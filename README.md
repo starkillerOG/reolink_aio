@@ -24,7 +24,7 @@ This is a package implementing Reolink IP NVR and camera API. Also it’s provid
 ### Installation
 
 ```
-pip3 install reolink_aio
+pip3 install reolink-aio
 ```
 
 or manually:
@@ -37,8 +37,11 @@ pip3 install .
 ### Usage
 
 ````
+from reolink_aio.api import Host
+import asyncio
+
 # Create a host-object (representing either a camera, or NVR with several channels)
-host = api.Host('192.168.1.10', 80, 'user', 'mypassword')
+host = Host('192.168.1.10', 80, 'user', 'mypassword')
 
 # Obtain/cache NVR or camera settings and capabilities, like model name, ports, HDD size, etc:
 await host.get_host_data()
