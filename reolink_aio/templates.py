@@ -1,12 +1,20 @@
-HEADERS = {'Content-Type': 'application/soap+xml;charset=UTF-8'}
+"""Reolink NVR/camera API."""
+
+HEADERS = {"Content-Type": "application/soap+xml;charset=UTF-8"}
 
 
-SUBSCRIBE_ACTION    = {'action': 'http://docs.oasis-open.org/wsn/bw-2/NotificationProducer/SubscribeRequest'}
-RENEW_ACTION        = {'action': 'http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/RenewRequest'}
-UNSUBSCRIBE_ACTION  = {'action': 'http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/UnsubscribeRequest'}
+SUBSCRIBE_ACTION = {
+    "action": "http://docs.oasis-open.org/wsn/bw-2/NotificationProducer/SubscribeRequest"
+}
+RENEW_ACTION = {
+    "action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/RenewRequest"
+}
+UNSUBSCRIBE_ACTION = {
+    "action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/UnsubscribeRequest"
+}
 
 
-SUBSCRIBE_XML = '''
+SUBSCRIBE_XML = """
     <soap:Envelope xmlns:add="http://www.w3.org/2005/08/addressing" xmlns:b="http://docs.oasis-open.org/wsn/b-2" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
         <soap:Header>
             <add:Action>http://docs.oasis-open.org/wsn/bw-2/NotificationProducer/SubscribeRequest</add:Action>
@@ -29,10 +37,10 @@ SUBSCRIBE_XML = '''
             </b:Subscribe>
         </soap:Body>
     </soap:Envelope>
-'''
+"""
 
 
-RENEW_XML = '''
+RENEW_XML = """
     <soap:Envelope xmlns:add="http://www.w3.org/2005/08/addressing" xmlns:b="http://docs.oasis-open.org/wsn/b-2" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
         <soap:Header>
             <add:Action>http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/RenewRequest</add:Action>
@@ -53,10 +61,10 @@ RENEW_XML = '''
             </b:Renew>
         </soap:Body>
     </soap:Envelope>
-'''
+"""
 
 
-UNSUBSCRIBE_XML = '''
+UNSUBSCRIBE_XML = """
     <soap:Envelope xmlns:add="http://www.w3.org/2005/08/addressing" xmlns:b="http://docs.oasis-open.org/wsn/b-2" xmlns:soap="http://www.w3.org/2003/05/soap-envelope">
         <soap:Header>
             <add:Action>http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/UnsubscribeRequest</add:Action>
@@ -75,4 +83,4 @@ UNSUBSCRIBE_XML = '''
             <b:Unsubscribe/>
         </soap:Body>
     </soap:Envelope>
-'''
+"""

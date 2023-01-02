@@ -1,1 +1,1 @@
-"""Reolink IP NVR/camera API."""
+"""Reolink NVR/camera API."""

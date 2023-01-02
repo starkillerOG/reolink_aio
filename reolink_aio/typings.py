@@ -2,12 +2,11 @@
 
 from typing import TypedDict
 
-
 SearchStatus = TypedDict("SearchStatus", {"mon": int, "table": str, "year": int})
 
 SearchTime = TypedDict(
     "SearchTime",
-    {"year": int, "mon": int, "day": int, "hour": int, "min": int, "sec": int}
+    {"year": int, "mon": int, "day": int, "hour": int, "min": int, "sec": int},
 )
 
 SearchFile = TypedDict(
@@ -21,5 +20,5 @@ SearchFile = TypedDict(
         "name": str,
         "size": int,
         "type": str,
-    }
+    },
 )

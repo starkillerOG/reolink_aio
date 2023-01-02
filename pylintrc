@@ -8,10 +8,11 @@ disable=
   broad-except,
   bare-except,
   abstract-method,
-  no-self-use,
+  missing-function-docstring,
   duplicate-code,
   too-few-public-methods,
   too-many-arguments,
+  too-many-nested-blocks,
   too-many-branches,
   too-many-instance-attributes,
   too-many-lines,
@@ -19,6 +20,7 @@ disable=
   too-many-public-methods,
   too-many-return-statements,
   too-many-statements,
+  too-many-boolean-expressions,
 
 [EXCEPTIONS]
 overgeneral-exceptions=Exception
