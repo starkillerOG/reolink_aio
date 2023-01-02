@@ -16,8 +16,7 @@ from xml.etree import ElementTree as XML
 import aiohttp
 
 from . import templates, typings
-from .exceptions import (ApiError, CredentialsInvalidError,
-                         InvalidContentTypeError)
+from .exceptions import ApiError, CredentialsInvalidError, InvalidContentTypeError
 from .software_version import SoftwareVersion
 
 MANUFACTURER = "Reolink"
@@ -92,18 +91,12 @@ class Host:
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
         # Connection session
-        self._timeout: Optional[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(
-            total=timeout
-        )
+        self._timeout: Optional[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=timeout)
         if aiohttp_get_session_callback is not None:
             self._aiohttp_get_session_callback = aiohttp_get_session_callback
             self._aiohttp_session: Optional[aiohttp.ClientSession] = None
         else:
-            self._aiohttp_session: Optional[
-                aiohttp.ClientSession
-            ] = aiohttp.ClientSession(
-                timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT)
-            )
+            self._aiohttp_session: Optional[aiohttp.ClientSession] = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
             self._aiohttp_get_session_callback = None
 
         ##############################################################################
@@ -283,11 +276,7 @@ class Host:
     @property
     def nvr_name(self) -> Optional[str]:
         if not self._is_nvr and (self._nvr_name is None or self._nvr_name == ""):
-            if (
-                len(self._channels) > 0
-                and self._channel_names is not None
-                and self._channels[0] in self._channel_names
-            ):
+            if len(self._channels) > 0 and self._channel_names is not None and self._channels[0] in self._channel_names:
                 return self._channel_names[self._channels[0]]
 
             return "Unknown"
@@ -346,9 +335,7 @@ class Host:
 
     @property
     def session_active(self) -> bool:
-        if self._token is not None and self._lease_time > (
-            datetime.now() + timedelta(seconds=5)
-        ):
+        if self._token is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
             return True
         return False
 
@@ -369,9 +356,7 @@ class Host:
         for user in self._users:
             if user["userName"] == self._username:
                 if user["level"] == "admin":
-                    _LOGGER.debug(
-                        'User %s has authorisation level "admin".', self._username
-                    )
+                    _LOGGER.debug('User %s has authorisation level "admin".', self._username)
                     return True
 
                 _LOGGER.warning(
@@ -397,152 +382,72 @@ class Host:
 
     def motion_detected(self, channel: int) -> bool:
         """Return the motion detection state (polled)."""
-        return (
-            self._motion_detection_states is not None
-            and channel in self._motion_detection_states
-            and self._motion_detection_states[channel]
-        )
+        return self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel]
 
     def ai_detected(self, channel: int, object_type: Optional[str] = None):
         """Return the AI object detection state (polled)."""
         if object_type is not None:
-            if (
-                self._ai_detection_states is not None
-                and channel in self._ai_detection_states
-                and self._ai_detection_states[channel] is not None
-            ):
+            if self._ai_detection_states is not None and channel in self._ai_detection_states and self._ai_detection_states[channel] is not None:
                 for key, value in self._ai_detection_states[channel].items():
-                    if (
-                        key == object_type
-                        or (object_type == PERSON_DETECTION_TYPE and key == "people")
-                        or (object_type == PET_DETECTION_TYPE and key == "dog_cat")
-                    ):
+                    if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
                         return value
             return False
 
-        if (
-            self._ai_detection_states is not None
-            and channel in self._ai_detection_states
-            and self._ai_detection_states[channel] is not None
-        ):
+        if self._ai_detection_states is not None and channel in self._ai_detection_states and self._ai_detection_states[channel] is not None:
             return self._ai_detection_states[channel]
         return {}
 
     def ai_supported(self, channel: int, object_type: Optional[str] = None):
         """Return if the AI object type detection is supported or not."""
         if object_type is not None:
-            if (
-                self._ai_detection_support is not None
-                and channel in self._ai_detection_support
-                and self._ai_detection_support[channel] is not None
-            ):
+            if self._ai_detection_support is not None and channel in self._ai_detection_support and self._ai_detection_support[channel] is not None:
                 for key, value in self._ai_detection_support[channel].items():
-                    if (
-                        key == object_type
-                        or (object_type == PERSON_DETECTION_TYPE and key == "people")
-                        or (object_type == PET_DETECTION_TYPE and key == "dog_cat")
-                    ):
+                    if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
                         return value
             return False
 
-        if (
-            self._ai_detection_support is not None
-            and channel in self._ai_detection_support
-            and self._ai_detection_support[channel] is not None
-        ):
+        if self._ai_detection_support is not None and channel in self._ai_detection_support and self._ai_detection_support[channel] is not None:
             return self._ai_detection_support[channel]
         return {}
 
     def audio_alarm_enabled(self, channel: int) -> bool:
-        return (
-            self._audio_alarm_enabled is not None
-            and channel in self._audio_alarm_enabled
-            and self._audio_alarm_enabled[channel]
-        )
+        return self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel]
 
     def ir_enabled(self, channel: int) -> bool:
-        return (
-            self._ir_enabled is not None
-            and channel in self._ir_enabled
-            and self._ir_enabled[channel]
-        )
+        return self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel]
 
     def power_led_enabled(self, channel: int) -> bool:
-        return (
-            self._power_led_enabled is not None
-            and channel in self._power_led_enabled
-            and self._power_led_enabled[channel]
-        )
+        return self._power_led_enabled is not None and channel in self._power_led_enabled and self._power_led_enabled[channel]
 
     def doorbell_light_enabled(self, channel: int) -> bool:
-        return (
-            self._doorbell_light_enabled is not None
-            and channel in self._doorbell_light_enabled
-            and self._doorbell_light_enabled[channel]
-        )
+        return self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel]
 
     def whiteled_enabled(self, channel: int) -> bool:
-        return (
-            self._whiteled_enabled is not None
-            and channel in self._whiteled_enabled
-            and self._whiteled_enabled[channel]
-        )
+        return self._whiteled_enabled is not None and channel in self._whiteled_enabled and self._whiteled_enabled[channel]
 
     def ftp_enabled(self, channel: Optional[int]) -> bool:
         if channel is None:
-            return (
-                self._ftp_enabled is not None
-                and 0 in self._ftp_enabled
-                and self._ftp_enabled[0]
-            )
+            return self._ftp_enabled is not None and 0 in self._ftp_enabled and self._ftp_enabled[0]
 
-        return (
-            self._ftp_enabled is not None
-            and channel in self._ftp_enabled
-            and self._ftp_enabled[channel]
-        )
+        return self._ftp_enabled is not None and channel in self._ftp_enabled and self._ftp_enabled[channel]
 
     def email_enabled(self, channel: Optional[int]) -> bool:
         if channel is None:
-            return (
-                self._email_enabled is not None
-                and 0 in self._email_enabled
-                and self._email_enabled[0]
-            )
+            return self._email_enabled is not None and 0 in self._email_enabled and self._email_enabled[0]
 
-        return (
-            self._email_enabled is not None
-            and channel in self._email_enabled
-            and self._email_enabled[channel]
-        )
+        return self._email_enabled is not None and channel in self._email_enabled and self._email_enabled[channel]
 
     def push_enabled(self, channel: Optional[int]) -> bool:
         if channel is None:
-            return (
-                self._push_enabled is not None
-                and 0 in self._push_enabled
-                and self._push_enabled[0]
-            )
+            return self._push_enabled is not None and 0 in self._push_enabled and self._push_enabled[0]
 
-        return (
-            self._push_enabled is not None
-            and channel in self._push_enabled
-            and self._push_enabled[channel]
-        )
+        return self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel]
 
     def recording_enabled(self, channel: Optional[int]) -> bool:
         if channel is None:
-            return (
-                self._recording_enabled is not None
-                and 0 in self._recording_enabled
-                and self._recording_enabled[0]
-            )
+            return self._recording_enabled is not None and 0 in self._recording_enabled and self._recording_enabled[0]
 
-        return (
-            self._recording_enabled is not None
-            and channel in self._recording_enabled
-            and self._recording_enabled[channel]
-        )
+        return self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel]
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
         if self._whiteled_modes is not None and channel in self._whiteled_modes:
@@ -577,17 +482,10 @@ class Host:
         return None
 
     def audio_state(self, channel: int) -> bool:
-        return (
-            self._audio_enabled is not None
-            and channel in self._audio_enabled
-            and self._audio_enabled[channel]
-        )
+        return self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel]
 
     def audio_alarm_settings(self, channel: int) -> Optional[dict]:
-        if (
-            self._audio_alarm_settings is not None
-            and channel in self._audio_alarm_settings
-        ):
+        if self._audio_alarm_settings is not None and channel in self._audio_alarm_settings:
             return self._audio_alarm_settings[channel]
 
         return None
@@ -599,47 +497,24 @@ class Host:
         return {}
 
     def sensitivity_presets(self, channel: int) -> dict:
-        if (
-            self._sensitivity_presets is not None
-            and channel in self._sensitivity_presets
-        ):
-            return (
-                self._sensitivity_presets[channel]
-                if self._sensitivity_presets[channel] is not None
-                else {}
-            )
+        if self._sensitivity_presets is not None and channel in self._sensitivity_presets:
+            return self._sensitivity_presets[channel] if self._sensitivity_presets[channel] is not None else {}
 
         return {}
 
     def ptz_supported(self, channel: int) -> bool:
-        return (
-            self._ptz_support is not None
-            and channel in self._ptz_support
-            and self._ptz_support[channel]
-        )
+        return self._ptz_support is not None and channel in self._ptz_support and self._ptz_support[channel]
 
     def motion_detection_state(self, channel: int) -> bool:
-        return (
-            self._motion_detection_states is not None
-            and channel in self._motion_detection_states
-            and self._motion_detection_states[channel]
-        )
+        return self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel]
 
     def is_ia_enabled(self, channel: int) -> bool:
         """Wether or not the camera supports AI objects detection"""
-        return (
-            self._is_ia_enabled is not None
-            and channel in self._is_ia_enabled
-            and self._is_ia_enabled[channel]
-        )
+        return self._is_ia_enabled is not None and channel in self._is_ia_enabled and self._is_ia_enabled[channel]
 
     def is_doorbell_enabled(self, channel: int) -> bool:
         """Wether or not the camera supports doorbell"""
-        return (
-            self._is_doorbell_enabled is not None
-            and channel in self._is_doorbell_enabled
-            and self._is_doorbell_enabled[channel]
-        )
+        return self._is_doorbell_enabled is not None and channel in self._is_doorbell_enabled and self._is_doorbell_enabled[channel]
 
     def enable_https(self, enable: bool):
         self._use_https = enable
@@ -658,9 +533,7 @@ class Host:
         await self._login_mutex.acquire()
 
         try:
-            if self._token is not None and self._lease_time > (
-                datetime.now() + timedelta(seconds=300)
-            ):
+            if self._token is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
                 return True
 
             await self.logout(True)  # Ensure there would be no "max session" error
@@ -707,16 +580,12 @@ class Host:
                 )
                 return False
 
-            _LOGGER.debug(
-                "Got login response from %s:%s: %s", self._host, self._port, json_data
-            )
+            _LOGGER.debug("Got login response from %s:%s: %s", self._host, self._port, json_data)
 
             if json_data is not None:
                 try:
                     if json_data[0]["code"] == 0:
-                        self._lease_time = datetime.now() + timedelta(
-                            seconds=float(json_data[0]["value"]["Token"]["leaseTime"])
-                        )
+                        self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
                         self._token = str(json_data[0]["value"]["Token"]["name"])
 
                         _LOGGER.debug(
@@ -794,115 +663,51 @@ class Host:
         """Return the capabilities of the NVR/camera that could be switched on/off."""
         capabilities: list[str] = []
 
-        if (
-            self._ftp_enabled is not None
-            and channel in self._ftp_enabled
-            and self._ftp_enabled[channel] is not None
-        ):
+        if self._ftp_enabled is not None and channel in self._ftp_enabled and self._ftp_enabled[channel] is not None:
             capabilities.append("ftp")
 
-        if (
-            self._push_enabled is not None
-            and channel in self._push_enabled
-            and self._push_enabled[channel] is not None
-        ):
+        if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
             capabilities.append("push")
 
-        if (
-            self._ir_enabled is not None
-            and channel in self._ir_enabled
-            and self._ir_enabled[channel] is not None
-        ):
+        if self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel] is not None:
             capabilities.append("irLights")
 
-        if (
-            self._power_led_enabled is not None
-            and channel in self._power_led_enabled
-            and self._power_led_enabled[channel] is not None
-        ):
+        if self._power_led_enabled is not None and channel in self._power_led_enabled and self._power_led_enabled[channel] is not None:
             capabilities.append("powerLed")
 
-        if (
-            self._doorbell_light_enabled is not None
-            and channel in self._doorbell_light_enabled
-            and self._doorbell_light_enabled[channel] is not None
-        ):
+        if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
             capabilities.append("doorbellLight")
 
-        if (
-            self._whiteled_enabled is not None
-            and channel in self._whiteled_enabled
-            and self._whiteled_enabled[channel] is not None
-        ):
+        if self._whiteled_enabled is not None and channel in self._whiteled_enabled and self._whiteled_enabled[channel] is not None:
             capabilities.append("spotlight")
 
-        if (
-            self._audio_alarm_enabled is not None
-            and channel in self._audio_alarm_enabled
-            and self._audio_alarm_enabled[channel] is not None
-        ):
+        if self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel] is not None:
             capabilities.append("siren")
 
-        if (
-            self._recording_enabled is not None
-            and channel in self._recording_enabled
-            and self._recording_enabled[channel] is not None
-        ):
+        if self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel] is not None:
             capabilities.append("recording")
 
-        if (
-            self._email_enabled is not None
-            and channel in self._email_enabled
-            and self._email_enabled[channel] is not None
-        ):
+        if self._email_enabled is not None and channel in self._email_enabled and self._email_enabled[channel] is not None:
             capabilities.append("email")
 
-        if (
-            self._audio_enabled is not None
-            and channel in self._audio_enabled
-            and self._audio_enabled[channel] is not None
-        ):
+        if self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel] is not None:
             capabilities.append("audio")
 
-        if (
-            self._ptz_support is not None
-            and channel in self._ptz_support
-            and self._ptz_support[channel]
-        ):
+        if self._ptz_support is not None and channel in self._ptz_support and self._ptz_support[channel]:
             capabilities.append("ptzControl")
-            if (
-                self._ptz_presets is not None
-                and channel in self._ptz_presets
-                and len(self._ptz_presets[channel]) != 0
-            ):
+            if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                 capabilities.append("ptzPresets")
 
-        if (
-            self._sensitivity_presets is not None
-            and channel in self._sensitivity_presets
-            and len(self._sensitivity_presets[channel]) != 0
-        ):
+        if self._sensitivity_presets is not None and channel in self._sensitivity_presets and len(self._sensitivity_presets[channel]) != 0:
             capabilities.append("sensitivityPresets")
 
-        if (
-            self._motion_detection_states is not None
-            and channel in self._motion_detection_states
-            and self._motion_detection_states[channel] is not None
-        ):
+        if self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel] is not None:
             capabilities.append("motionDetection")
 
-        if (
-            self._daynight_state is not None
-            and channel in self._daynight_state
-            and self._daynight_state[channel] is not None
-        ):
+        if self._daynight_state is not None and channel in self._daynight_state and self._daynight_state[channel] is not None:
             capabilities.append("dayNight")
 
-        if (
-            self._backlight_state is not None
-            and channel in self._backlight_state
-            and self._backlight_state[channel] is not None
-        ):
+        if self._backlight_state is not None and channel in self._backlight_state and self._backlight_state[channel] is not None:
             capabilities.append("backLight")
 
         return capabilities
@@ -912,41 +717,23 @@ class Host:
         channels = []
         for channel in self._channels:
             if cmd == "GetEnc":
-                ch_body = [
-                    {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetIsp":
-                ch_body = [
-                    {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetIrLights":
-                ch_body = [
-                    {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPowerLed":
-                ch_body = [
-                    {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWhiteLed":
-                ch_body = [
-                    {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset":
-                ch_body = [
-                    {"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAutoFocus":
-                ch_body = [
-                    {"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetZoomFocus":
-                ch_body = [
-                    {"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
-                ch_body = [
-                    {"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAlarm":
                 ch_body = [
                     {
@@ -957,9 +744,7 @@ class Host:
                 ]
             elif cmd in ["GetEmail", "GetEmailV20"]:
                 if self._api_version_getemail == 0:
-                    ch_body = [
-                        {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}]
                 else:
                     ch_body = [
                         {
@@ -970,9 +755,7 @@ class Host:
                     ]
             elif cmd in ["GetPush", "GetPushV20"]:
                 if self._api_version_getpush == 0:
-                    ch_body = [
-                        {"cmd": "GetPush", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetPush", "action": 0, "param": {"channel": channel}}]
                 else:
                     ch_body = [
                         {
@@ -983,22 +766,14 @@ class Host:
                     ]
             elif cmd in ["GetFtp", "GetFtpV20"]:
                 if self._api_version_getftp == 0:
-                    ch_body = [
-                        {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}]
                 else:
-                    ch_body = [
-                        {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetRec", "GetRecV20"]:
                 if self._api_version_getrec == 0:
-                    ch_body = [
-                        {"cmd": "GetRec", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetRec", "action": 0, "param": {"channel": channel}}]
                 else:
-                    ch_body = [
-                        {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetAudioAlarm", "GetAudioAlarmV20"]:
                 if self._api_version_getalarm == 0:
                     ch_body = [
@@ -1064,40 +839,24 @@ class Host:
             ]
 
             if self._api_version_getemail >= 1:
-                ch_body.append(
-                    {"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.append(
-                    {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
 
             if self._api_version_getpush >= 1:
-                ch_body.append(
-                    {"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.append(
-                    {"cmd": "GetPush", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
 
             if self._api_version_getftp >= 1:
-                ch_body.append(
-                    {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.append(
-                    {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
             if self._api_version_getrec >= 1:
-                ch_body.append(
-                    {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.append(
-                    {"cmd": "GetRec", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
 
             if self._api_version_getalarm >= 1:
                 ch_body.append(
@@ -1108,9 +867,7 @@ class Host:
                     }
                 )
             else:
-                ch_body.append(
-                    {"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
@@ -1185,21 +942,13 @@ class Host:
             ]
             # checking API versions (because Reolink dev quality sucks big time we cannot fully trust GetAbility)
             if self._api_version_getemail >= 1:
-                ch_body.append(
-                    {"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
             if self._api_version_getpush >= 1:
-                ch_body.append(
-                    {"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
             if self._api_version_getftp >= 1:
-                ch_body.append(
-                    {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
             if self._api_version_getrec >= 1:
-                ch_body.append(
-                    {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
             if self._api_version_getalarm >= 1:
                 ch_body.append(
                     {
@@ -1215,14 +964,10 @@ class Host:
         try:
             json_data = await self.send(body, expected_content_type="json")
         except InvalidContentTypeError:
-            _LOGGER.error(
-                "Host %s:%s: error translating API response.", self._host, self._port
-            )
+            _LOGGER.error("Host %s:%s: error translating API response.", self._host, self._port)
             return False
         if json_data is None:
-            _LOGGER.error(
-                "Host: %s:%s: error obtaining API response.", self._host, self._port
-            )
+            _LOGGER.error("Host: %s:%s: error obtaining API response.", self._host, self._port)
             return False
 
         self.map_channels_json_response(json_data, channels)
@@ -1292,9 +1037,7 @@ class Host:
 
         return (
             None
-            if self._motion_detection_states is None
-            or channel not in self._motion_detection_states
-            or self._motion_detection_states[channel] is None
+            if self._motion_detection_states is None or channel not in self._motion_detection_states or self._motion_detection_states[channel] is None
             else self._motion_detection_states[channel]
         )
 
@@ -1329,9 +1072,7 @@ class Host:
 
         return (
             None
-            if self._ai_detection_states is None
-            or channel not in self._ai_detection_states
-            or self._ai_detection_states[channel] is None
+            if self._ai_detection_states is None or channel not in self._ai_detection_states or self._ai_detection_states[channel] is None
             else self._ai_detection_states[channel]
         )
 
@@ -1375,9 +1116,7 @@ class Host:
 
         return (
             None
-            if self._motion_detection_states is None
-            or channel not in self._motion_detection_states
-            or self._motion_detection_states[channel] is None
+            if self._motion_detection_states is None or channel not in self._motion_detection_states or self._motion_detection_states[channel] is None
             else self._motion_detection_states[channel]
         )
 
@@ -1387,9 +1126,7 @@ class Host:
         channels = []
         for channel in self._channels:
             if self._api_version_getevents >= 1:
-                ch_body = [
-                    {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
             else:
                 ch_body = [
                     {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
@@ -1446,9 +1183,7 @@ class Host:
 
         return response
 
-    def get_rtmp_stream_source(
-        self, channel: int, stream: Optional[str] = None
-    ) -> Optional[str]:
+    def get_rtmp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._channels:
             return None
 
@@ -1466,9 +1201,7 @@ class Host:
 
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
-    def get_rtsp_stream_source(
-        self, channel: int, stream: Optional[str] = None
-    ) -> Optional[str]:
+    def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._channels:
             return None
 
@@ -1481,9 +1214,7 @@ class Host:
         # return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/Preview_{channel}_{stream}"
         return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/h264Preview_{channel}_{stream}"
 
-    async def get_stream_source(
-        self, channel: int, stream: Optional[str] = None
-    ) -> Optional[str]:
+    async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         """Return the stream source url."""
         if not await self.login():
             return None
@@ -1573,9 +1304,7 @@ class Host:
                 if data["cmd"] == "GetChannelstatus":
                     # Maybe later add a support of dynamic cameras' connect/disconnect, without API consumer re-init.
                     # A callback from here to the API consumer would be needed I think if changes are seen.
-                    if not self._GetChannelStatus_present and (
-                        self._nvr_num_channels == 0 or len(self._channels) == 0
-                    ):
+                    if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
                         self._channel_models.clear()
                         self._is_doorbell_enabled.clear()
@@ -1598,16 +1327,10 @@ class Host:
                                     cur_channel = ch_info["channel"]
 
                                     if self._GetChannelStatus_has_name:
-                                        self._channel_names[cur_channel] = ch_info[
-                                            "name"
-                                        ]
+                                        self._channel_names[cur_channel] = ch_info["name"]
 
-                                    self._channel_models[cur_channel] = ch_info.get(
-                                        "typeInfo", "Unknown"
-                                    )  # Not all Reolink devices respond with "typeInfo" attribute.
-                                    self._is_doorbell_enabled[cur_channel] = (
-                                        "Doorbell" in self._channel_models[cur_channel]
-                                    )
+                                    self._channel_models[cur_channel] = ch_info.get("typeInfo", "Unknown")  # Not all Reolink devices respond with "typeInfo" attribute.
+                                    self._is_doorbell_enabled[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
                                     self._channels.append(cur_channel)
                         else:
                             self._channel_names.clear()
@@ -1616,9 +1339,7 @@ class Host:
                         for ch_info in cur_status:
                             if ch_info["online"] == 1:
                                 # Just a dynamic name change is OK for the current "non dynamic" behavior.
-                                self._channel_names[ch_info["channel"]] = ch_info[
-                                    "name"
-                                ]
+                                self._channel_names[ch_info["channel"]] = ch_info["name"]
 
                     if not self._GetChannelStatus_present:
                         self._GetChannelStatus_present = True
@@ -1651,10 +1372,7 @@ class Host:
                     self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
 
                     # In case the "GetChannelStatus" command not supported by the device.
-                    if (
-                        not self._GetChannelStatus_present
-                        and self._nvr_num_channels == 0
-                    ):
+                    if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
                         self._channels.clear()
                         self._channel_models.clear()
                         self._is_doorbell_enabled.clear()
@@ -1693,9 +1411,7 @@ class Host:
                     self._rtsp_enabled = net_port.get("rtspEnable", 1) == 1
                     self._rtmp_enabled = net_port.get("rtmpEnable", 1) == 1
                     self._onvif_enabled = net_port.get("onvifEnable", 1) == 1
-                    self._subscribe_url = (
-                        f"http://{self._host}:{self._onvif_port}/onvif/event_service"
-                    )
+                    self._subscribe_url = f"http://{self._host}:{self._onvif_port}/onvif/event_service"
 
                 elif data["cmd"] == "GetUser":
                     self._users = data["value"]["User"]
@@ -1728,21 +1444,13 @@ class Host:
 
                     channel_abilities: list = host_abilities["abilityChn"]
                     for channel in self._channels:
-                        self._ptz_support[channel] = (
-                            channel_abilities[channel]["ptzCtrl"]["permit"] != 0
-                        )
+                        self._ptz_support[channel] = channel_abilities[channel]["ptzCtrl"]["permit"] != 0
                         if self._api_version_getftp is None:
-                            self._api_version_getftp = channel_abilities[channel].get(
-                                "ftp", {"ver": None}
-                            )["ver"]
+                            self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": None})["ver"]
                         if self._api_version_getrec is None:
-                            self._api_version_getrec = channel_abilities[channel].get(
-                                "recCfg", {"ver": None}
-                            )["ver"]
+                            self._api_version_getrec = channel_abilities[channel].get("recCfg", {"ver": None})["ver"]
                         if self._api_version_getalarm is None:
-                            self._api_version_getalarm = channel_abilities[channel].get(
-                                "supportAudioAlarm", {"ver": None}
-                            )["ver"]
+                            self._api_version_getalarm = channel_abilities[channel].get("supportAudioAlarm", {"ver": None})["ver"]
 
                     # Channel-level in older firmwares?..
                     if self._api_version_getftp is None:
@@ -1796,20 +1504,14 @@ class Host:
                         self._ai_detection_support[channel] = {}
                         for key, value in data["value"]["ai"].items():
                             supported: bool = value.get("support", 0) == 1
-                            self._ai_detection_states[channel][key] = (
-                                supported and value.get("alarm_state", 0) == 1
-                            )
+                            self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
                     if "md" in data["value"]:
-                        self._motion_detection_states[channel] = (
-                            data["value"]["md"]["alarm_state"] == 1
-                        )
+                        self._motion_detection_states[channel] = data["value"]["md"]["alarm_state"] == 1
                     if "visitor" in data["value"]:
                         value = data["value"]["visitor"]
                         supported: bool = value.get("support", 0) == 1
-                        self._visitor_states[channel] = (
-                            supported and value.get("alarm_state", 0) == 1
-                        )
+                        self._visitor_states[channel] = supported and value.get("alarm_state", 0) == 1
                         self._is_doorbell_enabled[channel] = supported
 
                 elif data["cmd"] == "GetMdState":
@@ -1827,9 +1529,7 @@ class Host:
                         if key == "channel" and value > channel:
                             break
 
-                        if isinstance(
-                            value, int
-                        ):  # compatibility with firmware < 3.0.0-494
+                        if isinstance(value, int):  # compatibility with firmware < 3.0.0-494
                             self._ai_detection_states[channel][key] = value == 1
                             self._ai_detection_support[channel][key] = True
                         else:
@@ -1856,27 +1556,18 @@ class Host:
                             #     }
                             # ]
                             supported: bool = value.get("support", 0) == 1
-                            self._ai_detection_states[channel][key] = (
-                                supported and value.get("alarm_state", 0) == 1
-                            )
+                            self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
 
                 elif data["cmd"] == "GetOsd":
                     ch = data["value"]["Osd"]["channel"]
                     self._osd_settings[ch] = data["value"]
-                    if (
-                        not self._GetChannelStatus_present
-                        or not self._GetChannelStatus_has_name
-                    ):
-                        self._channel_names[ch] = data["value"]["Osd"]["osdChannel"][
-                            "name"
-                        ]
+                    if not self._GetChannelStatus_present or not self._GetChannelStatus_has_name:
+                        self._channel_names[ch] = data["value"]["Osd"]["osdChannel"]["name"]
 
                 elif data["cmd"] == "GetFtp":
                     self._ftp_settings[channel] = data["value"]
-                    self._ftp_enabled[channel] = (
-                        data["value"]["Ftp"]["schedule"]["enable"] == 1
-                    )
+                    self._ftp_enabled[channel] = data["value"]["Ftp"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetFtpV20":
                     self._ftp_settings[channel] = data["value"]
@@ -1884,9 +1575,7 @@ class Host:
 
                 elif data["cmd"] == "GetPush":
                     self._push_settings[channel] = data["value"]
-                    self._push_enabled[channel] = (
-                        data["value"]["Push"]["schedule"]["enable"] == 1
-                    )
+                    self._push_enabled[channel] = data["value"]["Push"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetPushV20":
                     self._push_settings[channel] = data["value"]
@@ -1899,9 +1588,7 @@ class Host:
 
                 elif data["cmd"] == "GetEmail":
                     self._email_settings[channel] = data["value"]
-                    self._email_enabled[channel] = (
-                        data["value"]["Email"]["schedule"]["enable"] == 1
-                    )
+                    self._email_enabled[channel] = data["value"]["Email"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetEmailV20":
                     self._email_settings[channel] = data["value"]
@@ -1915,9 +1602,7 @@ class Host:
 
                 elif data["cmd"] == "GetIrLights":
                     self._ir_settings[channel] = data["value"]
-                    self._ir_enabled[channel] = (
-                        data["value"]["IrLights"]["state"] == "Auto"
-                    )
+                    self._ir_enabled[channel] = data["value"]["IrLights"]["state"] == "Auto"
 
                 elif data["cmd"] == "GetPowerLed":
                     ch = data["value"]["PowerLed"]["channel"]
@@ -1937,15 +1622,11 @@ class Host:
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
-                    self._recording_enabled[channel] = (
-                        data["value"]["Rec"]["schedule"]["enable"] == 1
-                    )
+                    self._recording_enabled[channel] = data["value"]["Rec"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetRecV20":
                     self._recording_settings[channel] = data["value"]
-                    self._recording_enabled[channel] = (
-                        data["value"]["Rec"]["enable"] == 1
-                    )
+                    self._recording_enabled[channel] = data["value"]["Rec"]["enable"] == 1
 
                 elif data["cmd"] == "GetPtzPreset":
                     self._ptz_presets_settings[channel] = data["value"]
@@ -1958,22 +1639,16 @@ class Host:
 
                 elif data["cmd"] == "GetAlarm":
                     self._alarm_settings[channel] = data["value"]
-                    self._motion_detection_states[channel] = (
-                        data["value"]["Alarm"]["enable"] == 1
-                    )
+                    self._motion_detection_states[channel] = data["value"]["Alarm"]["enable"] == 1
                     self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
 
                 elif data["cmd"] == "GetAudioAlarm":
                     self._audio_alarm_settings[channel] = data["value"]
-                    self._audio_alarm_enabled[channel] = (
-                        data["value"]["Audio"]["schedule"]["enable"] == 1
-                    )
+                    self._audio_alarm_enabled[channel] = data["value"]["Audio"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetAudioAlarmV20":
                     self._audio_alarm_settings[channel] = data["value"]
-                    self._audio_alarm_enabled[channel] = (
-                        data["value"]["Audio"]["enable"] == 1
-                    )
+                    self._audio_alarm_enabled[channel] = data["value"]["Audio"]["enable"] == 1
 
                 elif data["cmd"] == "GetAutoFocus":
                     self._auto_focus_settings[channel] = data["value"]
@@ -2031,9 +1706,7 @@ class Host:
         Always get current time first"""
         ret = await self.get_host_data()
         if not ret or self._time_settings is None:
-            _LOGGER.error(
-                "Host %s:%s: time settings are not available.", self._host, self._port
-            )
+            _LOGGER.error("Host %s:%s: time settings are not available.", self._host, self._port)
             return False
 
         body = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
@@ -2053,9 +1726,7 @@ class Host:
 
         if tzOffset is not None:
             if not isinstance(tzOffset, int):
-                _LOGGER.error(
-                    "Invalid time zone offset specified, type is not integer."
-                )
+                _LOGGER.error("Invalid time zone offset specified, type is not integer.")
                 return False
             if tzOffset < -43200 or tzOffset > 50400:
                 _LOGGER.error("Invalid time zone offset specified.")
@@ -2074,9 +1745,7 @@ class Host:
         interval (int) Interval of synchronization in minutes in range of (60-65535)
         """
         if self._ntp_settings is None:
-            _LOGGER.error(
-                "Host %s:%s: NTP settings are not available.", self._host, self._port
-            )
+            _LOGGER.error("Host %s:%s: NTP settings are not available.", self._host, self._port)
             return False
 
         body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
@@ -2113,9 +1782,7 @@ class Host:
     async def sync_ntp(self) -> bool:
         """Sync date and time on the host via NTP now."""
         if self._ntp_settings is None:
-            _LOGGER.error(
-                "Host %s:%s: NTP settings are not available.", self._host, self._port
-            )
+            _LOGGER.error("Host %s:%s: NTP settings are not available.", self._host, self._port)
             return False
 
         body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
@@ -2129,14 +1796,8 @@ class Host:
         enable (boolean) enables/disables AutoFocus if supported"""
         if channel not in self._channels:
             return False
-        if (
-            self._auto_focus_settings is None
-            or channel not in self._auto_focus_settings
-            or not self._auto_focus_settings[channel]
-        ):
-            _LOGGER.error(
-                "AutoFocus on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._auto_focus_settings is None or channel not in self._auto_focus_settings or not self._auto_focus_settings[channel]:
+            _LOGGER.error("AutoFocus on camera %s is not available.", self.camera_name(channel))
             return False
 
         body = [
@@ -2154,14 +1815,8 @@ class Host:
         """Get absolute focus value."""
         if channel not in self._channels:
             return False
-        if (
-            self._zoom_focus_settings is None
-            or channel not in self._zoom_focus_settings
-            or not self._zoom_focus_settings[channel]
-        ):
-            _LOGGER.error(
-                "ZoomFocus on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._zoom_focus_settings is None or channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
+            _LOGGER.error("ZoomFocus on camera %s is not available.", self.camera_name(channel))
             return False
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["focus"]["pos"]
@@ -2180,9 +1835,7 @@ class Host:
             {
                 "cmd": "StartZoomFocus",
                 "action": 0,
-                "param": {
-                    "ZoomFocus": {"channel": channel, "op": "FocusPos", "pos": focus}
-                },
+                "param": {"ZoomFocus": {"channel": channel, "op": "FocusPos", "pos": focus}},
             }
         ]
 
@@ -2192,14 +1845,8 @@ class Host:
         """Get absolute zoom value."""
         if channel not in self._channels:
             return False
-        if (
-            self._zoom_focus_settings is None
-            or channel not in self._zoom_focus_settings
-            or not self._zoom_focus_settings[channel]
-        ):
-            _LOGGER.error(
-                "ZoomFocus on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._zoom_focus_settings is None or channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
+            _LOGGER.error("ZoomFocus on camera %s is not available.", self.camera_name(channel))
             return False
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["zoom"]["pos"]
@@ -2218,9 +1865,7 @@ class Host:
             {
                 "cmd": "StartZoomFocus",
                 "action": 0,
-                "param": {
-                    "ZoomFocus": {"channel": channel, "op": "ZoomPos", "pos": zoom}
-                },
+                "param": {"ZoomFocus": {"channel": channel, "op": "ZoomPos", "pos": zoom}},
             }
         ]
 
@@ -2238,9 +1883,7 @@ class Host:
             "Lower Right",
         ]
 
-    async def set_osd(
-        self, channel: int, namePos=None, datePos=None, enableWaterMark=None
-    ) -> bool:
+    async def set_osd(self, channel: int, namePos=None, datePos=None, enableWaterMark=None) -> bool:
         """Set OSD parameters.
         Parameters:
         namePos (string) specifies the position of the camera name - "Off" disables this OSD
@@ -2248,14 +1891,8 @@ class Host:
         enableWaterMark (boolean) enables/disables the Logo (WaterMark) if supported"""
         if channel not in self._channels:
             return False
-        if (
-            self._osd_settings is None
-            or channel not in self._osd_settings
-            or not self._osd_settings[channel]
-        ):
-            _LOGGER.error(
-                "OSD on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._osd_settings is None or channel not in self._osd_settings or not self._osd_settings[channel]:
+            _LOGGER.error("OSD on camera %s is not available.", self.camera_name(channel))
             return False
 
         body = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
@@ -2302,11 +1939,7 @@ class Host:
             if self._api_version_getpush == 0:
                 OK = True
                 for c in self._channels:
-                    if (
-                        self._push_settings is not None
-                        and c in self._push_settings
-                        and self._push_settings[c] is not None
-                    ):
+                    if self._push_settings is not None and c in self._push_settings and self._push_settings[c] is not None:
                         body = [
                             {
                                 "cmd": "SetPush",
@@ -2314,9 +1947,7 @@ class Host:
                                 "param": self._push_settings[c],
                             }
                         ]
-                        body[0]["param"]["Push"]["schedule"]["enable"] = (
-                            1 if enable else 0
-                        )
+                        body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
                         OK = OK and await self.send_setting(body)
                 return OK
 
@@ -2326,11 +1957,7 @@ class Host:
 
         if channel not in self._channels:
             return False
-        if (
-            self._push_settings is None
-            or channel not in self._push_settings
-            or not self._push_settings[channel]
-        ):
+        if self._push_settings is None or channel not in self._push_settings or not self._push_settings[channel]:
             _LOGGER.error(
                 "Push-notifications on camera %s are not available.",
                 self.camera_name(channel),
@@ -2366,11 +1993,7 @@ class Host:
             if self._api_version_getftp == 0:
                 OK = True
                 for c in self._channels:
-                    if (
-                        self._ftp_settings is not None
-                        and c in self._ftp_settings
-                        and self._ftp_settings[c] is not None
-                    ):
+                    if self._ftp_settings is not None and c in self._ftp_settings and self._ftp_settings[c] is not None:
                         body = [
                             {
                                 "cmd": "SetFtp",
@@ -2378,9 +2001,7 @@ class Host:
                                 "param": self._ftp_settings[c],
                             }
                         ]
-                        body[0]["param"]["Ftp"]["schedule"]["enable"] = (
-                            1 if enable else 0
-                        )
+                        body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
                         OK = OK and await self.send_setting(body)
                 return OK
 
@@ -2390,20 +2011,12 @@ class Host:
 
         if channel not in self._channels:
             return False
-        if (
-            self._ftp_settings is None
-            or channel not in self._ftp_settings
-            or not self._ftp_settings[channel]
-        ):
-            _LOGGER.error(
-                "FTP on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._ftp_settings is None or channel not in self._ftp_settings or not self._ftp_settings[channel]:
+            _LOGGER.error("FTP on camera %s is not available.", self.camera_name(channel))
             return False
 
         if self._api_version_getftp == 0:
-            body = [
-                {"cmd": "SetFtp", "action": 0, "param": self._ftp_settings[channel]}
-            ]
+            body = [{"cmd": "SetFtp", "action": 0, "param": self._ftp_settings[channel]}]
             body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
         else:
             body = [
@@ -2423,11 +2036,7 @@ class Host:
             if self._api_version_getemail == 0:
                 OK = True
                 for c in self._channels:
-                    if (
-                        self._email_settings is not None
-                        and c in self._email_settings
-                        and self._email_settings[c] is not None
-                    ):
+                    if self._email_settings is not None and c in self._email_settings and self._email_settings[c] is not None:
                         body = [
                             {
                                 "cmd": "SetEmail",
@@ -2435,9 +2044,7 @@ class Host:
                                 "param": self._email_settings[c],
                             }
                         ]
-                        body[0]["param"]["Email"]["schedule"]["enable"] = (
-                            1 if enable else 0
-                        )
+                        body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
                         OK = OK and await self.send_setting(body)
                 return OK
 
@@ -2453,14 +2060,8 @@ class Host:
 
         if channel not in self._channels:
             return False
-        if (
-            self._email_settings is None
-            or channel not in self._email_settings
-            or not self._email_settings[channel]
-        ):
-            _LOGGER.error(
-                "Email on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._email_settings is None or channel not in self._email_settings or not self._email_settings[channel]:
+            _LOGGER.error("Email on camera %s is not available.", self.camera_name(channel))
             return False
 
         if self._api_version_getemail == 0:
@@ -2487,14 +2088,8 @@ class Host:
     async def set_audio(self, channel: int, enable: bool) -> bool:
         if channel not in self._channels:
             return False
-        if (
-            self._enc_settings is None
-            or channel not in self._enc_settings
-            or not self._enc_settings[channel]
-        ):
-            _LOGGER.error(
-                "Audio on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._enc_settings is None or channel not in self._enc_settings or not self._enc_settings[channel]:
+            _LOGGER.error("Audio on camera %s is not available.", self.camera_name(channel))
             return False
 
         body = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
@@ -2505,14 +2100,8 @@ class Host:
     async def set_ir_lights(self, channel: int, enable: bool) -> bool:
         if channel not in self._channels:
             return False
-        if (
-            self._ir_settings is None
-            or channel not in self._ir_settings
-            or not self._ir_settings[channel]
-        ):
-            _LOGGER.error(
-                "IR light on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._ir_settings is None or channel not in self._ir_settings or not self._ir_settings[channel]:
+            _LOGGER.error("IR light on camera %s is not available.", self.camera_name(channel))
             return False
 
         body = [
@@ -2526,19 +2115,11 @@ class Host:
 
         return await self.send_setting(body)
 
-    async def set_power_led(
-        self, channel: int, state: bool, doorbellLightState: bool
-    ) -> bool:
+    async def set_power_led(self, channel: int, state: bool, doorbellLightState: bool) -> bool:
         if channel not in self._channels:
             return False
-        if (
-            self._power_led_settings is None
-            or channel not in self._power_led_settings
-            or not self._power_led_settings[channel]
-        ):
-            _LOGGER.error(
-                "Power led on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._power_led_settings is None or channel not in self._power_led_settings or not self._power_led_settings[channel]:
+            _LOGGER.error("Power led on camera %s is not available.", self.camera_name(channel))
             return False
 
         body = [
@@ -2555,15 +2136,11 @@ class Host:
             }
         ]
         body[0]["param"]["PowerLed"]["state"] = "On" if state else "Off"
-        body[0]["param"]["PowerLed"]["eDoorbellLightState"] = (
-            "On" if doorbellLightState else "Off"
-        )
+        body[0]["param"]["PowerLed"]["eDoorbellLightState"] = "On" if doorbellLightState else "Off"
 
         return await self.send_setting(body)
 
-    async def set_whiteled(
-        self, channel: int, enable: bool, brightness, mode=None
-    ) -> bool:
+    async def set_whiteled(self, channel: int, enable: bool, brightness, mode=None) -> bool:
         """
         Set the WhiteLed parameter.
         with Reolink Duo GetWhiteLed returns an error state
@@ -2582,14 +2159,8 @@ class Host:
         """
         if channel not in self._channels:
             return False
-        if (
-            self._whiteled_settings is None
-            or channel not in self._whiteled_settings
-            or not self._whiteled_settings[channel]
-        ):
-            _LOGGER.error(
-                "White Led on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._whiteled_settings is None or channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
+            _LOGGER.error("White Led on camera %s is not available.", self.camera_name(channel))
             return False
 
         if mode is None:
@@ -2618,21 +2189,13 @@ class Host:
 
         return await self.send_setting(body)
 
-    async def set_spotlight_lighting_schedule(
-        self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0
-    ) -> bool:
+    async def set_spotlight_lighting_schedule(self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0) -> bool:
         """Stub to handle setting the time period where spotlight (WhiteLed) will be on when NightMode set and AUTO is off.
         Time in 24-hours format"""
         if channel not in self._channels:
             return False
-        if (
-            self._whiteled_settings is None
-            or channel not in self._whiteled_settings
-            or not self._whiteled_settings[channel]
-        ):
-            _LOGGER.error(
-                "White Led on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._whiteled_settings is None or channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
+            _LOGGER.error("White Led on camera %s is not available.", self.camera_name(channel))
             return False
 
         if (
@@ -2694,14 +2257,8 @@ class Host:
 
         if channel not in self._channels:
             return False
-        if (
-            self._audio_alarm_settings is None
-            or channel not in self._audio_alarm_settings
-            or not self._audio_alarm_settings[channel]
-        ):
-            _LOGGER.error(
-                "AudioAlarm on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._audio_alarm_settings is None or channel not in self._audio_alarm_settings or not self._audio_alarm_settings[channel]:
+            _LOGGER.error("AudioAlarm on camera %s is not available.", self.camera_name(channel))
             return False
 
         if self._api_version_getalarm == 0:
@@ -2722,9 +2279,7 @@ class Host:
             body = [
                 {
                     "cmd": "SetAudioAlarmV20",
-                    "param": {
-                        "Audio": {"enable": 1 if enable else 0, "channel": channel}
-                    },
+                    "param": {"Audio": {"enable": 1 if enable else 0, "channel": channel}},
                 }
             ]
 
@@ -2761,14 +2316,8 @@ class Host:
     async def set_daynight(self, channel: int, value: str) -> bool:
         if channel not in self._channels:
             return False
-        if (
-            self._isp_settings is None
-            or channel not in self._isp_settings
-            or not self._isp_settings[channel]
-        ):
-            _LOGGER.error(
-                "ISP on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._isp_settings is None or channel not in self._isp_settings or not self._isp_settings[channel]:
+            _LOGGER.error("ISP on camera %s is not available.", self.camera_name(channel))
             return False
 
         if value not in ["Auto", "Color", "Black&White"]:
@@ -2783,14 +2332,8 @@ class Host:
     async def set_backlight(self, channel: int, value: str) -> bool:
         if channel not in self._channels:
             return False
-        if (
-            self._isp_settings is None
-            or channel not in self._isp_settings
-            or not self._isp_settings[channel]
-        ):
-            _LOGGER.error(
-                "ISP on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._isp_settings is None or channel not in self._isp_settings or not self._isp_settings[channel]:
+            _LOGGER.error("ISP on camera %s is not available.", self.camera_name(channel))
             return False
 
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
@@ -2810,11 +2353,7 @@ class Host:
             if self._api_version_getrec == 0:
                 OK = True
                 for c in self._channels:
-                    if (
-                        self._recording_settings is not None
-                        and c in self._recording_settings
-                        and self._recording_settings[c] is not None
-                    ):
+                    if self._recording_settings is not None and c in self._recording_settings and self._recording_settings[c] is not None:
                         body = [
                             {
                                 "cmd": "SetRec",
@@ -2822,9 +2361,7 @@ class Host:
                                 "param": self._recording_settings[c],
                             }
                         ]
-                        body[0]["param"]["Rec"]["schedule"]["enable"] = (
-                            1 if enable else 0
-                        )
+                        body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
                         OK = OK and await self.send_setting(body)
                 return OK
 
@@ -2840,11 +2377,7 @@ class Host:
 
         if channel not in self._channels:
             return False
-        if (
-            self._recording_settings is None
-            or channel not in self._recording_settings
-            or not self._recording_settings[channel]
-        ):
+        if self._recording_settings is None or channel not in self._recording_settings or not self._recording_settings[channel]:
             _LOGGER.error(
                 "Recording on camera %s is not available.",
                 self.camera_name(channel),
@@ -2876,19 +2409,11 @@ class Host:
         """Set the motion detection parameter."""
         if channel not in self._channels:
             return False
-        if (
-            self._alarm_settings is None
-            or channel not in self._alarm_settings
-            or not self._alarm_settings[channel]
-        ):
-            _LOGGER.error(
-                "Alarm on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
+            _LOGGER.error("Alarm on camera %s is not available.", self.camera_name(channel))
             return False
 
-        body = [
-            {"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}
-        ]
+        body = [{"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
         return await self.send_setting(body)
@@ -2900,14 +2425,8 @@ class Host:
         """
         if channel not in self._channels:
             return False
-        if (
-            self._alarm_settings is None
-            or channel not in self._alarm_settings
-            or not self._alarm_settings[channel]
-        ):
-            _LOGGER.error(
-                "Alarm on camera %s is not available.", self.camera_name(channel)
-            )
+        if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
+            _LOGGER.error("Alarm on camera %s is not available.", self.camera_name(channel))
             return False
 
         body = [
@@ -2929,9 +2448,7 @@ class Host:
 
         return await self.send_setting(body)
 
-    async def set_ptz_command(
-        self, channel: int, command, preset=None, speed=None
-    ) -> bool:
+    async def set_ptz_command(self, channel: int, command, preset=None, speed=None) -> bool:
         """Send PTZ command to the camera.
 
         List of possible commands
@@ -3019,9 +2536,7 @@ class Host:
 
         try:
             # json_data = await self.send(body, {"cmd": "Search", "rs": "000000"}, expected_content_type = 'json')
-            json_data = await self.send(
-                body, {"cmd": "Search"}, expected_content_type="json"
-            )
+            json_data = await self.send(body, {"cmd": "Search"}, expected_content_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 'Host %s:%s: error translating of "Search" command response.',
@@ -3080,9 +2595,7 @@ class Host:
         )
 
         try:
-            json_data = await self.send(
-                body, {"cmd": command}, expected_content_type="json"
-            )
+            json_data = await self.send(body, {"cmd": command}, expected_content_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 'Host %s:%s: error translating command "%s" response.',
@@ -3118,9 +2631,7 @@ class Host:
             )
             return False
 
-        _LOGGER.error(
-            'Host %s:%s: command "%s" error.', self._host, self._port, command
-        )
+        _LOGGER.error('Host %s:%s: command "%s" error.', self._host, self._port, command)
         return False
 
     async def send(
@@ -3133,9 +2644,7 @@ class Host:
         """Generic send method."""
 
         if self._aiohttp_session is not None and self._aiohttp_session.closed:
-            self._aiohttp_session = aiohttp.ClientSession(
-                timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT)
-            )
+            self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
 
         if body is None:
             cur_command = "" if param is None else param.get("cmd", "")
@@ -3160,81 +2669,35 @@ class Host:
             if session is None:
                 session = self._aiohttp_get_session_callback()
 
-            _LOGGER.debug(
-                "%s/%s:%s::send() HTTP Request params =\n%s\n",
-                self.nvr_name,
-                self._host,
-                self._port,
-                str(param).replace(self._password, "<password>"),
-            )
+            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
 
             if body is None:
                 async with self._send_mutex:
-                    response = await session.get(
-                        url=self._url, params=param, allow_redirects=False
-                    )
+                    response = await session.get(url=self._url, params=param, allow_redirects=False)
 
                 data = await response.read()
             else:
-                _LOGGER.debug(
-                    "%s/%s:%s::send() HTTP Request body =\n%s\n",
-                    self.nvr_name,
-                    self._host,
-                    self._port,
-                    str(body).replace(self._password, "<password>"),
-                )
+                _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
 
                 async with self._send_mutex:
-                    response = await session.post(
-                        url=self._url, json=body, params=param, allow_redirects=False
-                    )
+                    response = await session.post(url=self._url, json=body, params=param, allow_redirects=False)
 
                 data = await response.text()
 
-            _LOGGER.debug(
-                "%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).",
-                self.nvr_name,
-                self._host,
-                self._port,
-                response.status,
-                response.content_type,
-            )
-
+            _LOGGER.debug("%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).", self.nvr_name, self._host, self._port, response.status, response.content_type)
             if cur_command == "Search" and len(data) > 500:
-                _LOGGER_DATA.debug(
-                    "%s/%s:%s::send() HTTP Response (VOD search) data scrapped because it's too large.",
-                    self.nvr_name,
-                    self._host,
-                    self._port,
-                )
+                _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (VOD search) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
             elif cur_command == "Snap":
-                _LOGGER_DATA.debug(
-                    "%s/%s:%s::send() HTTP Response (snapshot) data scrapped because it's too large.",
-                    self.nvr_name,
-                    self._host,
-                    self._port,
-                )
+                _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (snapshot) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
             else:
-                _LOGGER_DATA.debug(
-                    "%s/%s:%s::send() HTTP Response data:\n%s\n",
-                    self.nvr_name,
-                    self._host,
-                    self._port,
-                    data,
-                )
+                _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, data)
 
             if len(data) < 500 and response.content_type == "text/html":
                 if body is None:
-                    login_err = (
-                        b'"detail" : "invalid user"' in data
-                        or b'"detail" : "login failed"' in data
-                        or b'detail" : "please login first' in data
-                    )
+                    login_err = b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'detail" : "please login first' in data
                 else:
                     login_err = (
-                        '"detail" : "invalid user"' in data
-                        or '"detail" : "login failed"' in data
-                        or 'detail" : "please login first' in data
+                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or 'detail" : "please login first' in data
                     ) and cur_command != "Logout"
                 if login_err:
                     if is_login_logout:
@@ -3250,26 +2713,17 @@ class Host:
                     self.expire_session()
                     return await self.send(body, param, expected_content_type, True)
 
-            if (
-                expected_content_type not in [None, "json"]
-                and response.content_type != expected_content_type
-            ):
-                raise InvalidContentTypeError(
-                    f"Expected type '{expected_content_type}' but received '{response.content_type}'."
-                )
+            if expected_content_type not in [None, "json"] and response.content_type != expected_content_type:
+                raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'.")
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
-                raise ApiError(
-                    f"API returned HTTP status ERROR code {response.status}/{response.reason}."
-                )
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}.")
 
             if expected_content_type == "json":
                 try:
                     json_data = json.loads(data)
                 except (TypeError, json.JSONDecodeError) as e:
-                    raise InvalidContentTypeError(
-                        f"Error translating JSON response: {str(e)},  content type '{response.content_type}', data:\n{data}\n"
-                    ) from e
+                    raise InvalidContentTypeError(f"Error translating JSON response: {str(e)},  content type '{response.content_type}', data:\n{data}\n") from e
                 if json_data is None:
                     self.expire_session()
                 return json_data
@@ -3277,9 +2731,7 @@ class Host:
             return data
         except aiohttp.ClientConnectorError as e:
             self.expire_session()
-            _LOGGER.error(
-                "Host %s:%s: connection error: %s", self._host, self._port, str(e)
-            )
+            _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(e))
             raise e
         except asyncio.TimeoutError as e:
             self.expire_session()
@@ -3299,19 +2751,11 @@ class Host:
             raise e
         except InvalidContentTypeError as e:
             self.expire_session()
-            _LOGGER.error(
-                "Host %s:%s: content type error: %s.", self._host, self._port, str(e)
-            )
+            _LOGGER.error("Host %s:%s: content type error: %s.", self._host, self._port, str(e))
             raise e
         except Exception as e:
             self.expire_session()
-            _LOGGER.error(
-                'Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n',
-                self._host,
-                self._port,
-                str(e),
-                traceback.format_exc(),
-            )
+            _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(e), traceback.format_exc())
             raise e
 
     ##############################################################################
@@ -3319,16 +2763,11 @@ class Host:
     @property
     def renewtimer(self) -> int:
         """Return the renew time in seconds. Negative if expired."""
-        if (
-            self._subscription_time_difference is None
-            or self._subscription_termination_time is None
-        ):
+        if self._subscription_time_difference is None or self._subscription_termination_time is None:
             return -1
 
         diff = self._subscription_termination_time - datetime.utcnow()
-        _LOGGER.debug(
-            "Host %s:%s should renew in: %i seconds...", self._host, self._port, diff
-        )
+        _LOGGER.debug("Host %s:%s should renew in: %i seconds...", self._host, self._port, diff)
 
         return diff.seconds
 
@@ -3355,9 +2794,7 @@ class Host:
         nonce = base64.b64encode(raw_nonce)
 
         sha1 = hashlib.sha1()
-        sha1.update(
-            raw_nonce + time_created.encode("utf8") + self._password.encode("utf8")
-        )
+        sha1.update(raw_nonce + time_created.encode("utf8") + self._password.encode("utf8"))
         raw_digest = sha1.digest()
         digest_pwd = base64.b64encode(raw_digest)
 
@@ -3372,9 +2809,7 @@ class Host:
     async def subscription_send(self, headers, data) -> Optional[str]:
         """Send subscription data to the camera."""
         try:
-            async with aiohttp.ClientSession(
-                timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)
-            ) as session:
+            async with aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
                 _LOGGER.debug(
                     "Host %s:%s: subscription request data:\n%s\n",
                     self._host,
@@ -3412,17 +2847,11 @@ class Host:
                 return response_text
 
         except aiohttp.ClientConnectorError as e:
-            _LOGGER.error(
-                "Host %s:%s: connection error: %s.", self._host, self._port, str(e)
-            )
+            _LOGGER.error("Host %s:%s: connection error: %s.", self._host, self._port, str(e))
         except asyncio.TimeoutError:
-            _LOGGER.error(
-                "Host %s:%s: connection timeout exception.", self._host, self._port
-            )
+            _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
         except:
-            _LOGGER.error(
-                "Host %s:%s: unknown exception occurred.", self._host, self._port
-            )
+            _LOGGER.error("Host %s:%s: unknown exception occurred.", self._host, self._port)
 
     async def subscribe(self, webhook_url: str) -> bool:
         """Subscribe to ONVIF events."""
@@ -3464,9 +2893,7 @@ class Host:
             )
             return False
 
-        current_time_element = root.find(
-            ".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime"
-        )
+        current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             await self.unsubscribe_all()
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
@@ -3482,20 +2909,14 @@ class Host:
             )
             return False
 
-        self._subscription_time_difference = await self.calc_time_difference(
-            local_time, remote_time
-        )
+        self._subscription_time_difference = await self.calc_time_difference(local_time, remote_time)
 
-        termination_time_element = root.find(
-            ".//{http://docs.oasis-open.org/wsn/b-2}TerminationTime"
-        )
+        termination_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}TerminationTime")
         if termination_time_element is None:
             await self.unsubscribe_all()
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
             return False
-        self._subscription_termination_time = await self.convert_time(
-            termination_time_element.text
-        ) - timedelta(seconds=self._subscription_time_difference)
+        self._subscription_termination_time = await self.convert_time(termination_time_element.text) - timedelta(seconds=self._subscription_time_difference)
 
         if self._subscription_termination_time is None:
             await self.unsubscribe_all()
@@ -3543,9 +2964,7 @@ class Host:
             return False
         root = XML.fromstring(response)
 
-        current_time_element = root.find(
-            ".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime"
-        )
+        current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             await self.unsubscribe_all()
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
@@ -3561,9 +2980,7 @@ class Host:
             )
             return False
 
-        self._subscription_time_difference = await self.calc_time_difference(
-            local_time, remote_time
-        )
+        self._subscription_time_difference = await self.calc_time_difference(local_time, remote_time)
 
         # The Reolink renew functionality has a bug: it always returns the INITIAL TerminationTime.
         # By adding the duration to the CurrentTime parameter, the new termination time can be calculated.
@@ -3574,9 +2991,7 @@ class Host:
         #     _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
         #     return False
         # self._subscription_termination_time = await self.convert_time(termination_time_element.text) - timedelta(seconds = self._subscription_time_difference)
-        self._subscription_termination_time = local_time + timedelta(
-            minutes=SUBSCRIPTION_TERMINATION_TIME
-        )
+        self._subscription_termination_time = local_time + timedelta(minutes=SUBSCRIPTION_TERMINATION_TIME)
 
         if self._subscription_termination_time is None:
             await self.unsubscribe_all()
@@ -3627,28 +3042,20 @@ class Host:
         await self.unsubscribe()
 
         if self._nvr_model in ["RLN8-410", "RLN16-410"]:
-            _LOGGER.debug(
-                "Attempting to unsubscribe previous (dead) sessions notifications..."
-            )
+            _LOGGER.debug("Attempting to unsubscribe previous (dead) sessions notifications...")
 
             # These work for RLN8-410 NVR, so up to 3 maximum subscriptions on it
-            parameters = {
-                "To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_0"
-            }
+            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_0"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
             await self.subscription_send(headers, xml)
 
-            parameters = {
-                "To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_1"
-            }
+            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_1"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
             await self.subscription_send(headers, xml)
 
-            parameters = {
-                "To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_2"
-            }
+            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_2"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
             await self.subscription_send(headers, xml)

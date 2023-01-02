@@ -3,15 +3,9 @@
 HEADERS = {"Content-Type": "application/soap+xml;charset=UTF-8"}
 
 
-SUBSCRIBE_ACTION = {
-    "action": "http://docs.oasis-open.org/wsn/bw-2/NotificationProducer/SubscribeRequest"
-}
-RENEW_ACTION = {
-    "action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/RenewRequest"
-}
-UNSUBSCRIBE_ACTION = {
-    "action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/UnsubscribeRequest"
-}
+SUBSCRIBE_ACTION = {"action": "http://docs.oasis-open.org/wsn/bw-2/NotificationProducer/SubscribeRequest"}
+RENEW_ACTION = {"action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/RenewRequest"}
+UNSUBSCRIBE_ACTION = {"action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/UnsubscribeRequest"}
 
 
 SUBSCRIBE_XML = """

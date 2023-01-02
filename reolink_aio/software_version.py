@@ -2,9 +2,7 @@
 
 import re
 
-version_regex = re.compile(
-    r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_([0-9]+)"
-)
+version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_([0-9]+)")
 
 
 class SoftwareVersion:
@@ -26,9 +24,7 @@ class SoftwareVersion:
         match = version_regex.match(version_string)
 
         if match is None:
-            raise Exception(
-                f"version_string has invalid version format: {version_string}"
-            )
+            raise Exception(f"version_string has invalid version format: {version_string}")
 
         self.major = int(match.group("major"))
         self.middle = int(match.group("middle"))
@@ -98,12 +94,7 @@ class SoftwareVersion:
         return False
 
     def equals(self, target_version: "SoftwareVersion"):
-        if (
-            target_version.major == self.major
-            and target_version.middle == self.middle
-            and target_version.minor == self.minor
-            and target_version.build == self.build
-        ):
+        if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build:
             return True
         return False
 
@@ -120,12 +111,7 @@ class SoftwareVersion:
         return self.is_greater_or_equal_than(other)
 
     def __eq__(self, target_version):
-        if (
-            target_version.major == self.major
-            and target_version.middle == self.middle
-            and target_version.minor == self.minor
-            and target_version.build == self.build
-        ):
+        if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build:
             return True
         return False
 
