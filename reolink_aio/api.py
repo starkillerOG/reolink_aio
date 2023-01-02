@@ -2716,6 +2716,11 @@ class Host:
             if expected_content_type not in [None, "json"] and response.content_type != expected_content_type:
                 raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'.")
 
+            if response.status == 502 and not retry:
+                _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
+                self.expire_session()
+                return await self.send(body, param, expected_content_type, True)
+
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}.")
 
@@ -2723,6 +2728,10 @@ class Host:
                 try:
                     json_data = json.loads(data)
                 except (TypeError, json.JSONDecodeError) as e:
+                    if not retry:
+                        _LOGGER.debug("Error translating JSON response: %s, data:\n%s\n", e, response)
+                        self.expire_session()
+                        return await self.send(body, param, expected_content_type, True)
                     raise InvalidContentTypeError(f"Error translating JSON response: {str(e)},  content type '{response.content_type}', data:\n{data}\n") from e
                 if json_data is None:
                     self.expire_session()
