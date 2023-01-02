@@ -1,0 +1,24 @@
+[MASTER]
+reports=no
+
+disable=
+  line-too-long,
+  invalid-name,
+  protected-access,
+  broad-except,
+  bare-except,
+  abstract-method,
+  no-self-use,
+  duplicate-code,
+  too-few-public-methods,
+  too-many-arguments,
+  too-many-branches,
+  too-many-instance-attributes,
+  too-many-lines,
+  too-many-locals,
+  too-many-public-methods,
+  too-many-return-statements,
+  too-many-statements,
+
+[EXCEPTIONS]
+overgeneral-exceptions=Exception

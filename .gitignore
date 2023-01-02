@@ -1,0 +1,14 @@
+# Python byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs
+.idea
+.vscode/
+
+*.tar.gz
+*.tgz
+*.whl
+*.egg-info/
+/build/
