@@ -784,14 +784,7 @@ class Host:
                         }
                     ]
                 else:
-                    ch_body = [
-                        {
-                            "cmd": "GetAudioAlarmV20",
-                            "action": 0,
-                            "param": {"channel": channel},
-                        }
-                    ]
-
+                    ch_body = [{"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
