@@ -1,5 +1,5 @@
 <h2 align="center">
-  <a href="https://reolink.com"><img src="https://raw.githubusercontent.com/starkillerOG/reolink-aio/master/logo.png" width="200"></a>
+  <a href="https://reolink.com"><img src="https://raw.githubusercontent.com/starkillerOG/reolink_aio/master/logo.png" width="200"></a>
   <br>
   <i>Reolink NVR/cameras API package</i>
   <br>
@@ -8,10 +8,10 @@
 <p align="center">
   <a href="https://github.com/sponsors/starkillerOG"><img src="https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86" alt="Sponsor"></a>
   <a href="https://pypi.org/project/reolink-aio"><img src="https://img.shields.io/pypi/dm/reolink-aio"></a>
-  <img src="https://img.shields.io/github/v/release/StarkillerOG/reolink-aio?display_name=tag&include_prereleases&sort=semver" alt="Current version">
+  <img src="https://img.shields.io/github/v/release/StarkillerOG/reolink_aio?display_name=tag&include_prereleases&sort=semver" alt="Current version">
 </p>
 
-The `reolink-aio` Python package allows you to integrate your [Reolink](https://www.reolink.com/) devices (NVR/cameras) in your application.
+The `reolink_aio` Python package allows you to integrate your [Reolink](https://www.reolink.com/) devices (NVR/cameras) in your application.
 
 ### Description
 
@@ -24,13 +24,13 @@ This is a package implementing Reolink IP NVR and camera API. Also it’s provid
 ### Installation
 
 ```
-pip3 install reolink-aio
+pip3 install reolink_aio
 ```
 
 or manually:
 ````
-git clone https://github.com/StarkillerOG/reolink-aio
-cd reolink-aio/
+git clone https://github.com/StarkillerOG/reolink_aio
+cd reolink_aio/
 pip3 install .
 ````
 
@@ -77,7 +77,7 @@ await host.disconnect()
 
 This is an example of the usage of the API. In this case we want to retrive and print the Mac Address of the NVR.
 ````
-from reolink-aio.api import Host
+from reolink_aio.api import Host
 import asyncio
 
 async def print_mac_address():
@@ -98,5 +98,5 @@ if __name__ == "__main__":
 
 ### Acknowledgment
 This library is based on the work of:
-fwestenberg: https://github.com/fwestenberg/reolink_dev
-JimStar: https://github.com/JimStar/reolink_ip
+- fwestenberg: https://github.com/fwestenberg/reolink_dev
+- JimStar: https://github.com/JimStar/reolink_ip

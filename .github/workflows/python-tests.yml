@@ -33,10 +33,10 @@ jobs:
         if [ -f test-requirements.txt ]; then pip install -r test-requirements.txt; fi
     - name: Analysing the code with pylint
       run: |
-        pylint reolink-aio
+        pylint reolink_aio
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
-        flake8 reolink-aio --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 reolink_aio --count --select=E9,F63,F7,F82 --show-source --statistics
         # exit-zero treats all errors as warnings.
-        flake8 reolink-aio --count --exit-zero --max-line-length=79 --statistics
+        flake8 reolink_aio --count --exit-zero --max-line-length=79 --statistics
