@@ -746,13 +746,7 @@ class Host:
                 if self._api_version_getemail == 0:
                     ch_body = [{"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}]
                 else:
-                    ch_body = [
-                        {
-                            "cmd": "GetEmailV20",
-                            "action": 0,
-                            "param": {"channel": channel},
-                        }
-                    ]
+                    ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetPush", "GetPushV20"]:
                 if self._api_version_getpush == 0:
                     ch_body = [{"cmd": "GetPush", "action": 0, "param": {"channel": channel}}]
