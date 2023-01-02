@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/sponsors/starkillerOG"><img src="https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86" alt="Sponsor"></a>
   <a href="https://pypi.org/project/reolink-aio"><img src="https://img.shields.io/pypi/dm/reolink-aio"></a>
-  <img src="https://img.shields.io/github/v/release/StarkillerOG/reolink_aio?display_name=tag&include_prereleases&sort=semver" alt="Current version">
+  <a href="https://github.com/starkillerOG/reolink_aio/releases"><img src="https://img.shields.io/github/v/release/StarkillerOG/reolink_aio?display_name=tag&include_prereleases&sort=semver" alt="Current version"></a>
 </p>
 
 The `reolink_aio` Python package allows you to integrate your [Reolink](https://www.reolink.com/) devices (NVR/cameras) in your application.
