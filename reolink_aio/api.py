@@ -1487,6 +1487,7 @@ class Host:
                 if data["cmd"] == "GetEvents":
                     response_channel = data["value"]["channel"]
                     if response_channel != channel:
+                        _LOGGER.error("Host %s:%s: GetEvents response channel %s does not equal requested channel %s", self._host, self._port, response_channel, channel)
                         continue
                     if "ai" in data["value"]:
                         self._is_ia_enabled[channel] = True
@@ -1513,6 +1514,7 @@ class Host:
                     self._ai_detection_support[channel] = {}
                     response_channel = data["value"].get("channel", channel)
                     if response_channel != channel:
+                        _LOGGER.error("Host %s:%s: GetAiState response channel %s does not equal requested channel %s", self._host, self._port, response_channel, channel)
                         continue
 
                     for key, value in data["value"].items():
@@ -1656,8 +1658,8 @@ class Host:
                     traceback.format_exc(),
                 )
                 continue
-        if response_channel != channel:
-            _LOGGER.error("Host %s:%s: command %s response channel %s does not equal requested channel %s", self._host, self._port, data["cmd"], response_channel, channel)
+            if response_channel != channel:
+                _LOGGER.error("Host %s:%s: command %s response channel %s does not equal requested channel %s", self._host, self._port, data["cmd"], response_channel, channel)
 
     async def set_net_port(
         self,
