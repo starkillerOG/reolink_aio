@@ -713,7 +713,7 @@ class Host:
         return capabilities
 
     async def get_state(self, cmd: str) -> bool:
-        body = None
+        body = []
         channels = []
         for channel in self._channels:
             if cmd == "GetEnc":
@@ -782,7 +782,7 @@ class Host:
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
-        if body is not None:
+        if body:
             try:
                 json_data = await self.send(body, expected_content_type="json")
             except InvalidContentTypeError:
