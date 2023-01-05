@@ -1477,13 +1477,16 @@ class Host:
 
     def map_channel_json_response(self, json_data, channel: int):
         """Map the JSON objects to internal cache-objects."""
+        response_channel = channel
         for data in json_data:
             try:
                 if data["code"] == 1:  # -->Error, like "ability error"
+                    _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
                 if data["cmd"] == "GetEvents":
-                    if data["value"]["channel"] != channel:
+                    response_channel = data["value"]["channel"]
+                    if response_channel != channel:
                         continue
                     if "ai" in data["value"]:
                         self._is_ia_enabled[channel] = True
@@ -1508,13 +1511,13 @@ class Host:
                     self._is_ia_enabled[channel] = True
                     self._ai_detection_states[channel] = {}
                     self._ai_detection_support[channel] = {}
-                    found_channel = False
+                    response_channel = data["value"].get("channel", channel)
+                    if response_channel != channel:
+                        continue
+
                     for key, value in data["value"].items():
-                        if not found_channel and key == "channel" and value == channel:
-                            found_channel = True
+                        if key == "channel":
                             continue
-                        if key == "channel" and value > channel:
-                            break
 
                         if isinstance(value, int):  # compatibility with firmware < 3.0.0-494
                             self._ai_detection_states[channel][key] = value == 1
@@ -1547,10 +1550,10 @@ class Host:
                             self._ai_detection_support[channel][key] = supported
 
                 elif data["cmd"] == "GetOsd":
-                    ch = data["value"]["Osd"]["channel"]
-                    self._osd_settings[ch] = data["value"]
+                    response_channel = data["value"]["Osd"]["channel"]
+                    self._osd_settings[channel] = data["value"]
                     if not self._GetChannelStatus_present or not self._GetChannelStatus_has_name:
-                        self._channel_names[ch] = data["value"]["Osd"]["osdChannel"]["name"]
+                        self._channel_names[channel] = data["value"]["Osd"]["osdChannel"]["name"]
 
                 elif data["cmd"] == "GetFtp":
                     self._ftp_settings[channel] = data["value"]
@@ -1569,9 +1572,9 @@ class Host:
                     self._push_enabled[channel] = data["value"]["Push"]["enable"] == 1
 
                 elif data["cmd"] == "GetEnc":
-                    ch = data["value"]["Enc"]["channel"]
-                    self._enc_settings[ch] = data["value"]
-                    self._audio_enabled[ch] = data["value"]["Enc"]["audio"] == 1
+                    response_channel = data["value"]["Enc"]["channel"]
+                    self._enc_settings[channel] = data["value"]
+                    self._audio_enabled[channel] = data["value"]["Enc"]["audio"] == 1
 
                 elif data["cmd"] == "GetEmail":
                     self._email_settings[channel] = data["value"]
@@ -1582,30 +1585,30 @@ class Host:
                     self._email_enabled[channel] = data["value"]["Email"]["enable"] == 1
 
                 elif data["cmd"] == "GetIsp":
-                    ch = data["value"]["Isp"]["channel"]
-                    self._isp_settings[ch] = data["value"]
-                    self._daynight_state[ch] = data["value"]["Isp"]["dayNight"]
-                    self._backlight_state[ch] = data["value"]["Isp"]["backLight"]
+                    response_channel = data["value"]["Isp"]["channel"]
+                    self._isp_settings[channel] = data["value"]
+                    self._daynight_state[channel] = data["value"]["Isp"]["dayNight"]
+                    self._backlight_state[channel] = data["value"]["Isp"]["backLight"]
 
                 elif data["cmd"] == "GetIrLights":
                     self._ir_settings[channel] = data["value"]
                     self._ir_enabled[channel] = data["value"]["IrLights"]["state"] == "Auto"
 
                 elif data["cmd"] == "GetPowerLed":
-                    ch = data["value"]["PowerLed"]["channel"]
-                    self._power_led_settings[ch] = data["value"]
+                    response_channel = data["value"]["PowerLed"]["channel"]
+                    self._power_led_settings[channel] = data["value"]
                     val = data["value"]["PowerLed"].get("state", None)
                     if val is not None:
-                        self._power_led_enabled[ch] = val == "On"
+                        self._power_led_enabled[channel] = val == "On"
                     val = data["value"]["PowerLed"].get("eDoorbellLightState", None)
                     if val is not None and val != "NotSupport":
-                        self._doorbell_light_enabled[ch] = val == "On"
+                        self._doorbell_light_enabled[channel] = val == "On"
 
                 elif data["cmd"] == "GetWhiteLed":
-                    ch = data["value"]["WhiteLed"]["channel"]
-                    self._whiteled_settings[ch] = data["value"]
-                    self._whiteled_enabled[ch] = data["value"]["WhiteLed"]["state"] == 1
-                    self._whiteled_modes[ch] = data["value"]["WhiteLed"]["mode"]
+                    response_channel = data["value"]["WhiteLed"]["channel"]
+                    self._whiteled_settings[channel] = data["value"]
+                    self._whiteled_enabled[channel] = data["value"]["WhiteLed"]["state"] == 1
+                    self._whiteled_modes[channel] = data["value"]["WhiteLed"]["mode"]
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
@@ -1653,6 +1656,8 @@ class Host:
                     traceback.format_exc(),
                 )
                 continue
+        if response_channel != channel:
+            _LOGGER.error("Host %s:%s: command %s response channel %s does not equal requested channel %s", self._host, self._port, data["cmd"], response_channel, channel)
 
     async def set_net_port(
         self,
