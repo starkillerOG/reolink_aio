@@ -126,7 +126,7 @@ class Host:
 
         ##############################################################################
         # Presets
-        self._ptz_support: dict[int, bool] = {}
+        self._ptz_support: dict[int, int] = {}
         self._ptz_presets: dict[int, dict] = {}
         self._sensitivity_presets: dict[int, dict] = {}
 
@@ -503,7 +503,13 @@ class Host:
         return {}
 
     def ptz_supported(self, channel: int) -> bool:
-        return self._ptz_support is not None and channel in self._ptz_support and self._ptz_support[channel]
+        return channel in self._ptz_support and self._ptz_support[channel] != 0
+
+    def zoom_supported(self, channel: int) -> bool:
+        return channel in self._ptz_support and self._ptz_support[channel] in [1, 2, 5]
+
+    def pan_tilt_supported(self, channel: int) -> bool:
+        return channel in self._ptz_support and self._ptz_support[channel] in [2, 3, 5]
 
     def motion_detection_state(self, channel: int) -> bool:
         return self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel]
@@ -693,8 +699,12 @@ class Host:
         if self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel] is not None:
             capabilities.append("audio")
 
-        if self._ptz_support is not None and channel in self._ptz_support and self._ptz_support[channel]:
+        if self.ptz_supported(channel):
             capabilities.append("ptzControl")
+            if self.zoom_supported(channel):
+                capabilities.append("zoomControl")
+            if self.pan_tilt_supported(channel):
+                capabilities.append("ptControl")
             if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                 capabilities.append("ptzPresets")
 
@@ -814,16 +824,25 @@ class Host:
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetOsd", "action": 0, "param": {"channel": channel}},
-                {
-                    "cmd": "GetAlarm",
-                    "action": 0,
-                    "param": {"Alarm": {"channel": channel, "type": "md"}},
-                },
             ]
+            if self._api_version_getevents >= 1:
+                ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
+            else:
+                ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
+                if self._api_version_getalarm >= 1:
+                    ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
+
+            if self.pan_tilt_supported(channel):
+                ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
+
+            if self.zoom_supported(channel):
+                ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
+
+            if self.pan_tilt_supported(channel) and self.zoom_supported(channel):
+                ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
             if self._api_version_getemail >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
@@ -1431,7 +1450,7 @@ class Host:
 
                     channel_abilities: list = host_abilities["abilityChn"]
                     for channel in self._channels:
-                        self._ptz_support[channel] = channel_abilities[channel]["ptzCtrl"]["permit"] != 0
+                        self._ptz_support[channel] = channel_abilities[channel]["ptzType"]["ver"]
                         if self._api_version_getftp is None:
                             self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": None})["ver"]
                         if self._api_version_getrec is None:
@@ -1507,6 +1526,11 @@ class Host:
 
                 elif data["cmd"] == "GetMdState":
                     self._motion_detection_states[channel] = data["value"]["state"] == 1
+
+                elif data["cmd"] == "GetAlarm":
+                    self._alarm_settings[channel] = data["value"]
+                    self._motion_detection_states[channel] = data["value"]["Alarm"]["enable"] == 1
+                    self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
 
                 elif data["cmd"] == "GetAiState":
                     self._is_ia_enabled[channel] = True
@@ -1597,7 +1621,8 @@ class Host:
                     self._ir_enabled[channel] = data["value"]["IrLights"]["state"] == "Auto"
 
                 elif data["cmd"] == "GetPowerLed":
-                    response_channel = data["value"]["PowerLed"]["channel"]
+                    # GetPowerLed returns incorrect channel
+                    # response_channel = data["value"]["PowerLed"]["channel"]
                     self._power_led_settings[channel] = data["value"]
                     val = data["value"]["PowerLed"].get("state", None)
                     if val is not None:
@@ -1628,11 +1653,6 @@ class Host:
                             preset_name = preset["name"]
                             preset_id = int(preset["id"])
                             self._ptz_presets[channel][preset_name] = preset_id
-
-                elif data["cmd"] == "GetAlarm":
-                    self._alarm_settings[channel] = data["value"]
-                    self._motion_detection_states[channel] = data["value"]["Alarm"]["enable"] == 1
-                    self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
 
                 elif data["cmd"] == "GetAudioAlarm":
                     self._audio_alarm_settings[channel] = data["value"]
