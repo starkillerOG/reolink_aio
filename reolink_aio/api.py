@@ -385,16 +385,16 @@ class Host:
 
     def ai_detected(self, channel: int, object_type: Optional[str] = None):
         """Return the AI object detection state (polled)."""
+        if channel not in self._ai_detection_states or self._ai_detection_states[channel] is None:
+            return False
+        
         if object_type is not None:
-            if self._ai_detection_states is not None and channel in self._ai_detection_states and self._ai_detection_states[channel] is not None:
-                for key, value in self._ai_detection_states[channel].items():
-                    if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
-                        return value
+            for key, value in self._ai_detection_states[channel].items():
+                if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
+                    return value
             return False
 
-        if self._ai_detection_states is not None and channel in self._ai_detection_states and self._ai_detection_states[channel] is not None:
-            return self._ai_detection_states[channel]
-        return {}
+        return self._ai_detection_states[channel]
 
     def ai_supported(self, channel: int, object_type: Optional[str] = None):
         """Return if the AI object type detection is supported or not."""
@@ -1054,7 +1054,7 @@ class Host:
                 self._port,
                 channel,
             )
-            self._ai_detection_states[channel] = None
+            self._ai_detection_states[channel] = {}
             return None
         if json_data is None:
             _LOGGER.error(
@@ -1063,7 +1063,7 @@ class Host:
                 self._port,
                 channel,
             )
-            self._ai_detection_states[channel] = None
+            self._ai_detection_states[channel] = {}
             return None
 
         self.map_channel_json_response(json_data, channel)
@@ -1097,7 +1097,7 @@ class Host:
                 channel,
             )
             self._motion_detection_states[channel] = False
-            self._ai_detection_states[channel] = None
+            self._ai_detection_states[channel] = {}
             return False
         if json_data is None:
             _LOGGER.error(
@@ -1107,7 +1107,7 @@ class Host:
                 channel,
             )
             self._motion_detection_states[channel] = False
-            self._ai_detection_states[channel] = None
+            self._ai_detection_states[channel] = {}
             return False
 
         self.map_channel_json_response(json_data, channel)
@@ -1144,7 +1144,7 @@ class Host:
             )
             for channel in self._channels:
                 self._motion_detection_states[channel] = False
-                self._ai_detection_states[channel] = None
+                self._ai_detection_states[channel] = {}
             return False
         if json_data is None:
             _LOGGER.error(
@@ -1155,7 +1155,7 @@ class Host:
             self.expire_session()
             for channel in self._channels:
                 self._motion_detection_states[channel] = False
-                self._ai_detection_states[channel] = None
+                self._ai_detection_states[channel] = {}
             return False
 
         self.map_channels_json_response(json_data, channels)
