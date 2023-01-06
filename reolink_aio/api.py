@@ -162,7 +162,6 @@ class Host:
         ##############################################################################
         # States
         self._motion_detection_states: dict[int, bool] = {}
-        self._is_ia_enabled: dict[int, bool] = {}
         self._is_doorbell_enabled: dict[int, bool] = {}
         self._ai_detection_support: dict[int, dict[str, bool]] = {}
 
@@ -399,16 +398,16 @@ class Host:
 
     def ai_supported(self, channel: int, object_type: Optional[str] = None):
         """Return if the AI object type detection is supported or not."""
-        if object_type is not None:
-            if self._ai_detection_support is not None and channel in self._ai_detection_support and self._ai_detection_support[channel] is not None:
-                for key, value in self._ai_detection_support[channel].items():
-                    if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
-                        return value
+        if channel not in self._ai_detection_support or not self._ai_detection_support[channel]):
             return False
 
-        if self._ai_detection_support is not None and channel in self._ai_detection_support and self._ai_detection_support[channel] is not None:
-            return self._ai_detection_support[channel]
-        return {}
+        if object_type is not None:
+            for key, value in self._ai_detection_support[channel].items():
+                if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
+                    return value
+            return False
+
+        return True
 
     def audio_alarm_enabled(self, channel: int) -> bool:
         return self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel]
@@ -513,10 +512,6 @@ class Host:
 
     def motion_detection_state(self, channel: int) -> bool:
         return self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel]
-
-    def is_ia_enabled(self, channel: int) -> bool:
-        """Wether or not the camera supports AI objects detection"""
-        return self._is_ia_enabled is not None and channel in self._is_ia_enabled and self._is_ia_enabled[channel]
 
     def is_doorbell_enabled(self, channel: int) -> bool:
         """Wether or not the camera supports doorbell"""
@@ -1509,7 +1504,6 @@ class Host:
                         _LOGGER.error("Host %s:%s: GetEvents response channel %s does not equal requested channel %s", self._host, self._port, response_channel, channel)
                         continue
                     if "ai" in data["value"]:
-                        self._is_ia_enabled[channel] = True
                         self._ai_detection_states[channel] = {}
                         self._ai_detection_support[channel] = {}
                         for key, value in data["value"]["ai"].items():
@@ -1533,7 +1527,6 @@ class Host:
                     self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
 
                 elif data["cmd"] == "GetAiState":
-                    self._is_ia_enabled[channel] = True
                     self._ai_detection_states[channel] = {}
                     self._ai_detection_support[channel] = {}
                     response_channel = data["value"].get("channel", channel)
