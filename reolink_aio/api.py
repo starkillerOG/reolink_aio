@@ -824,7 +824,6 @@ class Host:
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetOsd", "action": 0, "param": {"channel": channel}},
             ]
             if self._api_version_getevents >= 1:
@@ -841,6 +840,9 @@ class Host:
 
             if self.zoom_supported(channel):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
+
+            if self.pan_tilt_supported(channel) and self.zoom_supported(channel):
+                ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
             if self._api_version_getemail >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
