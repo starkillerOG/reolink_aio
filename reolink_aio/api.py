@@ -381,7 +381,7 @@ class Host:
 
     def motion_detected(self, channel: int) -> bool:
         """Return the motion detection state (polled)."""
-        return self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel]
+        return channel in self._motion_detection_states and self._motion_detection_states[channel]
 
     def ai_detected(self, channel: int, object_type: Optional[str] = None):
         """Return the AI object detection state (polled)."""
@@ -509,9 +509,6 @@ class Host:
 
     def pan_tilt_supported(self, channel: int) -> bool:
         return channel in self._ptz_support and self._ptz_support[channel] in [2, 3, 5]
-
-    def motion_detection_state(self, channel: int) -> bool:
-        return self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel]
 
     def is_doorbell_enabled(self, channel: int) -> bool:
         """Wether or not the camera supports doorbell"""
@@ -706,7 +703,7 @@ class Host:
         if self._sensitivity_presets is not None and channel in self._sensitivity_presets and len(self._sensitivity_presets[channel]) != 0:
             capabilities.append("sensitivityPresets")
 
-        if self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel] is not None:
+        if channel in self._motion_detection_states:
             capabilities.append("motionDetection")
 
         if self._daynight_state is not None and channel in self._daynight_state and self._daynight_state[channel] is not None:
@@ -1038,7 +1035,7 @@ class Host:
 
         return (
             None
-            if self._motion_detection_states is None or channel not in self._motion_detection_states or self._motion_detection_states[channel] is None
+            if channel not in self._motion_detection_states
             else self._motion_detection_states[channel]
         )
 
@@ -1117,7 +1114,7 @@ class Host:
 
         return (
             None
-            if self._motion_detection_states is None or channel not in self._motion_detection_states or self._motion_detection_states[channel] is None
+            if channel not in self._motion_detection_states
             else self._motion_detection_states[channel]
         )
 
