@@ -818,19 +818,15 @@ class Host:
                 {"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetOsd", "action": 0, "param": {"channel": channel}},
-                {
-                    "cmd": "GetAlarm",
-                    "action": 0,
-                    "param": {"Alarm": {"channel": channel, "type": "md"}},
-                },
             ]
             if self._api_version_getevents >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.extend([
-                    {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
-                    {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},
-                ])
+                ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
+                if self._api_version_getalarm >= 1:
+                    ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
 
             if self._api_version_getemail >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
@@ -1515,6 +1511,11 @@ class Host:
                 elif data["cmd"] == "GetMdState":
                     self._motion_detection_states[channel] = data["value"]["state"] == 1
 
+                elif data["cmd"] == "GetAlarm":
+                    self._alarm_settings[channel] = data["value"]
+                    self._motion_detection_states[channel] = data["value"]["Alarm"]["enable"] == 1
+                    self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
+
                 elif data["cmd"] == "GetAiState":
                     self._is_ia_enabled[channel] = True
                     self._ai_detection_states[channel] = {}
@@ -1604,7 +1605,8 @@ class Host:
                     self._ir_enabled[channel] = data["value"]["IrLights"]["state"] == "Auto"
 
                 elif data["cmd"] == "GetPowerLed":
-                    response_channel = data["value"]["PowerLed"]["channel"]
+                    # GetPowerLed returns incorrect channel
+                    # response_channel = data["value"]["PowerLed"]["channel"]
                     self._power_led_settings[channel] = data["value"]
                     val = data["value"]["PowerLed"].get("state", None)
                     if val is not None:
@@ -1635,11 +1637,6 @@ class Host:
                             preset_name = preset["name"]
                             preset_id = int(preset["id"])
                             self._ptz_presets[channel][preset_name] = preset_id
-
-                elif data["cmd"] == "GetAlarm":
-                    self._alarm_settings[channel] = data["value"]
-                    self._motion_detection_states[channel] = data["value"]["Alarm"]["enable"] == 1
-                    self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
 
                 elif data["cmd"] == "GetAudioAlarm":
                     self._audio_alarm_settings[channel] = data["value"]
