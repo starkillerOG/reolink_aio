@@ -824,6 +824,13 @@ class Host:
                     "param": {"Alarm": {"channel": channel, "type": "md"}},
                 },
             ]
+            if self._api_version_getevents >= 1:
+                ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
+            else:
+                ch_body.extend([
+                    {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
+                    {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},
+                ])
 
             if self._api_version_getemail >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
