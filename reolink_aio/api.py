@@ -126,7 +126,7 @@ class Host:
 
         ##############################################################################
         # Presets
-        self._ptz_support: dict[int, bool] = {}
+        self._ptz_support: dict[int, int] = {}
         self._ptz_presets: dict[int, dict] = {}
         self._sensitivity_presets: dict[int, dict] = {}
 
@@ -503,7 +503,13 @@ class Host:
         return {}
 
     def ptz_supported(self, channel: int) -> bool:
-        return self._ptz_support is not None and channel in self._ptz_support and self._ptz_support[channel]
+        return channel in self._ptz_support and self._ptz_support[channel] != 0
+
+    def zoom_supported(self, channel: int) -> bool:
+        return channel in self._ptz_support and self._ptz_support[channel] in [1, 2, 5]
+
+    def pan_tilt_supported(self, channel: int) -> bool:
+        return channel in self._ptz_support and self._ptz_support[channel] in [2, 3, 5]
 
     def motion_detection_state(self, channel: int) -> bool:
         return self._motion_detection_states is not None and channel in self._motion_detection_states and self._motion_detection_states[channel]
@@ -693,8 +699,12 @@ class Host:
         if self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel] is not None:
             capabilities.append("audio")
 
-        if self._ptz_support is not None and channel in self._ptz_support and self._ptz_support[channel]:
+        if self.ptz_supported:
             capabilities.append("ptzControl")
+            if self.zoom_supported:
+                capabilities.append("zoomControl")
+            if self.pan_tilt_supported:
+                capabilities.append("ptControl")
             if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                 capabilities.append("ptzPresets")
 
@@ -1434,7 +1444,7 @@ class Host:
 
                     channel_abilities: list = host_abilities["abilityChn"]
                     for channel in self._channels:
-                        self._ptz_support[channel] = channel_abilities[channel]["ptzCtrl"]["permit"] != 0
+                        self._ptz_support[channel] = channel_abilities[channel]["ptzType"]["permit"]
                         if self._api_version_getftp is None:
                             self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": None})["ver"]
                         if self._api_version_getrec is None:
