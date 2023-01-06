@@ -1444,7 +1444,7 @@ class Host:
 
                     channel_abilities: list = host_abilities["abilityChn"]
                     for channel in self._channels:
-                        self._ptz_support[channel] = channel_abilities[channel]["ptzType"]["permit"]
+                        self._ptz_support[channel] = channel_abilities[channel]["ptzType"]["ver"]
                         if self._api_version_getftp is None:
                             self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": None})["ver"]
                         if self._api_version_getrec is None:
