@@ -699,11 +699,11 @@ class Host:
         if self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel] is not None:
             capabilities.append("audio")
 
-        if self.ptz_supported:
+        if self.ptz_supported(channel):
             capabilities.append("ptzControl")
-            if self.zoom_supported:
+            if self.zoom_supported(channel):
                 capabilities.append("zoomControl")
-            if self.pan_tilt_supported:
+            if self.pan_tilt_supported(channel):
                 capabilities.append("ptControl")
             if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                 capabilities.append("ptzPresets")
