@@ -396,6 +396,10 @@ class Host:
 
         return self._ai_detection_states[channel]
 
+    def visitor_detected(self, channel: int) -> bool:
+        """Return the visitor detection state (polled)."""
+        return channel in self._visitor_states and self._visitor_states[channel]
+
     def ai_supported(self, channel: int, object_type: Optional[str] = None):
         """Return if the AI object type detection is supported or not."""
         if channel not in self._ai_detection_support or not self._ai_detection_support[channel]):
