@@ -1123,7 +1123,7 @@ class Host:
         )
 
     async def get_motion_state_all_ch(self) -> Optional[bool]:
-        """Fetch All motions states of all channels at once (regular + AI)."""
+        """Fetch All motions states of all channels at once (regular + AI + visitor)."""
         body = []
         channels = []
         for channel in self._channels:
@@ -3095,3 +3095,94 @@ class Host:
             await self.subscription_send(headers, xml)
 
         return True
+
+    async def ONVIF_event_callback(data: str):
+        """Handle incoming ONVIF event from the webhook called by the Reolink device."""
+        _LOGGER_DATA.debug("ONVIF event callback received payload:\n%s", data)
+
+        channel = None
+        only_motion = True
+
+        if self.num_cameras == 1:
+            channel = self.channels[0]
+
+        root = XML.fromstring(data)
+        for message in root.iter('{http://docs.oasis-open.org/wsn/b-2}NotificationMessage'):
+            topic_element = message.find("{http://docs.oasis-open.org/wsn/b-2}Topic[@Dialect='http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet']")
+            if topic_element is None:
+                continue
+            rule = os.path.basename(topic_element.text)
+            if not rule:
+                continue
+
+            source_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='Source']")
+            if source_element is not None and "Value" in source_element.attrib:
+                if channel is None:
+                    channel = int(source_element.attrib["Value"])
+                elif channel != int(source_element.attrib["Value"]):
+                    _LOGGER.warning("ONVIF event data contains multiple channels, issuing poll instead")
+                    self.get_motion_state_all_ch()
+                    return None
+
+            if channel is None:
+                # Unknown which channel caused the event, poll all channels
+                if not await self.get_motion_state_all_ch():
+                    _LOGGER.error("Could not poll motion state after receiving ONVIF event with unknown channel")
+                return None
+            
+            if rule == "Motion":
+                data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='IsMotion']")
+                if data_element is None or "Value" not in data_element.attrib:
+                    continue
+                self._motion_detection_states[channel] = data_element.attrib["Value"] == "true"
+            elif rule == "MotionAlarm":
+                data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='State']")
+                if data_element is None or "Value" not in data_element.attrib:
+                    continue
+                self._motion_detection_states[channel] = data_element.attrib["Value"] == "true"
+            elif rule == "FaceDetect":
+                data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='State']")
+                if data_element is None or "Value" not in data_element.attrib:
+                    continue
+                only_motion = False
+                self._ai_detection_states[channel]["face"] = data_element.attrib["Value"] == "true"
+            elif rule == "PeopleDetect":
+                data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='State']")
+                if data_element is None or "Value" not in data_element.attrib:
+                    continue
+                only_motion = False
+                self._ai_detection_states[channel]["people"] = data_element.attrib["Value"] == "true"
+            elif rule == "VehicleDetect":
+                data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='State']")
+                if data_element is None or "Value" not in data_element.attrib:
+                    continue
+                only_motion = False
+                self._ai_detection_states[channel]["vehicle"] = data_element.attrib["Value"] == "true"
+            elif rule == "DogCatDetect":
+                data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='State']")
+                if data_element is None or "Value" not in data_element.attrib:
+                    continue
+                only_motion = False
+                self._ai_detection_states[channel]["dog_cat"] = data_element.attrib["Value"] == "true"
+            elif rule == "Visitor":
+                data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='State']")
+                if data_element is None or "Value" not in data_element.attrib:
+                    continue
+                only_motion = False
+                self._visitor_states[channel] = data_element.attrib["Value"] == "true"
+            else:
+                _LOGGER.debug("ONVIF event with unknown rule: '%s'", rule)
+
+        if channel is None:
+            # Unknown which channel caused the event, poll all channels
+            if not await self.get_motion_state_all_ch():
+                _LOGGER.error("Could not poll motion state after receiving ONVIF event with unknown channel")
+            return None
+
+        if only_motion:
+            # Poll all other states since not all cameras have rich notifications including the specific events
+            if not await self.get_all_motion_states(channel):
+                _LOGGER.error("Could not poll event state after receiving ONVIF event with only motion event")
+            return None
+            
+        return channel
