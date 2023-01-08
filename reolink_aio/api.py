@@ -2656,7 +2656,7 @@ class Host:
             )
             return False
 
-        _LOGGER.error('Host %s:%s: command "%s" error.', self._host, self._port, command)
+        _LOGGER.error('Host %s:%s: command "%s" error, response: %s', self._host, self._port, command, json_data)
         return False
 
     async def send(
