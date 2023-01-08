@@ -1185,6 +1185,21 @@ class Host:
 
         return response
 
+    def get_flv_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
+        if channel not in self._channels:
+            return None
+
+        if stream is None:
+            stream = self._stream
+
+        if self._use_https:
+            http_s = "https"
+        else:
+            http_s = "http"
+
+        password = parse.quote(self._password)
+        return f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=channel{channel}_{stream}.bcs&user={self._username}&password={password}"
+
     def get_rtmp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._channels:
             return None
@@ -1230,6 +1245,8 @@ class Host:
             return self.get_rtmp_stream_source(channel, stream)
         if self.protocol == "rtsp":
             return self.get_rtsp_stream_source(channel, stream)
+        if self.protocol == "flv":
+            return self.get_flv_stream_source(channel, stream)
         return None
 
     async def get_vod_source(
