@@ -8,6 +8,7 @@ import logging
 import ssl
 import traceback
 import uuid
+from os.path import basename
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from urllib import parse
@@ -383,7 +384,7 @@ class Host:
         """Return the AI object detection state (polled)."""
         if channel not in self._ai_detection_states or self._ai_detection_states[channel] is None:
             return False
-        
+
         if object_type is not None:
             for key, value in self._ai_detection_states[channel].items():
                 if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
@@ -1059,11 +1060,7 @@ class Host:
 
         self.map_channel_json_response(json_data, channel)
 
-        return (
-            None
-            if channel not in self._motion_detection_states
-            else self._motion_detection_states[channel]
-        )
+        return None if channel not in self._motion_detection_states else self._motion_detection_states[channel]
 
     async def get_ai_state(self, channel: int) -> Optional[dict[str, bool]]:
         if channel not in self._channels:
@@ -1138,11 +1135,7 @@ class Host:
 
         self.map_channel_json_response(json_data, channel)
 
-        return (
-            None
-            if channel not in self._motion_detection_states
-            else self._motion_detection_states[channel]
-        )
+        return None if channel not in self._motion_detection_states else self._motion_detection_states[channel]
 
     async def get_motion_state_all_ch(self) -> Optional[bool]:
         """Fetch All motions states of all channels at once (regular + AI + visitor)."""
@@ -2776,7 +2769,7 @@ class Host:
                         _LOGGER.debug("Error translating JSON response: %s, data:\n%s\n", err, response)
                         self.expire_session()
                         return await self.send(body, param, expected_content_type, True)
-                    raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from e
+                    raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from err
                 if json_data is None:
                     self.expire_session()
                 return json_data
@@ -3115,7 +3108,7 @@ class Host:
 
         return True
 
-    async def ONVIF_event_callback(data: str):
+    async def ONVIF_event_callback(self, data: str):
         """Handle incoming ONVIF event from the webhook called by the Reolink device."""
         _LOGGER_DATA.debug("ONVIF event callback received payload:\n%s", data)
 
@@ -3126,11 +3119,11 @@ class Host:
             channel = self.channels[0]
 
         root = XML.fromstring(data)
-        for message in root.iter('{http://docs.oasis-open.org/wsn/b-2}NotificationMessage'):
+        for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
             topic_element = message.find("{http://docs.oasis-open.org/wsn/b-2}Topic[@Dialect='http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet']")
             if topic_element is None:
                 continue
-            rule = os.path.basename(topic_element.text)
+            rule = basename(topic_element.text)
             if not rule:
                 continue
 
@@ -3148,7 +3141,7 @@ class Host:
                 if not await self.get_motion_state_all_ch():
                     _LOGGER.error("Could not poll motion state after receiving ONVIF event with unknown channel")
                 return None
-            
+
             if rule == "Motion":
                 data_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='IsMotion']")
                 if data_element is None or "Value" not in data_element.attrib:
@@ -3203,5 +3196,5 @@ class Host:
             if not await self.get_all_motion_states(channel):
                 _LOGGER.error("Could not poll event state after receiving ONVIF event with only motion event")
             return None
-            
+
         return channel
