@@ -213,6 +213,10 @@ class Host:
         return self._host
 
     @property
+    def username(self) -> str:
+        return self._username
+
+    @property
     def external_host(self) -> Optional[str]:
         return self._external_host
 
@@ -347,24 +351,24 @@ class Host:
         self._timeout = aiohttp.ClientTimeout(total=value)
 
     @property
-    def is_admin(self) -> bool:
+    def user_level(self) -> str:
         """Check if the user has admin authorisation."""
         if self._users is None or len(self._users) < 1:
-            return False
+            return ""
 
         for user in self._users:
             if user["userName"] == self._username:
-                if user["level"] == "admin":
-                    _LOGGER.debug('User %s has authorisation level "admin".', self._username)
-                    return True
+                return user["level"]
 
-                _LOGGER.warning(
-                    'User %s has authorisation level "%s". Only admin users can change camera settings! Not everything will work.',
-                    self._username,
-                    user["level"],
-                )
-                break
-        return False
+        return ""
+
+    @property
+    def is_admin(self) -> bool:
+        """
+        Check if the user has admin authorisation.
+        Only admin users can change camera settings, not everything will work if account is not admin
+        """
+        return self.user_level == "admin"
 
     ##############################################################################
     # Channel-level getters/setters
