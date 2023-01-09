@@ -324,17 +324,9 @@ class Host:
     def stream(self) -> str:
         return self._stream
 
-    @stream.setter
-    def stream(self, value: str):
-        self._stream = value
-
     @property
     def protocol(self) -> str:
         return self._protocol
-
-    @protocol.setter
-    def protocol(self, value: str):
-        self._protocol = value
 
     @property
     def session_active(self) -> bool:
@@ -354,13 +346,13 @@ class Host:
     def user_level(self) -> str:
         """Check if the user has admin authorisation."""
         if self._users is None or len(self._users) < 1:
-            return ""
+            return "unknown"
 
         for user in self._users:
             if user["userName"] == self._username:
                 return user["level"]
 
-        return ""
+        return "unknown"
 
     @property
     def is_admin(self) -> bool:
