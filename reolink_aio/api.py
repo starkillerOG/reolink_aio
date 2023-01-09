@@ -402,7 +402,7 @@ class Host:
 
     def ai_supported(self, channel: int, object_type: Optional[str] = None):
         """Return if the AI object type detection is supported or not."""
-        if channel not in self._ai_detection_support or not self._ai_detection_support[channel]):
+        if channel not in self._ai_detection_support or not self._ai_detection_support[channel]:
             return False
 
         if object_type is not None:
