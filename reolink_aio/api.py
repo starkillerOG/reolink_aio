@@ -2775,45 +2775,45 @@ class Host:
             if expected_content_type == "json":
                 try:
                     json_data = json.loads(data)
-                except (TypeError, json.JSONDecodeError) as e:
+                except (TypeError, json.JSONDecodeError) as err:
                     if not retry:
-                        _LOGGER.debug("Error translating JSON response: %s, data:\n%s\n", e, response)
+                        _LOGGER.debug("Error translating JSON response: %s, data:\n%s\n", err, response)
                         self.expire_session()
                         return await self.send(body, param, expected_content_type, True)
-                    raise InvalidContentTypeError(f"Error translating JSON response: {str(e)},  content type '{response.content_type}', data:\n{data}\n") from e
+                    raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from e
                 if json_data is None:
                     self.expire_session()
                 return json_data
 
             return data
-        except aiohttp.ClientConnectorError as e:
+        except aiohttp.ClientConnectorError as err:
             self.expire_session()
-            _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(e))
-            raise e
-        except asyncio.TimeoutError as e:
+            _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(err))
+            raise err
+        except asyncio.TimeoutError as err:
             self.expire_session()
             _LOGGER.error(
                 "Host %s:%s: connection timeout exception. Please check the connection to this host.",
                 self._host,
                 self._port,
             )
-            raise e
-        except ApiError as e:
+            raise err
+        except ApiError as err:
             self.expire_session()
-            _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(e))
-            raise e
-        except CredentialsInvalidError as e:
+            _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
+            raise err
+        except CredentialsInvalidError as err:
             self.expire_session()
             _LOGGER.error("Host %s:%s: login attempt failed.", self._host, self._port)
-            raise e
-        except InvalidContentTypeError as e:
+            raise err
+        except InvalidContentTypeError as err:
             self.expire_session()
-            _LOGGER.error("Host %s:%s: content type error: %s.", self._host, self._port, str(e))
-            raise e
-        except Exception as e:
+            _LOGGER.error("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
+            raise err
+        except Exception as err:
             self.expire_session()
-            _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(e), traceback.format_exc())
-            raise e
+            _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
+            raise err
 
     ##############################################################################
     # SUBSCRIPTION managing
