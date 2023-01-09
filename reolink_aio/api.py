@@ -722,6 +722,7 @@ class Host:
         body = []
         channels = []
         for channel in self._channels:
+            ch_body = []
             if cmd == "GetEnc":
                 ch_body = [{"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetIsp":
@@ -788,26 +789,51 @@ class Host:
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
+        if not channels:
+            if cmd == "Getchannelstatus":
+                body = [{"cmd": "Getchannelstatus"}]
+            elif cmd == "GetDevInfo":
+                body = [{"cmd": "GetDevInfo", "action": 0, "param": {}}]
+            elif cmd == "GetLocalLink":
+                body = [{"cmd": "GetLocalLink", "action": 0, "param": {}}]
+            elif cmd == "GetNetPort":
+                body = [{"cmd": "GetNetPort", "action": 0, "param": {}}]
+            elif cmd == "GetHddInfo":
+                body = [{"cmd": "GetHddInfo", "action": 0, "param": {}}]
+            elif cmd == "GetUser":
+                body = [{"cmd": "GetUser", "action": 0, "param": {}}]
+            elif cmd == "GetNtp":
+                body = [{"cmd": "GetNtp", "action": 0, "param": {}}]
+            elif cmd == "GetTime":
+                body = [{"cmd": "GetTime", "action": 0, "param": {}}]
+            elif cmd == "GetAbility":
+                body = [{"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}}]
+
         if body:
             try:
                 json_data = await self.send(body, expected_content_type="json")
             except InvalidContentTypeError:
                 _LOGGER.error(
-                    "Host: %s:%s: error translating channel-state response.",
+                    "Host: %s:%s: error translating get_state response for cmd '%s'",
                     self._host,
                     self._port,
+                    body[0]["cmd"],
                 )
                 return False
             if json_data is None:
                 _LOGGER.error(
-                    "Host: %s:%s: error obtaining channel-state response.",
+                    "Host: %s:%s: error obtaining get_state response for cmd '%s'",
                     self._host,
                     self._port,
+                    body[0]["cmd"],
                 )
-                self.expire_session()
                 return False
 
-            self.map_channels_json_response(json_data, channels)
+            if channels:
+                self.map_channels_json_response(json_data, channels)
+            else:
+                self.map_host_json_response(json_data)
+
         return True
 
     async def get_states(self) -> bool:
@@ -1156,7 +1182,6 @@ class Host:
                 self._host,
                 self._port,
             )
-            self.expire_session()
             for channel in self._channels:
                 self._motion_detection_states[channel] = False
                 self._ai_detection_states[channel] = {}
@@ -1490,8 +1515,6 @@ class Host:
                     traceback.format_exc(),
                 )
                 continue
-
-    # enfof map_host_json_response()
 
     def map_channels_json_response(self, json_data, channels: list[int]):
         if len(json_data) != len(channels):
