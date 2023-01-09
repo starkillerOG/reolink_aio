@@ -359,7 +359,7 @@ class Host:
                     return True
 
                 _LOGGER.warning(
-                    'User %s has authorisation level "%s". Only admin users can change camera settings! Switches will not work.',
+                    'User %s has authorisation level "%s". Only admin users can change camera settings! Not everything will work.',
                     self._username,
                     user["level"],
                 )
