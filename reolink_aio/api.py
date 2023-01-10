@@ -2813,9 +2813,10 @@ class Host:
             return -1
 
         diff = self._subscription_termination_time - datetime.utcnow()
-        _LOGGER.debug("Host %s:%s should renew in: %i seconds...", self._host, self._port, diff)
+        diff_s = int(diff.total_seconds())
+        _LOGGER.debug("Host %s:%s should renew in: %i seconds...", self._host, self._port, diff_s)
 
-        return diff.seconds
+        return diff_s
 
     @property
     def subscribed(self) -> bool:
