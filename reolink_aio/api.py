@@ -967,7 +967,7 @@ class Host:
 
         try:
             json_data = await self.send(body, expected_content_type="json")
-        except InvalidContentTypeError:
+        except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Channel-settings: {str(err)}")
         if json_data is None:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings")
