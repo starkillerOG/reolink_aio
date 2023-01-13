@@ -833,7 +833,7 @@ class Host:
 
         return True
 
-    async def get_states(self) -> bool:
+    async def get_states(self) -> None:
         body = []
         channels = []
         for channel in self._channels:
@@ -899,23 +899,12 @@ class Host:
 
         try:
             json_data = await self.send(body, expected_content_type="json")
-        except InvalidContentTypeError:
-            _LOGGER.error(
-                "Host: %s:%s: error translating channel-state response.",
-                self._host,
-                self._port,
-            )
-            return False
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError(f"channel-state: {str(err)}") from err
         if json_data is None:
-            _LOGGER.error(
-                "Host: %s:%s: error obtaining channel-state response.",
-                self._host,
-                self._port,
-            )
-            return False
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response")
 
         self.map_channels_json_response(json_data, channels)
-        return True
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
@@ -940,7 +929,7 @@ class Host:
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError("Get host-settings error: %s", str(err)) from err
         if json_data is None:
-            raise NoDataError("Host: %s:%s: returned no data when obtaining host-settings", self._host, self._port)
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings")
 
         self.map_host_json_response(json_data)
 
@@ -979,9 +968,9 @@ class Host:
         try:
             json_data = await self.send(body, expected_content_type="json")
         except InvalidContentTypeError:
-            raise InvalidContentTypeError("Get initial channel-settings error: %s", str(err)) from err
+            raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
         if json_data is None:
-            raise NoDataError("Host: %s:%s: returned no data when obtaining initial channel-settings", self._host, self._port)
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings")
 
         self.map_channels_json_response(json_data, channels)
 
