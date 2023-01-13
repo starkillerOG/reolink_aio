@@ -17,7 +17,7 @@ from xml.etree import ElementTree as XML
 import aiohttp
 
 from . import templates, typings
-from .exceptions import ApiError, CredentialsInvalidError, InvalidContentTypeError
+from .exceptions import ApiError, CredentialsInvalidError, InvalidContentTypeError, ReolinkError, NoDataError
 from .software_version import SoftwareVersion
 
 MANUFACTURER = "Reolink"
