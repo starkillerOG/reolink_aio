@@ -927,7 +927,7 @@ class Host:
         try:
             json_data = await self.send(body, expected_content_type="json")
         except InvalidContentTypeError as err:
-            raise InvalidContentTypeError("Get host-settings error: %s", str(err)) from err
+            raise InvalidContentTypeError(f"Get host-settings error: {str(err)}") from err
         if json_data is None:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings")
 
@@ -2838,7 +2838,7 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data, logger = True) -> Optional[str]:
+    async def subscription_send(self, headers, data, logger=True) -> Optional[str]:
         """Send subscription data to the camera."""
         try:
             async with aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
@@ -3089,17 +3089,17 @@ class Host:
             parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_0"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger = False)
+            await self.subscription_send(headers, xml, logger=False)
 
             parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_1"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger = False)
+            await self.subscription_send(headers, xml, logger=False)
 
             parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_2"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger = False)
+            await self.subscription_send(headers, xml, logger=False)
 
         return True
 
