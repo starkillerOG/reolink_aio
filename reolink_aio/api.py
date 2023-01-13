@@ -917,7 +917,7 @@ class Host:
         self.map_channels_json_response(json_data, channels)
         return True
 
-    async def get_host_data(self) -> bool:
+    async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
         body = [
             {"cmd": "Getchannelstatus"},
@@ -937,20 +937,10 @@ class Host:
 
         try:
             json_data = await self.send(body, expected_content_type="json")
-        except InvalidContentTypeError:
-            _LOGGER.error(
-                "Host %s:%s: error translating host-settings response.",
-                self._host,
-                self._port,
-            )
-            return False
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError("Get host-settings error: %s", str(err)) from err
         if json_data is None:
-            _LOGGER.error(
-                "Host: %s:%s: error obtaining host-settings response.",
-                self._host,
-                self._port,
-            )
-            return False
+            raise NoDataError("Host: %s:%s: returned no data when obtaining host-settings", self._host, self._port)
 
         self.map_host_json_response(json_data)
 
@@ -989,11 +979,9 @@ class Host:
         try:
             json_data = await self.send(body, expected_content_type="json")
         except InvalidContentTypeError:
-            _LOGGER.error("Host %s:%s: error translating API response.", self._host, self._port)
-            return False
+            raise InvalidContentTypeError("Get initial channel-settings error: %s", str(err)) from err
         if json_data is None:
-            _LOGGER.error("Host: %s:%s: error obtaining API response.", self._host, self._port)
-            return False
+            raise NoDataError("Host: %s:%s: returned no data when obtaining initial channel-settings", self._host, self._port)
 
         self.map_channels_json_response(json_data, channels)
 
@@ -1028,8 +1016,6 @@ class Host:
         if self._api_version_getalarm >= 1:
             if not check_command_exists("GetAudioAlarmV20"):
                 self._api_version_getalarm = 0
-
-        return True
 
     async def get_motion_state(self, channel: int) -> Optional[bool]:
         if channel not in self._channels:
@@ -1712,8 +1698,14 @@ class Host:
     ) -> bool:
         """Set Network Port parameters on the host (NVR or camera)."""
         if self._netport_settings is None:
+            try:
+                await self.get_host_data()
+            except ReolinkError:
+                pass
+
+        if self._netport_settings is None:
             _LOGGER.error(
-                "Host %s:%s: NetPort settings are not yet available, run get_host_data first.",
+                "Host %s:%s: Failed to retrieve NetPort settings.",
                 self._host,
                 self._port,
             )
@@ -1741,8 +1733,12 @@ class Host:
         tzoffset (int) Timezone offset versus UTC in seconds
 
         Always get current time first"""
-        ret = await self.get_host_data()
-        if not ret or self._time_settings is None:
+        try:
+            await self.get_host_data()
+        except ReolinkError:
+            _LOGGER.error("Host %s:%s: error fetching time settings.", self._host, self._port)
+            return False
+        if self._time_settings is None:
             _LOGGER.error("Host %s:%s: time settings are not available.", self._host, self._port)
             return False
 
@@ -2797,7 +2793,7 @@ class Host:
             raise err
         except InvalidContentTypeError as err:
             self.expire_session()
-            _LOGGER.error("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
+            _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
             raise err
         except Exception as err:
             self.expire_session()

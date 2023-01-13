@@ -15,3 +15,6 @@ class InvalidContentTypeError(ReolinkError):
 
 class CredentialsInvalidError(ReolinkError):
     """Raised when an API call returns credentials issue"""
+
+class NoDataError(ReolinkError)
+    """Raised when an API call returns None instead of expected data"""
