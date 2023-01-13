@@ -2853,7 +2853,7 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data) -> Optional[str]:
+    async def subscription_send(self, headers, data, logger = True) -> Optional[str]:
         """Send subscription data to the camera."""
         try:
             async with aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
@@ -2882,13 +2882,22 @@ class Host:
                 )
 
                 if response.status != 200:
-                    _LOGGER.warning(
-                        "Host %s:%s: subscription request got a response with wrong HTTP status %s: %s",
-                        self._host,
-                        self._port,
-                        response.status,
-                        response.reason,
-                    )
+                    if logger:
+                        _LOGGER.warning(
+                            "Host %s:%s: subscription request got a response with wrong HTTP status %s: %s",
+                            self._host,
+                            self._port,
+                            response.status,
+                            response.reason,
+                        )
+                    else:
+                        _LOGGER.debug(
+                            "Host %s:%s: unsubscribe request for unsubscribing all got a response with wrong HTTP status %s: %s, this is expected.",
+                            self._host,
+                            self._port,
+                            response.status,
+                            response.reason,
+                        )
                     return
 
                 return response_text
@@ -3095,17 +3104,17 @@ class Host:
             parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_0"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
-            await self.subscription_send(headers, xml)
+            await self.subscription_send(headers, xml, logger = False)
 
             parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_1"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
-            await self.subscription_send(headers, xml)
+            await self.subscription_send(headers, xml, logger = False)
 
             parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_2"}
             parameters.update(await self.get_digest())
             xml = template.format(**parameters)
-            await self.subscription_send(headers, xml)
+            await self.subscription_send(headers, xml, logger = False)
 
         return True
 
