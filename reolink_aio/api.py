@@ -2902,10 +2902,8 @@ class Host:
         except:
             _LOGGER.error("Host %s:%s: unknown exception occurred.", self._host, self._port)
 
-    async def subscribe(self, webhook_url: str) -> bool:
+    async def subscribe(self, webhook_url: str, retry: bool = False) -> bool:
         """Subscribe to ONVIF events."""
-        await self.unsubscribe_all()  # Trying to free up dangling subscriptions (limited resource in case of some NVRs/cameras).
-
         headers = templates.HEADERS
         headers.update(templates.SUBSCRIBE_ACTION)
         template = templates.SUBSCRIBE_XML
@@ -2922,19 +2920,26 @@ class Host:
 
         response = await self.subscription_send(headers, xml)
         if response is None:
-            await self.unsubscribe_all()
+            if not retry:
+                await self.unsubscribe_all()
+                return await self.subscribe(webhook_url, retry = True)
+            _LOGGER.error("Host %s:%s: failed to subscribe, None response.", self._host, self._port)
             return False
         root = XML.fromstring(response)
 
         address_element = root.find(".//{http://www.w3.org/2005/08/addressing}Address")
         if address_element is None:
-            await self.unsubscribe_all()
+            if not retry:
+                await self.unsubscribe_all()
+                return await self.subscribe(webhook_url, retry = True)
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
             return False
         self._subscription_manager_url = address_element.text
 
         if self._subscription_manager_url is None:
-            await self.unsubscribe_all()
+            if not retry:
+                await self.unsubscribe_all()
+                return await self.subscribe(webhook_url, retry = True)
             _LOGGER.error(
                 "Host %s:%s: failed to subscribe. Required response parameters not available.",
                 self._host,
@@ -2944,13 +2949,17 @@ class Host:
 
         current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
-            await self.unsubscribe_all()
+            if not retry:
+                await self.unsubscribe_all()
+                return await self.subscribe(webhook_url, retry = True)
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
             return False
         remote_time = await self.convert_time(current_time_element.text)
 
         if remote_time is None:
-            await self.unsubscribe_all()
+            if not retry:
+                await self.unsubscribe_all()
+                return await self.subscribe(webhook_url, retry = True)
             _LOGGER.error(
                 "Host %s:%s: failed to subscribe. Required response parameters not available.",
                 self._host,
@@ -2962,13 +2971,17 @@ class Host:
 
         termination_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}TerminationTime")
         if termination_time_element is None:
-            await self.unsubscribe_all()
+            if not retry:
+                await self.unsubscribe_all()
+                return await self.subscribe(webhook_url, retry = True)
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
             return False
         self._subscription_termination_time = await self.convert_time(termination_time_element.text) - timedelta(seconds=self._subscription_time_difference)
 
         if self._subscription_termination_time is None:
-            await self.unsubscribe_all()
+            if not retry:
+                await self.unsubscribe_all()
+                return await self.subscribe(webhook_url, retry = True)
             _LOGGER.error(
                 "Host %s:%s: failed to subscribe. Required response parameters not available.",
                 self._host,
