@@ -1208,17 +1208,25 @@ class Host:
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
     def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
+        if not self._enc_settings:
+            if not await self.get_state(cmd="GetEnc"):
+                return None
+
         if channel not in self._channels:
             return None
 
         if stream is None:
             stream = self._stream
 
+        encoding = self._enc_settings[channel]["Enc"].get(f"{stream}Stream", {}).get("vType")
+        if encoding is None:
+            return None
+
         password = parse.quote(self._password)
         channel = f"{channel + 1:02d}"
         # Reolink has deprecated the "h264/h265" prefixes, but it still does not work with some cameras without it (e.g. E1 Zoom). So maybe later...
         # return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/Preview_{channel}_{stream}"
-        return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/h264Preview_{channel}_{stream}"
+        return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel}_{stream}"
 
     async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         """Return the stream source url."""
