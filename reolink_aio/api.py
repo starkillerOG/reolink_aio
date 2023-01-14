@@ -1207,7 +1207,7 @@ class Host:
 
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
-    def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
+    async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if not self._enc_settings:
             if not await self.get_state(cmd="GetEnc"):
                 return None
@@ -1241,7 +1241,7 @@ class Host:
         if self.protocol == "rtmp":
             return self.get_rtmp_stream_source(channel, stream)
         if self.protocol == "rtsp":
-            return self.get_rtsp_stream_source(channel, stream)
+            return await self.get_rtsp_stream_source(channel, stream)
         if self.protocol == "flv":
             return self.get_flv_stream_source(channel, stream)
         return None
