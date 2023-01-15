@@ -1218,9 +1218,10 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        encoding = self._enc_settings[channel]["Enc"].get(f"{stream}Stream", {}).get("vType")
-        if encoding is None:
+        stream_enc = self._enc_settings[channel]["Enc"].get(f"{stream}Stream")
+        if stream_enc is None:
             return None
+        encoding = stream_enc.get("vType", "")
 
         password = parse.quote(self._password)
         channel = f"{channel + 1:02d}"
