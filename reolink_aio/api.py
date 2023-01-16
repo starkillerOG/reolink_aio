@@ -380,7 +380,7 @@ class Host:
         """Return the motion detection state (polled)."""
         return channel in self._motion_detection_states and self._motion_detection_states[channel]
 
-    def ai_detected(self, channel: int, object_type: Optional[str] = None):
+    def ai_detected(self, channel: int, object_type: Optional[str] = None) -> bool:
         """Return the AI object detection state (polled)."""
         if channel not in self._ai_detection_states or self._ai_detection_states[channel] is None:
             return False
@@ -397,7 +397,7 @@ class Host:
         """Return the visitor detection state (polled)."""
         return channel in self._visitor_states and self._visitor_states[channel]
 
-    def ai_supported(self, channel: int, object_type: Optional[str] = None):
+    def ai_supported(self, channel: int, object_type: Optional[str] = None) -> bool:
         """Return if the AI object type detection is supported or not."""
         if channel not in self._ai_detection_support or not self._ai_detection_support[channel]:
             return False
