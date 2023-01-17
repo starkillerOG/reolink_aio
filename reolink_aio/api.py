@@ -382,17 +382,19 @@ class Host:
         """Return the motion detection state (polled)."""
         return channel in self._motion_detection_states and self._motion_detection_states[channel]
 
-    def ai_detected(self, channel: int, object_type: Optional[str] = None) -> bool:
+    def ai_detected(self, channel: int, object_type: str) -> bool:
         """Return the AI object detection state (polled)."""
         if channel not in self._ai_detection_states or self._ai_detection_states[channel] is None:
             return False
 
-        if object_type is not None:
-            for key, value in self._ai_detection_states[channel].items():
-                if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
-                    return value
-            return False
+        for key, value in self._ai_detection_states[channel].items():
+            if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
+                return value
 
+        return False
+
+    def ai_detection_states(self, channel: int) -> dict[str, bool]:
+        """Return all the AI object detection state."""
         return self._ai_detection_states[channel]
 
     def visitor_detected(self, channel: int) -> bool:
