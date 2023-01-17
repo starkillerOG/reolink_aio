@@ -124,6 +124,8 @@ class Host:
         self._stream: str = stream
         self._protocol: str = protocol
         self._rtmp_auth_method: str = rtmp_auth_method
+        self._rtsp_mainStream: dict[int, str] = {}
+        self._rtsp_subStream: dict[int, str] = {}
 
         ##############################################################################
         # Presets
@@ -943,6 +945,7 @@ class Host:
                     "param": {"channel": channel},
                 },  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
             ]
             # checking API versions (because Reolink dev quality sucks big time we cannot fully trust GetAbility)
             if self._api_version_getemail >= 1:
@@ -1208,6 +1211,12 @@ class Host:
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
     async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
+        if stream == "main" and channel in self._rtsp_mainStream:
+            return self._rtsp_mainStream[channel]
+
+        if stream == "sub" and channel in self._rtsp_subStream:
+            return self._rtsp_subStream[channel]
+
         if not self._enc_settings:
             if not await self.get_state(cmd="GetEnc"):
                 return None
@@ -1225,8 +1234,7 @@ class Host:
 
         password = parse.quote(self._password)
         channel = f"{channel + 1:02d}"
-        # Reolink has deprecated the "h264/h265" prefixes, but it still does not work with some cameras without it (e.g. E1 Zoom). So maybe later...
-        # return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/Preview_{channel}_{stream}"
+
         return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel}_{stream}"
 
     async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
@@ -1608,6 +1616,14 @@ class Host:
                     response_channel = data["value"]["Enc"]["channel"]
                     self._enc_settings[channel] = data["value"]
                     self._audio_enabled[channel] = data["value"]["Enc"]["audio"] == 1
+
+                elif data["cmd"] == "GetRtspUrl":
+                    response_channel = data["value"]["rtspUrl"]["channel"]
+                    password = parse.quote(self._password)
+                    mainStream = data["value"]["rtspUrl"]["mainStream"]
+                    subStream = data["value"]["rtspUrl"]["subStream"]
+                    self._rtsp_mainStream[channel] = mainStream.replace("rtsp://", f"rtsp://{self._username}:{password}@")
+                    self._rtsp_subStream[channel] = subStream.replace("rtsp://", f"rtsp://{self._username}:{password}@")
 
                 elif data["cmd"] == "GetEmail":
                     self._email_settings[channel] = data["value"]
