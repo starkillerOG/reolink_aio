@@ -41,6 +41,6 @@ jobs:
         # exit-zero treats all errors as warnings.
         flake8 reolink_aio --count --exit-zero --max-line-length=175 --statistics
     - name: Black formatting
-    - uses: psf/black@stable
+      uses: psf/black@stable
       with:
         options: "--check --verbose"
