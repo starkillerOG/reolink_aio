@@ -19,3 +19,15 @@ class CredentialsInvalidError(ReolinkError):
 
 class NoDataError(ReolinkError):
     """Raised when an API call returns None instead of expected data"""
+
+
+class UnexpectedDataError(ReolinkError):
+    """Raised when an API call returns unexpected data which can not be handled properly"""
+
+
+class InvalidParameterError(ReolinkError):
+    """Raised when a function is called with invalid parameters"""
+
+
+class NotSupportedError(ReolinkError):
+    """Raised when a function is called with invalid parameters"""

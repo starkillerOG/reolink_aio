@@ -18,7 +18,7 @@ from xml.etree import ElementTree as XML
 import aiohttp
 
 from . import templates, typings
-from .exceptions import ApiError, CredentialsInvalidError, InvalidContentTypeError, ReolinkError, NoDataError
+from .exceptions import ApiError, CredentialsInvalidError, InvalidContentTypeError, ReolinkError, NoDataError, UnexpectedDataError, InvalidParameterError, NotSupportedError
 from .software_version import SoftwareVersion
 
 MANUFACTURER = "Reolink"
@@ -722,7 +722,7 @@ class Host:
 
         return capabilities
 
-    async def get_state(self, cmd: str) -> bool:
+    async def get_state(self, cmd: str) -> None:
         body = []
         channels = []
         for channel in self._channels:
@@ -817,28 +817,16 @@ class Host:
             try:
                 json_data = await self.send(body, expected_content_type="json")
             except InvalidContentTypeError:
-                _LOGGER.error(
-                    "Host: %s:%s: error translating get_state response for cmd '%s'",
-                    self._host,
-                    self._port,
-                    body[0]["cmd"],
-                )
-                return False
+                raise InvalidContentTypeError(f"get_state cmd '{body[0]["cmd"]}': {str(err)}") from err
             if json_data is None:
-                _LOGGER.error(
-                    "Host: %s:%s: error obtaining get_state response for cmd '%s'",
-                    self._host,
-                    self._port,
-                    body[0]["cmd"],
-                )
-                return False
+                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]["cmd"]}'")
 
             if channels:
                 self.map_channels_json_response(json_data, channels)
             else:
                 self.map_host_json_response(json_data)
 
-        return True
+        return
 
     async def get_states(self) -> None:
         body = []
@@ -1179,10 +1167,10 @@ class Host:
 
         return json_data[0]["value"]["newFirmware"]
 
-    async def update_firmware(self) -> bool:
+    async def update_firmware(self) -> None:
         """check for new firmware."""
         body = [{"cmd": "UpgradeOnline"}]
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
     async def update_progress(self) -> bool | int:
         """check progress of firmware update, returns False if not in progress."""
@@ -1261,7 +1249,9 @@ class Host:
             return self._rtsp_subStream[channel]
 
         if not self._enc_settings:
-            if not await self.get_state(cmd="GetEnc"):
+            try:
+                await self.get_state(cmd="GetEnc")
+            except ReolinkError:
                 return None
 
         if channel not in self._channels:
@@ -1752,21 +1742,13 @@ class Host:
         enable_onvif: bool = None,
         enable_rtmp: bool = None,
         enable_rtsp: bool = None,
-    ) -> bool:
+    ) -> None:
         """Set Network Port parameters on the host (NVR or camera)."""
         if self._netport_settings is None:
-            try:
-                await self.get_host_data()
-            except ReolinkError:
-                pass
+            await self.get_host_data()
 
         if self._netport_settings is None:
-            _LOGGER.error(
-                "Host %s:%s: Failed to retrieve NetPort settings.",
-                self._host,
-                self._port,
-            )
-            return False
+            raise NotSupportedError(f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}")
 
         body = [{"cmd": "SetNetPort", "param": self._netport_settings}]
 
@@ -1777,12 +1759,10 @@ class Host:
         if enable_rtsp is not None:
             body[0]["param"]["NetPort"]["rtspEnable"] = 1 if enable_rtsp else 0
 
-        response = await self.send_setting(body)
+        await self.send_setting(body)
         self.expire_session()  # When changing network port settings, tokens are invalidated.
 
-        return response
-
-    async def set_time(self, dateFmt=None, hours24=None, tzOffset=None) -> bool:
+    async def set_time(self, dateFmt=None, hours24=None, tzOffset=None) -> None:
         """Set time on the host (NVR or camera).
         Arguments:
         dateFmt (string) Format of the date in the OSD timestamp
@@ -1790,14 +1770,9 @@ class Host:
         tzoffset (int) Timezone offset versus UTC in seconds
 
         Always get current time first"""
-        try:
-            await self.get_host_data()
-        except ReolinkError:
-            _LOGGER.error("Host %s:%s: error fetching time settings.", self._host, self._port)
-            return False
+        await self.get_host_data()
         if self._time_settings is None:
-            _LOGGER.error("Host %s:%s: time settings are not available.", self._host, self._port)
-            return False
+            raise NotSupportedError(f"set_time: failed to retrieve current time settings from {self._host}:{self._port}")
 
         body = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
 
@@ -1805,8 +1780,7 @@ class Host:
             if dateFmt in ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY/MM/DD"]:
                 body[0]["param"]["Time"]["timeFmt"] = dateFmt
             else:
-                _LOGGER.error("Invalid date format specified.")
-                return False
+                raise InvalidParameterError(f"set_time: date format {dateFmt} not in ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY/MM/DD']")
 
         if hours24 is not None:
             if hours24:
@@ -1816,16 +1790,14 @@ class Host:
 
         if tzOffset is not None:
             if not isinstance(tzOffset, int):
-                _LOGGER.error("Invalid time zone offset specified, type is not integer.")
-                return False
+                raise InvalidParameterError(f"set_time: time zone offset {tzOffset} is not integer")
             if tzOffset < -43200 or tzOffset > 50400:
-                _LOGGER.error("Invalid time zone offset specified.")
-                return False
+                raise InvalidParameterError(f"set_time: time zone offset {tzOffset} not in range -43200..50400")
             body[0]["param"]["Time"]["timeZone"] = tzOffset
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_ntp(self, enable=None, server=None, port=None, interval=None) -> bool:
+    async def set_ntp(self, enable:bool=None, server:str=None, port:int=None, interval:int=None) -> None:
         """
         Set NTP parameters on the host (NVR or camera).
         Arguments:
@@ -1835,8 +1807,10 @@ class Host:
         interval (int) Interval of synchronization in minutes in range of (60-65535)
         """
         if self._ntp_settings is None:
-            _LOGGER.error("Host %s:%s: NTP settings are not available.", self._host, self._port)
-            return False
+            await self.get_host_data()
+
+        if self._ntp_settings is None:
+            raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
         body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
 
@@ -1851,44 +1825,41 @@ class Host:
 
         if port is not None:
             if not isinstance(port, int):
-                _LOGGER.error("Invalid NTP port specified, type is not integer.")
-                return False
+                raise InvalidParameterError(f"set_ntp: Invalid NTP port {port} specified, type is not integer")
             if port < 1 or port > 65535:
-                _LOGGER.error("Invalid NTP port (within invalid range) specified.")
-                return False
+                raise InvalidParameterError(f"set_ntp: Invalid NTP port {port} specified, out of valid range 1...65535")
             body[0]["param"]["Ntp"]["port"] = port
 
         if interval is not None:
             if not isinstance(interval, int):
-                _LOGGER.error("Invalid NTP interval specified, type is not integer.")
-                return False
+                raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, type is not integer")
             if port < 60 or port > 65535:
-                _LOGGER.error("Invalid NTP interval (within invalid range) specified.")
-                return False
+                raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, out of valid range 60...65535")
             body[0]["param"]["Ntp"]["interval"] = interval
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def sync_ntp(self) -> bool:
+    async def sync_ntp(self) -> None:
         """Sync date and time on the host via NTP now."""
         if self._ntp_settings is None:
-            _LOGGER.error("Host %s:%s: NTP settings are not available.", self._host, self._port)
-            return False
+            await self.get_host_data()
+
+        if self._ntp_settings is None:
+            raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
         body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
         body[0]["param"]["Ntp"]["interval"] = 0
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_autofocus(self, channel: int, enable: bool) -> bool:
+    async def set_autofocus(self, channel: int, enable: bool) -> None:
         """Enable/Disable AutoFocus on a camera.
         Parameters:
         enable (boolean) enables/disables AutoFocus if supported"""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_autofocus: no camera connected to channel '{channel}'")
         if self._auto_focus_settings is None or channel not in self._auto_focus_settings or not self._auto_focus_settings[channel]:
-            _LOGGER.error("AutoFocus on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available")
 
         body = [
             {
@@ -1899,27 +1870,25 @@ class Host:
         ]
         body[0]["param"]["AutoFocus"]["disable"] = 0 if enable else 1
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    def get_focus(self, channel: int):
+    def get_focus(self, channel: int) -> None:
         """Get absolute focus value."""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"get_focus: no camera connected to channel '{channel}'")
         if self._zoom_focus_settings is None or channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
-            _LOGGER.error("ZoomFocus on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"get_focus: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["focus"]["pos"]
 
-    async def set_focus(self, channel: int, focus) -> bool:
+    async def set_focus(self, channel: int, focus) -> None:
         """Set absolute focus value.
         Parameters:
         focus (int) 0..223"""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_focus: no camera connected to channel '{channel}'")
         if not focus in range(0, 223):
-            _LOGGER.error("Focus value not in range 0..223.")
-            return False
+            raise InvalidParameterError(f"set_focus: focus value {focus} not in range 0..223")
 
         body = [
             {
@@ -1929,27 +1898,25 @@ class Host:
             }
         ]
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
     def get_zoom(self, channel: int):
         """Get absolute zoom value."""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"get_zoom: no camera connected to channel '{channel}'")
         if self._zoom_focus_settings is None or channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
-            _LOGGER.error("ZoomFocus on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"get_zoom: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["zoom"]["pos"]
 
-    async def set_zoom(self, channel: int, zoom) -> bool:
+    async def set_zoom(self, channel: int, zoom) -> None:
         """Set absolute zoom value.
         Parameters:
         zoom (int) 0..33"""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_zoom: no camera connected to channel '{channel}'")
         if not zoom in range(0, 33):
-            _LOGGER.error("Zoom value not in range 0..33.")
-            return False
+            raise InvalidParameterError(f"set_zoom: zoom value {zoom} not in range 0..33")
 
         body = [
             {
@@ -1959,7 +1926,7 @@ class Host:
             }
         ]
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
     def validate_osd_pos(self, pos) -> bool:
         """Helper function for validating an OSD position
@@ -1973,17 +1940,16 @@ class Host:
             "Lower Right",
         ]
 
-    async def set_osd(self, channel: int, namePos=None, datePos=None, enableWaterMark=None) -> bool:
+    async def set_osd(self, channel: int, namePos=None, datePos=None, enableWaterMark=None) -> None:
         """Set OSD parameters.
         Parameters:
         namePos (string) specifies the position of the camera name - "Off" disables this OSD
         datePos (string) specifies the position of the date - "Off" disables this OSD
         enableWaterMark (boolean) enables/disables the Logo (WaterMark) if supported"""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_osd: no camera connected to channel '{channel}'")
         if self._osd_settings is None or channel not in self._osd_settings or not self._osd_settings[channel]:
-            _LOGGER.error("OSD on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_osd: OSD on camera {self.camera_name(channel)} is not available")
 
         body = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
 
@@ -1992,8 +1958,7 @@ class Host:
                 body[0]["param"]["Osd"]["osdChannel"]["enable"] = 0
             else:
                 if not self.validate_osd_pos(namePos):
-                    _LOGGER.error("Invalid name OSD position specified: %s.", namePos)
-                    return False
+                    raise InvalidParameterError(f"set_osd: Invalid name OSD position specified '{namePos}'")
                 body[0]["param"]["Osd"]["osdChannel"]["enable"] = 1
                 body[0]["param"]["Osd"]["osdChannel"]["pos"] = namePos
 
@@ -2002,8 +1967,7 @@ class Host:
                 body[0]["param"]["Osd"]["osdTime"]["enable"] = 0
             else:
                 if not self.validate_osd_pos(datePos):
-                    _LOGGER.error("Invalid date OSD position specified: %s", datePos)
-                    return False
+                    raise InvalidParameterError(f"set_osd: Invalid date OSD position specified '{datePos}'")
                 body[0]["param"]["Osd"]["osdTime"]["enable"] = 1
                 body[0]["param"]["Osd"]["osdTime"]["pos"] = datePos
 
@@ -2019,15 +1983,14 @@ class Host:
                     self.camera_name(channel),
                 )
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_push(self, channel: Optional[int], enable: bool) -> bool:
+    async def set_push(self, channel: Optional[int], enable: bool) -> None:
         """Set the PUSH-notifications parameter."""
 
         body = None
         if channel is None:
             if self._api_version_getpush == 0:
-                OK = True
                 for c in self._channels:
                     if self._push_settings is not None and c in self._push_settings and self._push_settings[c] is not None:
                         body = [
@@ -2038,21 +2001,18 @@ class Host:
                             }
                         ]
                         body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
-                        OK = OK and await self.send_setting(body)
-                return OK
+                        await self.send_setting(body)
+                return
 
             body = [{"cmd": "SetPushV20", "action": 0, "param": self._push_settings[0]}]
             body[0]["param"]["Push"]["enable"] = 1 if enable else 0
-            return await self.send_setting(body)
+            await self.send_setting(body)
+            return
 
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_push: no camera connected to channel '{channel}'")
         if self._push_settings is None or channel not in self._push_settings or not self._push_settings[channel]:
-            _LOGGER.error(
-                "Push-notifications on camera %s are not available.",
-                self.camera_name(channel),
-            )
-            return False
+            raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
         if self._api_version_getpush == 0:
             body = [
@@ -2073,15 +2033,14 @@ class Host:
             ]
             body[0]["param"]["Push"]["enable"] = 1 if enable else 0
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_ftp(self, channel: Optional[int], enable: bool) -> bool:
+    async def set_ftp(self, channel: Optional[int], enable: bool) -> None:
         """Set the FTP-notifications parameter."""
 
         body = None
         if channel is None:
             if self._api_version_getftp == 0:
-                OK = True
                 for c in self._channels:
                     if self._ftp_settings is not None and c in self._ftp_settings and self._ftp_settings[c] is not None:
                         body = [
@@ -2092,18 +2051,18 @@ class Host:
                             }
                         ]
                         body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
-                        OK = OK and await self.send_setting(body)
-                return OK
+                        await self.send_setting(body)
+                return
 
             body = [{"cmd": "SetFtpV20", "action": 0, "param": self._ftp_settings[0]}]
             body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
-            return await self.send_setting(body)
+            await self.send_setting(body)
+            return
 
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_ftp: no camera connected to channel '{channel}'")
         if self._ftp_settings is None or channel not in self._ftp_settings or not self._ftp_settings[channel]:
-            _LOGGER.error("FTP on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_ftp: FTP on camera {self.camera_name(channel)} is not available")
 
         if self._api_version_getftp == 0:
             body = [{"cmd": "SetFtp", "action": 0, "param": self._ftp_settings[channel]}]
@@ -2118,13 +2077,12 @@ class Host:
             ]
             body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_email(self, channel: Optional[int], enable: bool) -> bool:
+    async def set_email(self, channel: Optional[int], enable: bool) -> None:
         body = None
         if channel is None:
             if self._api_version_getemail == 0:
-                OK = True
                 for c in self._channels:
                     if self._email_settings is not None and c in self._email_settings and self._email_settings[c] is not None:
                         body = [
@@ -2135,8 +2093,8 @@ class Host:
                             }
                         ]
                         body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
-                        OK = OK and await self.send_setting(body)
-                return OK
+                        await self.send_setting(body)
+                return
 
             body = [
                 {
@@ -2146,13 +2104,13 @@ class Host:
                 }
             ]
             body[0]["param"]["Email"]["enable"] = 1 if enable else 0
-            return await self.send_setting(body)
+            await self.send_setting(body)
+            return
 
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_email: no camera connected to channel '{channel}'")
         if self._email_settings is None or channel not in self._email_settings or not self._email_settings[channel]:
-            _LOGGER.error("Email on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_email: Email on camera {self.camera_name(channel)} is not available")
 
         if self._api_version_getemail == 0:
             body = [
@@ -2173,26 +2131,24 @@ class Host:
             ]
             body[0]["param"]["Email"]["enable"] = 1 if enable else 0
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_audio(self, channel: int, enable: bool) -> bool:
+    async def set_audio(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_audio: no camera connected to channel '{channel}'")
         if self._enc_settings is None or channel not in self._enc_settings or not self._enc_settings[channel]:
-            _LOGGER.error("Audio on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
         body = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
         body[0]["param"]["Enc"]["audio"] = 1 if enable else 0
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_ir_lights(self, channel: int, enable: bool) -> bool:
+    async def set_ir_lights(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_ir_lights: no camera connected to channel '{channel}'")
         if self._ir_settings is None or channel not in self._ir_settings or not self._ir_settings[channel]:
-            _LOGGER.error("IR light on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_ir_lights: IR light on camera {self.camera_name(channel)} is not available")
 
         body = [
             {
@@ -2203,14 +2159,13 @@ class Host:
         ]
         body[0]["param"]["IrLights"]["state"] = "Auto" if enable else "Off"
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_power_led(self, channel: int, state: bool, doorbellLightState: bool) -> bool:
+    async def set_power_led(self, channel: int, state: bool, doorbellLightState: bool) -> None:
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_power_led: no camera connected to channel '{channel}'")
         if self._power_led_settings is None or channel not in self._power_led_settings or not self._power_led_settings[channel]:
-            _LOGGER.error("Power led on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_whiteled: Power led on camera {self.camera_name(channel)} is not available")
 
         body = [
             {
@@ -2228,9 +2183,9 @@ class Host:
         body[0]["param"]["PowerLed"]["state"] = "On" if state else "Off"
         body[0]["param"]["PowerLed"]["eDoorbellLightState"] = "On" if doorbellLightState else "Off"
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_whiteled(self, channel: int, enable: bool, brightness, mode=None) -> bool:
+    async def set_whiteled(self, channel: int, enable: bool, brightness, mode=None) -> None:
         """
         Set the WhiteLed parameter.
         with Reolink Duo GetWhiteLed returns an error state
@@ -2248,20 +2203,14 @@ class Host:
           LightingSchedule : { EndHour , EndMin, StartHour,StartMin  }
         """
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_whiteled: no camera connected to channel '{channel}'")
         if self._whiteled_settings is None or channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
-            _LOGGER.error("White Led on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_whiteled: White Led on camera {self.camera_name(channel)} is not available")
 
         if mode is None:
             mode = 1
         if brightness < 0 or brightness > 100 or mode not in [0, 1, 3]:
-            _LOGGER.error(
-                'Incorrect parameters supplied to "set whiteLed": brightness = %s\n mode = %s',
-                brightness,
-                mode,
-            )
-            return False
+            raise InvalidParameterError(f"set_whiteled: brightness {brightness} not in range 0..100 or mode {mode} not in [0,1,3]")
 
         body = [
             {
@@ -2277,16 +2226,15 @@ class Host:
             }
         ]
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_spotlight_lighting_schedule(self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0) -> bool:
+    async def set_spotlight_lighting_schedule(self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0) -> None:
         """Stub to handle setting the time period where spotlight (WhiteLed) will be on when NightMode set and AUTO is off.
         Time in 24-hours format"""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_spotlight_lighting_schedule: no camera connected to channel '{channel}'")
         if self._whiteled_settings is None or channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
-            _LOGGER.error("White Led on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_spotlight_lighting_schedule: White Led on camera {self.camera_name(channel)} is not available")
 
         if (
             endhour < 0
@@ -2300,15 +2248,7 @@ class Host:
             or (endhour == starthour and endmin < startmin)
             or (not (endhour < 12 and starthour > 16) and (endhour < starthour))
         ):
-            _LOGGER.error(
-                "Parameter error when setting Lighting schedule on camera %s: start time: %s:%s, end time: %s:%s.",
-                self.camera_name(channel),
-                starthour,
-                startmin,
-                endhour,
-                endmin,
-            )
-            return False
+            raise InvalidParameterError(f"set_spotlight_lighting_schedule: Parameter error on camera {self.camera_name(channel)} start time: {starthour}:{startmin}, end time: {endhour}:{endmin}}")
 
         body = [
             {
@@ -2328,28 +2268,26 @@ class Host:
             }
         ]
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_spotlight(self, channel: int, enable: bool) -> bool:
+    async def set_spotlight(self, channel: int, enable: bool) -> None:
         """Simply calls set_whiteled with brightness 100, mode 3 after setting lightning schedule to on all the time 0000 to 2359."""
         if enable:
-            if not await self.set_spotlight_lighting_schedule(channel, 23, 59, 0, 0):
-                return False
-            return await self.set_whiteled(channel, enable, 100, 3)
+            await self.set_spotlight_lighting_schedule(channel, 23, 59, 0, 0)
+            await self.set_whiteled(channel, enable, 100, 3)
+            return
 
-        if not await self.set_spotlight_lighting_schedule(channel, 0, 0, 0, 0):
-            return False
-        return await self.set_whiteled(channel, enable, 100, 1)
+        await self.set_spotlight_lighting_schedule(channel, 0, 0, 0, 0)
+        await self.set_whiteled(channel, enable, 100, 1)
 
-    async def set_audio_alarm(self, channel: int, enable: bool) -> bool:
+    async def set_audio_alarm(self, channel: int, enable: bool) -> None:
         # fairly basic only either turns it off or on
         # called in its simple form by set_siren
 
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_audio_alarm: no camera connected to channel '{channel}'")
         if self._audio_alarm_settings is None or channel not in self._audio_alarm_settings or not self._audio_alarm_settings[channel]:
-            _LOGGER.error("AudioAlarm on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_audio_alarm: AudioAlarm on camera {self.camera_name(channel)} is not available")
 
         if self._api_version_getalarm == 0:
             body = [
@@ -2373,20 +2311,17 @@ class Host:
                 }
             ]
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    # enfof set_audio_alarm()
-
-    async def set_siren(self, channel: int, enable: bool) -> bool:
+    async def set_siren(self, channel: int, enable: bool) -> None:
         # Uses API AudioAlarmPlay with manual switch
         # uncertain if there may be a glitch - dont know if there is API I have yet to find
         # which sets AudioLevel
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
 
         # This is overkill but to get state set right necessary to call set_audio_alarm.
-        if not await self.set_audio_alarm(channel, enable):
-            return False
+        await self.set_audio_alarm(channel, enable)
 
         body = [
             {
@@ -2401,47 +2336,42 @@ class Host:
             }
         ]
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_daynight(self, channel: int, value: str) -> bool:
+    async def set_daynight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_daynight: no camera connected to channel '{channel}'")
         if self._isp_settings is None or channel not in self._isp_settings or not self._isp_settings[channel]:
-            _LOGGER.error("ISP on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_daynight: ISP on camera {self.camera_name(channel)} is not available")
 
         if value not in ["Auto", "Color", "Black&White"]:
-            _LOGGER.error('Invalid input for "set day-night": %s', value)
-            return False
+            raise InvalidParameterError(f"set_daynight: value {value} not in ['Auto', 'Color', 'Black&White']")
 
         body = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_backlight(self, channel: int, value: str) -> bool:
+    async def set_backlight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_backlight: no camera connected to channel '{channel}'")
         if self._isp_settings is None or channel not in self._isp_settings or not self._isp_settings[channel]:
-            _LOGGER.error("ISP on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_backlight: ISP on camera {self.camera_name(channel)} is not available")
 
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
-            _LOGGER.error('Invalid input for "set backlight": %s', value)
-            return False
+            raise InvalidParameterError(f"set_backlight: value {value} not in ['BackLightControl', 'DynamicRangeControl', 'Off']")
 
         body = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["backLight"] = value
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_recording(self, channel: Optional[int], enable: bool) -> bool:
+    async def set_recording(self, channel: Optional[int], enable: bool) -> None:
         """Set the recording parameter."""
 
         body = None
         if channel is None:
             if self._api_version_getrec == 0:
-                OK = True
                 for c in self._channels:
                     if self._recording_settings is not None and c in self._recording_settings and self._recording_settings[c] is not None:
                         body = [
@@ -2452,8 +2382,8 @@ class Host:
                             }
                         ]
                         body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
-                        OK = OK and await self.send_setting(body)
-                return OK
+                        await self.send_setting(body)
+                return
 
             body = [
                 {
@@ -2463,16 +2393,13 @@ class Host:
                 }
             ]
             body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
-            return await self.send_setting(body)
+            await self.send_setting(body)
+            return
 
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
         if self._recording_settings is None or channel not in self._recording_settings or not self._recording_settings[channel]:
-            _LOGGER.error(
-                "Recording on camera %s is not available.",
-                self.camera_name(channel),
-            )
-            return False
+            raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
 
         if self._api_version_getrec == 0:
             body = [
@@ -2493,31 +2420,29 @@ class Host:
             ]
             body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
 
-            return await self.send_setting(body)
+            await self.send_setting(body)
 
-    async def set_motion_detection(self, channel: int, enable: bool) -> bool:
+    async def set_motion_detection(self, channel: int, enable: bool) -> None:
         """Set the motion detection parameter."""
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_motion_detection: no camera connected to channel '{channel}'")
         if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
-            _LOGGER.error("Alarm on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
         body = [{"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_sensitivity(self, channel: int, value: int, preset=None) -> bool:
+    async def set_sensitivity(self, channel: int, value: int, preset=None) -> None:
         """Set motion detection sensitivity.
         Here the camera web and windows application show a completely different value than set.
         So the calculation <51 - value> makes the "real" value.
         """
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_sensitivity: no camera connected to channel '{channel}'")
         if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
-            _LOGGER.error("Alarm on camera %s is not available.", self.camera_name(channel))
-            return False
+            raise NotSupportedError(f"set_sensitivity: alarm on camera {self.camera_name(channel)} is not available")
 
         body = [
             {
@@ -2536,9 +2461,9 @@ class Host:
             if preset is None or preset == setting["id"]:
                 setting["sensitivity"] = int(51 - value)
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
-    async def set_ptz_command(self, channel: int, command, preset=None, speed=None) -> bool:
+    async def set_ptz_command(self, channel: int, command, preset=None, speed=None) -> None:
         """Send PTZ command to the camera.
 
         List of possible commands
@@ -2563,7 +2488,7 @@ class Host:
         """
 
         if channel not in self._channels:
-            return False
+            raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
         body = [
             {
                 "cmd": "PtzCtrl",
@@ -2577,7 +2502,7 @@ class Host:
         if preset:
             body[0]["param"]["id"] = preset
 
-        return await self.send_setting(body)
+        await self.send_setting(body)
 
     async def request_vod_files(
         self,
@@ -2674,7 +2599,7 @@ class Host:
 
         return None, None
 
-    async def send_setting(self, body: dict) -> bool:
+    async def send_setting(self, body: dict) -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(
             'Sending command: "%s" to: %s:%s with body: %s',
@@ -2686,43 +2611,23 @@ class Host:
 
         try:
             json_data = await self.send(body, {"cmd": command}, expected_content_type="json")
-        except InvalidContentTypeError:
-            _LOGGER.error(
-                'Host %s:%s: error translating command "%s" response.',
-                self._host,
-                self._port,
-                command,
-            )
-            return False
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError(f"Command '{command}': {str(err)}") from err
         if json_data is None:
-            _LOGGER.error(
-                'Host %s:%s: error receiving response for command "%s".',
-                self._host,
-                self._port,
-                command,
-            )
-            return False
+            raise NoDataError(f"Host: {self._host}:{self._port}: error receiving response for command '{command}'")
 
-        _LOGGER.debug("Response from %s:%s: %s", self._host, self._port, json_data)
+        _LOGGER.debug("Response from cmd '%s' from %s:%s: %s", command, self._host, self._port, json_data)
 
         try:
-            if json_data[0]["code"] == 0 and json_data[0]["value"]["rspCode"] == 200:
-                if command[:3] == "Set":
-                    getcmd = command.replace("Set", "Get")
-                    await self.get_state(cmd=getcmd)
-                return True
-        except KeyError as e:
-            _LOGGER.error(
-                'Host %s:%s: received an unexpected response from command "%s": %s',
-                self._host,
-                self._port,
-                command,
-                e,
-            )
-            return False
+            if json_data[0]["code"] != 0 or json_data[0]["value"]["rspCode"] != 200:
+                _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
+                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {json_data[0]['value']['rspCode']}/{json_data[0]['value'].get('detail', '')}")
+        except KeyError as err:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
 
-        _LOGGER.error('Host %s:%s: command "%s" error, response: %s', self._host, self._port, command, json_data)
-        return False
+        if command[:3] == "Set":
+            getcmd = command.replace("Set", "Get")
+            await self.get_state(cmd=getcmd)
 
     async def send(
         self,
@@ -2812,7 +2717,7 @@ class Host:
                 return await self.send(body, param, expected_content_type, True)
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
-                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}.")
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
 
             if expected_content_type == "json":
                 try:
