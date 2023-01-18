@@ -1888,7 +1888,7 @@ class Host:
         focus (int) 0..223"""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_focus: no camera connected to channel '{channel}'")
-        if not focus in range(0, 223):
+        if focus not in range(0, 223):
             raise InvalidParameterError(f"set_focus: focus value {focus} not in range 0..223")
 
         body = [
@@ -1916,7 +1916,7 @@ class Host:
         zoom (int) 0..33"""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_zoom: no camera connected to channel '{channel}'")
-        if not zoom in range(0, 33):
+        if zoom not in range(0, 33):
             raise InvalidParameterError(f"set_zoom: zoom value {zoom} not in range 0..33")
 
         body = [
@@ -2870,8 +2870,6 @@ class Host:
             _LOGGER.error("Host %s:%s: connection error: %s.", self._host, self._port, str(e))
         except asyncio.TimeoutError:
             _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
-        except:
-            _LOGGER.error("Host %s:%s: unknown exception occurred.", self._host, self._port)
 
     async def subscribe(self, webhook_url: str, retry: bool = False) -> bool:
         """Subscribe to ONVIF events."""
