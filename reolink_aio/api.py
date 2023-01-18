@@ -1,4 +1,5 @@
 """ Reolink NVR/camera network API """
+from __future__ import annotations
 
 import asyncio
 import base64
@@ -1158,6 +1159,40 @@ class Host:
 
         self.map_channels_json_response(json_data, channels)
         return True
+
+    async def check_new_firmware(self) -> str:
+        """check for new firmware."""
+        body = [{"cmd": "CheckFirmware"}]
+
+        try:
+            json_data = await self.send(body, expected_content_type="json")
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
+        if json_data is None:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response")
+
+        return json_data[0]["newFirmware"]
+
+    async def update_firmware(self) -> bool:
+        """check for new firmware."""
+        body = [{"cmd": "UpgradeOnline"}]
+        return await self.send_setting(body)
+
+    async def update_progress(self) -> bool | int:
+        """check progress of firmware update, returns False if not in progress."""
+        body = [{"cmd": "UpgradeStatus"}]
+
+        try:
+            json_data = await self.send(body, expected_content_type="json")
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError(f"Update progress: {str(err)}") from err
+        if json_data is None:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response")
+
+        if json_data[0]["code"] != 0:
+            return False
+
+        return json_data[0]["value"]["Status"]["Persent"]
 
     async def get_snapshot(self, channel: int) -> Optional[list]:
         """Get the still image."""
