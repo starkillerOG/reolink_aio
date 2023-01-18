@@ -2,11 +2,9 @@
 reports=no
 
 disable=
-  line-too-long,
   invalid-name,
-  protected-access,
   broad-except,
-  bare-except,
+  protected-access,
   abstract-method,
   missing-function-docstring,
   duplicate-code,
@@ -21,6 +19,11 @@ disable=
   too-many-return-statements,
   too-many-statements,
   too-many-boolean-expressions,
+
+[FORMAT]
+
+# Maximum number of characters on a single line.
+max-line-length=175
 
 [EXCEPTIONS]
 overgeneral-exceptions=Exception

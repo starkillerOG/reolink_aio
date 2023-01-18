@@ -1320,12 +1320,11 @@ class Host:
 
         if self._is_nvr:
             # NVR VoDs "type=0": Adobe flv
-            # return "video/x-flv", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=0&start={filename}&seek=0&user={self._username}&password={self._password}"
             # NVR VoDs "type=1": mp4
-            # return "video/mp4", f"http://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}"
             return (
                 "application/x-mpegURL",
-                f"{http_s}://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}&type=1&start={filename}&seek=0&user={self._username}&password={self._password}",
+                f"{http_s}://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
+                f"&type=1&start={filename}&seek=0&user={self._username}&password={self._password}",
             )
 
         if external_url:
@@ -1439,7 +1438,9 @@ class Host:
 
                         if self._is_nvr:
                             _LOGGER.warning(
-                                'Your %s NVR doesn\'t support the "Getchannelstatus" command. Probably you need to update your firmware.\nNo way to recognize active channels, all %s channels will be considered "active" as a result.',
+                                "Your %s NVR doesn't support the 'Getchannelstatus' command. "
+                                "Probably you need to update your firmware.\n"
+                                "No way to recognize active channels, all %s channels will be considered 'active' as a result",
                                 self._nvr_name,
                                 self._nvr_num_channels,
                             )
@@ -2624,7 +2625,8 @@ class Host:
             if json_data[0]["code"] != 0 or json_data[0]["value"]["rspCode"] != 200:
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
                 raise ApiError(
-                    f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {json_data[0]['value']['rspCode']}/{json_data[0]['value'].get('detail', '')}"
+                    f"cmd '{command}': API returned error code {json_data[0]['code']}, "
+                    f"response code {json_data[0]['value']['rspCode']}/{json_data[0]['value'].get('detail', '')}"
                 )
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
