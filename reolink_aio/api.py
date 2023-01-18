@@ -817,9 +817,9 @@ class Host:
             try:
                 json_data = await self.send(body, expected_content_type="json")
             except InvalidContentTypeError:
-                raise InvalidContentTypeError(f"get_state cmd '{body[0]["cmd"]}': {str(err)}") from err
+                raise InvalidContentTypeError(f"get_state cmd '{body[0]['cmd']}': {str(err)}") from err
             if json_data is None:
-                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]["cmd"]}'")
+                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'")
 
             if channels:
                 self.map_channels_json_response(json_data, channels)
@@ -1797,7 +1797,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_ntp(self, enable:bool=None, server:str=None, port:int=None, interval:int=None) -> None:
+    async def set_ntp(self, enable: bool = None, server: str = None, port: int = None, interval: int = None) -> None:
         """
         Set NTP parameters on the host (NVR or camera).
         Arguments:
@@ -2248,7 +2248,9 @@ class Host:
             or (endhour == starthour and endmin < startmin)
             or (not (endhour < 12 and starthour > 16) and (endhour < starthour))
         ):
-            raise InvalidParameterError(f"set_spotlight_lighting_schedule: Parameter error on camera {self.camera_name(channel)} start time: {starthour}:{startmin}, end time: {endhour}:{endmin}}")
+            raise InvalidParameterError(
+                f"set_spotlight_lighting_schedule: Parameter error on camera {self.camera_name(channel)} start time: {starthour}:{startmin}, end time: {endhour}:{endmin}"
+            )
 
         body = [
             {
@@ -2621,7 +2623,9 @@ class Host:
         try:
             if json_data[0]["code"] != 0 or json_data[0]["value"]["rspCode"] != 200:
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
-                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {json_data[0]['value']['rspCode']}/{json_data[0]['value'].get('detail', '')}")
+                raise ApiError(
+                    f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {json_data[0]['value']['rspCode']}/{json_data[0]['value'].get('detail', '')}"
+                )
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
 
@@ -2887,7 +2891,7 @@ class Host:
         if response is None:
             if not retry:
                 await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry = True)
+                return await self.subscribe(webhook_url, retry=True)
             _LOGGER.error("Host %s:%s: failed to subscribe, None response.", self._host, self._port)
             return False
         root = XML.fromstring(response)
@@ -2896,7 +2900,7 @@ class Host:
         if address_element is None:
             if not retry:
                 await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry = True)
+                return await self.subscribe(webhook_url, retry=True)
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
             return False
         self._subscription_manager_url = address_element.text
@@ -2904,7 +2908,7 @@ class Host:
         if self._subscription_manager_url is None:
             if not retry:
                 await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry = True)
+                return await self.subscribe(webhook_url, retry=True)
             _LOGGER.error(
                 "Host %s:%s: failed to subscribe. Required response parameters not available.",
                 self._host,
@@ -2916,7 +2920,7 @@ class Host:
         if current_time_element is None:
             if not retry:
                 await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry = True)
+                return await self.subscribe(webhook_url, retry=True)
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
             return False
         remote_time = await self.convert_time(current_time_element.text)
@@ -2924,7 +2928,7 @@ class Host:
         if remote_time is None:
             if not retry:
                 await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry = True)
+                return await self.subscribe(webhook_url, retry=True)
             _LOGGER.error(
                 "Host %s:%s: failed to subscribe. Required response parameters not available.",
                 self._host,
@@ -2938,7 +2942,7 @@ class Host:
         if termination_time_element is None:
             if not retry:
                 await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry = True)
+                return await self.subscribe(webhook_url, retry=True)
             _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
             return False
         self._subscription_termination_time = await self.convert_time(termination_time_element.text) - timedelta(seconds=self._subscription_time_difference)
@@ -2946,7 +2950,7 @@ class Host:
         if self._subscription_termination_time is None:
             if not retry:
                 await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry = True)
+                return await self.subscribe(webhook_url, retry=True)
             _LOGGER.error(
                 "Host %s:%s: failed to subscribe. Required response parameters not available.",
                 self._host,
@@ -3096,7 +3100,7 @@ class Host:
         found_event = False
 
         root = XML.fromstring(data)
-        for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):            
+        for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
             channel = None
 
             # find NotificationMessage Rule (type of event)
@@ -3135,9 +3139,9 @@ class Host:
                 # Channel has no camera connected, ignoring this notification
                 continue
 
-            key = 'State'
+            key = "State"
             if rule == "Motion":
-                key = 'IsMotion'
+                key = "IsMotion"
             data_element = message.find(f".//\u007bhttp://www.onvif.org/ver10/schema\u007dSimpleItem[@Name='{key}']")
             if data_element is None or "Value" not in data_element.attrib:
                 if f"ONVIF_{rule}_no_data" not in self._log_once:
