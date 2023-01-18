@@ -1162,8 +1162,8 @@ class Host:
         self.map_channels_json_response(json_data, channels)
         return True
 
-    async def check_new_firmware(self) -> str:
-        """check for new firmware."""
+    async def check_new_firmware(self) -> bool | str:
+        """check for new firmware, returns False if no new firmware available."""
         body = [{"cmd": "CheckFirmware"}]
 
         try:
@@ -1173,7 +1173,11 @@ class Host:
         if json_data is None:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response")
 
-        return json_data[0]["newFirmware"]
+        new_firmware = json_data[0]["value"]["newFirmware"]
+        if new_firmware == 0:
+            return False
+
+        return json_data[0]["value"]["newFirmware"]
 
     async def update_firmware(self) -> bool:
         """check for new firmware."""
