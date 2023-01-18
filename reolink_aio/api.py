@@ -816,7 +816,7 @@ class Host:
         if body:
             try:
                 json_data = await self.send(body, expected_content_type="json")
-            except InvalidContentTypeError:
+            except InvalidContentTypeError as err:
                 raise InvalidContentTypeError(f"get_state cmd '{body[0]['cmd']}': {str(err)}") from err
             if json_data is None:
                 raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'")
