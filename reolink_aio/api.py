@@ -1673,7 +1673,7 @@ class Host:
                     response_channel = data["value"]["WhiteLed"]["channel"]
                     self._whiteled_settings[channel] = data["value"]
                     self._whiteled_enabled[channel] = data["value"]["WhiteLed"]["state"] == 1
-                    self._whiteled_modes[channel] = data["value"]["WhiteLed"].get["mode"]
+                    self._whiteled_modes[channel] = data["value"]["WhiteLed"].get("mode")
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
