@@ -18,9 +18,19 @@ from xml.etree import ElementTree as XML
 import aiohttp
 
 from . import templates, typings
-from .exceptions import ApiError, CredentialsInvalidError, InvalidContentTypeError, ReolinkError, NoDataError, UnexpectedDataError, InvalidParameterError, NotSupportedError, LoginError
+from .exceptions import (
+    ApiError,
+    CredentialsInvalidError,
+    InvalidContentTypeError,
+    ReolinkError,
+    NoDataError,
+    UnexpectedDataError,
+    InvalidParameterError,
+    NotSupportedError,
+    LoginError,
+)
 from .software_version import SoftwareVersion
-from. typings import reolink_json
+from .typings import reolink_json
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
@@ -535,10 +545,10 @@ class Host:
     async def login(self) -> None:
         if self._port is None or self._use_https is None:
             await self._login_try_ports()
-            return #succes
+            return  # succes
 
         if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
-            return #succes
+            return  # succes
 
         await self._login_mutex.acquire()
 
@@ -552,7 +562,7 @@ class Host:
                 self._username,
             )
 
-            body:reolink_json = [
+            body: reolink_json = [
                 {
                     "cmd": "Login",
                     "action": 0,
@@ -599,7 +609,7 @@ class Host:
             # Looks like some devices fail with not-logged-in if subsequent command sent with no delay, not sure 100% though...
             # I've seen RLC-520A failed with 0.5s, but did not try to set more. Need to gather some more logging data from users...
             # asyncio.sleep(0.5)
-            return #succes
+            return  # succes
         finally:
             self._login_mutex.release()
 
@@ -625,7 +635,7 @@ class Host:
         try:
             if self._token:
                 param = {"cmd": "Logout"}
-                await self.send(body, param, expected_response_type = "json")
+                await self.send(body, param, expected_response_type="json")
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
             # Thus it is not available for now to exit the previous "stuck" sessions after sudden crash or power failure:
@@ -2612,7 +2622,8 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"],
         retry: bool = False,
-    ) -> reolink_json: ...
+    ) -> reolink_json:
+        ...
 
     @overload
     async def send(
@@ -2621,7 +2632,8 @@ class Host:
         param: Optional[dict[str, Any]],
         expected_response_type: Literal["image/jpeg"],
         retry: bool = False,
-    ) -> bytes: ...
+    ) -> bytes:
+        ...
 
     @overload
     async def send(
@@ -2630,7 +2642,8 @@ class Host:
         *,
         expected_response_type: Literal["json"],
         retry: bool = False,
-    ) -> reolink_json: ...
+    ) -> reolink_json:
+        ...
 
     @overload
     async def send(
@@ -2639,7 +2652,8 @@ class Host:
         *,
         expected_response_type: Literal["image/jpeg"],
         retry: bool = False,
-    ) -> bytes: ...
+    ) -> bytes:
+        ...
 
     async def send(
         self,
@@ -2717,7 +2731,7 @@ class Host:
                     self.expire_session()
                     return await self.send(body, param, expected_response_type, True)
 
-            expected_content_type:str = expected_response_type
+            expected_content_type: str = expected_response_type
             if expected_response_type == "json":
                 expected_content_type = "text/html"
             if response.content_type != expected_content_type:
