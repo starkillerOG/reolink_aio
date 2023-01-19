@@ -1,6 +1,8 @@
 """ Typings for type validation and documentation """
 
-from typing import TypedDict
+from typing import Any, TypedDict
+
+reolink_json = list[dict[str, Any]]
 
 SearchStatus = TypedDict("SearchStatus", {"mon": int, "table": str, "year": int})
 

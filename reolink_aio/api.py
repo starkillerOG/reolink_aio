@@ -9,17 +9,28 @@ import logging
 import ssl
 import traceback
 import uuid
-from os.path import basename
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from os.path import basename
+from typing import Any, Literal, Optional, overload
 from urllib import parse
 from xml.etree import ElementTree as XML
 
 import aiohttp
 
 from . import templates, typings
-from .exceptions import ApiError, CredentialsInvalidError, InvalidContentTypeError, ReolinkError, NoDataError, UnexpectedDataError, InvalidParameterError, NotSupportedError
+from .exceptions import (
+    ApiError,
+    CredentialsInvalidError,
+    InvalidContentTypeError,
+    InvalidParameterError,
+    LoginError,
+    NoDataError,
+    NotSupportedError,
+    ReolinkError,
+    UnexpectedDataError,
+)
 from .software_version import SoftwareVersion
+from .typings import reolink_json
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
@@ -76,7 +87,7 @@ class Host:
         self._use_https: Optional[bool] = use_https
         self._host: str = host
         self._external_host: Optional[str] = None
-        self._external_port: Optional[str] = None
+        self._external_port: Optional[int] = None
         self._port: Optional[int] = port
         self._rtsp_port: Optional[int] = None
         self._rtmp_port: Optional[int] = None
@@ -93,13 +104,12 @@ class Host:
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
         # Connection session
-        self._timeout: Optional[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=timeout)
+        self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
+        self._aiohttp_session: aiohttp.ClientSession
         if aiohttp_get_session_callback is not None:
-            self._aiohttp_get_session_callback = aiohttp_get_session_callback
-            self._aiohttp_session: Optional[aiohttp.ClientSession] = None
+            self._aiohttp_session = aiohttp_get_session_callback()
         else:
-            self._aiohttp_session: Optional[aiohttp.ClientSession] = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
-            self._aiohttp_get_session_callback = None
+            self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
 
         ##############################################################################
         # NVR (host-level) attributes
@@ -185,7 +195,7 @@ class Host:
         self._power_led_enabled: dict[int, bool] = {}
         self._doorbell_light_enabled: dict[int, bool] = {}
         self._whiteled_enabled: dict[int, bool] = {}
-        self._whiteled_modes: dict[int, int] = {}
+        self._whiteled_modes: dict[int, int | None] = {}
         self._daynight_state: dict[int, str] = {}
         self._backlight_state: dict[int, str] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
@@ -193,12 +203,12 @@ class Host:
 
         ##############################################################################
         # API-versions of commands
-        self._api_version_getevents: Optional[int] = 0
-        self._api_version_getemail: Optional[int] = None
-        self._api_version_getrec: Optional[int] = None
-        self._api_version_getftp: Optional[int] = None
-        self._api_version_getpush: Optional[int] = None
-        self._api_version_getalarm: Optional[int] = None
+        self._api_version_getevents: int = 0
+        self._api_version_getemail: int = 1
+        self._api_version_getrec: int = 1
+        self._api_version_getftp: int = 1
+        self._api_version_getpush: int = 1
+        self._api_version_getalarm: int = 1
 
         self.refresh_base_url()
 
@@ -210,7 +220,7 @@ class Host:
         self._subscription_termination_time: Optional[datetime] = None
         self._subscription_time_difference: Optional[float] = None
         self._onvif_only_motion = True
-        self._log_once = []
+        self._log_once: list[str] = []
 
     ##############################################################################
     # Properties
@@ -235,11 +245,11 @@ class Host:
         return self._use_https
 
     @property
-    def external_port(self) -> Optional[str]:
+    def external_port(self) -> Optional[int]:
         return self._external_port
 
     @external_port.setter
-    def external_port(self, value: Optional[str]):
+    def external_port(self, value: Optional[int]):
         self._external_port = value
 
     @property
@@ -336,12 +346,12 @@ class Host:
 
     @property
     def session_active(self) -> bool:
-        if self._token is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
+        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
             return True
         return False
 
     @property
-    def timeout(self) -> float:
+    def timeout(self) -> Optional[float]:
         return self._timeout.total
 
     @timeout.setter
@@ -457,7 +467,7 @@ class Host:
         return self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel]
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
-        if self._whiteled_modes is not None and channel in self._whiteled_modes:
+        if channel in self._whiteled_modes:
             return self._whiteled_modes[channel]
 
         return None
@@ -532,16 +542,17 @@ class Host:
         else:
             self._url = f"http://{self._host}:{self._port}/cgi-bin/api.cgi"
 
-    async def login(self) -> bool:
+    async def login(self) -> None:
         if self._port is None or self._use_https is None:
-            return await self._login_try_ports()
+            await self._login_try_ports()
+            return  # succes
+
+        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
+            return  # succes
 
         await self._login_mutex.acquire()
 
         try:
-            if self._token is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
-                return True
-
             await self.logout(True)  # Ensure there would be no "max session" error
 
             _LOGGER.debug(
@@ -551,7 +562,7 @@ class Host:
                 self._username,
             )
 
-            body = [
+            body: reolink_json = [
                 {
                     "cmd": "Login",
                     "action": 0,
@@ -566,68 +577,54 @@ class Host:
             param = {"cmd": "Login"}
 
             try:
-                json_data = await self.send(body, param, expected_content_type="json")
-            except ApiError:
-                return False
-            except aiohttp.ClientConnectorError:
-                return False
-            except InvalidContentTypeError:
-                _LOGGER.error(
-                    "Host %s:%s: error translating login response.",
-                    self._host,
-                    self._port,
-                )
-                return False
-            if json_data is None:
-                _LOGGER.error(
-                    "Host: %s:%s: error receiving Reolink login response.",
-                    self._host,
-                    self._port,
-                )
-                return False
+                json_data = await self.send(body, param, expected_response_type="json")
+            except ApiError as err:
+                raise LoginError(f"API error during login of host {self._host}:{self._port}: {str(err)}") from err
+            except aiohttp.ClientConnectorError as err:
+                raise LoginError(f"Client connector error during login of host {self._host}:{self._port}: {str(err)}") from err
+            except InvalidContentTypeError as err:
+                raise LoginError(f"Invalid content error during login of host {self._host}:{self._port}: {str(err)}") from err
+            except NoDataError as err:
+                raise LoginError(f"Error receiving Reolink login response of host {self._host}:{self._port}") from err
 
             _LOGGER.debug("Got login response from %s:%s: %s", self._host, self._port, json_data)
 
-            if json_data is not None:
-                try:
-                    if json_data[0]["code"] == 0:
-                        self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
-                        self._token = str(json_data[0]["value"]["Token"]["name"])
+            try:
+                if json_data[0]["code"] != 0:
+                    raise LoginError(f"API returned error code {json_data[0]['code']} during login of host {self._host}:{self._port}")
 
-                        _LOGGER.debug(
-                            "Logged in at host %s:%s. Leasetime %s, token %s",
-                            self._host,
-                            self._port,
-                            self._lease_time.strftime("%d-%m-%Y %H:%M"),
-                            self._token,
-                        )
-                        # Looks like some devices fail with not-logged-in if subsequent command sent with no delay, not sure 100% though...
-                        # I've seen RLC-520A failed with 0.5s, but did not try to set more. Need to gather some more logging data from users...
-                        # asyncio.sleep(0.5)
-                        return True
-                except Exception:
-                    _LOGGER.error(
-                        "Host %s:%s: login error, unknown response format.",
-                        self._host,
-                        self._port,
-                    )
-                    self.clear_token()
-                    return False
+                self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
+                self._token = str(json_data[0]["value"]["Token"]["name"])
+            except Exception as err:
+                self.clear_token()
+                raise LoginError(f"Login error, unknown response format from host {self._host}:{self._port}: {json_data}") from err
 
-            _LOGGER.error("Failed to login at host %s:%s.", self._host, self._port)
-            return False
+            _LOGGER.debug(
+                "Logged in at host %s:%s. Leasetime %s, token %s",
+                self._host,
+                self._port,
+                self._lease_time.strftime("%d-%m-%Y %H:%M"),
+                self._token,
+            )
+            # Looks like some devices fail with not-logged-in if subsequent command sent with no delay, not sure 100% though...
+            # I've seen RLC-520A failed with 0.5s, but did not try to set more. Need to gather some more logging data from users...
+            # asyncio.sleep(0.5)
+            return  # succes
         finally:
             self._login_mutex.release()
 
-    async def _login_try_ports(self) -> bool:
+    async def _login_try_ports(self) -> None:
         self._port = 443
         self.enable_https(True)
-        if await self.login():
-            return True
+        try:
+            await self.login()
+            return
+        except LoginError:
+            pass
 
         self._port = 80
         self.enable_https(False)
-        return await self.login()
+        await self.login()
 
     async def logout(self, mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
@@ -638,7 +635,7 @@ class Host:
         try:
             if self._token:
                 param = {"cmd": "Logout"}
-                await self.send(body, param)
+                await self.send(body, param, expected_response_type="json")
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
             # Thus it is not available for now to exit the previous "stuck" sessions after sudden crash or power failure:
@@ -648,7 +645,7 @@ class Host:
             # else:
             #     body  = [{"cmd": "Logout", "action": 0, "param": {"User": {"userName": self._username, "password": self._password}}}]
             #     param = {"cmd": "Logout"}
-            #     await self.send(body, param)
+            #     await self.send(body, param, expected_response_type = "json")
 
             self.clear_token()
             if self._aiohttp_session is not None:
@@ -815,11 +812,11 @@ class Host:
 
         if body:
             try:
-                json_data = await self.send(body, expected_content_type="json")
+                json_data = await self.send(body, expected_response_type="json")
             except InvalidContentTypeError as err:
                 raise InvalidContentTypeError(f"get_state cmd '{body[0]['cmd']}': {str(err)}") from err
-            if json_data is None:
-                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'")
+            except NoDataError as err:
+                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'") from err
 
             if channels:
                 self.map_channels_json_response(json_data, channels)
@@ -893,17 +890,17 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"channel-state: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response") from err
 
         self.map_channels_json_response(json_data, channels)
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
-        body = [
+        body: reolink_json = [
             {"cmd": "Getchannelstatus"},
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
             {"cmd": "GetLocalLink", "action": 0, "param": {}},
@@ -920,11 +917,11 @@ class Host:
         ]
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Get host-settings error: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings") from err
 
         self.map_host_json_response(json_data)
 
@@ -962,11 +959,11 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
 
         self.map_channels_json_response(json_data, channels)
 
@@ -1009,7 +1006,7 @@ class Host:
         body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 "Host %s:%s: error translating motion detection state response for channel %s.",
@@ -1019,7 +1016,7 @@ class Host:
             )
             self._motion_detection_states[channel] = False
             return False
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining motion state response for channel %s.",
                 self._host,
@@ -1040,7 +1037,7 @@ class Host:
         body = [{"cmd": "GetAiState", "action": 0, "param": {"channel": channel}}]
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 "Host %s:%s: error translating AI detection state response for channel %s.",
@@ -1050,7 +1047,7 @@ class Host:
             )
             self._ai_detection_states[channel] = {}
             return None
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining AI detection state response for channel %s.",
                 self._host,
@@ -1082,7 +1079,7 @@ class Host:
             ]
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 "Host %s:%s: error translating All Motion States response for channel %s.",
@@ -1093,7 +1090,7 @@ class Host:
             self._motion_detection_states[channel] = False
             self._ai_detection_states[channel] = {}
             return False
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining All Motion States response for channel %s.",
                 self._host,
@@ -1124,7 +1121,7 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as e:
             _LOGGER.error(
                 "Host %s:%s: error translating All Motion States response: %s",
@@ -1136,7 +1133,7 @@ class Host:
                 self._motion_detection_states[channel] = False
                 self._ai_detection_states[channel] = {}
             return False
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining All Motion States response.",
                 self._host,
@@ -1155,11 +1152,11 @@ class Host:
         body = [{"cmd": "CheckFirmware"}]
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
 
         new_firmware = json_data[0]["value"]["newFirmware"]
         if new_firmware == 0:
@@ -1177,25 +1174,25 @@ class Host:
         body = [{"cmd": "UpgradeStatus"}]
 
         try:
-            json_data = await self.send(body, expected_content_type="json")
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Update progress: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response") from err
 
         if json_data[0]["code"] != 0:
             return False
 
         return json_data[0]["value"]["Status"]["Persent"]
 
-    async def get_snapshot(self, channel: int) -> Optional[list]:
+    async def get_snapshot(self, channel: int) -> bytes | None:
         """Get the still image."""
         if channel not in self._channels:
             return None
 
-        param = {"cmd": "Snap", "channel": channel}
+        param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
 
-        response = await self.send(None, param, expected_content_type="image/jpeg")
+        response = await self.send(None, param, expected_response_type="image/jpeg")
         if response is None or response == b"":
             _LOGGER.error(
                 "Host: %s:%s: error obtaining still image response for channel %s.",
@@ -1266,13 +1263,15 @@ class Host:
         encoding = stream_enc.get("vType", "")
 
         password = parse.quote(self._password)
-        channel = f"{channel + 1:02d}"
+        channel_str = f"{channel + 1:02d}"
 
-        return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel}_{stream}"
+        return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
 
     async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         """Return the stream source url."""
-        if not await self.login():
+        try:
+            await self.login()
+        except LoginError:
             return None
 
         if stream is None:
@@ -1298,16 +1297,16 @@ class Host:
         """Return the VOD source url."""
         if channel not in self._channels:
             return None, None
-        if not await self.login():
-            return None, None
 
-        host_url: str = None
+        await self.login()
+
+        host_url: str
         if external_url and self._external_host:
             host_url = self._external_host
         else:
             host_url = self._host
 
-        host_port: str = None
+        host_port: int | None
         if external_url and self._external_port:
             host_port = self._external_port
         else:
@@ -1351,7 +1350,7 @@ class Host:
             f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}",
         )
 
-    def map_host_json_response(self, json_data):
+    def map_host_json_response(self, json_data: reolink_json):
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
             try:
@@ -1423,10 +1422,11 @@ class Host:
                     self._is_nvr = dev_info.get("exactType", "CAM") == "NVR"
                     self._nvr_serial = dev_info["serial"]
                     self._nvr_name = dev_info["name"]
-                    self._nvr_model: str = dev_info["model"]
+                    self._nvr_model = dev_info["model"]
                     self._nvr_hw_version = dev_info["hardVer"]
                     self._nvr_sw_version = dev_info["firmVer"]
-                    self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
+                    if self._nvr_sw_version is not None:
+                        self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
 
                     # In case the "GetChannelStatus" command not supported by the device.
                     if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
@@ -1445,7 +1445,7 @@ class Host:
                                 self._nvr_num_channels,
                             )
 
-                        if self._nvr_num_channels > 0:
+                        if self._nvr_num_channels > 0 and self._nvr_model is not None:
                             is_doorbell = "Doorbell" in self._nvr_model
                             for i in range(self._nvr_num_channels):
                                 self._channel_models[i] = self._nvr_model
@@ -1463,7 +1463,7 @@ class Host:
 
                 elif data["cmd"] == "GetNetPort":
                     self._netport_settings = data["value"]
-                    net_port = self._netport_settings["NetPort"]
+                    net_port = data["value"]["NetPort"]
                     self._rtsp_port = net_port["rtspPort"]
                     self._rtmp_port = net_port["rtmpPort"]
                     self._onvif_port = net_port["onvifPort"]
@@ -1495,31 +1495,12 @@ class Host:
                         elif ability == "supportAudioAlarm":
                             self._api_version_getalarm = details["ver"]
 
-                    if self._api_version_getemail is None:
-                        self._api_version_getemail = 1
-
-                    if self._api_version_getpush is None:
-                        self._api_version_getpush = 1
-
                     channel_abilities: list = host_abilities["abilityChn"]
                     for channel in self._channels:
                         self._ptz_support[channel] = channel_abilities[channel]["ptzType"]["ver"]
-                        if self._api_version_getftp is None:
-                            self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": None})["ver"]
-                        if self._api_version_getrec is None:
-                            self._api_version_getrec = channel_abilities[channel].get("recCfg", {"ver": None})["ver"]
-                        if self._api_version_getalarm is None:
-                            self._api_version_getalarm = channel_abilities[channel].get("supportAudioAlarm", {"ver": None})["ver"]
-
-                    # Channel-level in older firmwares?..
-                    if self._api_version_getftp is None:
-                        self._api_version_getftp = 1
-
-                    if self._api_version_getrec is None:
-                        self._api_version_getrec = 1
-
-                    if self._api_version_getalarm is None:
-                        self._api_version_getalarm = 1
+                        self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": 1})["ver"]
+                        self._api_version_getrec = channel_abilities[channel].get("recCfg", {"ver": 1})["ver"]
+                        self._api_version_getalarm = channel_abilities[channel].get("supportAudioAlarm", {"ver": 1})["ver"]
 
             except Exception as e:  # pylint: disable=bare-except
                 _LOGGER.error(
@@ -1570,7 +1551,7 @@ class Host:
                         self._motion_detection_states[channel] = data["value"]["md"]["alarm_state"] == 1
                     if "visitor" in data["value"]:
                         value = data["value"]["visitor"]
-                        supported: bool = value.get("support", 0) == 1
+                        supported = value.get("support", 0) == 1
                         self._visitor_states[channel] = supported and value.get("alarm_state", 0) == 1
                         self._is_doorbell_enabled[channel] = supported
 
@@ -1620,7 +1601,7 @@ class Host:
                             #         }
                             #     }
                             # ]
-                            supported: bool = value.get("support", 0) == 1
+                            supported = value.get("support", 0) == 1
                             self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
 
@@ -1692,7 +1673,7 @@ class Host:
                     response_channel = data["value"]["WhiteLed"]["channel"]
                     self._whiteled_settings[channel] = data["value"]
                     self._whiteled_enabled[channel] = data["value"]["WhiteLed"]["state"] == 1
-                    self._whiteled_modes[channel] = data["value"]["WhiteLed"]["mode"]
+                    self._whiteled_modes[channel] = data["value"]["WhiteLed"].get["mode"]
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
@@ -1740,9 +1721,9 @@ class Host:
 
     async def set_net_port(
         self,
-        enable_onvif: bool = None,
-        enable_rtmp: bool = None,
-        enable_rtsp: bool = None,
+        enable_onvif: bool | None = None,
+        enable_rtmp: bool | None = None,
+        enable_rtsp: bool | None = None,
     ) -> None:
         """Set Network Port parameters on the host (NVR or camera)."""
         if self._netport_settings is None:
@@ -1751,7 +1732,7 @@ class Host:
         if self._netport_settings is None:
             raise NotSupportedError(f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetNetPort", "param": self._netport_settings}]
+        body: reolink_json = [{"cmd": "SetNetPort", "param": self._netport_settings}]
 
         if enable_onvif is not None:
             body[0]["param"]["NetPort"]["onvifEnable"] = 1 if enable_onvif else 0
@@ -1775,7 +1756,7 @@ class Host:
         if self._time_settings is None:
             raise NotSupportedError(f"set_time: failed to retrieve current time settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
+        body: reolink_json = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
 
         if dateFmt is not None:
             if dateFmt in ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY/MM/DD"]:
@@ -1798,7 +1779,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_ntp(self, enable: bool = None, server: str = None, port: int = None, interval: int = None) -> None:
+    async def set_ntp(self, enable: bool | None = None, server: str | None = None, port: int | None = None, interval: int | None = None) -> None:
         """
         Set NTP parameters on the host (NVR or camera).
         Arguments:
@@ -1813,7 +1794,7 @@ class Host:
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
+        body: reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
 
         if enable is not None:
             if enable:
@@ -1834,7 +1815,7 @@ class Host:
         if interval is not None:
             if not isinstance(interval, int):
                 raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, type is not integer")
-            if port < 60 or port > 65535:
+            if interval < 60 or interval > 65535:
                 raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, out of valid range 60...65535")
             body[0]["param"]["Ntp"]["interval"] = interval
 
@@ -1848,7 +1829,7 @@ class Host:
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
+        body: reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
         body[0]["param"]["Ntp"]["interval"] = 0
 
         await self.send_setting(body)
@@ -1862,7 +1843,7 @@ class Host:
         if self._auto_focus_settings is None or channel not in self._auto_focus_settings or not self._auto_focus_settings[channel]:
             raise NotSupportedError(f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: reolink_json = [
             {
                 "cmd": "SetAutoFocus",
                 "action": 0,
@@ -1952,7 +1933,7 @@ class Host:
         if self._osd_settings is None or channel not in self._osd_settings or not self._osd_settings[channel]:
             raise NotSupportedError(f"set_osd: OSD on camera {self.camera_name(channel)} is not available")
 
-        body = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
+        body: reolink_json = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
 
         if namePos is not None:
             if namePos == "Off":
@@ -1989,7 +1970,7 @@ class Host:
     async def set_push(self, channel: Optional[int], enable: bool) -> None:
         """Set the PUSH-notifications parameter."""
 
-        body = None
+        body: reolink_json
         if channel is None:
             if self._api_version_getpush == 0:
                 for c in self._channels:
@@ -2039,7 +2020,7 @@ class Host:
     async def set_ftp(self, channel: Optional[int], enable: bool) -> None:
         """Set the FTP-notifications parameter."""
 
-        body = None
+        body: reolink_json
         if channel is None:
             if self._api_version_getftp == 0:
                 for c in self._channels:
@@ -2081,7 +2062,7 @@ class Host:
         await self.send_setting(body)
 
     async def set_email(self, channel: Optional[int], enable: bool) -> None:
-        body = None
+        body: reolink_json
         if channel is None:
             if self._api_version_getemail == 0:
                 for c in self._channels:
@@ -2140,7 +2121,7 @@ class Host:
         if self._enc_settings is None or channel not in self._enc_settings or not self._enc_settings[channel]:
             raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
-        body = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body: reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
         body[0]["param"]["Enc"]["audio"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -2151,7 +2132,7 @@ class Host:
         if self._ir_settings is None or channel not in self._ir_settings or not self._ir_settings[channel]:
             raise NotSupportedError(f"set_ir_lights: IR light on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: reolink_json = [
             {
                 "cmd": "SetIrLights",
                 "action": 0,
@@ -2168,7 +2149,7 @@ class Host:
         if self._power_led_settings is None or channel not in self._power_led_settings or not self._power_led_settings[channel]:
             raise NotSupportedError(f"set_whiteled: Power led on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: reolink_json = [
             {
                 "cmd": "SetPowerLed",
                 "action": 0,
@@ -2350,7 +2331,7 @@ class Host:
         if value not in ["Auto", "Color", "Black&White"]:
             raise InvalidParameterError(f"set_daynight: value {value} not in ['Auto', 'Color', 'Black&White']")
 
-        body = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
 
         await self.send_setting(body)
@@ -2364,7 +2345,7 @@ class Host:
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
             raise InvalidParameterError(f"set_backlight: value {value} not in ['BackLightControl', 'DynamicRangeControl', 'Off']")
 
-        body = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["backLight"] = value
 
         await self.send_setting(body)
@@ -2372,7 +2353,7 @@ class Host:
     async def set_recording(self, channel: Optional[int], enable: bool) -> None:
         """Set the recording parameter."""
 
-        body = None
+        body: reolink_json
         if channel is None:
             if self._api_version_getrec == 0:
                 for c in self._channels:
@@ -2432,7 +2413,7 @@ class Host:
         if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
             raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
-        body = [{"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}]
+        body: reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -2447,7 +2428,7 @@ class Host:
         if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
             raise NotSupportedError(f"set_sensitivity: alarm on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: reolink_json = [
             {
                 "cmd": "SetAlarm",
                 "action": 0,
@@ -2492,7 +2473,7 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
-        body = [
+        body: reolink_json = [
             {
                 "cmd": "PtzCtrl",
                 "action": 0,
@@ -2514,7 +2495,7 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus], Optional[list[typings.SearchFile]]]:
+    ) -> tuple[list[typings.SearchStatus] | None, list[typings.SearchFile] | None]:
         """Send search VOD-files command."""
         if channel not in self._channels:
             return None, None
@@ -2553,8 +2534,8 @@ class Host:
         ]
 
         try:
-            # json_data = await self.send(body, {"cmd": "Search", "rs": "000000"}, expected_content_type = 'json')
-            json_data = await self.send(body, {"cmd": "Search"}, expected_content_type="json")
+            # json_data = await self.send(body, {"cmd": "Search", "rs": "000000"}, expected_response_type = 'json')
+            json_data = await self.send(body, {"cmd": "Search"}, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 'Host %s:%s: error translating of "Search" command response.',
@@ -2562,7 +2543,7 @@ class Host:
                 self._port,
             )
             return None, None
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 'Host %s:%s: error receiving response for "Search" command.',
                 self._host,
@@ -2602,7 +2583,7 @@ class Host:
 
         return None, None
 
-    async def send_setting(self, body: dict) -> None:
+    async def send_setting(self, body: reolink_json) -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(
             'Sending command: "%s" to: %s:%s with body: %s',
@@ -2613,11 +2594,11 @@ class Host:
         )
 
         try:
-            json_data = await self.send(body, {"cmd": command}, expected_content_type="json")
+            json_data = await self.send(body, {"cmd": command}, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Command '{command}': {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error receiving response for command '{command}'")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error receiving response for command '{command}'") from err
 
         _LOGGER.debug("Response from cmd '%s' from %s:%s: %s", command, self._host, self._port, json_data)
 
@@ -2635,19 +2616,59 @@ class Host:
             getcmd = command.replace("Set", "Get")
             await self.get_state(cmd=getcmd)
 
+    @overload
     async def send(
         self,
-        body: Optional[list],
-        param: Optional[dict] = None,
-        expected_content_type: Optional[str] = None,
+        body: reolink_json | None,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["json"],
         retry: bool = False,
-    ) -> Optional[list]:
+    ) -> reolink_json:
+        ...
+
+    @overload
+    async def send(
+        self,
+        body: Optional[reolink_json],
+        param: Optional[dict[str, Any]],
+        expected_response_type: Literal["image/jpeg"],
+        retry: bool = False,
+    ) -> bytes:
+        ...
+
+    @overload
+    async def send(
+        self,
+        body: reolink_json | None,
+        *,
+        expected_response_type: Literal["json"],
+        retry: bool = False,
+    ) -> reolink_json:
+        ...
+
+    @overload
+    async def send(
+        self,
+        body: reolink_json | None,
+        *,
+        expected_response_type: Literal["image/jpeg"],
+        retry: bool = False,
+    ) -> bytes:
+        ...
+
+    async def send(
+        self,
+        body: Optional[reolink_json],
+        param: Optional[dict[str, Any]] = None,
+        expected_response_type: Literal["json"] | Literal["image/jpeg"] = "json",
+        retry: bool = False,
+    ) -> reolink_json | bytes:
         """Generic send method."""
 
         if self._aiohttp_session is not None and self._aiohttp_session.closed:
             self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
 
-        if body is None:
+        if expected_response_type == "image/jpeg" or body is None:
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
         else:
@@ -2655,8 +2676,7 @@ class Host:
             is_login_logout = cur_command in ["Login", "Logout"]
 
         if not is_login_logout:
-            if not await self.login():
-                return None
+            await self.login()
 
         if not param:
             param = {}
@@ -2667,23 +2687,21 @@ class Host:
 
         try:
             session = self._aiohttp_session
-            if session is None:
-                session = self._aiohttp_get_session_callback()
-
             _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
 
-            if body is None:
+            data: bytes | str
+            if expected_response_type == "image/jpeg":
                 async with self._send_mutex:
                     response = await session.get(url=self._url, params=param, allow_redirects=False)
 
-                data = await response.read()
+                data = await response.read()  # returns bytes
             else:
                 _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
 
                 async with self._send_mutex:
                     response = await session.post(url=self._url, json=body, params=param, allow_redirects=False)
 
-                data = await response.text()
+                data = await response.text()  # returns str
 
             _LOGGER.debug("%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).", self.nvr_name, self._host, self._port, response.status, response.content_type)
             if cur_command == "Search" and len(data) > 500:
@@ -2694,7 +2712,7 @@ class Host:
                 _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, data)
 
             if len(data) < 500 and response.content_type == "text/html":
-                if body is None:
+                if isinstance(data, bytes):
                     login_err = b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'detail" : "please login first' in data
                 else:
                     login_err = (
@@ -2712,33 +2730,40 @@ class Host:
                         self._port,
                     )
                     self.expire_session()
-                    return await self.send(body, param, expected_content_type, True)
+                    return await self.send(body, param, expected_response_type, True)
 
-            if expected_content_type not in [None, "json"] and response.content_type != expected_content_type:
-                raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'.")
+            expected_content_type: str = expected_response_type
+            if expected_response_type == "json":
+                expected_content_type = "text/html"
+            if response.content_type != expected_content_type:
+                raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
             if response.status == 502 and not retry:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
                 self.expire_session()
-                return await self.send(body, param, expected_content_type, True)
+                return await self.send(body, param, expected_response_type, True)
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
 
-            if expected_content_type == "json":
+            if expected_response_type == "json" and isinstance(data, str):
                 try:
                     json_data = json.loads(data)
                 except (TypeError, json.JSONDecodeError) as err:
                     if not retry:
                         _LOGGER.debug("Error translating JSON response: %s, data:\n%s\n", err, response)
                         self.expire_session()
-                        return await self.send(body, param, expected_content_type, True)
+                        return await self.send(body, param, expected_response_type, True)
                     raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from err
                 if json_data is None:
                     self.expire_session()
+                    raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
                 return json_data
 
-            return data
+            if expected_response_type == "image/jpeg" and isinstance(data, bytes):
+                return data
+
+            raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
             self.expire_session()
             _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(err))
@@ -2793,7 +2818,7 @@ class Host:
         except ValueError:
             return None
 
-    async def calc_time_difference(self, local_time, remote_time):
+    async def calc_time_difference(self, local_time, remote_time) -> float:
         """Calculate the time difference between local and remote."""
         return remote_time.timestamp() - local_time.timestamp()
 
@@ -2817,8 +2842,14 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data, logger=True) -> Optional[str]:
+    async def subscription_send(self, headers, data, logger=True) -> str | None:
         """Send subscription data to the camera."""
+        if self._subscribe_url is None:
+            await self.get_host_data()
+
+        if self._subscribe_url is None:
+            raise NotSupportedError(f"subscription_send: failed to retrieve subscribe_url from {self._host}:{self._port}")
+
         try:
             async with aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
                 _LOGGER.debug(
@@ -2862,7 +2893,7 @@ class Host:
                             response.status,
                             response.reason,
                         )
-                    return
+                    return None
 
                 return response_text
 
@@ -2870,6 +2901,7 @@ class Host:
             _LOGGER.error("Host %s:%s: connection error: %s.", self._host, self._port, str(e))
         except asyncio.TimeoutError:
             _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
+        return None
 
     async def subscribe(self, webhook_url: str, retry: bool = False) -> bool:
         """Subscribe to ONVIF events."""
@@ -2943,9 +2975,15 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
+            _LOGGER.error("Host %s:%s: failed to subscribe, could not retrieve TerminationTime.", self._host, self._port)
             return False
-        self._subscription_termination_time = await self.convert_time(termination_time_element.text) - timedelta(seconds=self._subscription_time_difference)
+
+        termination_time = await self.convert_time(termination_time_element.text)
+        if termination_time is None:
+            _LOGGER.error("Host %s:%s: failed to subscribe, could not parse TerminationTime.", self._host, self._port)
+            return False
+
+        self._subscription_termination_time = termination_time - timedelta(seconds=self._subscription_time_difference)
 
         if self._subscription_termination_time is None:
             if not retry:
@@ -3105,7 +3143,7 @@ class Host:
 
             # find NotificationMessage Rule (type of event)
             topic_element = message.find("{http://docs.oasis-open.org/wsn/b-2}Topic[@Dialect='http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet']")
-            if topic_element is None:
+            if topic_element is None or topic_element.text is None:
                 continue
             rule = basename(topic_element.text)
             if not rule:
