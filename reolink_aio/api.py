@@ -93,13 +93,13 @@ class Host:
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
         # Connection session
-        self._timeout: Optional[aiohttp.ClientTimeout] = aiohttp.ClientTimeout(total=timeout)
+        self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
+        self._aiohttp_session: Optional[aiohttp.ClientSession] = None
+        self._aiohttp_get_session_callback = None
         if aiohttp_get_session_callback is not None:
             self._aiohttp_get_session_callback = aiohttp_get_session_callback
-            self._aiohttp_session: Optional[aiohttp.ClientSession] = None
         else:
-            self._aiohttp_session: Optional[aiohttp.ClientSession] = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
-            self._aiohttp_get_session_callback = None
+            self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
 
         ##############################################################################
         # NVR (host-level) attributes
@@ -185,7 +185,7 @@ class Host:
         self._power_led_enabled: dict[int, bool] = {}
         self._doorbell_light_enabled: dict[int, bool] = {}
         self._whiteled_enabled: dict[int, bool] = {}
-        self._whiteled_modes: dict[int, int] = {}
+        self._whiteled_modes: dict[int, int | None] = {}
         self._daynight_state: dict[int, str] = {}
         self._backlight_state: dict[int, str] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
@@ -193,12 +193,12 @@ class Host:
 
         ##############################################################################
         # API-versions of commands
-        self._api_version_getevents: Optional[int] = 0
-        self._api_version_getemail: Optional[int] = None
-        self._api_version_getrec: Optional[int] = None
-        self._api_version_getftp: Optional[int] = None
-        self._api_version_getpush: Optional[int] = None
-        self._api_version_getalarm: Optional[int] = None
+        self._api_version_getevents: int = 0
+        self._api_version_getemail: int = 1
+        self._api_version_getrec: int = 1
+        self._api_version_getftp: int = 1
+        self._api_version_getpush: int = 1
+        self._api_version_getalarm: int = 1
 
         self.refresh_base_url()
 
@@ -210,7 +210,7 @@ class Host:
         self._subscription_termination_time: Optional[datetime] = None
         self._subscription_time_difference: Optional[float] = None
         self._onvif_only_motion = True
-        self._log_once = []
+        self._log_once: list[str] = []
 
     ##############################################################################
     # Properties
@@ -336,12 +336,12 @@ class Host:
 
     @property
     def session_active(self) -> bool:
-        if self._token is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
+        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
             return True
         return False
 
     @property
-    def timeout(self) -> float:
+    def timeout(self) -> Optional[float]:
         return self._timeout.total
 
     @timeout.setter
@@ -457,7 +457,7 @@ class Host:
         return self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel]
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
-        if self._whiteled_modes is not None and channel in self._whiteled_modes:
+        if channel in self._whiteled_modes:
             return self._whiteled_modes[channel]
 
         return None
@@ -539,7 +539,7 @@ class Host:
         await self._login_mutex.acquire()
 
         try:
-            if self._token is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
+            if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
                 return True
 
             await self.logout(True)  # Ensure there would be no "max session" error
@@ -588,31 +588,30 @@ class Host:
 
             _LOGGER.debug("Got login response from %s:%s: %s", self._host, self._port, json_data)
 
-            if json_data is not None:
-                try:
-                    if json_data[0]["code"] == 0:
-                        self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
-                        self._token = str(json_data[0]["value"]["Token"]["name"])
+            try:
+                if json_data[0]["code"] == 0:
+                    self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
+                    self._token = str(json_data[0]["value"]["Token"]["name"])
 
-                        _LOGGER.debug(
-                            "Logged in at host %s:%s. Leasetime %s, token %s",
-                            self._host,
-                            self._port,
-                            self._lease_time.strftime("%d-%m-%Y %H:%M"),
-                            self._token,
-                        )
-                        # Looks like some devices fail with not-logged-in if subsequent command sent with no delay, not sure 100% though...
-                        # I've seen RLC-520A failed with 0.5s, but did not try to set more. Need to gather some more logging data from users...
-                        # asyncio.sleep(0.5)
-                        return True
-                except Exception:
-                    _LOGGER.error(
-                        "Host %s:%s: login error, unknown response format.",
+                    _LOGGER.debug(
+                        "Logged in at host %s:%s. Leasetime %s, token %s",
                         self._host,
                         self._port,
+                        self._lease_time.strftime("%d-%m-%Y %H:%M"),
+                        self._token,
                     )
-                    self.clear_token()
-                    return False
+                    # Looks like some devices fail with not-logged-in if subsequent command sent with no delay, not sure 100% though...
+                    # I've seen RLC-520A failed with 0.5s, but did not try to set more. Need to gather some more logging data from users...
+                    # asyncio.sleep(0.5)
+                    return True
+            except Exception:
+                _LOGGER.error(
+                    "Host %s:%s: login error, unknown response format.",
+                    self._host,
+                    self._port,
+                )
+                self.clear_token()
+                return False
 
             _LOGGER.error("Failed to login at host %s:%s.", self._host, self._port)
             return False
@@ -967,6 +966,7 @@ class Host:
             raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
         if json_data is None:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings")
+        typing.cast(dict, json_data)
 
         self.map_channels_json_response(json_data, channels)
 
@@ -1495,31 +1495,12 @@ class Host:
                         elif ability == "supportAudioAlarm":
                             self._api_version_getalarm = details["ver"]
 
-                    if self._api_version_getemail is None:
-                        self._api_version_getemail = 1
-
-                    if self._api_version_getpush is None:
-                        self._api_version_getpush = 1
-
                     channel_abilities: list = host_abilities["abilityChn"]
                     for channel in self._channels:
                         self._ptz_support[channel] = channel_abilities[channel]["ptzType"]["ver"]
-                        if self._api_version_getftp is None:
-                            self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": None})["ver"]
-                        if self._api_version_getrec is None:
-                            self._api_version_getrec = channel_abilities[channel].get("recCfg", {"ver": None})["ver"]
-                        if self._api_version_getalarm is None:
-                            self._api_version_getalarm = channel_abilities[channel].get("supportAudioAlarm", {"ver": None})["ver"]
-
-                    # Channel-level in older firmwares?..
-                    if self._api_version_getftp is None:
-                        self._api_version_getftp = 1
-
-                    if self._api_version_getrec is None:
-                        self._api_version_getrec = 1
-
-                    if self._api_version_getalarm is None:
-                        self._api_version_getalarm = 1
+                        self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": 1})["ver"]
+                        self._api_version_getrec = channel_abilities[channel].get("recCfg", {"ver": 1})["ver"]
+                        self._api_version_getalarm = channel_abilities[channel].get("supportAudioAlarm", {"ver": 1})["ver"]
 
             except Exception as e:  # pylint: disable=bare-except
                 _LOGGER.error(
@@ -1692,7 +1673,7 @@ class Host:
                     response_channel = data["value"]["WhiteLed"]["channel"]
                     self._whiteled_settings[channel] = data["value"]
                     self._whiteled_enabled[channel] = data["value"]["WhiteLed"]["state"] == 1
-                    self._whiteled_modes[channel] = data["value"]["WhiteLed"]["mode"]
+                    self._whiteled_modes[channel] = data["value"]["WhiteLed"].get["mode"]
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
@@ -1775,7 +1756,7 @@ class Host:
         if self._time_settings is None:
             raise NotSupportedError(f"set_time: failed to retrieve current time settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
+        body: list[dict] = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
 
         if dateFmt is not None:
             if dateFmt in ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY/MM/DD"]:
@@ -1813,7 +1794,7 @@ class Host:
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
+        body: list[dict] = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
 
         if enable is not None:
             if enable:
@@ -1848,7 +1829,7 @@ class Host:
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
+        body: list[dict] = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
         body[0]["param"]["Ntp"]["interval"] = 0
 
         await self.send_setting(body)
@@ -1862,7 +1843,7 @@ class Host:
         if self._auto_focus_settings is None or channel not in self._auto_focus_settings or not self._auto_focus_settings[channel]:
             raise NotSupportedError(f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: list[dict] = [
             {
                 "cmd": "SetAutoFocus",
                 "action": 0,
@@ -1952,7 +1933,7 @@ class Host:
         if self._osd_settings is None or channel not in self._osd_settings or not self._osd_settings[channel]:
             raise NotSupportedError(f"set_osd: OSD on camera {self.camera_name(channel)} is not available")
 
-        body = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
+        body: list[dict] = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
 
         if namePos is not None:
             if namePos == "Off":
@@ -1989,7 +1970,7 @@ class Host:
     async def set_push(self, channel: Optional[int], enable: bool) -> None:
         """Set the PUSH-notifications parameter."""
 
-        body = None
+        body: list[dict]
         if channel is None:
             if self._api_version_getpush == 0:
                 for c in self._channels:
@@ -2039,7 +2020,7 @@ class Host:
     async def set_ftp(self, channel: Optional[int], enable: bool) -> None:
         """Set the FTP-notifications parameter."""
 
-        body = None
+        body: list[dict]
         if channel is None:
             if self._api_version_getftp == 0:
                 for c in self._channels:
@@ -2081,7 +2062,7 @@ class Host:
         await self.send_setting(body)
 
     async def set_email(self, channel: Optional[int], enable: bool) -> None:
-        body = None
+        body: list[dict]
         if channel is None:
             if self._api_version_getemail == 0:
                 for c in self._channels:
@@ -2140,7 +2121,7 @@ class Host:
         if self._enc_settings is None or channel not in self._enc_settings or not self._enc_settings[channel]:
             raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
-        body = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body: list[dict] = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
         body[0]["param"]["Enc"]["audio"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -2151,7 +2132,7 @@ class Host:
         if self._ir_settings is None or channel not in self._ir_settings or not self._ir_settings[channel]:
             raise NotSupportedError(f"set_ir_lights: IR light on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: list[dict] = [
             {
                 "cmd": "SetIrLights",
                 "action": 0,
@@ -2168,7 +2149,7 @@ class Host:
         if self._power_led_settings is None or channel not in self._power_led_settings or not self._power_led_settings[channel]:
             raise NotSupportedError(f"set_whiteled: Power led on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: list[dict] = [
             {
                 "cmd": "SetPowerLed",
                 "action": 0,
@@ -2350,7 +2331,7 @@ class Host:
         if value not in ["Auto", "Color", "Black&White"]:
             raise InvalidParameterError(f"set_daynight: value {value} not in ['Auto', 'Color', 'Black&White']")
 
-        body = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: list[dict] = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
 
         await self.send_setting(body)
@@ -2364,7 +2345,7 @@ class Host:
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
             raise InvalidParameterError(f"set_backlight: value {value} not in ['BackLightControl', 'DynamicRangeControl', 'Off']")
 
-        body = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: list[dict] = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["backLight"] = value
 
         await self.send_setting(body)
@@ -2372,7 +2353,7 @@ class Host:
     async def set_recording(self, channel: Optional[int], enable: bool) -> None:
         """Set the recording parameter."""
 
-        body = None
+        body: list[dict]
         if channel is None:
             if self._api_version_getrec == 0:
                 for c in self._channels:
@@ -2432,7 +2413,7 @@ class Host:
         if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
             raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
-        body = [{"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}]
+        body: list[dict] = [{"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -2447,7 +2428,7 @@ class Host:
         if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
             raise NotSupportedError(f"set_sensitivity: alarm on camera {self.camera_name(channel)} is not available")
 
-        body = [
+        body: list[dict] = [
             {
                 "cmd": "SetAlarm",
                 "action": 0,
@@ -2492,7 +2473,7 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
-        body = [
+        body: list[dict] = [
             {
                 "cmd": "PtzCtrl",
                 "action": 0,
@@ -2602,7 +2583,7 @@ class Host:
 
         return None, None
 
-    async def send_setting(self, body: dict) -> None:
+    async def send_setting(self, body: list[dict[str, Any]]) -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(
             'Sending command: "%s" to: %s:%s with body: %s',
@@ -2793,7 +2774,7 @@ class Host:
         except ValueError:
             return None
 
-    async def calc_time_difference(self, local_time, remote_time):
+    async def calc_time_difference(self, local_time, remote_time) -> float:
         """Calculate the time difference between local and remote."""
         return remote_time.timestamp() - local_time.timestamp()
 
