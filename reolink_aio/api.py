@@ -3198,7 +3198,7 @@ class Host:
                 self._onvif_only_motion = False
 
             state = data_element.attrib["Value"] == "true"
-            _LOGGER.info("Reolink ONVIF event %s: %s", rule, state)
+            _LOGGER.info("Reolink ONVIF event channel %s, %s: %s", channel, rule, state)
 
             if rule == "Motion":
                 self._motion_detection_states[channel] = state
