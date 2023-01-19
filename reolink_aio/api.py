@@ -11,7 +11,7 @@ import traceback
 import uuid
 from os.path import basename
 from datetime import datetime, timedelta
-from typing import Any, Optional, overload
+from typing import Any, Optional, overload, Literal
 from urllib import parse
 from xml.etree import ElementTree as XML
 
@@ -77,7 +77,7 @@ class Host:
         self._use_https: Optional[bool] = use_https
         self._host: str = host
         self._external_host: Optional[str] = None
-        self._external_port: Optional[str] = None
+        self._external_port: Optional[int] = None
         self._port: Optional[int] = port
         self._rtsp_port: Optional[int] = None
         self._rtmp_port: Optional[int] = None
@@ -95,10 +95,9 @@ class Host:
         self._lease_time: Optional[datetime] = None
         # Connection session
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
-        self._aiohttp_session: Optional[aiohttp.ClientSession] = None
-        self._aiohttp_get_session_callback = None
+        self._aiohttp_session: aiohttp.ClientSession
         if aiohttp_get_session_callback is not None:
-            self._aiohttp_get_session_callback = aiohttp_get_session_callback
+            self._aiohttp_session = aiohttp_get_session_callback()
         else:
             self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
 
@@ -236,11 +235,11 @@ class Host:
         return self._use_https
 
     @property
-    def external_port(self) -> Optional[str]:
+    def external_port(self) -> Optional[int]:
         return self._external_port
 
     @external_port.setter
-    def external_port(self, value: Optional[str]):
+    def external_port(self, value: Optional[int]):
         self._external_port = value
 
     @property
@@ -568,25 +567,27 @@ class Host:
             param = {"cmd": "Login"}
 
             try:
-                json_data = await self.send(body, param, expected_response_type=reolink_json())
+                json_data = await self.send(body, param, expected_response_type="json")
             except ApiError as err:
                 raise LoginError(f"API error during login of host {self._host}:{self._port}: {str(err)}") from err
             except aiohttp.ClientConnectorError as err:
                 raise LoginError(f"Client connector error during login of host {self._host}:{self._port}: {str(err)}") from err
             except InvalidContentTypeError as err:
                 raise LoginError(f"Invalid content error during login of host {self._host}:{self._port}: {str(err)}") from err
-            if json_data is None:
-                raise LoginError(f"Error receiving Reolink login response of host {self._host}:{self._port}")
+            except NoDataError as err:
+                raise LoginError(f"Error receiving Reolink login response of host {self._host}:{self._port}") from err
 
             _LOGGER.debug("Got login response from %s:%s: %s", self._host, self._port, json_data)
 
             try:
-                if json_data[0]["code"] == 0:
-                    self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
-                    self._token = str(json_data[0]["value"]["Token"]["name"])
-            except Exception:
+                if json_data[0]["code"] != 0:
+                    raise LoginError(f"API returned error code {json_data[0]['code']} during login of host {self._host}:{self._port}")
+
+                self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
+                self._token = str(json_data[0]["value"]["Token"]["name"])
+            except Exception as err:
                 self.clear_token()
-                raise LoginError(f"Login error, unknown response format from host {self._host}:{self._port}: {json_data}")
+                raise LoginError(f"Login error, unknown response format from host {self._host}:{self._port}: {json_data}") from err
 
             _LOGGER.debug(
                 "Logged in at host %s:%s. Leasetime %s, token %s",
@@ -624,7 +625,7 @@ class Host:
         try:
             if self._token:
                 param = {"cmd": "Logout"}
-                await self.send(body, param, expected_content_type = "json")
+                await self.send(body, param, expected_response_type = "json")
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
             # Thus it is not available for now to exit the previous "stuck" sessions after sudden crash or power failure:
@@ -634,7 +635,7 @@ class Host:
             # else:
             #     body  = [{"cmd": "Logout", "action": 0, "param": {"User": {"userName": self._username, "password": self._password}}}]
             #     param = {"cmd": "Logout"}
-            #     await self.send(body, param, expected_content_type = "json")
+            #     await self.send(body, param, expected_response_type = "json")
 
             self.clear_token()
             if self._aiohttp_session is not None:
@@ -801,11 +802,11 @@ class Host:
 
         if body:
             try:
-                json_data = await self.send(body, expected_response_type=reolink_json())
+                json_data = await self.send(body, expected_response_type="json")
             except InvalidContentTypeError as err:
                 raise InvalidContentTypeError(f"get_state cmd '{body[0]['cmd']}': {str(err)}") from err
-            if json_data is None:
-                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'")
+            except NoDataError as err:
+                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'") from err
 
             if channels:
                 self.map_channels_json_response(json_data, channels)
@@ -879,11 +880,11 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"channel-state: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response") from err
 
         self.map_channels_json_response(json_data, channels)
 
@@ -906,11 +907,11 @@ class Host:
         ]
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Get host-settings error: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings") from err
 
         self.map_host_json_response(json_data)
 
@@ -948,11 +949,11 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
 
         self.map_channels_json_response(json_data, channels)
 
@@ -995,7 +996,7 @@ class Host:
         body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 "Host %s:%s: error translating motion detection state response for channel %s.",
@@ -1005,7 +1006,7 @@ class Host:
             )
             self._motion_detection_states[channel] = False
             return False
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining motion state response for channel %s.",
                 self._host,
@@ -1026,7 +1027,7 @@ class Host:
         body = [{"cmd": "GetAiState", "action": 0, "param": {"channel": channel}}]
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 "Host %s:%s: error translating AI detection state response for channel %s.",
@@ -1036,7 +1037,7 @@ class Host:
             )
             self._ai_detection_states[channel] = {}
             return None
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining AI detection state response for channel %s.",
                 self._host,
@@ -1068,7 +1069,7 @@ class Host:
             ]
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 "Host %s:%s: error translating All Motion States response for channel %s.",
@@ -1079,7 +1080,7 @@ class Host:
             self._motion_detection_states[channel] = False
             self._ai_detection_states[channel] = {}
             return False
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining All Motion States response for channel %s.",
                 self._host,
@@ -1110,7 +1111,7 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as e:
             _LOGGER.error(
                 "Host %s:%s: error translating All Motion States response: %s",
@@ -1122,7 +1123,7 @@ class Host:
                 self._motion_detection_states[channel] = False
                 self._ai_detection_states[channel] = {}
             return False
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 "Host %s:%s: error obtaining All Motion States response.",
                 self._host,
@@ -1141,11 +1142,11 @@ class Host:
         body = [{"cmd": "CheckFirmware"}]
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
 
         new_firmware = json_data[0]["value"]["newFirmware"]
         if new_firmware == 0:
@@ -1163,25 +1164,25 @@ class Host:
         body = [{"cmd": "UpgradeStatus"}]
 
         try:
-            json_data = await self.send(body, expected_response_type=reolink_json())
+            json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Update progress: {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response") from err
 
         if json_data[0]["code"] != 0:
             return False
 
         return json_data[0]["value"]["Status"]["Persent"]
 
-    async def get_snapshot(self, channel: int) -> Optional[list]:
+    async def get_snapshot(self, channel: int) -> bytes | None:
         """Get the still image."""
         if channel not in self._channels:
             return None
 
-        param = {"cmd": "Snap", "channel": channel}
+        param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
 
-        response = await self.send(None, param, expected_response_type=bytes())
+        response = await self.send(None, param, expected_response_type="image/jpeg")
         if response is None or response == b"":
             _LOGGER.error(
                 "Host: %s:%s: error obtaining still image response for channel %s.",
@@ -1252,9 +1253,9 @@ class Host:
         encoding = stream_enc.get("vType", "")
 
         password = parse.quote(self._password)
-        channel = f"{channel + 1:02d}"
+        channel_str = f"{channel + 1:02d}"
 
-        return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel}_{stream}"
+        return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
 
     async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         """Return the stream source url."""
@@ -1289,13 +1290,13 @@ class Host:
 
         await self.login()
 
-        host_url: str = None
+        host_url: str
         if external_url and self._external_host:
             host_url = self._external_host
         else:
             host_url = self._host
 
-        host_port: str = None
+        host_port: int | None
         if external_url and self._external_port:
             host_port = self._external_port
         else:
@@ -1539,7 +1540,7 @@ class Host:
                         self._motion_detection_states[channel] = data["value"]["md"]["alarm_state"] == 1
                     if "visitor" in data["value"]:
                         value = data["value"]["visitor"]
-                        supported: bool = value.get("support", 0) == 1
+                        supported = value.get("support", 0) == 1
                         self._visitor_states[channel] = supported and value.get("alarm_state", 0) == 1
                         self._is_doorbell_enabled[channel] = supported
 
@@ -1589,7 +1590,7 @@ class Host:
                             #         }
                             #     }
                             # ]
-                            supported: bool = value.get("support", 0) == 1
+                            supported = value.get("support", 0) == 1
                             self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
 
@@ -1720,7 +1721,7 @@ class Host:
         if self._netport_settings is None:
             raise NotSupportedError(f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}")
 
-        body = [{"cmd": "SetNetPort", "param": self._netport_settings}]
+        body: reolink_json = [{"cmd": "SetNetPort", "param": self._netport_settings}]
 
         if enable_onvif is not None:
             body[0]["param"]["NetPort"]["onvifEnable"] = 1 if enable_onvif else 0
@@ -1803,7 +1804,7 @@ class Host:
         if interval is not None:
             if not isinstance(interval, int):
                 raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, type is not integer")
-            if port < 60 or port > 65535:
+            if interval < 60 or interval > 65535:
                 raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, out of valid range 60...65535")
             body[0]["param"]["Ntp"]["interval"] = interval
 
@@ -2483,7 +2484,7 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus], Optional[list[typings.SearchFile]]]:
+    ) -> tuple[list[typings.SearchStatus] | None, list[typings.SearchFile] | None]:
         """Send search VOD-files command."""
         if channel not in self._channels:
             return None, None
@@ -2522,8 +2523,8 @@ class Host:
         ]
 
         try:
-            # json_data = await self.send(body, {"cmd": "Search", "rs": "000000"}, expected_content_type = 'json')
-            json_data = await self.send(body, {"cmd": "Search"}, expected_response_type=reolink_json())
+            # json_data = await self.send(body, {"cmd": "Search", "rs": "000000"}, expected_response_type = 'json')
+            json_data = await self.send(body, {"cmd": "Search"}, expected_response_type="json")
         except InvalidContentTypeError:
             _LOGGER.error(
                 'Host %s:%s: error translating of "Search" command response.',
@@ -2531,7 +2532,7 @@ class Host:
                 self._port,
             )
             return None, None
-        if json_data is None:
+        except NoDataError:
             _LOGGER.error(
                 'Host %s:%s: error receiving response for "Search" command.',
                 self._host,
@@ -2582,11 +2583,11 @@ class Host:
         )
 
         try:
-            json_data = await self.send(body, {"cmd": command}, expected_response_type=reolink_json())
+            json_data = await self.send(body, {"cmd": command}, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Command '{command}': {str(err)}") from err
-        if json_data is None:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error receiving response for command '{command}'")
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error receiving response for command '{command}'") from err
 
         _LOGGER.debug("Response from cmd '%s' from %s:%s: %s", command, self._host, self._port, json_data)
 
@@ -2607,18 +2608,36 @@ class Host:
     @overload
     async def send(
         self,
-        body: Optional[reolink_json],
-        param: Optional[dict[str, Any]] = None,
-        expected_response_type: reolink_json = reolink_json(),
+        body: reolink_json | None,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["json"],
         retry: bool = False,
-    ) -> reolink_json | None: ...
+    ) -> reolink_json: ...
 
     @overload
     async def send(
         self,
         body: Optional[reolink_json],
-        param: Optional[dict[str, Any]] = None,
-        expected_response_type: bytes = bytes(),
+        param: Optional[dict[str, Any]],
+        expected_response_type: Literal["image/jpeg"],
+        retry: bool = False,
+    ) -> bytes: ...
+
+    @overload
+    async def send(
+        self,
+        body: reolink_json | None,
+        *,
+        expected_response_type: Literal["json"],
+        retry: bool = False,
+    ) -> reolink_json: ...
+
+    @overload
+    async def send(
+        self,
+        body: reolink_json | None,
+        *,
+        expected_response_type: Literal["image/jpeg"],
         retry: bool = False,
     ) -> bytes: ...
 
@@ -2626,15 +2645,15 @@ class Host:
         self,
         body: Optional[reolink_json],
         param: Optional[dict[str, Any]] = None,
-        expected_response_type: reolink_json | bytes = reolink_json(),
+        expected_response_type: Literal["json"] | Literal["image/jpeg"] = "json",
         retry: bool = False,
-    ) -> reolink_json | bytes | None:
+    ) -> reolink_json | bytes:
         """Generic send method."""
 
         if self._aiohttp_session is not None and self._aiohttp_session.closed:
             self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
 
-        if body is None:
+        if expected_response_type == "image/jpeg" or body is None:
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
         else:
@@ -2653,12 +2672,10 @@ class Host:
 
         try:
             session = self._aiohttp_session
-            if session is None:
-                session = self._aiohttp_get_session_callback()
-
             _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
 
-            if body is None:
+            data: bytes | str
+            if expected_response_type == "image/jpeg":
                 async with self._send_mutex:
                     response = await session.get(url=self._url, params=param, allow_redirects=False)
 
@@ -2680,7 +2697,7 @@ class Host:
                 _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, data)
 
             if len(data) < 500 and response.content_type == "text/html":
-                if body is None:
+                if isinstance(data, bytes):
                     login_err = b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'detail" : "please login first' in data
                 else:
                     login_err = (
@@ -2700,9 +2717,9 @@ class Host:
                     self.expire_session()
                     return await self.send(body, param, expected_response_type, True)
 
-            expected_content_type = "text/html"
-            if expected_response_type == bytes():
-                expected_content_type = "image/jpeg"
+            expected_content_type:str = expected_response_type
+            if expected_response_type == "json":
+                expected_content_type = "text/html"
             if response.content_type != expected_content_type:
                 raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
@@ -2714,7 +2731,7 @@ class Host:
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
 
-            if expected_response_type == reolink_json():
+            if expected_response_type == "json" and isinstance(data, str):
                 try:
                     json_data = json.loads(data)
                 except (TypeError, json.JSONDecodeError) as err:
@@ -2725,9 +2742,13 @@ class Host:
                     raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from err
                 if json_data is None:
                     self.expire_session()
+                    raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
                 return json_data
 
-            return data
+            if expected_response_type == "image/jpeg" and isinstance(data, bytes):
+                return data
+
+            raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
             self.expire_session()
             _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(err))
@@ -2806,8 +2827,14 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data, logger=True) -> Optional[str]:
+    async def subscription_send(self, headers, data, logger=True) -> str | None:
         """Send subscription data to the camera."""
+        if self._subscribe_url is None:
+            await self.get_host_data()
+
+        if self._subscribe_url is None:
+            raise NotSupportedError(f"subscription_send: failed to retrieve subscribe_url from {self._host}:{self._port}")
+
         try:
             async with aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
                 _LOGGER.debug(
@@ -2851,7 +2878,7 @@ class Host:
                             response.status,
                             response.reason,
                         )
-                    return
+                    return None
 
                 return response_text
 
@@ -2859,6 +2886,7 @@ class Host:
             _LOGGER.error("Host %s:%s: connection error: %s.", self._host, self._port, str(e))
         except asyncio.TimeoutError:
             _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
+        return None
 
     async def subscribe(self, webhook_url: str, retry: bool = False) -> bool:
         """Subscribe to ONVIF events."""
@@ -2932,9 +2960,15 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
+            _LOGGER.error("Host %s:%s: failed to subscribe, could not retrieve TerminationTime.", self._host, self._port)
             return False
-        self._subscription_termination_time = await self.convert_time(termination_time_element.text) - timedelta(seconds=self._subscription_time_difference)
+
+        termination_time = await self.convert_time(termination_time_element.text)
+        if termination_time is None:
+            _LOGGER.error("Host %s:%s: failed to subscribe, could not parse TerminationTime.", self._host, self._port)
+            return False
+
+        self._subscription_termination_time = termination_time - timedelta(seconds=self._subscription_time_difference)
 
         if self._subscription_termination_time is None:
             if not retry:
@@ -3094,7 +3128,7 @@ class Host:
 
             # find NotificationMessage Rule (type of event)
             topic_element = message.find("{http://docs.oasis-open.org/wsn/b-2}Topic[@Dialect='http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet']")
-            if topic_element is None:
+            if topic_element is None or topic_element.text is None:
                 continue
             rule = basename(topic_element.text)
             if not rule:
