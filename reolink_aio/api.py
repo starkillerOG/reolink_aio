@@ -1350,7 +1350,7 @@ class Host:
             f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}",
         )
 
-    def map_host_json_response(self, json_data):
+    def map_host_json_response(self, json_data: reolink_json):
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
             try:
@@ -1422,10 +1422,11 @@ class Host:
                     self._is_nvr = dev_info.get("exactType", "CAM") == "NVR"
                     self._nvr_serial = dev_info["serial"]
                     self._nvr_name = dev_info["name"]
-                    self._nvr_model: str = dev_info["model"]
+                    self._nvr_model = dev_info["model"]
                     self._nvr_hw_version = dev_info["hardVer"]
                     self._nvr_sw_version = dev_info["firmVer"]
-                    self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
+                    if self._nvr_sw_version is not None:
+                        self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
 
                     # In case the "GetChannelStatus" command not supported by the device.
                     if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
@@ -1444,7 +1445,7 @@ class Host:
                                 self._nvr_num_channels,
                             )
 
-                        if self._nvr_num_channels > 0:
+                        if self._nvr_num_channels > 0 and self._nvr_model is not None:
                             is_doorbell = "Doorbell" in self._nvr_model
                             for i in range(self._nvr_num_channels):
                                 self._channel_models[i] = self._nvr_model
@@ -1462,7 +1463,7 @@ class Host:
 
                 elif data["cmd"] == "GetNetPort":
                     self._netport_settings = data["value"]
-                    net_port = self._netport_settings["NetPort"]
+                    net_port = data["value"]["NetPort"]
                     self._rtsp_port = net_port["rtspPort"]
                     self._rtmp_port = net_port["rtmpPort"]
                     self._onvif_port = net_port["onvifPort"]
@@ -1720,9 +1721,9 @@ class Host:
 
     async def set_net_port(
         self,
-        enable_onvif: bool = None,
-        enable_rtmp: bool = None,
-        enable_rtsp: bool = None,
+        enable_onvif: bool | None = None,
+        enable_rtmp: bool | None = None,
+        enable_rtsp: bool | None = None,
     ) -> None:
         """Set Network Port parameters on the host (NVR or camera)."""
         if self._netport_settings is None:
@@ -1778,7 +1779,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_ntp(self, enable: bool = None, server: str = None, port: int = None, interval: int = None) -> None:
+    async def set_ntp(self, enable: bool | None = None, server: str | None = None, port: int | None = None, interval: int | None = None) -> None:
         """
         Set NTP parameters on the host (NVR or camera).
         Arguments:
