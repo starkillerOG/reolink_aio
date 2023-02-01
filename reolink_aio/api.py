@@ -2802,10 +2802,7 @@ class Host:
             return -1
 
         diff = self._subscription_termination_time - datetime.utcnow()
-        diff_s = int(diff.total_seconds())
-        _LOGGER.debug("Host %s:%s should renew in: %i seconds...", self._host, self._port, diff_s)
-
-        return diff_s
+        return int(diff.total_seconds())
 
     @property
     def subscribed(self) -> bool:
@@ -2924,7 +2921,7 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, None response")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, None response")
         root = XML.fromstring(response)
 
         address_element = root.find(".//{http://www.w3.org/2005/08/addressing}Address")
@@ -2932,28 +2929,28 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, could not find subscription manager url")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, could not find subscription manager url")
         self._subscription_manager_url = address_element.text
 
         if self._subscription_manager_url is None:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, subscription manager url not available")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, subscription manager url not available")
 
         current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, could not find CurrentTime")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, could not find CurrentTime")
         remote_time = await self.convert_time(current_time_element.text)
 
         if remote_time is None:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, CurrentTime not available")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, CurrentTime not available")
 
         self._subscription_time_difference = await self.calc_time_difference(local_time, remote_time)
 
@@ -2962,11 +2959,11 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, could not find TerminationTime")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, could not find TerminationTime")
 
         termination_time = await self.convert_time(termination_time_element.text)
         if termination_time is None:
-            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, TerminationTime not available")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, TerminationTime not available")
 
         self._subscription_termination_time = termination_time - timedelta(seconds=self._subscription_time_difference)
 
@@ -2980,12 +2977,10 @@ class Host:
 
         return
 
-    async def renew(self) -> bool:
+    async def renew(self):
         """Renew the ONVIF event subscription."""
-
         if not self.subscribed:
-            _LOGGER.error("Host %s:%s: failed to renew, not previously subscribed.", self._host, self._port)
-            return False
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, not previously subscribed")
 
         headers = templates.HEADERS
         headers.update(templates.RENEW_ACTION)
@@ -3004,24 +2999,18 @@ class Host:
         response = await self.subscription_send(headers, xml)
         if response is None:
             await self.unsubscribe_all()
-            return False
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, None response")
         root = XML.fromstring(response)
 
         current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             await self.unsubscribe_all()
-            _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
-            return False
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, could not find CurrentTime")
         remote_time = await self.convert_time(current_time_element.text)
 
         if remote_time is None:
             await self.unsubscribe_all()
-            _LOGGER.error(
-                "Host %s:%s: failed to renew subscription. Unexpected response.",
-                self._host,
-                self._port,
-            )
-            return False
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, CurrentTime not available")
 
         self._subscription_time_difference = await self.calc_time_difference(local_time, remote_time)
 
@@ -3038,22 +3027,17 @@ class Host:
 
         if self._subscription_termination_time is None:
             await self.unsubscribe_all()
-            _LOGGER.error(
-                "Host %s:%s: failed to renew subscription. Unexpected response.",
-                self._host,
-                self._port,
-            )
-            return False
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, unexpected response")
 
         _LOGGER.debug(
-            "Local time: %s, camera time: %s (difference: %s), termination time: %s",
+            "Renewed subscription successfully, local time: %s, camera time: %s (difference: %s), termination time: %s",
             local_time.strftime("%Y-%m-%d %H:%M"),
             remote_time.strftime("%Y-%m-%d %H:%M"),
             self._subscription_time_difference,
             self._subscription_termination_time.strftime("%Y-%m-%d %H:%M"),
         )
 
-        return True
+        return
 
     async def unsubscribe(self):
         """Unsubscribe from ONVIF events."""
