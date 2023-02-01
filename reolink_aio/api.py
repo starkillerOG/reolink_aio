@@ -77,7 +77,6 @@ class Host:
         rtmp_auth_method: str = DEFAULT_RTMP_AUTH_METHOD,
         aiohttp_get_session_callback=None,
     ):
-
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
 

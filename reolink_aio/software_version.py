@@ -1,6 +1,7 @@
 """Reolink NVR/camera API."""
 
 import re
+from .exceptions import UnexpectedDataError
 
 version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_([0-9]+)")
 
@@ -24,7 +25,7 @@ class SoftwareVersion:
         match = version_regex.match(version_string)
 
         if match is None:
-            raise Exception(f"version_string has invalid version format: {version_string}")
+            raise UnexpectedDataError(f"version_string has invalid version format: {version_string}")
 
         self.major = int(match.group("major"))
         self.middle = int(match.group("middle"))
