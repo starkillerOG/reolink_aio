@@ -27,6 +27,7 @@ from .exceptions import (
     NoDataError,
     NotSupportedError,
     ReolinkError,
+    SubscriptionError,
     UnexpectedDataError,
 )
 from .software_version import SoftwareVersion
@@ -2902,7 +2903,7 @@ class Host:
             _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
         return None
 
-    async def subscribe(self, webhook_url: str, retry: bool = False) -> bool:
+    async def subscribe(self, webhook_url: str, retry: bool = False):
         """Subscribe to ONVIF events."""
         headers = templates.HEADERS
         headers.update(templates.SUBSCRIBE_ACTION)
@@ -2923,8 +2924,7 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error("Host %s:%s: failed to subscribe, None response.", self._host, self._port)
-            return False
+            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, None response")
         root = XML.fromstring(response)
 
         address_element = root.find(".//{http://www.w3.org/2005/08/addressing}Address")
@@ -2932,40 +2932,28 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
-            return False
+            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, could not find subscription manager url")
         self._subscription_manager_url = address_element.text
 
         if self._subscription_manager_url is None:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error(
-                "Host %s:%s: failed to subscribe. Required response parameters not available.",
-                self._host,
-                self._port,
-            )
-            return False
+            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, subscription manager url not available")
 
         current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
-            return False
+            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, could not find CurrentTime")
         remote_time = await self.convert_time(current_time_element.text)
 
         if remote_time is None:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error(
-                "Host %s:%s: failed to subscribe. Required response parameters not available.",
-                self._host,
-                self._port,
-            )
-            return False
+            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, CurrentTime not available")
 
         self._subscription_time_difference = await self.calc_time_difference(local_time, remote_time)
 
@@ -2974,26 +2962,13 @@ class Host:
             if not retry:
                 await self.unsubscribe_all()
                 return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error("Host %s:%s: failed to subscribe, could not retrieve TerminationTime.", self._host, self._port)
-            return False
+            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, could not find TerminationTime")
 
         termination_time = await self.convert_time(termination_time_element.text)
         if termination_time is None:
-            _LOGGER.error("Host %s:%s: failed to subscribe, could not parse TerminationTime.", self._host, self._port)
-            return False
+            raise SubscriptionError("Host {self._host}:{self._port}: failed to subscribe, TerminationTime not available")
 
         self._subscription_termination_time = termination_time - timedelta(seconds=self._subscription_time_difference)
-
-        if self._subscription_termination_time is None:
-            if not retry:
-                await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry=True)
-            _LOGGER.error(
-                "Host %s:%s: failed to subscribe. Required response parameters not available.",
-                self._host,
-                self._port,
-            )
-            return False
 
         _LOGGER.debug(
             "Local time: %s, camera time: %s (difference: %s), termination time: %s",
@@ -3003,7 +2978,7 @@ class Host:
             self._subscription_termination_time.strftime("%Y-%m-%d %H:%M"),
         )
 
-        return True
+        return
 
     async def renew(self) -> bool:
         """Renew the ONVIF event subscription."""

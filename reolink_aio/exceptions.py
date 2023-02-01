@@ -35,3 +35,7 @@ class InvalidParameterError(ReolinkError):
 
 class NotSupportedError(ReolinkError):
     """Raised when a function is called with invalid parameters"""
+
+
+class SubscriptionError(ReolinkError):
+    """Raised when a function is called with invalid parameters"""
