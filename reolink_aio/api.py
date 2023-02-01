@@ -1144,7 +1144,10 @@ class Host:
 
     async def check_new_firmware(self) -> bool | str:
         """check for new firmware, returns False if no new firmware available."""
-        body = [{"cmd": "CheckFirmware"}]
+        body: reolink_json = [
+            {"cmd": "CheckFirmware"},
+            {"cmd": "GetDevInfo", "action": 0, "param": {}},
+        ]
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -1152,6 +1155,8 @@ class Host:
             raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
+
+        self.map_host_json_response(json_data)
 
         new_firmware = json_data[0]["value"]["newFirmware"]
         if new_firmware == 0:
