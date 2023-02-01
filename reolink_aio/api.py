@@ -105,11 +105,11 @@ class Host:
         self._lease_time: Optional[datetime] = None
         # Connection session
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
-        self._aiohttp_session: aiohttp.ClientSession
         if aiohttp_get_session_callback is not None:
-            self._aiohttp_session = aiohttp_get_session_callback()
+            self._get_aiohttp_session = aiohttp_get_session_callback
         else:
-            self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
+            self._get_aiohttp_session = lambda: aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
+        self._aiohttp_session: aiohttp.ClientSession = self._get_aiohttp_session()
 
         ##############################################################################
         # NVR (host-level) attributes
@@ -354,10 +354,6 @@ class Host:
     def timeout(self) -> Optional[float]:
         return self._timeout.total
 
-    @timeout.setter
-    def timeout(self, value: float):
-        self._timeout = aiohttp.ClientTimeout(total=value)
-
     @property
     def user_level(self) -> str:
         """Check if the user has admin authorisation."""
@@ -553,7 +549,7 @@ class Host:
         await self._login_mutex.acquire()
 
         try:
-            await self.logout(True)  # Ensure there would be no "max session" error
+            await self.logout(login_mutex_owned=True)  # Ensure there would be no "max session" error
 
             _LOGGER.debug(
                 "Host %s:%s, trying to login with user %s...",
@@ -626,10 +622,10 @@ class Host:
         self.enable_https(False)
         await self.login()
 
-    async def logout(self, mutex_owned=False):
+    async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
 
-        if not mutex_owned:
+        if not login_mutex_owned:
             await self._login_mutex.acquire()
 
         try:
@@ -648,10 +644,10 @@ class Host:
             #     await self.send(body, param, expected_response_type = "json")
 
             self.clear_token()
-            if self._aiohttp_session is not None:
+            if not login_mutex_owned:
                 await self._aiohttp_session.close()
         finally:
-            if not mutex_owned:
+            if not login_mutex_owned:
                 self._login_mutex.release()
 
     def expire_session(self):
@@ -2665,9 +2661,6 @@ class Host:
     ) -> reolink_json | bytes:
         """Generic send method."""
 
-        if self._aiohttp_session is not None and self._aiohttp_session.closed:
-            self._aiohttp_session = aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
-
         if expected_response_type == "image/jpeg" or body is None:
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
@@ -2685,21 +2678,23 @@ class Host:
         elif self._token is not None:
             param["token"] = self._token
 
-        try:
-            session = self._aiohttp_session
-            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
+        _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
 
+        if self._aiohttp_session.closed:
+            self._aiohttp_session = self._get_aiohttp_session()
+
+        try:
             data: bytes | str
             if expected_response_type == "image/jpeg":
                 async with self._send_mutex:
-                    response = await session.get(url=self._url, params=param, allow_redirects=False)
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
 
                 data = await response.read()  # returns bytes
             else:
                 _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
 
                 async with self._send_mutex:
-                    response = await session.post(url=self._url, json=body, params=param, allow_redirects=False)
+                    response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
 
                 data = await response.text()  # returns str
 
