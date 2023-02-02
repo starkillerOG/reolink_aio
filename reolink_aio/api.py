@@ -158,6 +158,7 @@ class Host:
         self._netport_settings: Optional[dict] = None
         # Camera-level
         self._zoom_focus_settings: dict[int, dict] = {}
+        self._zoom_focus_range: dict[int, dict] = {}
         self._auto_focus_settings: dict[int, dict] = {}
         self._isp_settings: dict[int, dict] = {}
         self._ftp_settings: dict[int, dict] = {}
@@ -520,6 +521,9 @@ class Host:
 
     def zoom_supported(self, channel: int) -> bool:
         return channel in self._ptz_support and self._ptz_support[channel] in [1, 2, 5]
+
+    def zoom_range(self, channel: int) -> dict:
+        return self._zoom_focus_range[channel]
 
     def pan_tilt_supported(self, channel: int) -> bool:
         return channel in self._ptz_support and self._ptz_support[channel] in [2, 3, 5]
@@ -933,6 +937,9 @@ class Host:
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
             ]
+            # checking range
+            if self.zoom_supported(channel):
+                ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
             # checking API versions (because Reolink dev quality sucks big time we cannot fully trust GetAbility)
             if self._api_version_getemail >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
@@ -1712,6 +1719,8 @@ class Host:
 
                 elif data["cmd"] == "GetZoomFocus":
                     self._zoom_focus_settings[channel] = data["value"]
+                    if "range" in data:
+                        self._zoom_focus_range[channel] = data["range"]["ZoomFocus"]
 
             except Exception as e:
                 _LOGGER.error(
@@ -1865,7 +1874,7 @@ class Host:
         """Get absolute focus value."""
         if channel not in self._channels:
             raise InvalidParameterError(f"get_focus: no camera connected to channel '{channel}'")
-        if self._zoom_focus_settings is None or channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
+        if channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
             raise NotSupportedError(f"get_focus: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["focus"]["pos"]
@@ -1876,8 +1885,12 @@ class Host:
         focus (int) 0..223"""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_focus: no camera connected to channel '{channel}'")
-        if focus not in range(0, 223):
-            raise InvalidParameterError(f"set_focus: focus value {focus} not in range 0..223")
+        if not self.zoom_supported(channel):
+            raise NotSupportedError(f"set_focus: not supported by camera {self.camera_name(channel)}")
+        min_focus = self.zoom_range(channel)["focus"]["pos"]["min"]
+        max_focus = self.zoom_range(channel)["focus"]["pos"]["max"]
+        if focus not in range(min_focus, max_focus):
+            raise InvalidParameterError(f"set_focus: focus value {focus} not in range {min_focus}..{max_focus}")
 
         body = [
             {
@@ -1893,7 +1906,7 @@ class Host:
         """Get absolute zoom value."""
         if channel not in self._channels:
             raise InvalidParameterError(f"get_zoom: no camera connected to channel '{channel}'")
-        if self._zoom_focus_settings is None or channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
+        if channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
             raise NotSupportedError(f"get_zoom: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["zoom"]["pos"]
@@ -1904,8 +1917,12 @@ class Host:
         zoom (int) 0..33"""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_zoom: no camera connected to channel '{channel}'")
-        if zoom not in range(0, 33):
-            raise InvalidParameterError(f"set_zoom: zoom value {zoom} not in range 0..33")
+        if not self.zoom_supported(channel):
+            raise NotSupportedError(f"set_zoom: not supported by camera {self.camera_name(channel)}")
+        min_zoom = self.zoom_range(channel)["zoom"]["pos"]["min"]
+        max_zoom = self.zoom_range(channel)["focus"]["pos"]["max"]
+        if zoom not in range(min_zoom, max_zoom):
+            raise InvalidParameterError(f"set_zoom: zoom value {zoom} not in range {min_zoom}..{max_zoom}")
 
         body = [
             {
