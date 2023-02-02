@@ -1879,7 +1879,7 @@ class Host:
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["focus"]["pos"]
 
-    async def set_focus(self, channel: int, focus) -> None:
+    async def set_focus(self, channel: int, focus: int) -> None:
         """Set absolute focus value.
         Parameters:
         focus (int) 0..223"""
@@ -1889,7 +1889,7 @@ class Host:
             raise NotSupportedError(f"set_focus: not supported by camera {self.camera_name(channel)}")
         min_focus = self.zoom_range(channel)["focus"]["pos"]["min"]
         max_focus = self.zoom_range(channel)["focus"]["pos"]["max"]
-        if focus not in range(min_focus, max_focus):
+        if focus not in range(min_focus, max_focus + 1):
             raise InvalidParameterError(f"set_focus: focus value {focus} not in range {min_focus}..{max_focus}")
 
         body = [
@@ -1911,7 +1911,7 @@ class Host:
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["zoom"]["pos"]
 
-    async def set_zoom(self, channel: int, zoom) -> None:
+    async def set_zoom(self, channel: int, zoom: int) -> None:
         """Set absolute zoom value.
         Parameters:
         zoom (int) 0..33"""
@@ -1920,8 +1920,8 @@ class Host:
         if not self.zoom_supported(channel):
             raise NotSupportedError(f"set_zoom: not supported by camera {self.camera_name(channel)}")
         min_zoom = self.zoom_range(channel)["zoom"]["pos"]["min"]
-        max_zoom = self.zoom_range(channel)["focus"]["pos"]["max"]
-        if zoom not in range(min_zoom, max_zoom):
+        max_zoom = self.zoom_range(channel)["zoom"]["pos"]["max"]
+        if zoom not in range(min_zoom, max_zoom + 1):
             raise InvalidParameterError(f"set_zoom: zoom value {zoom} not in range {min_zoom}..{max_zoom}")
 
         body = [
