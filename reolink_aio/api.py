@@ -1258,10 +1258,16 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        stream_enc = self._enc_settings[channel]["Enc"].get(f"{stream}Stream")
-        if stream_enc is None:
-            return None
-        encoding = stream_enc.get("vType", "")
+        encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
+        if encoding is None:
+            _LOGGER.debug(
+                "Host %s:%s rtsp stream: GetRtspUrl unavailable, GetEnc incomplete, falling back to h264 encoding for channel %i, Enc: %s",
+                self._host,
+                self._port,
+                channel,
+                self._enc_settings,
+            )
+            encoding = "h264"
 
         password = parse.quote(self._password)
         channel_str = f"{channel + 1:02d}"
