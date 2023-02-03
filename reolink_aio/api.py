@@ -1247,25 +1247,25 @@ class Host:
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
     async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
-        if stream == "main" and channel in self._rtsp_mainStream:
-            return self._rtsp_mainStream[channel]
-
-        if stream == "sub" and channel in self._rtsp_subStream:
-            return self._rtsp_subStream[channel]
-
-        if not self._enc_settings:
-            try:
-                await self.get_state(cmd="GetEnc")
-            except ReolinkError:
-                return None
-
         if channel not in self._channels:
             return None
 
         if stream is None:
             stream = self._stream
 
+        if not self._enc_settings:
+            try:
+                await self.get_state(cmd="GetEnc")
+            except ReolinkError:
+                pass
+
         encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
+        if encoding is None and stream == "main" and channel in self._rtsp_mainStream:
+            return self._rtsp_mainStream[channel]
+
+        if encoding is None and stream == "sub" and channel in self._rtsp_subStream:
+            return self._rtsp_subStream[channel]
+
         if encoding is None:
             _LOGGER.debug(
                 "Host %s:%s rtsp stream: GetRtspUrl unavailable, GetEnc incomplete, falling back to h264 encoding for channel %i, Enc: %s",
