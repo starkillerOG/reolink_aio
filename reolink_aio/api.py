@@ -654,9 +654,10 @@ class Host:
             if not login_mutex_owned:
                 self._login_mutex.release()
 
-    def expire_session(self):
+    async def expire_session(self):
         if self._lease_time is not None:
             self._lease_time = datetime.now() - timedelta(seconds=5)
+        await self._aiohttp_session.close()
 
     def clear_token(self):
         self._token = None
@@ -1208,7 +1209,7 @@ class Host:
                 self._port,
                 channel,
             )
-            self.expire_session()
+            await self.expire_session()
             return None
 
         return response
@@ -1758,7 +1759,7 @@ class Host:
             body[0]["param"]["NetPort"]["rtspEnable"] = 1 if enable_rtsp else 0
 
         await self.send_setting(body)
-        self.expire_session()  # When changing network port settings, tokens are invalidated.
+        await self.expire_session()  # When changing network port settings, tokens are invalidated.
 
     async def set_time(self, dateFmt=None, hours24=None, tzOffset=None) -> None:
         """Set time on the host (NVR or camera).
@@ -2752,7 +2753,7 @@ class Host:
                         self._host,
                         self._port,
                     )
-                    self.expire_session()
+                    await self.expire_session()
                     return await self.send(body, param, expected_response_type, True)
 
             expected_content_type: str = expected_response_type
@@ -2763,7 +2764,7 @@ class Host:
 
             if response.status == 502 and not retry:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
-                self.expire_session()
+                await self.expire_session()
                 return await self.send(body, param, expected_response_type, True)
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
@@ -2775,11 +2776,11 @@ class Host:
                 except (TypeError, json.JSONDecodeError) as err:
                     if not retry:
                         _LOGGER.debug("Error translating JSON response: %s, data:\n%s\n", err, response)
-                        self.expire_session()
+                        await self.expire_session()
                         return await self.send(body, param, expected_response_type, True)
                     raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from err
                 if json_data is None:
-                    self.expire_session()
+                    await self.expire_session()
                     raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
                 return json_data
 
@@ -2788,11 +2789,11 @@ class Host:
 
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
-            self.expire_session()
+            await self.expire_session()
             _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(err))
             raise err
         except asyncio.TimeoutError as err:
-            self.expire_session()
+            await self.expire_session()
             _LOGGER.error(
                 "Host %s:%s: connection timeout exception. Please check the connection to this host.",
                 self._host,
@@ -2800,19 +2801,19 @@ class Host:
             )
             raise err
         except ApiError as err:
-            self.expire_session()
+            await self.expire_session()
             _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
             raise err
         except CredentialsInvalidError as err:
-            self.expire_session()
+            await self.expire_session()
             _LOGGER.error("Host %s:%s: login attempt failed.", self._host, self._port)
             raise err
         except InvalidContentTypeError as err:
-            self.expire_session()
+            await self.expire_session()
             _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
             raise err
         except Exception as err:
-            self.expire_session()
+            await self.expire_session()
             _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
             raise err
 
