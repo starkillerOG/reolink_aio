@@ -1122,7 +1122,7 @@ class Host:
 
         return None if channel not in self._motion_detection_states else self._motion_detection_states[channel]
 
-    async def get_motion_state_all_ch(self) -> Optional[bool]:
+    async def get_motion_state_all_ch(self) -> bool:
         """Fetch All motions states of all channels at once (regular + AI + visitor)."""
         body = []
         channels = []
@@ -3123,11 +3123,11 @@ class Host:
 
         return True
 
-    async def ONVIF_event_callback(self, data: str) -> int | None:
+    async def ONVIF_event_callback(self, data: str) -> list[int] | None:
         """Handle incoming ONVIF event from the webhook called by the Reolink device."""
         _LOGGER_DATA.debug("ONVIF event callback received payload:\n%s", data)
 
-        found_event = False
+        event_channels: list[int] = []
 
         root = XML.fromstring(data)
         for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
@@ -3185,7 +3185,8 @@ class Host:
                     _LOGGER.warning("ONVIF event with unknown rule: '%s'", rule)
                 continue
 
-            found_event = True
+            if channel not in event_channels:
+                event_channels.append(channel)
             if rule in ["FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
                 self._onvif_only_motion = False
 
@@ -3207,7 +3208,7 @@ class Host:
             elif rule == "Visitor":
                 self._visitor_states[channel] = state
 
-        if not found_event:
+        if not event_channels:
             # ONVIF notification withouth known events
             if "ONVIF_no_known" not in self._log_once:
                 self._log_once.append("ONVIF_no_known")
@@ -3216,7 +3217,7 @@ class Host:
                 _LOGGER.error("Could not poll motion state after receiving ONVIF event without any known events")
             return None
 
-        if self._onvif_only_motion:
+        if self._onvif_only_motion and all([self.ai_supported(ch) for ch in event_channels]):
             # Poll all other states since not all cameras have rich notifications including the specific events
             if "ONVIF_only_motion" not in self._log_once:
                 self._log_once.append("ONVIF_only_motion")
@@ -3225,4 +3226,4 @@ class Host:
                 _LOGGER.error("Could not poll event state after receiving ONVIF event with only motion event")
             return None
 
-        return channel
+        return event_channels
