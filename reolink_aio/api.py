@@ -129,6 +129,8 @@ class Host:
         self._channels: list[int] = []
         self._channel_names: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
+        self._channel_abilities: list # raw response from NVR/camera
+        self._channel_capabilities: dict[int, list[str]] = {}
 
         ##############################################################################
         # Video-stream formats
@@ -140,7 +142,6 @@ class Host:
 
         ##############################################################################
         # Presets
-        self._ptz_support: dict[int, int] = {}
         self._ptz_presets: dict[int, dict] = {}
         self._sensitivity_presets: dict[int, dict] = {}
 
@@ -517,16 +518,16 @@ class Host:
         return {}
 
     def ptz_supported(self, channel: int) -> bool:
-        return channel in self._ptz_support and self._ptz_support[channel] != 0
+        return self.supported(channel, "ptz")
 
     def zoom_supported(self, channel: int) -> bool:
-        return channel in self._ptz_support and self._ptz_support[channel] in [1, 2, 5]
+        return self.supported(channel, "zoom")
 
     def zoom_range(self, channel: int) -> dict:
         return self._zoom_focus_range[channel]
 
     def pan_tilt_supported(self, channel: int) -> bool:
-        return channel in self._ptz_support and self._ptz_support[channel] in [2, 3, 5]
+        return self.supported(channel, "pan_tilt")
 
     def is_doorbell_enabled(self, channel: int) -> bool:
         """Wether or not the camera supports doorbell"""
@@ -663,62 +664,69 @@ class Host:
         self._token = None
         self._lease_time = None
 
-    async def get_switchable_capabilities(self, channel: int) -> list[str]:
-        """Return the capabilities of the NVR/camera that could be switched on/off."""
-        capabilities: list[str] = []
+    def construct_capabilities(self) -> None:
+        """Construct the capabilities list of the NVR/camera."""
+        for channel in self._channels:
+            self._channel_capabilities[channel] = []
 
-        if self._ftp_enabled is not None and channel in self._ftp_enabled and self._ftp_enabled[channel] is not None:
-            capabilities.append("ftp")
+            if self._ftp_enabled is not None and channel in self._ftp_enabled and self._ftp_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("ftp")
 
-        if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
-            capabilities.append("push")
+            if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("push")
 
-        if self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel] is not None:
-            capabilities.append("irLights")
+            if self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("ir_lights")
 
-        if self._power_led_enabled is not None and channel in self._power_led_enabled and self._power_led_enabled[channel] is not None:
-            capabilities.append("powerLed")
+            if self._power_led_enabled is not None and channel in self._power_led_enabled and self._power_led_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("power_led")
 
-        if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
-            capabilities.append("doorbellLight")
+            if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("doorbell_light")
 
-        if self._whiteled_enabled is not None and channel in self._whiteled_enabled and self._whiteled_enabled[channel] is not None:
-            capabilities.append("spotlight")
+            if channel in self._whiteled_enabled:
+                self._channel_capabilities[channel].append("spotlight")
 
-        if self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel] is not None:
-            capabilities.append("siren")
+            if self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("siren")
 
-        if self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel] is not None:
-            capabilities.append("recording")
+            if self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("recording")
 
-        if self._email_enabled is not None and channel in self._email_enabled and self._email_enabled[channel] is not None:
-            capabilities.append("email")
+            if self._email_enabled is not None and channel in self._email_enabled and self._email_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("email")
 
-        if self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel] is not None:
-            capabilities.append("audio")
+            if self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel] is not None:
+                self._channel_capabilities[channel].append("audio")
 
-        if self.ptz_supported(channel):
-            capabilities.append("ptzControl")
-            if self.zoom_supported(channel):
-                capabilities.append("zoomControl")
-            if self.pan_tilt_supported(channel):
-                capabilities.append("ptControl")
-            if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
-                capabilities.append("ptzPresets")
+            ptz_ver = self._channel_abilities[channel]["ptzType"]["ver"]
+            if ptz_ver != 0:
+                self._channel_capabilities[channel].append("ptz")
+                if ptz_ver in [1, 2, 5]:
+                    self._channel_capabilities[channel].append("zoom")
+                if ptz_ver in [2, 3, 5]:
+                    self._channel_capabilities[channel].append("pan_tilt")
+                if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
+                    self._channel_capabilities[channel].append("ptz_presets")
 
-        if self._sensitivity_presets is not None and channel in self._sensitivity_presets and len(self._sensitivity_presets[channel]) != 0:
-            capabilities.append("sensitivityPresets")
+            if self._sensitivity_presets is not None and channel in self._sensitivity_presets and len(self._sensitivity_presets[channel]) != 0:
+                self._channel_capabilities[channel].append("sensitivity_presets")
 
-        if channel in self._motion_detection_states:
-            capabilities.append("motionDetection")
+            if channel in self._motion_detection_states:
+                self._channel_capabilities[channel].append("motion_detection")
 
-        if self._daynight_state is not None and channel in self._daynight_state and self._daynight_state[channel] is not None:
-            capabilities.append("dayNight")
+            if self._daynight_state is not None and channel in self._daynight_state and self._daynight_state[channel] is not None:
+                self._channel_capabilities[channel].append("dayNight")
 
-        if self._backlight_state is not None and channel in self._backlight_state and self._backlight_state[channel] is not None:
-            capabilities.append("backLight")
+            if self._backlight_state is not None and channel in self._backlight_state and self._backlight_state[channel] is not None:
+                self._channel_capabilities[channel].append("backLight")
 
-        return capabilities
+    def supported(self, channel: int, capability: str) -> bool:
+        """Return if a capability is supported by a camera channel."""
+        if channel not in self._channel_capabilities:
+            return False
+
+        return capability in self._channel_capabilities[channel]
 
     async def get_state(self, cmd: str) -> None:
         body = []
@@ -996,6 +1004,8 @@ class Host:
         if self._api_version_getalarm >= 1:
             if not check_command_exists("GetAudioAlarmV20"):
                 self._api_version_getalarm = 0
+
+        self.construct_capabilities()
 
     async def get_motion_state(self, channel: int) -> Optional[bool]:
         if channel not in self._channels:
@@ -1502,12 +1512,11 @@ class Host:
                         elif ability == "supportAudioAlarm":
                             self._api_version_getalarm = details["ver"]
 
-                    channel_abilities: list = host_abilities["abilityChn"]
+                    self._channel_abilities = host_abilities["abilityChn"]
                     for channel in self._channels:
-                        self._ptz_support[channel] = channel_abilities[channel]["ptzType"]["ver"]
-                        self._api_version_getftp = channel_abilities[channel].get("ftp", {"ver": 1})["ver"]
-                        self._api_version_getrec = channel_abilities[channel].get("recCfg", {"ver": 1})["ver"]
-                        self._api_version_getalarm = channel_abilities[channel].get("supportAudioAlarm", {"ver": 1})["ver"]
+                        self._api_version_getftp = self._channel_abilities[channel].get("ftp", {"ver": 1})["ver"]
+                        self._api_version_getrec = self._channel_abilities[channel].get("recCfg", {"ver": 1})["ver"]
+                        self._api_version_getalarm = self._channel_abilities[channel].get("supportAudioAlarm", {"ver": 1})["ver"]
 
             except Exception as e:  # pylint: disable=bare-except
                 _LOGGER.error(
