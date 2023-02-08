@@ -1754,7 +1754,7 @@ class Host:
     ) -> None:
         """Set Network Port parameters on the host (NVR or camera)."""
         if self._netport_settings is None:
-            await self.get_host_data()
+            await self.get_state("GetNetPort")
 
         if self._netport_settings is None:
             raise NotSupportedError(f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}")
@@ -1779,7 +1779,7 @@ class Host:
         tzoffset (int) Timezone offset versus UTC in seconds
 
         Always get current time first"""
-        await self.get_host_data()
+        await self.get_state("GetTime")
         if self._time_settings is None:
             raise NotSupportedError(f"set_time: failed to retrieve current time settings from {self._host}:{self._port}")
 
@@ -1816,7 +1816,7 @@ class Host:
         interval (int) Interval of synchronization in minutes in range of (60-65535)
         """
         if self._ntp_settings is None:
-            await self.get_host_data()
+            await self.get_state("GetNtp")
 
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
@@ -1851,7 +1851,7 @@ class Host:
     async def sync_ntp(self) -> None:
         """Sync date and time on the host via NTP now."""
         if self._ntp_settings is None:
-            await self.get_host_data()
+            await self.get_state("GetNtp")
 
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
@@ -2876,7 +2876,7 @@ class Host:
     async def subscription_send(self, headers, data, logger=True) -> str | None:
         """Send subscription data to the camera."""
         if self._subscribe_url is None:
-            await self.get_host_data()
+            await self.get_state("GetNetPort")
 
         if self._subscribe_url is None:
             raise NotSupportedError(f"subscription_send: failed to retrieve subscribe_url from {self._host}:{self._port}")
