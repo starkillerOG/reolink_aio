@@ -842,7 +842,8 @@ class Host:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
-                ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
+                if self.ai_supported(channel):
+                    ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
 
             if self.pan_tilt_supported(channel):
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
@@ -927,11 +928,7 @@ class Host:
         channels = []
         for channel in self._channels:
             ch_body = [
-                {
-                    "cmd": "GetAiState",
-                    "action": 0,
-                    "param": {"channel": channel},
-                },  # to capture AI capabilities
+                {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
             ]
@@ -1074,10 +1071,9 @@ class Host:
         if self._api_version_getevents >= 1:
             body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
         else:
-            body = [
-                {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},
-            ]
+            body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
+            if self.ai_supported(channel):
+                body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -1114,10 +1110,9 @@ class Host:
             if self._api_version_getevents >= 1:
                 ch_body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
             else:
-                ch_body = [
-                    {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
-                    {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},
-                ]
+                ch_body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
+                if self.ai_supported(channel):
+                    ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
