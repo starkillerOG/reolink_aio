@@ -845,7 +845,6 @@ class Host:
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetOsd", "action": 0, "param": {"channel": channel}},
             ]
             if self._api_version["GetEvents"] >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
@@ -945,6 +944,8 @@ class Host:
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
             ]
+            # one time values
+            ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             # checking range
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
@@ -1965,7 +1966,10 @@ class Host:
         enableWaterMark (boolean) enables/disables the Logo (WaterMark) if supported"""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_osd: no camera connected to channel '{channel}'")
-        if self._osd_settings is None or channel not in self._osd_settings or not self._osd_settings[channel]:
+
+        await self.get_state("GetOsd")
+
+        if channel not in self._osd_settings or not self._osd_settings[channel]:
             raise NotSupportedError(f"set_osd: OSD on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
