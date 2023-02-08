@@ -129,7 +129,7 @@ class Host:
         self._channels: list[int] = []
         self._channel_names: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
-        self._channel_abilities: list # raw response from NVR/camera
+        self._channel_abilities: list  # raw response from NVR/camera
         self._channel_capabilities: dict[int, list[str]] = {}
 
         ##############################################################################
@@ -675,7 +675,7 @@ class Host:
             if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("push")
 
-            #if self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel] is not None:
+            # if self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel] is not None:
             if self._channel_abilities[channel]["ledControl"]["ver"] > 0:
                 self._channel_capabilities[channel].append("ir_lights")
 
@@ -863,7 +863,7 @@ class Host:
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "pan_tilt")) and self.supported(channel, "zoom"):
+            if self.supported(channel, "pan_tilt") and self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
             if self._api_version["GetEmail"] >= 1:
@@ -3217,7 +3217,7 @@ class Host:
                 _LOGGER.error("Could not poll motion state after receiving ONVIF event without any known events")
             return None
 
-        if self._onvif_only_motion and all([self.ai_supported(ch) for ch in event_channels]):
+        if self._onvif_only_motion and all(self.ai_supported(ch) for ch in event_channels):
             # Poll all other states since not all cameras have rich notifications including the specific events
             if "ONVIF_only_motion" not in self._log_once:
                 self._log_once.append("ONVIF_only_motion")
