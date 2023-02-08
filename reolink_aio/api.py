@@ -841,11 +841,8 @@ class Host:
             if self._api_version_getevents >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
+                ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
-                if self._api_version_getalarm >= 1:
-                    ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
-                else:
-                    ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
 
             if self.pan_tilt_supported(channel):
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
@@ -1575,7 +1572,6 @@ class Host:
 
                 elif data["cmd"] == "GetAlarm":
                     self._alarm_settings[channel] = data["value"]
-                    self._motion_detection_states[channel] = data["value"]["Alarm"]["enable"] == 1
                     self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
 
                 elif data["cmd"] == "GetAiState":
