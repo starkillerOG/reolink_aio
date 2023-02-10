@@ -2731,15 +2731,13 @@ class Host:
             if expected_response_type == "image/jpeg":
                 async with self._send_mutex:
                     response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
-
-                data = await response.read()  # returns bytes
+                    data = await response.read()  # returns bytes
             else:
                 _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
 
                 async with self._send_mutex:
                     response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
-
-                data = await response.text()  # returns str
+                    data = await response.text()  # returns str
 
             _LOGGER.debug("%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).", self.nvr_name, self._host, self._port, response.status, response.content_type)
             if cur_command == "Search" and len(data) > 500:
