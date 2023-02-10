@@ -1185,7 +1185,10 @@ class Host:
         if new_firmware == 0:
             return False
 
-        return json_data[0]["value"]["newFirmware"]
+        if new_firmware == 1:
+            return "New firmware available"
+
+        return str(new_firmware)
 
     async def update_firmware(self) -> None:
         """check for new firmware."""
