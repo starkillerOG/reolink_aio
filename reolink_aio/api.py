@@ -37,6 +37,7 @@ MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
 DEFAULT_PROTOCOL = "rtmp"
 DEFAULT_TIMEOUT = 60
+RETRY_ATTEMPTS = 3
 DEFAULT_RTMP_AUTH_METHOD = "PASSWORD"
 SUBSCRIPTION_TERMINATION_TIME = 15
 
@@ -2661,7 +2662,7 @@ class Host:
         body: reolink_json | None,
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"],
-        retry: bool = False,
+        retry: int = RETRY_ATTEMPTS,
     ) -> reolink_json:
         ...
 
@@ -2671,7 +2672,7 @@ class Host:
         body: Optional[reolink_json],
         param: Optional[dict[str, Any]],
         expected_response_type: Literal["image/jpeg"],
-        retry: bool = False,
+        retry: int = RETRY_ATTEMPTS,
     ) -> bytes:
         ...
 
@@ -2681,7 +2682,7 @@ class Host:
         body: reolink_json | None,
         *,
         expected_response_type: Literal["json"],
-        retry: bool = False,
+        retry: int = RETRY_ATTEMPTS,
     ) -> reolink_json:
         ...
 
@@ -2691,7 +2692,7 @@ class Host:
         body: reolink_json | None,
         *,
         expected_response_type: Literal["image/jpeg"],
-        retry: bool = False,
+        retry: int = RETRY_ATTEMPTS,
     ) -> bytes:
         ...
 
@@ -2700,9 +2701,10 @@ class Host:
         body: Optional[reolink_json],
         param: Optional[dict[str, Any]] = None,
         expected_response_type: Literal["json"] | Literal["image/jpeg"] = "json",
-        retry: bool = False,
+        retry: int = RETRY_ATTEMPTS,
     ) -> reolink_json | bytes:
         """Generic send method."""
+        retry = retry - 1
 
         if expected_response_type == "image/jpeg" or body is None:
             cur_command = "" if param is None else param.get("cmd", "")
@@ -2758,7 +2760,7 @@ class Host:
                     if is_login_logout:
                         raise CredentialsInvalidError()
 
-                    if retry:
+                    if retry <= 0:
                         raise CredentialsInvalidError()
                     _LOGGER.debug(
                         'Host %s:%s: "invalid login" response, trying to login again and retry the command.',
@@ -2766,7 +2768,7 @@ class Host:
                         self._port,
                     )
                     await self.expire_session()
-                    return await self.send(body, param, expected_response_type, True)
+                    return await self.send(body, param, expected_response_type, retry)
 
             expected_content_type: str = expected_response_type
             if expected_response_type == "json":
@@ -2774,10 +2776,10 @@ class Host:
             if response.content_type != expected_content_type:
                 raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
-            if response.status == 502 and not retry:
+            if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
                 await self.expire_session()
-                return await self.send(body, param, expected_response_type, True)
+                return await self.send(body, param, expected_response_type, retry)
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
@@ -2786,11 +2788,11 @@ class Host:
                 try:
                     json_data = json.loads(data)
                 except (TypeError, json.JSONDecodeError) as err:
-                    if not retry:
-                        _LOGGER.debug("Error translating JSON response: %s, data:\n%s\n", err, data)
-                        await self.expire_session()
-                        return await self.send(body, param, expected_response_type, True)
-                    raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from err
+                    if retry <= 0:
+                        raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from err
+                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", err, data)
+                    await self.expire_session()
+                    return await self.send(body, param, expected_response_type, retry)
                 if json_data is None:
                     await self.expire_session()
                     raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
