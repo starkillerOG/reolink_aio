@@ -32,6 +32,7 @@ from .exceptions import (
 )
 from .software_version import SoftwareVersion
 from .typings import reolink_json
+from .enums import SpotlightModeEnum, DayNightEnum
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
@@ -2214,7 +2215,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_whiteled(self, channel: int, state: bool | None = None, brightness:int|None = None, mode:int|None=None) -> None:
+    async def set_whiteled(self, channel: int, state: bool | None = None, brightness:int|None = None, mode:int|str|None=None) -> None:
         """
         Set the WhiteLed parameter.
         with Reolink Duo GetWhiteLed returns an error state
@@ -2244,9 +2245,14 @@ class Host:
             if brightness < 0 or brightness > 100:
                 raise InvalidParameterError(f"set_whiteled: brightness {brightness} not in range 0..100")
         if mode is not None:
-            settings["mode"] = mode
-            if mode not in [0, 1, 3]:
-                raise InvalidParameterError(f"set_whiteled: mode {mode} not in [0,1,3]")
+            if isinstance(mode, str):
+                mode_int = SpotlightModeEnum[mode].value
+            else:
+                mode_int = mode
+            settings["mode"] = mode_int
+            mode_list = [mode.value for mode in SpotlightModeEnum]
+            if mode_int not in mode_list:
+                raise InvalidParameterError(f"set_whiteled: mode {mode_int} not in {mode_list}")
 
         body = [
             {
@@ -2374,11 +2380,13 @@ class Host:
     async def set_daynight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_daynight: no camera connected to channel '{channel}'")
-        if self._isp_settings is None or channel not in self._isp_settings or not self._isp_settings[channel]:
+        await self.get_state(cmd="GetIsp")
+        if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_daynight: ISP on camera {self.camera_name(channel)} is not available")
 
-        if value not in ["Auto", "Color", "Black&White"]:
-            raise InvalidParameterError(f"set_daynight: value {value} not in ['Auto', 'Color', 'Black&White']")
+        val_list = [val.value for val in DayNightEnum]
+        if value not in val_list:
+            raise InvalidParameterError(f"set_daynight: value {value} not in {val_list}")
 
         body: reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
@@ -2388,7 +2396,8 @@ class Host:
     async def set_backlight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_backlight: no camera connected to channel '{channel}'")
-        if self._isp_settings is None or channel not in self._isp_settings or not self._isp_settings[channel]:
+        await self.get_state(cmd="GetIsp")
+        if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_backlight: ISP on camera {self.camera_name(channel)} is not available")
 
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
