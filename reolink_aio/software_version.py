@@ -1,6 +1,7 @@
 """Reolink NVR/camera API."""
 
 import re
+
 from .exceptions import UnexpectedDataError
 
 version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_([0-9]+)")

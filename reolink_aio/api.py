@@ -18,6 +18,7 @@ from xml.etree import ElementTree as XML
 import aiohttp
 
 from . import templates, typings
+from .enums import DayNightEnum, SpotlightModeEnum
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -32,7 +33,6 @@ from .exceptions import (
 )
 from .software_version import SoftwareVersion
 from .typings import reolink_json
-from .enums import SpotlightModeEnum, DayNightEnum
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
@@ -2210,7 +2210,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_whiteled(self, channel: int, state: bool | None = None, brightness:int|None = None, mode:int|str|None=None) -> None:
+    async def set_whiteled(self, channel: int, state: bool | None = None, brightness: int | None = None, mode: int | str | None = None) -> None:
         """
         Set the WhiteLed parameter.
         with Reolink Duo GetWhiteLed returns an error state
@@ -2252,9 +2252,7 @@ class Host:
         body = [
             {
                 "cmd": "SetWhiteLed",
-                "param": {
-                    "WhiteLed": settings
-                },
+                "param": {"WhiteLed": settings},
             }
         ]
 
