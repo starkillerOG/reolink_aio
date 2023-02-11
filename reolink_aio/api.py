@@ -205,6 +205,7 @@ class Host:
         ##############################################################################
         # API-versions of commands
         self._api_version: dict[str, int] = {}
+        self._api_version["GetWhiteLed"] = 0
         self._api_version["GetEmail"] = 1
         self._api_version["GetRec"] = 1
         self._api_version["GetFtp"] = 1
