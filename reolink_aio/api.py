@@ -436,9 +436,6 @@ class Host:
     def doorbell_light_enabled(self, channel: int) -> bool:
         return self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel]
 
-    def whiteled_enabled(self, channel: int) -> bool:
-        return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
-
     def ftp_enabled(self, channel: Optional[int]) -> bool:
         if channel is None:
             return self._ftp_enabled is not None and 0 in self._ftp_enabled and self._ftp_enabled[0]
@@ -463,11 +460,20 @@ class Host:
 
         return self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel]
 
+    def whiteled_state(self, channel: int) -> bool:
+        return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
+
     def whiteled_mode(self, channel: int) -> Optional[int]:
         if channel not in self._whiteled_settings:
             return None
 
         return self._whiteled_settings[channel]["WhiteLed"].get("mode")
+
+    def whiteled_brightness(self, channel: int) -> Optional[int]:
+        if channel not in self._whiteled_settings:
+            return None
+
+        return self._whiteled_settings[channel]["WhiteLed"].get("bright")
 
     def whiteled_schedule(self, channel: int) -> Optional[dict]:
         """Return the spotlight state."""
@@ -2187,7 +2193,7 @@ class Host:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_power_led: no camera connected to channel '{channel}'")
         if self._power_led_settings is None or channel not in self._power_led_settings or not self._power_led_settings[channel]:
-            raise NotSupportedError(f"set_whiteled: Power led on camera {self.camera_name(channel)} is not available")
+            raise NotSupportedError(f"set_power_led: Power led on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json = [
             {
@@ -2207,7 +2213,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_whiteled(self, channel: int, enable: bool, brightness, mode=None) -> None:
+    async def set_whiteled(self, channel: int, state: bool | None = None, brightness:int|None = None, mode:int|None=None) -> None:
         """
         Set the WhiteLed parameter.
         with Reolink Duo GetWhiteLed returns an error state
@@ -2229,21 +2235,23 @@ class Host:
         if channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
             raise NotSupportedError(f"set_whiteled: White Led on camera {self.camera_name(channel)} is not available")
 
-        if mode is None:
-            mode = 1
-        if brightness < 0 or brightness > 100 or mode not in [0, 1, 3]:
-            raise InvalidParameterError(f"set_whiteled: brightness {brightness} not in range 0..100 or mode {mode} not in [0,1,3]")
+        settings = {"channel": channel}
+        if state is not None:
+            settings["state"] = 1 if state else 0
+        if brightness is not None:
+            settings["bright"] = brightness
+            if brightness < 0 or brightness > 100:
+                raise InvalidParameterError(f"set_whiteled: brightness {brightness} not in range 0..100")
+        if mode is not None:
+            settings["mode"] = mode
+            if mode not in [0, 1, 3]:
+                raise InvalidParameterError(f"set_whiteled: mode {mode} not in [0,1,3]")
 
         body = [
             {
                 "cmd": "SetWhiteLed",
                 "param": {
-                    "WhiteLed": {
-                        "state": 1 if enable else 0,
-                        "channel": channel,
-                        "mode": mode,
-                        "bright": brightness,
-                    }
+                    "WhiteLed": settings
                 },
             }
         ]
