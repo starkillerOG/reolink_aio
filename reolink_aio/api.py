@@ -197,8 +197,6 @@ class Host:
         self._ir_enabled: dict[int, bool] = {}
         self._power_led_enabled: dict[int, bool] = {}
         self._doorbell_light_enabled: dict[int, bool] = {}
-        self._whiteled_enabled: dict[int, bool] = {}
-        self._whiteled_modes: dict[int, int | None] = {}
         self._daynight_state: dict[int, str] = {}
         self._backlight_state: dict[int, str] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
@@ -439,7 +437,7 @@ class Host:
         return self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel]
 
     def whiteled_enabled(self, channel: int) -> bool:
-        return self._whiteled_enabled is not None and channel in self._whiteled_enabled and self._whiteled_enabled[channel]
+        return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
 
     def ftp_enabled(self, channel: Optional[int]) -> bool:
         if channel is None:
@@ -466,21 +464,21 @@ class Host:
         return self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel]
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
-        if channel in self._whiteled_modes:
-            return self._whiteled_modes[channel]
+        if channel not in self._whiteled_settings:
+            return None
 
-        return None
+        return self._whiteled_settings[channel]["WhiteLed"].get("mode")
 
     def whiteled_schedule(self, channel: int) -> Optional[dict]:
         """Return the spotlight state."""
-        if self._whiteled_settings is not None and channel in self._whiteled_settings:
+        if channel in self._whiteled_settings:
             return self._whiteled_settings[channel]["WhiteLed"]["LightingSchedule"]
 
         return None
 
     def whiteled_settings(self, channel: int) -> Optional[dict]:
         """Return the spotlight state."""
-        if self._whiteled_settings is not None and channel in self._whiteled_settings:
+        if channel in self._whiteled_settings:
             return self._whiteled_settings[channel]
 
         return None
@@ -1703,8 +1701,6 @@ class Host:
                 elif data["cmd"] == "GetWhiteLed":
                     response_channel = data["value"]["WhiteLed"]["channel"]
                     self._whiteled_settings[channel] = data["value"]
-                    self._whiteled_enabled[channel] = data["value"]["WhiteLed"]["state"] == 1
-                    self._whiteled_modes[channel] = data["value"]["WhiteLed"].get("mode")
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
@@ -2230,7 +2226,7 @@ class Host:
         """
         if channel not in self._channels:
             raise InvalidParameterError(f"set_whiteled: no camera connected to channel '{channel}'")
-        if self._whiteled_settings is None or channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
+        if channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
             raise NotSupportedError(f"set_whiteled: White Led on camera {self.camera_name(channel)} is not available")
 
         if mode is None:
@@ -2259,7 +2255,7 @@ class Host:
         Time in 24-hours format"""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_spotlight_lighting_schedule: no camera connected to channel '{channel}'")
-        if self._whiteled_settings is None or channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
+        if channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
             raise NotSupportedError(f"set_spotlight_lighting_schedule: White Led on camera {self.camera_name(channel)} is not available")
 
         if (
