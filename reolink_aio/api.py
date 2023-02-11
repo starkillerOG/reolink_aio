@@ -949,6 +949,7 @@ class Host:
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
             ]
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
