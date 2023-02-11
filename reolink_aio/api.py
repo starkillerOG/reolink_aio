@@ -198,8 +198,6 @@ class Host:
         self._ir_enabled: dict[int, bool] = {}
         self._power_led_enabled: dict[int, bool] = {}
         self._doorbell_light_enabled: dict[int, bool] = {}
-        self._daynight_state: dict[int, str] = {}
-        self._backlight_state: dict[int, str] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
         self._visitor_states: dict[int, bool] = {}
 
@@ -492,16 +490,16 @@ class Host:
         return None
 
     def daynight_state(self, channel: int) -> Optional[str]:
-        if self._daynight_state is not None and channel in self._daynight_state:
-            return self._daynight_state[channel]
+        if channel not in self._isp_settings:
+            return None
 
-        return None
+        return self._isp_settings[channel]["Isp"]["dayNight"]
 
     def backlight_state(self, channel: int) -> Optional[str]:
-        if self._backlight_state is not None and channel in self._backlight_state:
-            return self._backlight_state[channel]
+        if channel not in self._isp_settings:
+            return None
 
-        return None
+        return self._isp_settings[channel]["Isp"]["backLight"]
 
     def audio_state(self, channel: int) -> bool:
         return self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel]
@@ -724,10 +722,10 @@ class Host:
             if channel in self._motion_detection_states:
                 self._channel_capabilities[channel].append("motion_detection")
 
-            if self._daynight_state is not None and channel in self._daynight_state and self._daynight_state[channel] is not None:
+            if self.daynight_state(channel) is not None:
                 self._channel_capabilities[channel].append("dayNight")
 
-            if self._backlight_state is not None and channel in self._backlight_state and self._backlight_state[channel] is not None:
+            if self.backlight_state(channel) is not None:
                 self._channel_capabilities[channel].append("backLight")
 
     def supported(self, channel: int, capability: str) -> bool:
@@ -1688,8 +1686,6 @@ class Host:
                 elif data["cmd"] == "GetIsp":
                     response_channel = data["value"]["Isp"]["channel"]
                     self._isp_settings[channel] = data["value"]
-                    self._daynight_state[channel] = data["value"]["Isp"]["dayNight"]
-                    self._backlight_state[channel] = data["value"]["Isp"]["backLight"]
 
                 elif data["cmd"] == "GetIrLights":
                     self._ir_settings[channel] = data["value"]
