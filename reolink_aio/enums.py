@@ -10,4 +10,4 @@ class SpotlightModeEnum(Enum):
 class DayNightEnum(Enum):
     Auto = "Auto"
     Color = "Color"
-    Black&White = "Black&White"
+    BlackWhite = "Black&White"

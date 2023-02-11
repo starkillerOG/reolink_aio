@@ -195,7 +195,6 @@ class Host:
         self._ftp_enabled: dict[int, bool] = {}
         self._push_enabled: dict[int, bool] = {}
         self._audio_enabled: dict[int, bool] = {}
-        self._ir_enabled: dict[int, bool] = {}
         self._power_led_enabled: dict[int, bool] = {}
         self._doorbell_light_enabled: dict[int, bool] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
@@ -428,7 +427,7 @@ class Host:
         return self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel]
 
     def ir_enabled(self, channel: int) -> bool:
-        return self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel]
+        return channel in self._ir_settings and self._ir_settings[channel]["IrLights"]["state"] == "Auto"
 
     def power_led_enabled(self, channel: int) -> bool:
         return self._power_led_enabled is not None and channel in self._power_led_enabled and self._power_led_enabled[channel]
@@ -680,7 +679,7 @@ class Host:
             if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("push")
 
-            # if self._ir_enabled is not None and channel in self._ir_enabled and self._ir_enabled[channel] is not None:
+            # if channel in self._ir_settings:
             if self._channel_abilities[channel]["ledControl"]["ver"] > 0:
                 self._channel_capabilities[channel].append("ir_lights")
 
@@ -1690,7 +1689,6 @@ class Host:
 
                 elif data["cmd"] == "GetIrLights":
                     self._ir_settings[channel] = data["value"]
-                    self._ir_enabled[channel] = data["value"]["IrLights"]["state"] == "Auto"
 
                 elif data["cmd"] == "GetPowerLed":
                     # GetPowerLed returns incorrect channel
@@ -2174,17 +2172,17 @@ class Host:
     async def set_ir_lights(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_ir_lights: no camera connected to channel '{channel}'")
-        if self._ir_settings is None or channel not in self._ir_settings or not self._ir_settings[channel]:
+        if channel not in self._ir_settings:
             raise NotSupportedError(f"set_ir_lights: IR light on camera {self.camera_name(channel)} is not available")
 
+        state = "Auto" if enable else "Off"
         body: reolink_json = [
             {
                 "cmd": "SetIrLights",
                 "action": 0,
-                "param": {"IrLights": {"channel": channel, "state": "dummy"}},
+                "param": {"IrLights": {"channel": channel, "state": state}},
             }
         ]
-        body[0]["param"]["IrLights"]["state"] = "Auto" if enable else "Off"
 
         await self.send_setting(body)
 
