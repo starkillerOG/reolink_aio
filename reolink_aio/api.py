@@ -935,6 +935,7 @@ class Host:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings") from err
 
         self.map_host_json_response(json_data)
+        self.construct_capabilities()
 
         body = []
         channels = []
