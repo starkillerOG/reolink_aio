@@ -846,7 +846,6 @@ class Host:
             ch_body = [
                 {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}},
             ]
             if self._api_version["GetEvents"] >= 1:
@@ -855,6 +854,9 @@ class Host:
                 ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
                 if self.ai_supported(channel):
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "ir_lights"):
+                ch_body.append({"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "floodLight"):
                 ch_body.append({"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}})
