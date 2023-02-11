@@ -679,8 +679,7 @@ class Host:
             if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("push")
 
-            # if channel in self._ir_settings:
-            if self._channel_abilities[channel]["ledControl"]["ver"] > 0:
+            if self._channel_abilities[channel]["ledControl"]["ver"] > 0 and channel in self._ir_settings:
                 self._channel_capabilities[channel].append("ir_lights")
 
             if self._channel_abilities[channel]["powerLed"]["ver"] > 0:
@@ -949,6 +948,7 @@ class Host:
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
             ]
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
