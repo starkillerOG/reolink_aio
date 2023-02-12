@@ -1919,6 +1919,8 @@ class Host:
         ]
 
         await self.send_setting(body)
+        await asyncio.sleep(3)
+        await self.get_state(cmd="GetZoomFocus")
 
     def get_zoom(self, channel: int):
         """Get absolute zoom value."""
@@ -1951,6 +1953,8 @@ class Host:
         ]
 
         await self.send_setting(body)
+        await asyncio.sleep(3)
+        await self.get_state(cmd="GetZoomFocus")
 
     def validate_osd_pos(self, pos) -> bool:
         """Helper function for validating an OSD position
@@ -2258,7 +2262,7 @@ class Host:
             }
         ]
 
-        await self.send_setting(body)
+        await self.send_setting(body, wait_before_get=2)
 
     async def set_spotlight_lighting_schedule(self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0) -> None:
         """Stub to handle setting the time period where spotlight (WhiteLed) will be on when NightMode set and AUTO is off.
@@ -2636,7 +2640,7 @@ class Host:
 
         return None, None
 
-    async def send_setting(self, body: reolink_json) -> None:
+    async def send_setting(self, body: reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(
             'Sending command: "%s" to: %s:%s with body: %s',
@@ -2667,6 +2671,8 @@ class Host:
 
         if command[:3] == "Set":
             getcmd = command.replace("Set", "Get")
+            if wait_before_get > 0:
+                await asyncio.sleep(wait_before_get)
             await self.get_state(cmd=getcmd)
 
     @overload
