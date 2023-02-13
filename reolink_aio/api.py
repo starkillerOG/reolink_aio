@@ -681,16 +681,16 @@ class Host:
             if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("push")
 
-            if self._channel_abilities[channel]["ledControl"]["ver"] > 0 and channel in self._ir_settings:
+            if self.api_version(channel, "ledControl") > 0 and channel in self._ir_settings:
                 self._channel_capabilities[channel].append("ir_lights")
 
-            if self._channel_abilities[channel]["powerLed"]["ver"] > 0:
+            if self.api_version(channel, "powerLed") > 0:
                 self._channel_capabilities[channel].append("power_led")
 
             if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("doorbell_light")
 
-            if self._channel_abilities[channel]["floodLight"]["ver"] > 0 and self._api_version["GetWhiteLed"] > 0:
+            if self.api_version(channel, "floodLight") > 0 and self._api_version["GetWhiteLed"] > 0:
                 # floodlight == spotlight == WhiteLed
                 self._channel_capabilities[channel].append("floodLight")
 
@@ -706,7 +706,7 @@ class Host:
             if self.audio_record(channel) is not None:
                 self._channel_capabilities[channel].append("audio")
 
-            ptz_ver = self._channel_abilities[channel]["ptzType"]["ver"]
+            ptz_ver = self.api_version(channel, "ptzType")
             if ptz_ver != 0:
                 self._channel_capabilities[channel].append("ptz")
                 if ptz_ver in [1, 2, 5]:
@@ -734,6 +734,16 @@ class Host:
             return False
 
         return capability in self._channel_capabilities[channel]
+
+    def api_version(self, channel: int, capability: str) -> bool:
+        """Return the api version of a capability, 0=not supported, >0 is supported"""
+        if channel not in self._channel_abilities:
+            return 0
+
+        if capability not in self._channel_abilities[channel]:
+            return 0
+
+        return self._channel_abilities[channel][capability].get("ver", 0)
 
     async def get_state(self, cmd: str) -> None:
         body = []
