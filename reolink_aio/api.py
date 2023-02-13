@@ -194,7 +194,6 @@ class Host:
         self._audio_alarm_enabled: dict[int, bool] = {}
         self._ftp_enabled: dict[int, bool] = {}
         self._push_enabled: dict[int, bool] = {}
-        self._audio_enabled: dict[int, bool] = {}
         self._power_led_enabled: dict[int, bool] = {}
         self._doorbell_light_enabled: dict[int, bool] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
@@ -500,8 +499,11 @@ class Host:
 
         return self._isp_settings[channel]["Isp"]["backLight"]
 
-    def audio_state(self, channel: int) -> bool:
-        return self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel]
+    def audio_record(self, channel: int) -> bool:
+        if channel not in self._enc_settings:
+            return None
+        
+        return self._enc_settings[channel]["Enc"]["audio"] == 1
 
     def audio_alarm_settings(self, channel: int) -> Optional[dict]:
         if self._audio_alarm_settings is not None and channel in self._audio_alarm_settings:
@@ -701,7 +703,7 @@ class Host:
             if self._email_enabled is not None and channel in self._email_enabled and self._email_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("email")
 
-            if self._audio_enabled is not None and channel in self._audio_enabled and self._audio_enabled[channel] is not None:
+            if self.audio_record(channel) is not None:
                 self._channel_capabilities[channel].append("audio")
 
             ptz_ver = self._channel_abilities[channel]["ptzType"]["ver"]
@@ -951,6 +953,7 @@ class Host:
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
             ]
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
@@ -1667,7 +1670,6 @@ class Host:
                 elif data["cmd"] == "GetEnc":
                     response_channel = data["value"]["Enc"]["channel"]
                     self._enc_settings[channel] = data["value"]
-                    self._audio_enabled[channel] = data["value"]["Enc"]["audio"] == 1
 
                 elif data["cmd"] == "GetRtspUrl":
                     response_channel = data["value"]["rtspUrl"]["channel"]
@@ -2167,7 +2169,8 @@ class Host:
     async def set_audio(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_audio: no camera connected to channel '{channel}'")
-        if self._enc_settings is None or channel not in self._enc_settings or not self._enc_settings[channel]:
+        await self.get_state(cmd="GetEnc")
+        if channel not in self._enc_settings:
             raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
