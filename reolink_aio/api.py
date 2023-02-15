@@ -743,7 +743,10 @@ class Host:
         if channel is None:
             return self._abilities.get(capability, {}).get("ver", 0)
 
-        return self._abilities["abilityChn"].get(channel, {}).get(capability, {}).get("ver", 0)
+        if channel>=len(self._abilities["abilityChn"]):
+            return 0
+
+        return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", 0)
 
     async def get_state(self, cmd: str) -> None:
         body = []
