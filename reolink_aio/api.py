@@ -642,7 +642,7 @@ class Host:
         try:
             if self._token:
                 param = {"cmd": "Logout"}
-                await self.send(body, param, expected_response_type="json")
+                await self.send(body, param, expected_response_type="text/html")
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
             # Thus it is not available for now to exit the previous "stuck" sessions after sudden crash or power failure:
@@ -652,7 +652,7 @@ class Host:
             # else:
             #     body  = [{"cmd": "Logout", "action": 0, "param": {"User": {"userName": self._username, "password": self._password}}}]
             #     param = {"cmd": "Logout"}
-            #     await self.send(body, param, expected_response_type = "json")
+            #     await self.send(body, param, expected_response_type = "text/html")
 
             self.clear_token()
             if not login_mutex_owned:
@@ -2713,6 +2713,16 @@ class Host:
     @overload
     async def send(
         self,
+        body: Optional[reolink_json],
+        param: Optional[dict[str, Any]],
+        expected_response_type: Literal["text/html"],
+        retry: int = RETRY_ATTEMPTS,
+    ) -> str:
+        ...
+
+    @overload
+    async def send(
+        self,
         body: reolink_json | None,
         *,
         expected_response_type: Literal["json"],
@@ -2730,11 +2740,21 @@ class Host:
     ) -> bytes:
         ...
 
+    @overload
+    async def send(
+        self,
+        body: reolink_json | None,
+        *,
+        expected_response_type: Literal["text/html"],
+        retry: int = RETRY_ATTEMPTS,
+    ) -> str:
+        ...
+
     async def send(
         self,
         body: Optional[reolink_json],
         param: Optional[dict[str, Any]] = None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] = "json",
+        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] = "json",
         retry: int = RETRY_ATTEMPTS,
     ) -> reolink_json | bytes:
         """Generic send method."""
@@ -2833,6 +2853,9 @@ class Host:
                 return json_data
 
             if expected_response_type == "image/jpeg" and isinstance(data, bytes):
+                return data
+
+            if expected_response_type == "text/html" and isinstance(data, str):
                 return data
 
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
