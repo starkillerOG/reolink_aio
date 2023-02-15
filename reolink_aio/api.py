@@ -99,6 +99,8 @@ class Host:
         self._onvif_enabled: Optional[bool] = None
         self._mac_address: Optional[str] = None
 
+        self.refresh_base_url()
+
         ##############################################################################
         # Login session
         self._username: str = username
@@ -131,8 +133,12 @@ class Host:
         self._channels: list[int] = []
         self._channel_names: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
+
+        ##############################################################################
+        # API-versions and capabilities
+        self._api_version: dict[str, int] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
-        self._channel_capabilities: dict[int, list[str]] = {}
+        self._channel_capabilities: dict[int, list[str]] = {}  # processed by construct_capabilities
 
         ##############################################################################
         # Video-stream formats
@@ -198,18 +204,6 @@ class Host:
         self._doorbell_light_enabled: dict[int, bool] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
         self._visitor_states: dict[int, bool] = {}
-
-        ##############################################################################
-        # API-versions of commands
-        self._api_version: dict[str, int] = {}
-        self._api_version["GetWhiteLed"] = 0
-        self._api_version["GetEmail"] = 1
-        self._api_version["GetRec"] = 1
-        self._api_version["GetFtp"] = 1
-        self._api_version["GetPush"] = 1
-        self._api_version["GetAudioAlarm"] = 1
-
-        self.refresh_base_url()
 
         ##############################################################################
         # SUBSCRIPTION managing
@@ -502,7 +496,7 @@ class Host:
     def audio_record(self, channel: int) -> bool:
         if channel not in self._enc_settings:
             return None
-        
+
         return self._enc_settings[channel]["Enc"]["audio"] == 1
 
     def audio_alarm_settings(self, channel: int) -> Optional[dict]:
@@ -694,7 +688,7 @@ class Host:
             if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("doorbell_light")
 
-            if self.api_version("floodLight", channel) > 0 and self._api_version["GetWhiteLed"] > 0:
+            if self.api_version("floodLight", channel) > 0 and self.api_version("GetWhiteLed") > 0:
                 # floodlight == spotlight == WhiteLed
                 self._channel_capabilities[channel].append("floodLight")
 
@@ -747,7 +741,7 @@ class Host:
         if channel is None:
             return self._abilities.get(capability, {}).get("ver", 0)
 
-        if channel>=len(self._abilities["abilityChn"]):
+        if channel >= len(self._abilities["abilityChn"]):
             return 0
 
         return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", 0)
@@ -776,50 +770,32 @@ class Host:
             elif cmd == "GetOsd":
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAlarm":
-                ch_body = [
-                    {
-                        "cmd": "GetAlarm",
-                        "action": 0,
-                        "param": {"Alarm": {"channel": channel, "type": "md"}},
-                    }
-                ]
+                ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
             elif cmd in ["GetEmail", "GetEmailV20"]:
-                if self._api_version["GetEmail"] == 0:
-                    ch_body = [{"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}]
-                else:
+                if self.api_version("GetEmail") >= 1:
                     ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
+                else:
+                    ch_body = [{"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetPush", "GetPushV20"]:
-                if self._api_version["GetPush"] == 0:
+                if self.api_version("GetPush") >= 1:
+                    ch_body = [{"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}}]
+                else:
                     ch_body = [{"cmd": "GetPush", "action": 0, "param": {"channel": channel}}]
-                else:
-                    ch_body = [
-                        {
-                            "cmd": "GetPushV20",
-                            "action": 0,
-                            "param": {"channel": channel},
-                        }
-                    ]
             elif cmd in ["GetFtp", "GetFtpV20"]:
-                if self._api_version["GetFtp"] == 0:
-                    ch_body = [{"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}]
-                else:
+                if self.api_version("GetFtp") >= 1:
                     ch_body = [{"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}]
+                else:
+                    ch_body = [{"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetRec", "GetRecV20"]:
-                if self._api_version["GetRec"] == 0:
-                    ch_body = [{"cmd": "GetRec", "action": 0, "param": {"channel": channel}}]
-                else:
+                if self.api_version("GetRec") >= 1:
                     ch_body = [{"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetAudioAlarm", "GetAudioAlarmV20"]:
-                if self._api_version["GetAudioAlarm"] == 0:
-                    ch_body = [
-                        {
-                            "cmd": "GetAudioAlarm",
-                            "action": 0,
-                            "param": {"channel": channel},
-                        }
-                    ]
                 else:
+                    ch_body = [{"cmd": "GetRec", "action": 0, "param": {"channel": channel}}]
+            elif cmd in ["GetAudioAlarm", "GetAudioAlarmV20"]:
+                if self.api_version("GetAudioAlarm") >= 1:
                     ch_body = [{"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}}]
+                else:
+                    ch_body = [{"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
@@ -867,7 +843,7 @@ class Host:
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}},
             ]
-            if self._api_version["GetEvents"] >= 1:
+            if self.api_version("GetEvents") >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
@@ -889,34 +865,28 @@ class Host:
             if self.supported(channel, "pan_tilt") and self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
-            if self._api_version["GetEmail"] >= 1:
+            if self.api_version("GetEmail") >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
 
-            if self._api_version["GetPush"] >= 1:
+            if self.api_version("GetPush") >= 1:
                 ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
 
-            if self._api_version["GetFtp"] >= 1:
+            if self.api_version("GetFtp") >= 1:
                 ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
-            if self._api_version["GetRec"] >= 1:
+            if self.api_version("GetRec") >= 1:
                 ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
 
-            if self._api_version["GetAudioAlarm"] >= 1:
-                ch_body.append(
-                    {
-                        "cmd": "GetAudioAlarmV20",
-                        "action": 0,
-                        "param": {"channel": channel},
-                    }
-                )
+            if self.api_version("GetAudioAlarm") >= 1:
+                ch_body.append({"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
 
@@ -943,11 +913,7 @@ class Host:
             {"cmd": "GetUser", "action": 0, "param": {}},
             {"cmd": "GetNtp", "action": 0, "param": {}},
             {"cmd": "GetTime", "action": 0, "param": {}},
-            {
-                "cmd": "GetAbility",
-                "action": 0,
-                "param": {"User": {"userName": self._username}},
-            },
+            {"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}},
         ]
 
         try:
@@ -977,22 +943,16 @@ class Host:
             # checking range
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
-            # checking API versions (because Reolink dev quality sucks big time we cannot fully trust GetAbility)
-            if self._api_version["GetEmail"] >= 1:
-                ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
-            if self._api_version["GetPush"] >= 1:
-                ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
-            if self._api_version["GetFtp"] >= 1:
-                ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
-            if self._api_version["GetRec"] >= 1:
-                ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
-            if self._api_version["GetAudioAlarm"] >= 1:
-                ch_body.append(
-                    {
-                        "cmd": "GetAudioAlarmV20",
-                        "action": 0,
-                        "param": {"channel": channel},
-                    }
+            # checking API versions
+            if self.api_version("scheduleVersion") >= 1:
+                ch_body.extend(
+                    [
+                        {"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}},
+                    ]
                 )
 
             body.extend(ch_body)
@@ -1008,41 +968,26 @@ class Host:
         self.map_channels_json_response(json_data, channels)
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
-        def check_command_exists(cmd: str) -> bool:
+        def check_command_exists(cmd: str) -> int:
             for x in json_data:
                 if x["cmd"] == cmd:
-                    return True
-            return False
+                    return 1
+            return 0
 
-        if check_command_exists("GetEvents"):
-            self._api_version["GetEvents"] = 1
+        self._api_version["GetEvents"] = check_command_exists("GetEvents")
+        self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
+        if self.api_version("scheduleVersion") >= 1:
+            self._api_version["GetEmail"] = check_command_exists("GetEmailV20")
+            self._api_version["GetPush"] = check_command_exists("GetPushV20")
+            self._api_version["GetFtp"] = check_command_exists("GetFtpV20")
+            self._api_version["GetRec"] = check_command_exists("GetRecV20")
+            self._api_version["GetAudioAlarm"] = check_command_exists("GetAudioAlarmV20")
         else:
-            self._api_version["GetEvents"] = 0
-
-        if check_command_exists("GetWhiteLed"):
-            self._api_version["GetWhiteLed"] = 1
-        else:
-            self._api_version["GetWhiteLed"] = 0
-
-        if self._api_version["GetEmail"] >= 1:
-            if not check_command_exists("GetEmailV20"):
-                self._api_version["GetEmail"] = 0
-
-        if self._api_version["GetPush"] >= 1:
-            if not check_command_exists("GetPushV20"):
-                self._api_version["GetPush"] = 0
-
-        if self._api_version["GetFtp"] >= 1:
-            if not check_command_exists("GetFtpV20"):
-                self._api_version["GetFtp"] = 0
-
-        if self._api_version["GetRec"] >= 1:
-            if not check_command_exists("GetRecV20"):
-                self._api_version["GetRec"] = 0
-
-        if self._api_version["GetAudioAlarm"] >= 1:
-            if not check_command_exists("GetAudioAlarmV20"):
-                self._api_version["GetAudioAlarm"] = 0
+            self._api_version["GetEmail"] = 0
+            self._api_version["GetPush"] = 0
+            self._api_version["GetFtp"] = 0
+            self._api_version["GetRec"] = 0
+            self._api_version["GetAudioAlarm"] = 0
 
         self.construct_capabilities()
 
@@ -1117,7 +1062,7 @@ class Host:
         if channel not in self._channels:
             return None
 
-        if self._api_version["GetEvents"] >= 1:
+        if self.api_version("GetEvents") >= 1:
             body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
         else:
             body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
@@ -1156,7 +1101,7 @@ class Host:
         body = []
         channels = []
         for channel in self._channels:
-            if self._api_version["GetEvents"] >= 1:
+            if self.api_version("GetEvents") >= 1:
                 ch_body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
             else:
                 ch_body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
@@ -1542,22 +1487,6 @@ class Host:
 
                 elif data["cmd"] == "GetAbility":
                     self._abilities = data["value"]["Ability"]
-                    for ability, details in self._abilities.items():
-                        if ability == "email":
-                            self._api_version["GetEmail"] = details["ver"]
-                        elif ability == "push":
-                            self._api_version["GetPush"] = details["ver"]
-                        elif ability == "supportFtpEnable":
-                            self._api_version["GetFtp"] = details["ver"]
-                        elif ability == "supportRecordEnable":
-                            self._api_version["GetRec"] = details["ver"]
-                        elif ability == "supportAudioAlarm":
-                            self._api_version["GetAudioAlarm"] = details["ver"]
-
-                    for channel in self._channels:
-                        self._api_version["GetFtp"] = self._abilities["abilityChn"][channel].get("ftp", {"ver": 1})["ver"]
-                        self._api_version["GetRec"] = self._abilities["abilityChn"][channel].get("recCfg", {"ver": 1})["ver"]
-                        self._api_version["GetAudioAlarm"] = self._abilities["abilityChn"][channel].get("supportAudioAlarm", {"ver": 1})["ver"]
 
             except Exception as e:  # pylint: disable=bare-except
                 _LOGGER.error(
@@ -2039,23 +1968,17 @@ class Host:
 
         body: reolink_json
         if channel is None:
-            if self._api_version["GetPush"] == 0:
-                for c in self._channels:
-                    if self._push_settings is not None and c in self._push_settings and self._push_settings[c] is not None:
-                        body = [
-                            {
-                                "cmd": "SetPush",
-                                "action": 0,
-                                "param": self._push_settings[c],
-                            }
-                        ]
-                        body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
-                        await self.send_setting(body)
+            if self.api_version("GetPush") >= 1:
+                body = [{"cmd": "SetPushV20", "action": 0, "param": self._push_settings[0]}]
+                body[0]["param"]["Push"]["enable"] = 1 if enable else 0
+                await self.send_setting(body)
                 return
 
-            body = [{"cmd": "SetPushV20", "action": 0, "param": self._push_settings[0]}]
-            body[0]["param"]["Push"]["enable"] = 1 if enable else 0
-            await self.send_setting(body)
+            for c in self._channels:
+                if self._push_settings is not None and c in self._push_settings and self._push_settings[c] is not None:
+                    body = [{"cmd": "SetPush", "action": 0, "param": self._push_settings[c]}]
+                    body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
+                    await self.send_setting(body)
             return
 
         if channel not in self._channels:
@@ -2063,24 +1986,12 @@ class Host:
         if self._push_settings is None or channel not in self._push_settings or not self._push_settings[channel]:
             raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
-        if self._api_version["GetPush"] == 0:
-            body = [
-                {
-                    "cmd": "SetPush",
-                    "action": 0,
-                    "param": self._push_settings[channel],
-                }
-            ]
-            body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
-        else:
-            body = [
-                {
-                    "cmd": "SetPushV20",
-                    "action": 0,
-                    "param": self._push_settings[channel],
-                }
-            ]
+        if self.api_version("GetPush") >= 1:
+            body = [{"cmd": "SetPushV20", "action": 0, "param": self._push_settings[channel]}]
             body[0]["param"]["Push"]["enable"] = 1 if enable else 0
+        else:
+            body = [{"cmd": "SetPush", "action": 0, "param": self._push_settings[channel]}]
+            body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
 
@@ -2089,23 +2000,17 @@ class Host:
 
         body: reolink_json
         if channel is None:
-            if self._api_version["GetFtp"] == 0:
-                for c in self._channels:
-                    if self._ftp_settings is not None and c in self._ftp_settings and self._ftp_settings[c] is not None:
-                        body = [
-                            {
-                                "cmd": "SetFtp",
-                                "action": 0,
-                                "param": self._ftp_settings[c],
-                            }
-                        ]
-                        body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
-                        await self.send_setting(body)
+            if self.api_version("GetFtp") >= 1:
+                body = [{"cmd": "SetFtpV20", "action": 0, "param": self._ftp_settings[0]}]
+                body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
+                await self.send_setting(body)
                 return
 
-            body = [{"cmd": "SetFtpV20", "action": 0, "param": self._ftp_settings[0]}]
-            body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
-            await self.send_setting(body)
+            for c in self._channels:
+                if self._ftp_settings is not None and c in self._ftp_settings and self._ftp_settings[c] is not None:
+                    body = [{"cmd": "SetFtp", "action": 0, "param": self._ftp_settings[c]}]
+                    body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
+                    await self.send_setting(body)
             return
 
         if channel not in self._channels:
@@ -2113,47 +2018,29 @@ class Host:
         if self._ftp_settings is None or channel not in self._ftp_settings or not self._ftp_settings[channel]:
             raise NotSupportedError(f"set_ftp: FTP on camera {self.camera_name(channel)} is not available")
 
-        if self._api_version["GetFtp"] == 0:
+        if self.api_version("GetFtp") >= 1:
+            body = [{"cmd": "SetFtpV20", "action": 0, "param": self._ftp_settings[channel]}]
+            body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
+        else:
             body = [{"cmd": "SetFtp", "action": 0, "param": self._ftp_settings[channel]}]
             body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
-        else:
-            body = [
-                {
-                    "cmd": "SetFtpV20",
-                    "action": 0,
-                    "param": self._ftp_settings[channel],
-                }
-            ]
-            body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
 
     async def set_email(self, channel: Optional[int], enable: bool) -> None:
         body: reolink_json
         if channel is None:
-            if self._api_version["GetEmail"] == 0:
-                for c in self._channels:
-                    if self._email_settings is not None and c in self._email_settings and self._email_settings[c] is not None:
-                        body = [
-                            {
-                                "cmd": "SetEmail",
-                                "action": 0,
-                                "param": self._email_settings[c],
-                            }
-                        ]
-                        body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
-                        await self.send_setting(body)
+            if self.api_version("GetEmail") >= 1:
+                body = [{"cmd": "SetEmailV20", "action": 0, "param": self._email_settings[0]}]
+                body[0]["param"]["Email"]["enable"] = 1 if enable else 0
+                await self.send_setting(body)
                 return
 
-            body = [
-                {
-                    "cmd": "SetEmailV20",
-                    "action": 0,
-                    "param": self._email_settings[0],
-                }
-            ]
-            body[0]["param"]["Email"]["enable"] = 1 if enable else 0
-            await self.send_setting(body)
+            for c in self._channels:
+                if self._email_settings is not None and c in self._email_settings and self._email_settings[c] is not None:
+                    body = [{"cmd": "SetEmail", "action": 0, "param": self._email_settings[c]}]
+                    body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
+                    await self.send_setting(body)
             return
 
         if channel not in self._channels:
@@ -2161,24 +2048,12 @@ class Host:
         if self._email_settings is None or channel not in self._email_settings or not self._email_settings[channel]:
             raise NotSupportedError(f"set_email: Email on camera {self.camera_name(channel)} is not available")
 
-        if self._api_version["GetEmail"] == 0:
-            body = [
-                {
-                    "cmd": "SetEmail",
-                    "action": 0,
-                    "param": self._email_settings[channel],
-                }
-            ]
-            body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
-        else:
-            body = [
-                {
-                    "cmd": "SetEmailV20",
-                    "action": 0,
-                    "param": self._email_settings[channel],
-                }
-            ]
+        if self.api_version("GetEmail") >= 1:
+            body = [{"cmd": "SetEmailV20", "action": 0, "param": self._email_settings[channel]}]
             body[0]["param"]["Email"]["enable"] = 1 if enable else 0
+        else:
+            body = [{"cmd": "SetEmail", "action": 0, "param": self._email_settings[channel]}]
+            body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
 
@@ -2346,7 +2221,9 @@ class Host:
         if self._audio_alarm_settings is None or channel not in self._audio_alarm_settings or not self._audio_alarm_settings[channel]:
             raise NotSupportedError(f"set_audio_alarm: AudioAlarm on camera {self.camera_name(channel)} is not available")
 
-        if self._api_version["GetAudioAlarm"] == 0:
+        if self.api_version("GetAudioAlarm") >= 1:
+            body = [{"cmd": "SetAudioAlarmV20", "param": {"Audio": {"enable": 1 if enable else 0, "channel": channel}}}]
+        else:
             body = [
                 {
                     "cmd": "SetAudioAlarm",
@@ -2358,13 +2235,6 @@ class Host:
                             }
                         }
                     },
-                }
-            ]
-        else:
-            body = [
-                {
-                    "cmd": "SetAudioAlarmV20",
-                    "param": {"Audio": {"enable": 1 if enable else 0, "channel": channel}},
                 }
             ]
 
@@ -2431,29 +2301,17 @@ class Host:
 
         body: reolink_json
         if channel is None:
-            if self._api_version["GetRec"] == 0:
-                for c in self._channels:
-                    if self._recording_settings is not None and c in self._recording_settings and self._recording_settings[c] is not None:
-                        body = [
-                            {
-                                "cmd": "SetRec",
-                                "action": 0,
-                                "param": self._recording_settings[c],
-                            }
-                        ]
-                        body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
-                        await self.send_setting(body)
+            if self.api_version("GetRec") >= 1:
+                body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[0]}]
+                body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
+                await self.send_setting(body)
                 return
 
-            body = [
-                {
-                    "cmd": "SetRecV20",
-                    "action": 0,
-                    "param": self._recording_settings[0],
-                }
-            ]
-            body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
-            await self.send_setting(body)
+            for c in self._channels:
+                if self._recording_settings is not None and c in self._recording_settings and self._recording_settings[c] is not None:
+                    body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[c]}]
+                    body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
+                    await self.send_setting(body)
             return
 
         if channel not in self._channels:
@@ -2461,24 +2319,12 @@ class Host:
         if self._recording_settings is None or channel not in self._recording_settings or not self._recording_settings[channel]:
             raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
 
-        if self._api_version["GetRec"] == 0:
-            body = [
-                {
-                    "cmd": "SetRec",
-                    "action": 0,
-                    "param": self._recording_settings[channel],
-                }
-            ]
-            body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
-        else:
-            body = [
-                {
-                    "cmd": "SetRecV20",
-                    "action": 0,
-                    "param": self._recording_settings[channel],
-                }
-            ]
+        if self.api_version("GetRec") >= 1:
+            body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[channel]}]
             body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
+        else:
+            body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[channel]}]
+            body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
 
             await self.send_setting(body)
 
@@ -2847,7 +2693,9 @@ class Host:
                     json_data = json.loads(data)
                 except (TypeError, json.JSONDecodeError) as err:
                     if retry <= 0:
-                        raise InvalidContentTypeError(f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, content type '{response.content_type}', data:\n{data}\n") from err
+                        raise InvalidContentTypeError(
+                            f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, content type '{response.content_type}', data:\n{data}\n"
+                        ) from err
                     _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", err, data)
                     await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
