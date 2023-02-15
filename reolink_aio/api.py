@@ -131,7 +131,7 @@ class Host:
         self._channels: list[int] = []
         self._channel_names: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
-        self._channel_abilities: list  # raw response from NVR/camera
+        self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
         self._channel_capabilities: dict[int, list[str]] = {}
 
         ##############################################################################
@@ -681,16 +681,16 @@ class Host:
             if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("push")
 
-            if self.api_version(channel, "ledControl") > 0 and channel in self._ir_settings:
+            if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
                 self._channel_capabilities[channel].append("ir_lights")
 
-            if self.api_version(channel, "powerLed") > 0:
+            if self.api_version("powerLed", channel) > 0:
                 self._channel_capabilities[channel].append("power_led")
 
             if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
                 self._channel_capabilities[channel].append("doorbell_light")
 
-            if self.api_version(channel, "floodLight") > 0 and self._api_version["GetWhiteLed"] > 0:
+            if self.api_version("floodLight", channel) > 0 and self._api_version["GetWhiteLed"] > 0:
                 # floodlight == spotlight == WhiteLed
                 self._channel_capabilities[channel].append("floodLight")
 
@@ -706,7 +706,7 @@ class Host:
             if self.audio_record(channel) is not None:
                 self._channel_capabilities[channel].append("audio")
 
-            ptz_ver = self.api_version(channel, "ptzType")
+            ptz_ver = self.api_version("ptzType", channel)
             if ptz_ver != 0:
                 self._channel_capabilities[channel].append("ptz")
                 if ptz_ver in [1, 2, 5]:
@@ -735,15 +735,15 @@ class Host:
 
         return capability in self._channel_capabilities[channel]
 
-    def api_version(self, channel: int, capability: str) -> bool:
+    def api_version(self, capability: str, channel: int | None = None) -> bool:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
-        if channel not in self._channel_abilities:
-            return 0
+        if capability in self._api_version:
+            return self._api_version[capability]
 
-        if capability not in self._channel_abilities[channel]:
-            return 0
+        if channel is None:
+            return self._abilities.get(capability, {}).get("ver", 0)
 
-        return self._channel_abilities[channel][capability].get("ver", 0)
+        return self._abilities["abilityChn"].get(channel, {}).get(capability, {}).get("ver", 0)
 
     async def get_state(self, cmd: str) -> None:
         body = []
@@ -1534,8 +1534,8 @@ class Host:
                     self._time_settings = data["value"]
 
                 elif data["cmd"] == "GetAbility":
-                    host_abilities: dict[str, Any] = data["value"]["Ability"]
-                    for ability, details in host_abilities.items():
+                    self._abilities = data["value"]["Ability"]
+                    for ability, details in self._abilities.items():
                         if ability == "email":
                             self._api_version["GetEmail"] = details["ver"]
                         elif ability == "push":
@@ -1547,11 +1547,10 @@ class Host:
                         elif ability == "supportAudioAlarm":
                             self._api_version["GetAudioAlarm"] = details["ver"]
 
-                    self._channel_abilities = host_abilities["abilityChn"]
                     for channel in self._channels:
-                        self._api_version["GetFtp"] = self._channel_abilities[channel].get("ftp", {"ver": 1})["ver"]
-                        self._api_version["GetRec"] = self._channel_abilities[channel].get("recCfg", {"ver": 1})["ver"]
-                        self._api_version["GetAudioAlarm"] = self._channel_abilities[channel].get("supportAudioAlarm", {"ver": 1})["ver"]
+                        self._api_version["GetFtp"] = self._abilities["abilityChn"][channel].get("ftp", {"ver": 1})["ver"]
+                        self._api_version["GetRec"] = self._abilities["abilityChn"][channel].get("recCfg", {"ver": 1})["ver"]
+                        self._api_version["GetAudioAlarm"] = self._abilities["abilityChn"][channel].get("supportAudioAlarm", {"ver": 1})["ver"]
 
             except Exception as e:  # pylint: disable=bare-except
                 _LOGGER.error(
