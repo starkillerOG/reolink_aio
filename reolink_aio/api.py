@@ -495,7 +495,7 @@ class Host:
 
     def audio_record(self, channel: int) -> bool:
         if channel not in self._enc_settings:
-            return None
+            return False
 
         return self._enc_settings[channel]["Enc"]["audio"] == 1
 
@@ -733,7 +733,7 @@ class Host:
 
         return capability in self._channel_capabilities[channel]
 
-    def api_version(self, capability: str, channel: int | None = None) -> bool:
+    def api_version(self, capability: str, channel: int | None = None) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
         if capability in self._api_version:
             return self._api_version[capability]
@@ -1190,7 +1190,8 @@ class Host:
 
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
 
-        response = await self.send(None, param, expected_response_type="image/jpeg")
+        body: list[dict[str, Any]] = [{}]
+        response = await self.send(body, param, expected_response_type="image/jpeg")
         if response is None or response == b"":
             _LOGGER.error(
                 "Host: %s:%s: error obtaining still image response for channel %s.",
@@ -2543,7 +2544,7 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json | None,
+        body: reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"],
         retry: int = RETRY_ATTEMPTS,
@@ -2553,8 +2554,8 @@ class Host:
     @overload
     async def send(
         self,
-        body: Optional[reolink_json],
-        param: Optional[dict[str, Any]],
+        body: reolink_json,
+        param: dict[str, Any] | None,
         expected_response_type: Literal["image/jpeg"],
         retry: int = RETRY_ATTEMPTS,
     ) -> bytes:
@@ -2563,8 +2564,8 @@ class Host:
     @overload
     async def send(
         self,
-        body: Optional[reolink_json],
-        param: Optional[dict[str, Any]],
+        body: reolink_json,
+        param: dict[str, Any] | None,
         expected_response_type: Literal["text/html"],
         retry: int = RETRY_ATTEMPTS,
     ) -> str:
@@ -2573,7 +2574,7 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json | None,
+        body: reolink_json,
         *,
         expected_response_type: Literal["json"],
         retry: int = RETRY_ATTEMPTS,
@@ -2583,7 +2584,7 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json | None,
+        body: reolink_json,
         *,
         expected_response_type: Literal["image/jpeg"],
         retry: int = RETRY_ATTEMPTS,
@@ -2593,7 +2594,7 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json | None,
+        body: reolink_json,
         *,
         expected_response_type: Literal["text/html"],
         retry: int = RETRY_ATTEMPTS,
@@ -2602,15 +2603,15 @@ class Host:
 
     async def send(
         self,
-        body: Optional[reolink_json],
-        param: Optional[dict[str, Any]] = None,
+        body: reolink_json,
+        param: dict[str, Any] | None = None,
         expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] = "json",
         retry: int = RETRY_ATTEMPTS,
-    ) -> reolink_json | bytes:
+    ) -> reolink_json | bytes | str:
         """Generic send method."""
         retry = retry - 1
 
-        if expected_response_type == "image/jpeg" or body is None:
+        if expected_response_type == "image/jpeg":
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
         else:
