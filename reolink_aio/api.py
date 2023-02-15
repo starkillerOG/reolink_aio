@@ -2244,26 +2244,38 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_siren(self, channel: int, enable: bool) -> None:
+    async def set_siren(self, channel: int, enable: bool = True, duration: int | None = 2) -> None:
         # Uses API AudioAlarmPlay with manual switch
         # uncertain if there may be a glitch - dont know if there is API I have yet to find
         # which sets AudioLevel
         if channel not in self._channels:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
 
-        # This is overkill but to get state set right necessary to call set_audio_alarm.
-        await self.set_audio_alarm(channel, enable)
+        if enable:
+            if duration is not None:
+                params = {
+                    "alarm_mode": "times",
+                    "times": duration,
+                    "channel": channel,
+                }
+            else:
+                params = {
+                    "alarm_mode": "manul",
+                    "manual_switch": 1,
+                    "channel": channel,
+                }
+        else:
+            params = {
+                "alarm_mode": "manul",
+                "manual_switch": 0,
+                "channel": channel,
+            }
 
         body = [
             {
                 "cmd": "AudioAlarmPlay",
                 "action": 0,
-                "param": {
-                    "alarm_mode": "manul",
-                    "manual_switch": 1 if enable else 0,
-                    "times": 2,
-                    "channel": channel,
-                },
+                "param": params,
             }
         ]
 
