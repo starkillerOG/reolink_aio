@@ -2846,7 +2846,7 @@ class Host:
                     json_data = json.loads(data)
                 except (TypeError, json.JSONDecodeError) as err:
                     if retry <= 0:
-                        raise InvalidContentTypeError(f"Error translating JSON response: {str(err)},  content type '{response.content_type}', data:\n{data}\n") from err
+                        raise InvalidContentTypeError(f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, content type '{response.content_type}', data:\n{data}\n") from err
                     _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", err, data)
                     await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
