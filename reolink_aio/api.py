@@ -642,7 +642,10 @@ class Host:
         try:
             if self._token:
                 param = {"cmd": "Logout"}
-                await self.send(body, param, expected_response_type="text/html")
+                try:
+                    await self.send(body, param, expected_response_type="text/html")
+                except ReolinkError as err:
+                    _LOGGER.warning("Error while logging out: %s", err)
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
             # Thus it is not available for now to exit the previous "stuck" sessions after sudden crash or power failure:
