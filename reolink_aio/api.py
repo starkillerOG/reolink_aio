@@ -643,6 +643,7 @@ class Host:
             if self._token:
                 param = {"cmd": "Logout"}
                 try:
+                    # logout sometimes responds with a string of seemingly random caracters, which are always the same for a given camera.
                     await self.send(body, param, expected_response_type="text/html")
                 except ReolinkError as err:
                     _LOGGER.warning("Error while logging out: %s", err)
