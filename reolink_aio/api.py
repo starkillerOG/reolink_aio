@@ -1190,7 +1190,7 @@ class Host:
 
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
 
-        body: list[dict[str, Any]] = [{}]
+        body: reolink_json = [{}]
         response = await self.send(body, param, expected_response_type="image/jpeg")
         if response is None or response == b"":
             _LOGGER.error(
