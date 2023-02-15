@@ -197,7 +197,6 @@ class Host:
         # a channel-number, and will get a not-requested bulky schedule-block response for that camera among requested host-level attributes.
         self._email_enabled: dict[int, bool] = {}
         self._recording_enabled: dict[int, bool] = {}
-        self._audio_alarm_enabled: dict[int, bool] = {}
         self._ftp_enabled: dict[int, bool] = {}
         self._push_enabled: dict[int, bool] = {}
         self._power_led_enabled: dict[int, bool] = {}
@@ -417,7 +416,13 @@ class Host:
         return True
 
     def audio_alarm_enabled(self, channel: int) -> bool:
-        return self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel]
+        if channel not in self._audio_alarm_settings:
+            return False
+
+        if self.api_version("GetAudioAlarm") >= 1:
+            return self._audio_alarm_settings[channel]["Audio"]["enable"] == 1
+
+        return self._audio_alarm_settings[channel]["Audio"]["schedule"]["enable"] == 1
 
     def ir_enabled(self, channel: int) -> bool:
         return channel in self._ir_settings and self._ir_settings[channel]["IrLights"]["state"] == "Auto"
@@ -499,11 +504,11 @@ class Host:
 
         return self._enc_settings[channel]["Enc"]["audio"] == 1
 
-    def audio_alarm_settings(self, channel: int) -> Optional[dict]:
-        if self._audio_alarm_settings is not None and channel in self._audio_alarm_settings:
+    def audio_alarm_settings(self, channel: int) -> dict:
+        if channel in self._audio_alarm_settings:
             return self._audio_alarm_settings[channel]
 
-        return None
+        return {}
 
     def ptz_presets(self, channel: int) -> dict:
         if self._ptz_presets is not None and channel in self._ptz_presets:
@@ -692,7 +697,7 @@ class Host:
                 # floodlight == spotlight == WhiteLed
                 self._channel_capabilities[channel].append("floodLight")
 
-            if self._audio_alarm_enabled is not None and channel in self._audio_alarm_enabled and self._audio_alarm_enabled[channel] is not None:
+            if channel in self._audio_alarm_settings:
                 self._channel_capabilities[channel].append("siren")
 
             if self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel] is not None:
@@ -1674,11 +1679,9 @@ class Host:
 
                 elif data["cmd"] == "GetAudioAlarm":
                     self._audio_alarm_settings[channel] = data["value"]
-                    self._audio_alarm_enabled[channel] = data["value"]["Audio"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetAudioAlarmV20":
                     self._audio_alarm_settings[channel] = data["value"]
-                    self._audio_alarm_enabled[channel] = data["value"]["Audio"]["enable"] == 1
 
                 elif data["cmd"] == "GetAutoFocus":
                     self._auto_focus_settings[channel] = data["value"]
@@ -2219,11 +2222,11 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_audio_alarm: no camera connected to channel '{channel}'")
-        if self._audio_alarm_settings is None or channel not in self._audio_alarm_settings or not self._audio_alarm_settings[channel]:
+        if channel not in self._audio_alarm_settings or not self._audio_alarm_settings[channel]:
             raise NotSupportedError(f"set_audio_alarm: AudioAlarm on camera {self.camera_name(channel)} is not available")
 
         if self.api_version("GetAudioAlarm") >= 1:
-            body = [{"cmd": "SetAudioAlarmV20", "param": {"Audio": {"enable": 1 if enable else 0, "channel": channel}}}]
+            body = [{"cmd": "SetAudioAlarmV20", "param": {"Audio": {"enable": 1 if enable else 0, "schedule": {"channel": channel}}}}]
         else:
             body = [
                 {
