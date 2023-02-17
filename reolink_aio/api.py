@@ -181,6 +181,7 @@ class Host:
         self._whiteled_settings: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
         self._alarm_settings: dict[int, dict] = {}
+        self._audio_settings: dict[int, dict] = {}
         self._audio_alarm_settings: dict[int, dict] = {}
 
         ##############################################################################
@@ -504,6 +505,12 @@ class Host:
 
         return self._enc_settings[channel]["Enc"]["audio"] == 1
 
+    def volume(self, channel: int) -> int:
+        if channel not in self._audio_settings:
+            return 100
+
+        return self._audio_settings[channel]["AudioCfg"]["volume"]
+
     def audio_alarm_settings(self, channel: int) -> dict:
         if channel in self._audio_alarm_settings:
             return self._audio_alarm_settings[channel]
@@ -697,6 +704,9 @@ class Host:
                 # floodlight == spotlight == WhiteLed
                 self._channel_capabilities[channel].append("floodLight")
 
+            if self.api_version("GetAudioCfg") > 0:
+                self._channel_capabilities[channel].append("volume")
+
             if channel in self._audio_alarm_settings:
                 self._channel_capabilities[channel].append("siren")
 
@@ -772,6 +782,8 @@ class Host:
                 ch_body = [{"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetZoomFocus":
                 ch_body = [{"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetAudioCfg":
+                ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAlarm":
@@ -870,6 +882,9 @@ class Host:
             if self.supported(channel, "pan_tilt") and self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
+            if self.supported(channel, "volume"):
+                ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
+
             if self.api_version("GetEmail") >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
             else:
@@ -942,6 +957,7 @@ class Host:
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
             ]
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
@@ -981,6 +997,7 @@ class Host:
 
         self._api_version["GetEvents"] = check_command_exists("GetEvents")
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
+        self._api_version["GetAudioCfg"] = check_command_exists("GetAudioCfg")
         if self.api_version("scheduleVersion") >= 1:
             self._api_version["GetEmail"] = check_command_exists("GetEmailV20")
             self._api_version["GetPush"] = check_command_exists("GetPushV20")
@@ -1677,6 +1694,9 @@ class Host:
                             preset_id = int(preset["id"])
                             self._ptz_presets[channel][preset_name] = preset_id
 
+                elif data["cmd"] == "GetAudioCfg":
+                    self._audio_settings[channel] = data["value"]
+
                 elif data["cmd"] == "GetAudioAlarm":
                     self._audio_alarm_settings[channel] = data["value"]
 
@@ -2215,6 +2235,17 @@ class Host:
 
         await self.set_spotlight_lighting_schedule(channel, 0, 0, 0, 0)
         await self.set_whiteled(channel, enable, 100, 1)
+
+    async def set_volume(self, channel: int, volume: int) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_volume: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "volume"):
+            raise NotSupportedError(f"set_volume: Volume control on camera {self.camera_name(channel)} is not available")
+        if volume < 0 or volume > 100:
+            raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
+
+        body = [{"cmd":"SetAudioCfg", "action": 0, "param": {"AudioCfg": {"volume": volume, "channel": channel}}}]
+        await self.send_setting(body)
 
     async def set_audio_alarm(self, channel: int, enable: bool) -> None:
         # fairly basic only either turns it off or on
