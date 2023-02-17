@@ -2572,11 +2572,13 @@ class Host:
         _LOGGER.debug("Response from cmd '%s' from %s:%s: %s", command, self._host, self._port, json_data)
 
         try:
-            if json_data[0]["code"] != 0 or json_data[0]["value"]["rspCode"] != 200:
+            if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
+                rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
+                detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
                 raise ApiError(
                     f"cmd '{command}': API returned error code {json_data[0]['code']}, "
-                    f"response code {json_data[0]['value']['rspCode']}/{json_data[0]['value'].get('detail', '')}"
+                    f"response code {rspCode}/{detail}"
                 )
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
