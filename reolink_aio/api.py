@@ -1878,6 +1878,8 @@ class Host:
             raise NotSupportedError(f"set_focus: not supported by camera {self.camera_name(channel)}")
         min_focus = self.zoom_range(channel)["focus"]["pos"]["min"]
         max_focus = self.zoom_range(channel)["focus"]["pos"]["max"]
+        if not isinstance(focus, int):
+            raise InvalidParameterError(f"set_focus: focus value {focus} not integer")
         if focus not in range(min_focus, max_focus + 1):
             raise InvalidParameterError(f"set_focus: focus value {focus} not in range {min_focus}..{max_focus}")
 
@@ -1912,6 +1914,8 @@ class Host:
             raise NotSupportedError(f"set_zoom: not supported by camera {self.camera_name(channel)}")
         min_zoom = self.zoom_range(channel)["zoom"]["pos"]["min"]
         max_zoom = self.zoom_range(channel)["zoom"]["pos"]["max"]
+        if not isinstance(zoom, int):
+            raise InvalidParameterError(f"set_zoom: zoom value {zoom} not integer")
         if zoom not in range(min_zoom, max_zoom + 1):
             raise InvalidParameterError(f"set_zoom: zoom value {zoom} not in range {min_zoom}..{max_zoom}")
 
@@ -2241,6 +2245,8 @@ class Host:
             raise InvalidParameterError(f"set_volume: no camera connected to channel '{channel}'")
         if not self.supported(channel, "volume"):
             raise NotSupportedError(f"set_volume: Volume control on camera {self.camera_name(channel)} is not available")
+        if not isinstance(volume, int):
+            raise InvalidParameterError(f"set_volume: volume {volume} not integer")
         if volume < 0 or volume > 100:
             raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
 
@@ -2281,6 +2287,8 @@ class Host:
         # which sets AudioLevel
         if channel not in self._channels:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
+        if duration is not None and not isinstance(duration, int):
+            raise InvalidParameterError(f"set_siren: duration '{duration}' is not integer")
 
         if enable:
             if duration is not None:
@@ -2416,7 +2424,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_ptz_command(self, channel: int, command, preset=None, speed=None) -> None:
+    async def set_ptz_command(self, channel: int, command, preset: int | None = None, speed: int | None = None) -> None:
         """Send PTZ command to the camera.
 
         List of possible commands
@@ -2442,6 +2450,10 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
+        if preset is not None and not isinstance(preset, int):
+            raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
+        if speed is not None and not isinstance(speed, int):
+            raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
         body: reolink_json = [
             {
                 "cmd": "PtzCtrl",
