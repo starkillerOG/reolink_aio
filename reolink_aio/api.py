@@ -192,14 +192,6 @@ class Host:
 
         ##############################################################################
         # Camera-level states
-        # Actually these must be divided into host-level and camera-level parts.
-        # BUT there is a data-normalization bug in Reolink network API: in commands/responses Host-level attributes are mixed with
-        # Channel-level attributes. So if you want to obtain some host-level switch (like e.g. "ftp enabled") - you still need to supply
-        # a channel-number, and will get a not-requested bulky schedule-block response for that camera among requested host-level attributes.
-        self._email_enabled: dict[int, bool] = {}
-        self._recording_enabled: dict[int, bool] = {}
-        self._ftp_enabled: dict[int, bool] = {}
-        self._push_enabled: dict[int, bool] = {}
         self._power_led_enabled: dict[int, bool] = {}
         self._doorbell_light_enabled: dict[int, bool] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
@@ -434,29 +426,41 @@ class Host:
     def doorbell_light_enabled(self, channel: int) -> bool:
         return self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel]
 
-    def ftp_enabled(self, channel: Optional[int]) -> bool:
-        if channel is None:
-            return self._ftp_enabled is not None and 0 in self._ftp_enabled and self._ftp_enabled[0]
+    def ftp_enabled(self, channel: int) -> bool:
+        if channel not in self._ftp_settings:
+            return False
 
-        return self._ftp_enabled is not None and channel in self._ftp_enabled and self._ftp_enabled[channel]
+        if self.api_version("GetFtp") >= 1:
+            self._ftp_settings[channel]["Ftp"]["enable"] == 1
 
-    def email_enabled(self, channel: Optional[int]) -> bool:
-        if channel is None:
-            return self._email_enabled is not None and 0 in self._email_enabled and self._email_enabled[0]
+        return self._ftp_settings[channel]["Ftp"]["schedule"]["enable"] == 1
 
-        return self._email_enabled is not None and channel in self._email_enabled and self._email_enabled[channel]
+    def email_enabled(self, channel: int) -> bool:
+        if channel not in self._email_settings:
+            return False
 
-    def push_enabled(self, channel: Optional[int]) -> bool:
-        if channel is None:
-            return self._push_enabled is not None and 0 in self._push_enabled and self._push_enabled[0]
+        if self.api_version("GetEmail") >= 1:
+            return self._email_settings[channel]["Email"]["enable"] == 1
 
-        return self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel]
+        return self._email_settings[channel]["Email"]["schedule"]["enable"] == 1
 
-    def recording_enabled(self, channel: Optional[int]) -> bool:
-        if channel is None:
-            return self._recording_enabled is not None and 0 in self._recording_enabled and self._recording_enabled[0]
+    def push_enabled(self, channel: int) -> bool:
+        if channel not in self._push_settings:
+            return False
 
-        return self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel]
+        if self.api_version("GetPush") >= 1:
+            return self._push_settings[channel]["Push"]["enable"] == 1
+
+        return self._push_settings[channel]["Push"]["schedule"]["enable"] == 1
+
+    def recording_enabled(self, channel: int) -> bool:
+        if channel not in self._recording_settings:
+            return False
+
+        if self.api_version("GetRec") >= 1:
+            return self._recording_settings[channel]["Rec"]["enable"] == 1
+
+        return self._recording_settings[channel]["Rec"]["schedule"]["enable"] == 1
 
     def whiteled_state(self, channel: int) -> bool:
         return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
@@ -685,10 +689,10 @@ class Host:
         for channel in self._channels:
             self._channel_capabilities[channel] = []
 
-            if self._ftp_enabled is not None and channel in self._ftp_enabled and self._ftp_enabled[channel] is not None:
+            if channel in self._ftp_settings:
                 self._channel_capabilities[channel].append("ftp")
 
-            if self._push_enabled is not None and channel in self._push_enabled and self._push_enabled[channel] is not None:
+            if channel in self._push_settings:
                 self._channel_capabilities[channel].append("push")
 
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
@@ -710,10 +714,10 @@ class Host:
             if channel in self._audio_alarm_settings:
                 self._channel_capabilities[channel].append("siren")
 
-            if self._recording_enabled is not None and channel in self._recording_enabled and self._recording_enabled[channel] is not None:
+            if channel in self._recording_settings:
                 self._channel_capabilities[channel].append("recording")
 
-            if self._email_enabled is not None and channel in self._email_enabled and self._email_enabled[channel] is not None:
+            if channel in self._email_settings:
                 self._channel_capabilities[channel].append("email")
 
             if self.audio_record(channel) is not None:
@@ -1621,19 +1625,15 @@ class Host:
 
                 elif data["cmd"] == "GetFtp":
                     self._ftp_settings[channel] = data["value"]
-                    self._ftp_enabled[channel] = data["value"]["Ftp"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetFtpV20":
                     self._ftp_settings[channel] = data["value"]
-                    self._ftp_enabled[channel] = data["value"]["Ftp"]["enable"] == 1
 
                 elif data["cmd"] == "GetPush":
                     self._push_settings[channel] = data["value"]
-                    self._push_enabled[channel] = data["value"]["Push"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetPushV20":
                     self._push_settings[channel] = data["value"]
-                    self._push_enabled[channel] = data["value"]["Push"]["enable"] == 1
 
                 elif data["cmd"] == "GetEnc":
                     response_channel = data["value"]["Enc"]["channel"]
@@ -1649,11 +1649,9 @@ class Host:
 
                 elif data["cmd"] == "GetEmail":
                     self._email_settings[channel] = data["value"]
-                    self._email_enabled[channel] = data["value"]["Email"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetEmailV20":
                     self._email_settings[channel] = data["value"]
-                    self._email_enabled[channel] = data["value"]["Email"]["enable"] == 1
 
                 elif data["cmd"] == "GetIsp":
                     response_channel = data["value"]["Isp"]["channel"]
@@ -1679,11 +1677,9 @@ class Host:
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
-                    self._recording_enabled[channel] = data["value"]["Rec"]["schedule"]["enable"] == 1
 
                 elif data["cmd"] == "GetRecV20":
                     self._recording_settings[channel] = data["value"]
-                    self._recording_enabled[channel] = data["value"]["Rec"]["enable"] == 1
 
                 elif data["cmd"] == "GetPtzPreset":
                     self._ptz_presets_settings[channel] = data["value"]
