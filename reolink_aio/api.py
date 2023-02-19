@@ -138,7 +138,7 @@ class Host:
         # API-versions and capabilities
         self._api_version: dict[str, int] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
-        self._channel_capabilities: dict[int, list[str]] = {}  # processed by construct_capabilities
+        self._capabilities: dict[int | str, list[str]] = {"Host": []}  # processed by construct_capabilities
 
         ##############################################################################
         # Video-stream formats
@@ -362,7 +362,10 @@ class Host:
     ##############################################################################
     # Channel-level getters/setters
 
-    def camera_name(self, channel: int) -> Optional[str]:
+    def camera_name(self, channel: int | None) -> Optional[str]:
+        if channel is None:
+            return self.nvr_name
+
         if self._channel_names is None or channel not in self._channel_names:
             return "Unknown"
         return self._channel_names[channel]
@@ -710,71 +713,89 @@ class Host:
 
     def construct_capabilities(self) -> None:
         """Construct the capabilities list of the NVR/camera."""
+        # Host capabilities
+        self._capabilities["Host"] = []
+        if self._ftp_settings:
+            self._capabilities["Host"].append("ftp")
+
+        if self._push_settings:
+            self._capabilities["Host"].append("push")
+
+        if self._recording_settings:
+            self._capabilities["Host"].append("recording")
+
+        if self._email_settings:
+            self._capabilities["Host"].append("email")
+
+        # Channel capabilities
         for channel in self._channels:
-            self._channel_capabilities[channel] = []
+            self._capabilities[channel] = []
 
             if channel in self._ftp_settings:
-                self._channel_capabilities[channel].append("ftp")
+                self._capabilities[channel].append("ftp")
 
             if channel in self._push_settings:
-                self._channel_capabilities[channel].append("push")
+                self._capabilities[channel].append("push")
+
+            if channel in self._recording_settings:
+                self._capabilities[channel].append("recording")
+
+            if channel in self._email_settings:
+                self._capabilities[channel].append("email")
 
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
-                self._channel_capabilities[channel].append("ir_lights")
+                self._capabilities[channel].append("ir_lights")
 
             if self.api_version("powerLed", channel) > 0:
-                self._channel_capabilities[channel].append("power_led")
+                self._capabilities[channel].append("power_led")
 
             if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
-                self._channel_capabilities[channel].append("doorbell_light")
+                self._capabilities[channel].append("doorbell_light")
 
             if self.api_version("floodLight", channel) > 0 and self.api_version("GetWhiteLed") > 0:
                 # floodlight == spotlight == WhiteLed
-                self._channel_capabilities[channel].append("floodLight")
+                self._capabilities[channel].append("floodLight")
 
             if self.api_version("GetAudioCfg") > 0:
-                self._channel_capabilities[channel].append("volume")
+                self._capabilities[channel].append("volume")
 
             if channel in self._audio_alarm_settings:
-                self._channel_capabilities[channel].append("siren")
-
-            if channel in self._recording_settings:
-                self._channel_capabilities[channel].append("recording")
-
-            if channel in self._email_settings:
-                self._channel_capabilities[channel].append("email")
+                self._capabilities[channel].append("siren")
 
             if self.audio_record(channel) is not None:
-                self._channel_capabilities[channel].append("audio")
+                self._capabilities[channel].append("audio")
 
             ptz_ver = self.api_version("ptzType", channel)
             if ptz_ver != 0:
-                self._channel_capabilities[channel].append("ptz")
+                self._capabilities[channel].append("ptz")
                 if ptz_ver in [1, 2, 5]:
-                    self._channel_capabilities[channel].append("zoom")
+                    self._capabilities[channel].append("zoom")
                 if ptz_ver in [2, 3, 5]:
-                    self._channel_capabilities[channel].append("pan_tilt")
+                    self._capabilities[channel].append("pan_tilt")
                 if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
-                    self._channel_capabilities[channel].append("ptz_presets")
+                    self._capabilities[channel].append("ptz_presets")
 
             if self._sensitivity_presets is not None and channel in self._sensitivity_presets and len(self._sensitivity_presets[channel]) != 0:
-                self._channel_capabilities[channel].append("sensitivity_presets")
+                self._capabilities[channel].append("sensitivity_presets")
 
             if channel in self._motion_detection_states:
-                self._channel_capabilities[channel].append("motion_detection")
+                self._capabilities[channel].append("motion_detection")
 
             if self.daynight_state(channel) is not None:
-                self._channel_capabilities[channel].append("dayNight")
+                self._capabilities[channel].append("dayNight")
 
             if self.backlight_state(channel) is not None:
-                self._channel_capabilities[channel].append("backLight")
+                self._capabilities[channel].append("backLight")
 
-    def supported(self, channel: int, capability: str) -> bool:
+    def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
-        if channel not in self._channel_capabilities:
+        if channel is None:
+            return capability in self._capabilities["Host"]
+
+        if channel not in self._capabilities:
             return False
 
-        return capability in self._channel_capabilities[channel]
+        return capability in self._capabilities[channel]
 
     def api_version(self, capability: str, channel: int | None = None) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
@@ -2011,8 +2032,10 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_push(self, channel: Optional[int], enable: bool) -> None:
+    async def set_push(self, channel: int | None, enable: bool) -> None:
         """Set the PUSH-notifications parameter."""
+        if not self.supported(channel, "push"):
+            raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
         body: reolink_json
         if channel is None:
@@ -2031,8 +2054,6 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_push: no camera connected to channel '{channel}'")
-        if self._push_settings is None or channel not in self._push_settings or not self._push_settings[channel]:
-            raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
         if self.api_version("GetPush") >= 1:
             body = [{"cmd": "SetPushV20", "action": 0, "param": self._push_settings[channel]}]
@@ -2043,8 +2064,10 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_ftp(self, channel: Optional[int], enable: bool) -> None:
+    async def set_ftp(self, channel: int | None, enable: bool) -> None:
         """Set the FTP-notifications parameter."""
+        if not self.supported(channel, "ftp"):
+            raise NotSupportedError(f"set_ftp: FTP on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json
         if channel is None:
@@ -2063,8 +2086,6 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_ftp: no camera connected to channel '{channel}'")
-        if self._ftp_settings is None or channel not in self._ftp_settings or not self._ftp_settings[channel]:
-            raise NotSupportedError(f"set_ftp: FTP on camera {self.camera_name(channel)} is not available")
 
         if self.api_version("GetFtp") >= 1:
             body = [{"cmd": "SetFtpV20", "action": 0, "param": self._ftp_settings[channel]}]
@@ -2075,7 +2096,10 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_email(self, channel: Optional[int], enable: bool) -> None:
+    async def set_email(self, channel: int | None, enable: bool) -> None:
+        if not self.supported(channel, "email"):
+            raise NotSupportedError(f"set_email: Email on camera {self.camera_name(channel)} is not available")
+
         body: reolink_json
         if channel is None:
             if self.api_version("GetEmail") >= 1:
@@ -2093,8 +2117,6 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_email: no camera connected to channel '{channel}'")
-        if self._email_settings is None or channel not in self._email_settings or not self._email_settings[channel]:
-            raise NotSupportedError(f"set_email: Email on camera {self.camera_name(channel)} is not available")
 
         if self.api_version("GetEmail") >= 1:
             body = [{"cmd": "SetEmailV20", "action": 0, "param": self._email_settings[channel]}]
@@ -2102,6 +2124,38 @@ class Host:
         else:
             body = [{"cmd": "SetEmail", "action": 0, "param": self._email_settings[channel]}]
             body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
+
+        await self.send_setting(body)
+
+    async def set_recording(self, channel: int | None, enable: bool) -> None:
+        """Set the recording parameter."""
+        if not self.supported(channel, "recording"):
+            raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
+
+        body: reolink_json
+        if channel is None:
+            if self.api_version("GetRec") >= 1:
+                body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[0]}]
+                body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
+                await self.send_setting(body)
+                return
+
+            for c in self._channels:
+                if self._recording_settings is not None and c in self._recording_settings and self._recording_settings[c] is not None:
+                    body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[c]}]
+                    body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
+                    await self.send_setting(body)
+            return
+
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
+
+        if self.api_version("GetRec") >= 1:
+            body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[channel]}]
+            body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
+        else:
+            body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[channel]}]
+            body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
 
@@ -2368,38 +2422,6 @@ class Host:
 
         body: reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["backLight"] = value
-
-        await self.send_setting(body)
-
-    async def set_recording(self, channel: int | None, enable: bool) -> None:
-        """Set the recording parameter."""
-
-        body: reolink_json
-        if channel is None:
-            if self.api_version("GetRec") >= 1:
-                body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[0]}]
-                body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
-                await self.send_setting(body)
-                return
-
-            for c in self._channels:
-                if self._recording_settings is not None and c in self._recording_settings and self._recording_settings[c] is not None:
-                    body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[c]}]
-                    body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
-                    await self.send_setting(body)
-            return
-
-        if channel not in self._channels:
-            raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
-        if self._recording_settings is None or channel not in self._recording_settings or not self._recording_settings[channel]:
-            raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
-
-        if self.api_version("GetRec") >= 1:
-            body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[channel]}]
-            body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
-        else:
-            body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[channel]}]
-            body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
 
