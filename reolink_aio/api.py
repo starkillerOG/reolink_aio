@@ -184,6 +184,7 @@ class Host:
         self._audio_settings: dict[int, dict] = {}
         self._audio_alarm_settings: dict[int, dict] = {}
         self._buzzer_settings: dict[int, dict] = {}
+        self._auto_track_settings: dict[int, dict] = {}
 
         ##############################################################################
         # States
@@ -558,6 +559,12 @@ class Host:
 
         return {}
 
+    def auto_track_enabled(self, channel: int) -> bool:
+        if channel not in self._auto_track_settings:
+            return False
+
+        return self._auto_track_settings[channel]["bSmartTrack"] == 1
+
     def ptz_presets(self, channel: int) -> dict:
         if self._ptz_presets is not None and channel in self._ptz_presets:
             return self._ptz_presets[channel]
@@ -791,6 +798,9 @@ class Host:
                 if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                     self._capabilities[channel].append("ptz_presets")
 
+            if self.api_version("aiTrack", channel) > 0:
+                self._capabilities[channel].append("auto_track")
+
             if self._sensitivity_presets is not None and channel in self._sensitivity_presets and len(self._sensitivity_presets[channel]) != 0:
                 self._capabilities[channel].append("sensitivity_presets")
 
@@ -847,6 +857,8 @@ class Host:
                 ch_body = [{"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetZoomFocus":
                 ch_body = [{"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetAiCfg":
+                ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioCfg":
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
@@ -948,6 +960,9 @@ class Host:
 
             if self.supported(channel, "pan_tilt") and self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "auto_track"):
+                ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "volume"):
                 ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
@@ -1759,6 +1774,9 @@ class Host:
                             preset_id = int(preset["id"])
                             self._ptz_presets[channel][preset_name] = preset_id
 
+                elif data["cmd"] == "GetAiCfg":
+                    self._auto_track_settings[channel] = data["value"]
+
                 elif data["cmd"] == "GetAudioCfg":
                     self._audio_settings[channel] = data["value"]
 
@@ -2539,6 +2557,15 @@ class Host:
         if preset:
             body[0]["param"]["id"] = preset
 
+        await self.send_setting(body)
+
+    async def set_auto_tracking(self, channel: int, enable: bool) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_auto_tracking: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "auto_track"):
+            raise NotSupportedError(f"set_auto_tracking: Auto tracking on camera {self.camera_name(channel)} is not available")
+
+        body = [{"cmd": "SetAiCfg", "action": 0, "param": {"bSmartTrack": 1 if enable else 0, "channel": channel}}]
         await self.send_setting(body)
 
     async def request_vod_files(
