@@ -183,6 +183,7 @@ class Host:
         self._alarm_settings: dict[int, dict] = {}
         self._audio_settings: dict[int, dict] = {}
         self._audio_alarm_settings: dict[int, dict] = {}
+        self._buzzer_settings: dict[int, dict] = {}
 
         ##############################################################################
         # States
@@ -489,6 +490,15 @@ class Host:
 
         return self._recording_settings[channel]["Rec"]["schedule"]["enable"] == 1
 
+    def buzzer_enabled(self, channel: int | None = None) -> bool:
+        if channel is None:
+            return all(self._buzzer_settings[ch]["Buzzer"]["enable"] == 1 for ch in self._channels)
+
+        if channel not in self._buzzer_settings:
+            return False
+
+        return self._buzzer_settings[channel]["Buzzer"]["enable"] == 1
+
     def whiteled_state(self, channel: int) -> bool:
         return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
 
@@ -727,6 +737,9 @@ class Host:
         if self._email_settings:
             self._capabilities["Host"].append("email")
 
+        if self.api_version("supportBuzzer") > 0:
+            self._capabilities["Host"].append("buzzer")
+
         # Channel capabilities
         for channel in self._channels:
             self._capabilities[channel] = []
@@ -742,6 +755,9 @@ class Host:
 
             if channel in self._email_settings:
                 self._capabilities[channel].append("email")
+
+            if self.api_version("supportBuzzer") > 0:
+                self._capabilities[channel].append("buzzer")
 
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
                 self._capabilities[channel].append("ir_lights")
@@ -837,6 +853,8 @@ class Host:
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAlarm":
                 ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
+            elif cmd == "GetBuzzerAlarmV20":
+                ch_body = [{"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetEmail", "GetEmailV20"]:
                 if self.api_version("GetEmail") >= 1:
                     ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
@@ -933,6 +951,9 @@ class Host:
 
             if self.supported(channel, "volume"):
                 ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "buzzer"):
+                ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
 
             if self.api_version("GetEmail") >= 1:
                 ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
@@ -1698,6 +1719,9 @@ class Host:
                 elif data["cmd"] == "GetEmailV20":
                     self._email_settings[channel] = data["value"]
 
+                elif data["cmd"] == "GetBuzzerAlarmV20":
+                    self._buzzer_settings[channel] = data["value"]
+
                 elif data["cmd"] == "GetIsp":
                     response_channel = data["value"]["Isp"]["channel"]
                     self._isp_settings[channel] = data["value"]
@@ -2145,6 +2169,24 @@ class Host:
         else:
             body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": {"schedule": {"enable": on_off, "channel": channel}}}}]
 
+        await self.send_setting(body)
+
+    async def set_buzzer(self, channel: int | None, enable: bool) -> None:
+        """Set the NVR buzzer parameter."""
+        if not self.supported(channel, "buzzer"):
+            raise NotSupportedError(f"set_buzzer: NVR buzzer on camera {self.camera_name(channel)} is not available")
+
+        body: reolink_json
+        on_off = 1 if enable else 0
+        if channel is None:
+            body = [{"cmd": "SetBuzzerAlarmV20", "action": 0, "param": {"Buzzer": {"enable": on_off}}}]
+            await self.send_setting(body)
+            return
+
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
+
+        body = [{"cmd": "SetBuzzerAlarmV20", "action": 0, "param": {"Buzzer": {"enable": on_off, "schedule": {"channel": channel}}}}]
         await self.send_setting(body)
 
     async def set_audio(self, channel: int, enable: bool) -> None:
