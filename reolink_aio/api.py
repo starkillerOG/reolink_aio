@@ -2038,17 +2038,16 @@ class Host:
             raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
         body: reolink_json
+        on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetPush") >= 1:
-                body = [{"cmd": "SetPushV20", "action": 0, "param": self._push_settings[0]}]
-                body[0]["param"]["Push"]["enable"] = 1 if enable else 0
+                body = [{"cmd": "SetPushV20", "action": 0, "param": {"Push":{"enable": on_off}}}]
                 await self.send_setting(body)
                 return
 
-            for c in self._channels:
-                if self._push_settings is not None and c in self._push_settings and self._push_settings[c] is not None:
-                    body = [{"cmd": "SetPush", "action": 0, "param": self._push_settings[c]}]
-                    body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
+            for ch in self._channels:
+                if self.supported(ch, "push"):
+                    body = [{"cmd": "SetPush", "action": 0, "param": {"Push":{"schedule":{"enable": on_off, "channel": ch)}}}]
                     await self.send_setting(body)
             return
 
@@ -2056,11 +2055,9 @@ class Host:
             raise InvalidParameterError(f"set_push: no camera connected to channel '{channel}'")
 
         if self.api_version("GetPush") >= 1:
-            body = [{"cmd": "SetPushV20", "action": 0, "param": self._push_settings[channel]}]
-            body[0]["param"]["Push"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetPushV20", "action": 0, "param": {"Push":{"enable": on_off, "schedule": {"channel": channel}}}}]
         else:
-            body = [{"cmd": "SetPush", "action": 0, "param": self._push_settings[channel]}]
-            body[0]["param"]["Push"]["schedule"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetPush", "action": 0, "param": {"Push":{"schedule": {"enable": on_off, "channel": channel}}}}]
 
         await self.send_setting(body)
 
@@ -2070,17 +2067,16 @@ class Host:
             raise NotSupportedError(f"set_ftp: FTP on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json
+        on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetFtp") >= 1:
-                body = [{"cmd": "SetFtpV20", "action": 0, "param": self._ftp_settings[0]}]
-                body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
+                body = [{"cmd": "SetFtpV20", "action": 0, "param": {"Ftp":{"enable": on_off}}}]
                 await self.send_setting(body)
                 return
 
-            for c in self._channels:
-                if self._ftp_settings is not None and c in self._ftp_settings and self._ftp_settings[c] is not None:
-                    body = [{"cmd": "SetFtp", "action": 0, "param": self._ftp_settings[c]}]
-                    body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
+            for ch in self._channels:
+                if self.supported(ch, "ftp"):
+                    body = [{"cmd": "SetFtp", "action": 0, "param": {"Ftp":{"schedule":{"enable": on_off, "channel": ch)}}}]
                     await self.send_setting(body)
             return
 
@@ -2088,11 +2084,9 @@ class Host:
             raise InvalidParameterError(f"set_ftp: no camera connected to channel '{channel}'")
 
         if self.api_version("GetFtp") >= 1:
-            body = [{"cmd": "SetFtpV20", "action": 0, "param": self._ftp_settings[channel]}]
-            body[0]["param"]["Ftp"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetFtpV20", "action": 0, "param": {"Ftp":{"enable": on_off, "schedule": {"channel": channel}}}}]
         else:
-            body = [{"cmd": "SetFtp", "action": 0, "param": self._ftp_settings[channel]}]
-            body[0]["param"]["Ftp"]["schedule"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetFtp", "action": 0, "param": {"Ftp":{"schedule": {"enable": on_off, "channel": channel}}}}]
 
         await self.send_setting(body)
 
@@ -2101,17 +2095,16 @@ class Host:
             raise NotSupportedError(f"set_email: Email on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json
+        on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetEmail") >= 1:
-                body = [{"cmd": "SetEmailV20", "action": 0, "param": self._email_settings[0]}]
-                body[0]["param"]["Email"]["enable"] = 1 if enable else 0
+                body = [{"cmd": "SetEmailV20", "action": 0, "param": {"Email":{"enable": on_off}}}]
                 await self.send_setting(body)
                 return
 
-            for c in self._channels:
-                if self._email_settings is not None and c in self._email_settings and self._email_settings[c] is not None:
-                    body = [{"cmd": "SetEmail", "action": 0, "param": self._email_settings[c]}]
-                    body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
+            for ch in self._channels:
+                if self.supported(ch, "email"):
+                    body = [{"cmd": "SetEmail", "action": 0, "param": {"Email":{"schedule":{"enable": on_off, "channel": ch)}}}]
                     await self.send_setting(body)
             return
 
@@ -2119,11 +2112,9 @@ class Host:
             raise InvalidParameterError(f"set_email: no camera connected to channel '{channel}'")
 
         if self.api_version("GetEmail") >= 1:
-            body = [{"cmd": "SetEmailV20", "action": 0, "param": self._email_settings[channel]}]
-            body[0]["param"]["Email"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetEmailV20", "action": 0, "param": {"Email":{"enable": on_off, "schedule": {"channel": channel}}}}]
         else:
-            body = [{"cmd": "SetEmail", "action": 0, "param": self._email_settings[channel]}]
-            body[0]["param"]["Email"]["schedule"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetEmail", "action": 0, "param": {"Email":{"schedule": {"enable": on_off, "channel": channel}}}}]
 
         await self.send_setting(body)
 
@@ -2133,17 +2124,16 @@ class Host:
             raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json
+        on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetRec") >= 1:
-                body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[0]}]
-                body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
+                body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec":{"enable": on_off}}}]
                 await self.send_setting(body)
                 return
 
-            for c in self._channels:
-                if self._recording_settings is not None and c in self._recording_settings and self._recording_settings[c] is not None:
-                    body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[c]}]
-                    body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
+            for ch in self._channels:
+                if self.supported(ch, "recording"):
+                    body = [{"cmd": "SetRec", "action": 0, "param": {"Rec":{"schedule":{"enable": on_off, "channel": ch)}}}]
                     await self.send_setting(body)
             return
 
@@ -2151,11 +2141,9 @@ class Host:
             raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
         if self.api_version("GetRec") >= 1:
-            body = [{"cmd": "SetRecV20", "action": 0, "param": self._recording_settings[channel]}]
-            body[0]["param"]["Rec"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec":{"enable": on_off, "schedule": {"channel": channel}}}}]
         else:
-            body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[channel]}]
-            body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
+            body = [{"cmd": "SetRec", "action": 0, "param": {"Rec":{"schedule": {"enable": on_off, "channel": channel}}}}]
 
         await self.send_setting(body)
 
