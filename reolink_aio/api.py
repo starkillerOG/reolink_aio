@@ -426,16 +426,28 @@ class Host:
     def doorbell_light_enabled(self, channel: int) -> bool:
         return self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel]
 
-    def ftp_enabled(self, channel: int) -> bool:
+    def ftp_enabled(self, channel: int | None = None) -> bool:
+        if channel is None:
+            if self.api_version("GetFtp") >= 1:
+                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels)
+
+            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels)
+
         if channel not in self._ftp_settings:
             return False
 
         if self.api_version("GetFtp") >= 1:
-            self._ftp_settings[channel]["Ftp"]["enable"] == 1
+            return self._ftp_settings[channel]["Ftp"]["enable"] == 1
 
         return self._ftp_settings[channel]["Ftp"]["schedule"]["enable"] == 1
 
-    def email_enabled(self, channel: int) -> bool:
+    def email_enabled(self, channel: int | None = None) -> bool:
+        if channel is None:
+            if self.api_version("GetEmail") >= 1:
+                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels)
+
+            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels)
+
         if channel not in self._email_settings:
             return False
 
@@ -444,7 +456,13 @@ class Host:
 
         return self._email_settings[channel]["Email"]["schedule"]["enable"] == 1
 
-    def push_enabled(self, channel: int) -> bool:
+    def push_enabled(self, channel: int | None = None) -> bool:
+        if channel is None:
+            if self.api_version("GetPush") >= 1:
+                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels)
+
+            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels)
+
         if channel not in self._push_settings:
             return False
 
@@ -453,7 +471,13 @@ class Host:
 
         return self._push_settings[channel]["Push"]["schedule"]["enable"] == 1
 
-    def recording_enabled(self, channel: int) -> bool:
+    def recording_enabled(self, channel: int | None = None) -> bool:
+        if channel is None:
+            if self.api_version("GetRec") >= 1:
+                return all(self._recording_settings[ch]["Rec"]["enable"] == 1 for ch in self._channels)
+
+            return all(self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1 for ch in self._channels)
+
         if channel not in self._recording_settings:
             return False
 
@@ -2246,7 +2270,7 @@ class Host:
         if volume < 0 or volume > 100:
             raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
 
-        body = [{"cmd":"SetAudioCfg", "action": 0, "param": {"AudioCfg": {"volume": volume, "channel": channel}}}]
+        body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": {"volume": volume, "channel": channel}}}]
         await self.send_setting(body)
 
     async def set_audio_alarm(self, channel: int, enable: bool) -> None:
@@ -2347,7 +2371,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_recording(self, channel: Optional[int], enable: bool) -> None:
+    async def set_recording(self, channel: int | None, enable: bool) -> None:
         """Set the recording parameter."""
 
         body: reolink_json
@@ -2377,7 +2401,7 @@ class Host:
             body = [{"cmd": "SetRec", "action": 0, "param": self._recording_settings[channel]}]
             body[0]["param"]["Rec"]["schedule"]["enable"] = 1 if enable else 0
 
-            await self.send_setting(body)
+        await self.send_setting(body)
 
     async def set_motion_detection(self, channel: int, enable: bool) -> None:
         """Set the motion detection parameter."""
@@ -2584,10 +2608,7 @@ class Host:
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
                 rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
                 detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
-                raise ApiError(
-                    f"cmd '{command}': API returned error code {json_data[0]['code']}, "
-                    f"response code {rspCode}/{detail}"
-                )
+                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, " f"response code {rspCode}/{detail}")
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
 
