@@ -800,6 +800,10 @@ class Host:
                         self._capabilities[channel].append("auto_focus")
                 if ptz_ver in [2, 3, 5]:
                     self._capabilities[channel].append("pan_tilt")
+                    if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
+                        self._capabilities[channel].append("ptz_callibrate")
+                    if self.api_version("GetPtzGuard", channel) > 0:
+                        self._capabilities[channel].append("ptz_guard")
                 if ptz_ver in [2, 3]:
                     self._capabilities[channel].append("ptz_speed")
                 if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
@@ -1055,6 +1059,7 @@ class Host:
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("scheduleVersion") >= 1:
                 ch_body.extend(
@@ -1089,6 +1094,7 @@ class Host:
         self._api_version["GetEvents"] = check_command_exists("GetEvents")
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
         self._api_version["GetAudioCfg"] = check_command_exists("GetAudioCfg")
+        self._api_version["GetPtzGuard"] = check_command_exists("GetPtzGuard")
         if self.api_version("scheduleVersion") >= 1:
             self._api_version["GetEmail"] = check_command_exists("GetEmailV20")
             self._api_version["GetPush"] = check_command_exists("GetPushV20")
@@ -1378,7 +1384,7 @@ class Host:
 
         if encoding is None:
             _LOGGER.debug(
-                "Host %s:%s rtsp stream: GetRtspUrl unavailable, GetEnc incomplete, falling back to h264 encoding for channel %i, Enc: %s",
+                "Host %s:%s rtsp stream: GetEnc incomplete, GetRtspUrl unavailable, falling back to h264 encoding for channel %i, Enc: %s",
                 self._host,
                 self._port,
                 channel,
