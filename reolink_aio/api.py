@@ -575,10 +575,10 @@ class Host:
         return self._auto_track_settings[channel]["bSmartTrack"] == 1
 
     def ptz_presets(self, channel: int) -> dict:
-        if self._ptz_presets is not None and channel in self._ptz_presets:
-            return self._ptz_presets[channel]
+        if channel not in self._ptz_presets:
+            return {}
 
-        return {}
+        return self._ptz_presets[channel]
 
     def sensitivity_presets(self, channel: int) -> dict:
         if self._sensitivity_presets is not None and channel in self._sensitivity_presets:
@@ -802,7 +802,7 @@ class Host:
                     self._capabilities[channel].append("pan_tilt")
                 if ptz_ver in [2, 3]:
                     self._capabilities[channel].append("ptz_speed")
-                if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
+                if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                     self._capabilities[channel].append("ptz_presets")
 
             if self.api_version("aiTrack", channel) > 0:
@@ -959,9 +959,6 @@ class Host:
             if self.supported(channel, "floodLight"):
                 ch_body.append({"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "pan_tilt"):
-                ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
-
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
 
@@ -1056,6 +1053,8 @@ class Host:
             # checking range
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
+            if self.supported(channel, "pan_tilt"):
+                ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("scheduleVersion") >= 1:
                 ch_body.extend(
