@@ -152,7 +152,6 @@ class Host:
         ##############################################################################
         # Presets
         self._ptz_presets: dict[int, dict] = {}
-        self._sensitivity_presets: dict[int, dict] = {}
 
         ##############################################################################
         # Saved info response-blocks
@@ -569,11 +568,19 @@ class Host:
 
         return {}
 
-    def sensitivity_presets(self, channel: int) -> dict:
-        if self._sensitivity_presets is not None and channel in self._sensitivity_presets:
-            return self._sensitivity_presets[channel] if self._sensitivity_presets[channel] is not None else {}
+    def md_sensitivity(self, channel: int) -> int:
+        if channel not in self._md_alarm_settings:
+            return 0
+        
+        if self.api_version("GetMdAlarm") >= 1:
+            if self._md_alarm_settings[channel]["MdAlarm"].get("useNewSens", 0) == 1:
+                return 51 - self._md_alarm_settings[channel]["MdAlarm"]["newSens"]["sensDef"]
 
-        return {}
+            sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["MdAlarm"]["sens"]]
+            return 51 - mean(sensitivities)
+        
+        sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["Alarm"]["sens"]]
+        return 51 - mean(sensitivities)
 
     def ptz_supported(self, channel: int) -> bool:
         return self.supported(channel, "ptz")
@@ -801,8 +808,11 @@ class Host:
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].append("auto_track")
 
-            if self._sensitivity_presets is not None and channel in self._sensitivity_presets and len(self._sensitivity_presets[channel]) != 0:
-                self._capabilities[channel].append("sensitivity_presets")
+            if channel in self._md_alarm_settings:
+                self._capabilities[channel].append("md_sensitivity")
+
+            if self.api_version("supportAiSensitivity", channel) > 0:
+                self._capabilities[channel].append("ai_sensitivity")
 
             if channel in self._motion_detection_states:
                 self._capabilities[channel].append("motion_detection")
@@ -1002,10 +1012,11 @@ class Host:
             else:
                 ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetMdAlarm") >= 1:
-                ch_body.append({"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
+            if self.supported(channel, "md_sensitivity"):
+                if self.api_version("GetMdAlarm") >= 1:
+                    ch_body.append({"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
@@ -1679,7 +1690,9 @@ class Host:
 
                 elif data["cmd"] == "GetAlarm":
                     self._md_alarm_settings[channel] = data["value"]
-                    self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
+
+                elif data["cmd"] == "GetMdAlarm":
+                    self._md_alarm_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetAiState":
                     self._ai_detection_states[channel] = {}
@@ -2596,7 +2609,7 @@ class Host:
         """Set the motion detection parameter."""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_motion_detection: no camera connected to channel '{channel}'")
-        if self._md_alarm_settings is None or channel not in self._md_alarm_settings or not self._md_alarm_settings[channel]:
+        if channel not in self._md_alarm_settings:
             raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}]
@@ -2611,7 +2624,7 @@ class Host:
         """
         if channel not in self._channels:
             raise InvalidParameterError(f"set_sensitivity: no camera connected to channel '{channel}'")
-        if self._md_alarm_settings is None or channel not in self._md_alarm_settings or not self._md_alarm_settings[channel]:
+        if channel not in self._md_alarm_settings:
             raise NotSupportedError(f"set_sensitivity: alarm on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json = [
