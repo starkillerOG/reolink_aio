@@ -800,6 +800,8 @@ class Host:
                         self._capabilities[channel].append("auto_focus")
                 if ptz_ver in [2, 3, 5]:
                     self._capabilities[channel].append("pan_tilt")
+                if ptz_ver in [2, 3]:
+                    self._capabilities[channel].append("ptz_speed")
                 if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                     self._capabilities[channel].append("ptz_presets")
 
@@ -2019,6 +2021,8 @@ class Host:
             raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
         if speed is not None and not isinstance(speed, int):
             raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
+        if speed is not None and not self.supported(channel, "ptz_speed"):
+            raise NotSupportedError(f"set_ptz_command: ptz speed on camera {self.camera_name(channel)} is not available")
         command_list = [com.value for com in PtzEnum]
         if command is not None and command not in command_list:
             raise InvalidParameterError(f"set_ptz_command: command {command} not in {command_list}")
