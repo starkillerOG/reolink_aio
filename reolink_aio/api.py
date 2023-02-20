@@ -2800,7 +2800,7 @@ class Host:
 
                 async with self._send_mutex:
                     response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
-                    data = await response.text(encoding="ascii")  # returns str
+                    data = await response.text(encoding="utf-8")  # returns str
 
             _LOGGER.debug("%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).", self.nvr_name, self._host, self._port, response.status, response.content_type)
             if cur_command == "Search" and len(data) > 500:
