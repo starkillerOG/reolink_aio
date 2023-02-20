@@ -17,3 +17,13 @@ class DayNightEnum(Enum):
     auto = "Auto"
     color = "Color"
     blackwhite = "Black&White"
+
+
+class PtzEnum(Enum):
+    """Options for PTZ control"""
+
+    stop = "Stop"
+    left = "Left"
+    right = "Right"
+    up = "Up"
+    down = "Down"

@@ -18,7 +18,7 @@ from xml.etree import ElementTree as XML
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, SpotlightModeEnum
+from .enums import DayNightEnum, SpotlightModeEnum, PtzEnum
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -2010,29 +2010,8 @@ class Host:
         await asyncio.sleep(3)
         await self.get_state(cmd="GetZoomFocus")
 
-    async def set_ptz_command(self, channel: int, command, preset: int | None = None, speed: int | None = None) -> None:
-        """Send PTZ command to the camera.
-
-        List of possible commands
-        --------------------------
-        Command     Speed   Preset
-        --------------------------
-        Right       X
-        RightUp     X
-        RightDown   X
-        Left        X
-        LeftUp      X
-        LeftDown    X
-        Up          X
-        Down        X
-        ZoomInc     X
-        ZoomDec     X
-        FocusInc    X
-        FocusDec    X
-        ToPos       X       X
-        Auto
-        Stop
-        """
+    async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | None = None, speed: int | None = None) -> None:
+        """Send PTZ command to the camera, list of possible commands see PtzEnum."""
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
@@ -2040,6 +2019,15 @@ class Host:
             raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
         if speed is not None and not isinstance(speed, int):
             raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
+        command_list = [com.value for com in PtzEnum]
+        if command is not None and command not in command_list:
+            raise InvalidParameterError(f"set_ptz_command: command {command} not in {command_list}")
+
+        if preset is not None:
+            command = "ToPos"
+
+        if command is None:
+            raise InvalidParameterError(f"set_ptz_command: No command or preset specified.")
 
         body: reolink_json = [
             {
