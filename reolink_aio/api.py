@@ -133,6 +133,7 @@ class Host:
         self._channels: list[int] = []
         self._channel_names: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
+        self._is_doorbell: dict[int, bool] = {}
 
         ##############################################################################
         # API-versions and capabilities
@@ -177,7 +178,7 @@ class Host:
         self._ptz_presets_settings: dict[int, dict] = {}
         self._email_settings: dict[int, dict] = {}
         self._ir_settings: dict[int, dict] = {}
-        self._power_led_settings: dict[int, dict] = {}
+        self._status_led_settings: dict[int, dict] = {}
         self._whiteled_settings: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
         self._alarm_settings: dict[int, dict] = {}
@@ -189,13 +190,10 @@ class Host:
         ##############################################################################
         # States
         self._motion_detection_states: dict[int, bool] = {}
-        self._is_doorbell_enabled: dict[int, bool] = {}
         self._ai_detection_support: dict[int, dict[str, bool]] = {}
 
         ##############################################################################
         # Camera-level states
-        self._power_led_enabled: dict[int, bool] = {}
-        self._doorbell_light_enabled: dict[int, bool] = {}
         self._ai_detection_states: dict[int, dict[str, bool]] = {}
         self._visitor_states: dict[int, bool] = {}
 
@@ -377,6 +375,14 @@ class Host:
             return "Unknown"
         return self._channel_models[channel]
 
+    def is_doorbell(self, channel: int) -> bool:
+        """Wether or not the camera is a doorbell"""
+        return channel in self._is_doorbell and self._is_doorbell[channel]
+
+    def is_doorbell_enabled(self, channel: int) -> bool:
+        """Needs to be depricated"""
+        return self.is_doorbell(channel)
+
     def motion_detected(self, channel: int) -> bool:
         """Return the motion detection state (polled)."""
         return channel in self._motion_detection_states and self._motion_detection_states[channel]
@@ -425,11 +431,14 @@ class Host:
     def ir_enabled(self, channel: int) -> bool:
         return channel in self._ir_settings and self._ir_settings[channel]["IrLights"]["state"] == "Auto"
 
-    def power_led_enabled(self, channel: int) -> bool:
-        return self._power_led_enabled is not None and channel in self._power_led_enabled and self._power_led_enabled[channel]
+    def status_led_enabled(self, channel: int) -> bool:
+        if channel not in self._status_led_settings:
+            return False
 
-    def doorbell_light_enabled(self, channel: int) -> bool:
-        return self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel]
+        if self.is_doorbell(channel):
+            return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off") == "On"
+
+        return self._status_led_settings[channel]["PowerLed"].get("state", "Off") == "On"
 
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -588,10 +597,6 @@ class Host:
 
     def pan_tilt_supported(self, channel: int) -> bool:
         return self.supported(channel, "pan_tilt")
-
-    def is_doorbell_enabled(self, channel: int) -> bool:
-        """Wether or not the camera supports doorbell"""
-        return self._is_doorbell_enabled is not None and channel in self._is_doorbell_enabled and self._is_doorbell_enabled[channel]
 
     def enable_https(self, enable: bool):
         self._use_https = enable
@@ -770,10 +775,8 @@ class Host:
                 self._capabilities[channel].append("ir_lights")
 
             if self.api_version("powerLed", channel) > 0:
-                self._capabilities[channel].append("power_led")
-
-            if self._doorbell_light_enabled is not None and channel in self._doorbell_light_enabled and self._doorbell_light_enabled[channel] is not None:
-                self._capabilities[channel].append("doorbell_light")
+                # powerLed == statusLed
+                self._capabilities[channel].append("status_led")
 
             if self.api_version("floodLight", channel) > 0 and self.api_version("GetWhiteLed") > 0:
                 # floodlight == spotlight == WhiteLed
@@ -1475,7 +1478,7 @@ class Host:
                     if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
                         self._channel_models.clear()
-                        self._is_doorbell_enabled.clear()
+                        self._is_doorbell.clear()
 
                         cur_value = data["value"]
                         self._nvr_num_channels = cur_value["count"]
@@ -1498,7 +1501,7 @@ class Host:
                                         self._channel_names[cur_channel] = ch_info["name"]
 
                                     self._channel_models[cur_channel] = ch_info.get("typeInfo", "Unknown")  # Not all Reolink devices respond with "typeInfo" attribute.
-                                    self._is_doorbell_enabled[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
+                                    self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
                                     self._channels.append(cur_channel)
                         else:
                             self._channel_names.clear()
@@ -1544,7 +1547,7 @@ class Host:
                     if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
                         self._channels.clear()
                         self._channel_models.clear()
-                        self._is_doorbell_enabled.clear()
+                        self._is_doorbell.clear()
 
                         self._nvr_num_channels = dev_info["channelNum"]
 
@@ -1561,7 +1564,7 @@ class Host:
                             is_doorbell = "Doorbell" in self._nvr_model
                             for i in range(self._nvr_num_channels):
                                 self._channel_models[i] = self._nvr_model
-                                self._is_doorbell_enabled[i] = is_doorbell
+                                self._is_doorbell[i] = is_doorbell
                                 self._channels.append(i)
                         else:
                             self._channel_names.clear()
@@ -1647,7 +1650,7 @@ class Host:
                         value = data["value"]["visitor"]
                         supported = value.get("support", 0) == 1
                         self._visitor_states[channel] = supported and value.get("alarm_state", 0) == 1
-                        self._is_doorbell_enabled[channel] = supported
+                        self._is_doorbell[channel] = supported
 
                 elif data["cmd"] == "GetMdState":
                     self._motion_detection_states[channel] = data["value"]["state"] == 1
@@ -1747,13 +1750,7 @@ class Host:
                 elif data["cmd"] == "GetPowerLed":
                     # GetPowerLed returns incorrect channel
                     # response_channel = data["value"]["PowerLed"]["channel"]
-                    self._power_led_settings[channel] = data["value"]
-                    val = data["value"]["PowerLed"].get("state", None)
-                    if val is not None:
-                        self._power_led_enabled[channel] = val == "On"
-                    val = data["value"]["PowerLed"].get("eDoorbellLightState", None)
-                    if val is not None and val != "NotSupport":
-                        self._doorbell_light_enabled[channel] = val == "On"
+                    self._status_led_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetWhiteLed":
                     response_channel = data["value"]["WhiteLed"]["channel"]
@@ -2236,28 +2233,19 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_power_led(self, channel: int, state: bool, doorbellLightState: bool) -> None:
+    async def set_status_led(self, channel: int, state: bool) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(f"set_power_led: no camera connected to channel '{channel}'")
-        if self._power_led_settings is None or channel not in self._power_led_settings or not self._power_led_settings[channel]:
-            raise NotSupportedError(f"set_power_led: Power led on camera {self.camera_name(channel)} is not available")
+            raise InvalidParameterError(f"set_status_led: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "status_led"):
+            raise NotSupportedError(f"set_status_led: Status led on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json = [
-            {
-                "cmd": "SetPowerLed",
-                "action": 0,
-                "param": {
-                    "PowerLed": {
-                        "channel": channel,
-                        "state": "dummy",
-                        "eDoorbellLightState": "dummy",
-                    }
-                },
-            }
-        ]
-        body[0]["param"]["PowerLed"]["state"] = "On" if state else "Off"
-        body[0]["param"]["PowerLed"]["eDoorbellLightState"] = "On" if doorbellLightState else "Off"
+        value = "On" if state else "Off"
+        if self.is_doorbell(channel):
+            param = {"channel": channel, "eDoorbellLightState": value}
+        else:
+            param = {"channel": channel, "state": value}
 
+        body: reolink_json = [{"cmd": "SetPowerLed", "action": 0, "param": {"PowerLed": param}}]
         await self.send_setting(body)
 
     async def set_whiteled(self, channel: int, state: bool | None = None, brightness: int | None = None, mode: int | str | None = None) -> None:
