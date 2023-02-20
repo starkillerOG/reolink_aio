@@ -1370,6 +1370,12 @@ class Host:
         if encoding is None and stream == "sub" and channel in self._rtsp_subStream:
             return self._rtsp_subStream[channel]
 
+        if encoding is None and stream == "main":
+            if host.api_version("mainEncType", channel) > 0:
+                encoding = "h265"
+            else:
+                encoding = "h264"
+
         if encoding is None:
             _LOGGER.debug(
                 "Host %s:%s rtsp stream: GetRtspUrl unavailable, GetEnc incomplete, falling back to h264 encoding for channel %i, Enc: %s",
