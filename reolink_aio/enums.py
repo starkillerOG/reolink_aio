@@ -27,3 +27,9 @@ class PtzEnum(Enum):
     right = "Right"
     up = "Up"
     down = "Down"
+
+class GuardEnum(Enum):
+    """Options for PTZ Guard"""
+
+    set = "setPos"
+    goto = "toPos"

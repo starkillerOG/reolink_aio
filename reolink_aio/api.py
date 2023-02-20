@@ -18,7 +18,7 @@ from xml.etree import ElementTree as XML
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, SpotlightModeEnum, PtzEnum
+from .enums import DayNightEnum, SpotlightModeEnum, PtzEnum, GuardEnum
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -182,7 +182,7 @@ class Host:
         self._status_led_settings: dict[int, dict] = {}
         self._whiteled_settings: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
-        self._alarm_settings: dict[int, dict] = {}
+        self._md_alarm_settings: dict[int, dict] = {}
         self._audio_settings: dict[int, dict] = {}
         self._audio_alarm_settings: dict[int, dict] = {}
         self._buzzer_settings: dict[int, dict] = {}
@@ -569,32 +569,6 @@ class Host:
 
         return {}
 
-    def auto_track_enabled(self, channel: int) -> bool:
-        if channel not in self._auto_track_settings:
-            return False
-
-        return self._auto_track_settings[channel]["bSmartTrack"] == 1
-
-    def ptz_presets(self, channel: int) -> dict:
-        if channel not in self._ptz_presets:
-            return {}
-
-        return self._ptz_presets[channel]
-
-    def ptz_guard_enabled(self, channel: int) -> bool:
-        if channel not in self._ptz_guard_settings:
-            return False
-
-        values = self._ptz_guard_settings[channel]["PtzGuard"]
-        return values["benable"] == 1 and values["bexistPos"] == 1
-
-    def ptz_guard_time(self, channel: int) -> int:
-        """Guard point return time in seconds"""
-        if channel not in self._ptz_guard_settings:
-            return 60
-
-        return self._ptz_guard_settings[channel]["PtzGuard"]["timeout"]
-
     def sensitivity_presets(self, channel: int) -> dict:
         if self._sensitivity_presets is not None and channel in self._sensitivity_presets:
             return self._sensitivity_presets[channel] if self._sensitivity_presets[channel] is not None else {}
@@ -891,10 +865,13 @@ class Host:
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetAlarm":
-                ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
             elif cmd == "GetBuzzerAlarmV20":
                 ch_body = [{"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}}]
+            elif cmd in ["GetAlarm", "GetMdAlarm"]:
+                if self.api_version("GetMdAlarm") >= 1:
+                    ch_body = [{"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}}]
+                else:
+                    ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
             elif cmd in ["GetEmail", "GetEmailV20"]:
                 if self.api_version("GetEmail") >= 1:
                     ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
@@ -1025,6 +1002,11 @@ class Host:
             else:
                 ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
 
+            if self.api_version("GetMdAlarm") >= 1:
+                ch_body.append({"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}})
+            else:
+                ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
+
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
@@ -1091,6 +1073,7 @@ class Host:
                         {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
 
@@ -1123,12 +1106,14 @@ class Host:
             self._api_version["GetFtp"] = check_command_exists("GetFtpV20")
             self._api_version["GetRec"] = check_command_exists("GetRecV20")
             self._api_version["GetAudioAlarm"] = check_command_exists("GetAudioAlarmV20")
+            self._api_version["GetMdAlarm"] = check_command_exists("GetMdAlarm")
         else:
             self._api_version["GetEmail"] = 0
             self._api_version["GetPush"] = 0
             self._api_version["GetFtp"] = 0
             self._api_version["GetRec"] = 0
             self._api_version["GetAudioAlarm"] = 0
+            self._api_version["GetMdAlarm"] = 0
 
         self.construct_capabilities()
 
@@ -1693,7 +1678,7 @@ class Host:
                     self._motion_detection_states[channel] = data["value"]["state"] == 1
 
                 elif data["cmd"] == "GetAlarm":
-                    self._alarm_settings[channel] = data["value"]
+                    self._md_alarm_settings[channel] = data["value"]
                     self._sensitivity_presets[channel] = data["value"]["Alarm"]["sens"]
 
                 elif data["cmd"] == "GetAiState":
@@ -2048,6 +2033,12 @@ class Host:
         await asyncio.sleep(3)
         await self.get_state(cmd="GetZoomFocus")
 
+    def ptz_presets(self, channel: int) -> dict:
+        if channel not in self._ptz_presets:
+            return {}
+
+        return self._ptz_presets[channel]
+
     async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | str | None = None, speed: int | None = None) -> None:
         """Send PTZ command to the camera, list of possible commands see PtzEnum."""
 
@@ -2088,6 +2079,46 @@ class Host:
 
         await self.send_setting(body)
 
+    def ptz_guard_enabled(self, channel: int) -> bool:
+        if channel not in self._ptz_guard_settings:
+            return False
+
+        values = self._ptz_guard_settings[channel]["PtzGuard"]
+        return values["benable"] == 1 and values["bexistPos"] == 1
+
+    def ptz_guard_time(self, channel: int) -> int:
+        """Guard point return time in seconds"""
+        if channel not in self._ptz_guard_settings:
+            return 60
+
+        return self._ptz_guard_settings[channel]["PtzGuard"]["timeout"]
+
+    async def set_ptz_guard(self, channel: int, command: str | None = None, enable: bool | None = None, time: int | None = None) -> None:
+        """Send PTZ guard."""
+
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_ptz_guard: no camera connected to channel '{channel}'")
+        if time is not None and not isinstance(time, int):
+            raise InvalidParameterError(f"set_ptz_guard: guard time {time} is not integer")
+        command_list = [com.value for com in GuardEnum]
+        if command is not None and command not in command_list:
+            raise InvalidParameterError(f"set_ptz_guard: command {command} not in {command_list}")
+
+        params = {"channel": channel}
+        if command is not None:
+            params["cmdStr"] = command
+            if command == "setPos":
+                params["bSaveCurrentPos"] = 1
+        if command is None:
+            params["cmdStr"] = "setPos"
+        if enable is not None:
+            params["benable"] = 1 if enable else 0
+        if time is not None:
+            params["timeout"] = time
+
+        body: reolink_json = [{"cmd": "SetPtzGuard", "action": 0, "param": {"PtzGuard": params}}]
+        await self.send_setting(body)
+
     async def ptz_callibrate(self, channel: int) -> None:
         """Callibrate PTZ of the camera."""
         if channel not in self._channels:
@@ -2095,6 +2126,12 @@ class Host:
 
         body: reolink_json = [{"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}]
         await self.send_setting(body)
+
+    def auto_track_enabled(self, channel: int) -> bool:
+        if channel not in self._auto_track_settings:
+            return False
+
+        return self._auto_track_settings[channel]["bSmartTrack"] == 1
 
     async def set_auto_tracking(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
@@ -2559,10 +2596,10 @@ class Host:
         """Set the motion detection parameter."""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_motion_detection: no camera connected to channel '{channel}'")
-        if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
+        if self._md_alarm_settings is None or channel not in self._md_alarm_settings or not self._md_alarm_settings[channel]:
             raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._alarm_settings[channel]}]
+        body: reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -2574,7 +2611,7 @@ class Host:
         """
         if channel not in self._channels:
             raise InvalidParameterError(f"set_sensitivity: no camera connected to channel '{channel}'")
-        if self._alarm_settings is None or channel not in self._alarm_settings or not self._alarm_settings[channel]:
+        if self._md_alarm_settings is None or channel not in self._md_alarm_settings or not self._md_alarm_settings[channel]:
             raise NotSupportedError(f"set_sensitivity: alarm on camera {self.camera_name(channel)} is not available")
 
         body: reolink_json = [
@@ -2585,7 +2622,7 @@ class Host:
                     "Alarm": {
                         "channel": channel,
                         "type": "md",
-                        "sens": self._alarm_settings[channel]["Alarm"]["sens"],
+                        "sens": self._md_alarm_settings[channel]["Alarm"]["sens"],
                     }
                 },
             }
