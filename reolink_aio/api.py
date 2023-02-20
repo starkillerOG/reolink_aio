@@ -796,6 +796,8 @@ class Host:
                 self._capabilities[channel].append("ptz")
                 if ptz_ver in [1, 2, 5]:
                     self._capabilities[channel].append("zoom")
+                    if self.api_version("disableAutoFocus", channel) > 0:
+                        self._capabilities[channel].append("auto_focus")
                 if ptz_ver in [2, 3, 5]:
                     self._capabilities[channel].append("pan_tilt")
                 if self._ptz_presets is not None and channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
@@ -961,7 +963,7 @@ class Host:
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "pan_tilt") and self.supported(channel, "zoom"):
+            if self.supported(channel, "auto_focus"):
                 ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "auto_track"):
@@ -1919,26 +1921,6 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_autofocus(self, channel: int, enable: bool) -> None:
-        """Enable/Disable AutoFocus on a camera.
-        Parameters:
-        enable (boolean) enables/disables AutoFocus if supported"""
-        if channel not in self._channels:
-            raise InvalidParameterError(f"set_autofocus: no camera connected to channel '{channel}'")
-        if self._auto_focus_settings is None or channel not in self._auto_focus_settings or not self._auto_focus_settings[channel]:
-            raise NotSupportedError(f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available")
-
-        body: reolink_json = [
-            {
-                "cmd": "SetAutoFocus",
-                "action": 0,
-                "param": self._auto_focus_settings[channel],
-            }
-        ]
-        body[0]["param"]["AutoFocus"]["disable"] = 0 if enable else 1
-
-        await self.send_setting(body)
-
     def get_focus(self, channel: int) -> None:
         """Get absolute focus value."""
         if channel not in self._channels:
@@ -1974,6 +1956,23 @@ class Host:
         await self.send_setting(body)
         await asyncio.sleep(3)
         await self.get_state(cmd="GetZoomFocus")
+
+    def autofocus_enabled(self, channel: int) -> bool:
+        """Auto focus enabled."""
+        if channel not in self._auto_focus_settings:
+            return True
+
+        return self._auto_focus_settings[channel]["AutoFocus"]["disable"] == 0
+
+    async def set_autofocus(self, channel: int, enable: bool) -> None:
+        """Enable/Disable AutoFocus on a camera."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_autofocus: no camera connected to channel '{channel}'")
+        if channel not in self._auto_focus_settings:
+            raise NotSupportedError(f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available")
+
+        body: reolink_json = [{"cmd": "SetAutoFocus", "action": 0, "param": {"AutoFocus": {"disable": 0 if enable else 1, "channel": channel}}}]
+        await self.send_setting(body)
 
     def get_zoom(self, channel: int):
         """Get absolute zoom value."""
