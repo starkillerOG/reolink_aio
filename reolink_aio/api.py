@@ -1053,7 +1053,7 @@ class Host:
             # checking range
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
-            if self.supported(channel, "pan_tilt"):
+            if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("scheduleVersion") >= 1:
@@ -2011,13 +2011,11 @@ class Host:
         await asyncio.sleep(3)
         await self.get_state(cmd="GetZoomFocus")
 
-    async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | None = None, speed: int | None = None) -> None:
+    async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | str | None = None, speed: int | None = None) -> None:
         """Send PTZ command to the camera, list of possible commands see PtzEnum."""
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
-        if preset is not None and not isinstance(preset, int):
-            raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
         if speed is not None and not isinstance(speed, int):
             raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
         if speed is not None and not self.supported(channel, "ptz_speed"):
@@ -2028,6 +2026,12 @@ class Host:
 
         if preset is not None:
             command = "ToPos"
+            if isinstance(preset, str):
+                if preset not in self.ptz_presets(channel):
+                    raise InvalidParameterError(f"set_ptz_command: preset '{preset}' not in available presets {list(self.ptz_presets(channel).keys())}")
+                preset = self.ptz_presets(channel)[preset]
+            if not isinstance(preset, int):
+                raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
 
         if command is None:
             raise InvalidParameterError(f"set_ptz_command: No command or preset specified.")
