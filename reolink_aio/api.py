@@ -2010,6 +2010,69 @@ class Host:
         await asyncio.sleep(3)
         await self.get_state(cmd="GetZoomFocus")
 
+    async def set_ptz_command(self, channel: int, command, preset: int | None = None, speed: int | None = None) -> None:
+        """Send PTZ command to the camera.
+
+        List of possible commands
+        --------------------------
+        Command     Speed   Preset
+        --------------------------
+        Right       X
+        RightUp     X
+        RightDown   X
+        Left        X
+        LeftUp      X
+        LeftDown    X
+        Up          X
+        Down        X
+        ZoomInc     X
+        ZoomDec     X
+        FocusInc    X
+        FocusDec    X
+        ToPos       X       X
+        Auto
+        Stop
+        """
+
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
+        if preset is not None and not isinstance(preset, int):
+            raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
+        if speed is not None and not isinstance(speed, int):
+            raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
+
+        body: reolink_json = [
+            {
+                "cmd": "PtzCtrl",
+                "action": 0,
+                "param": {"channel": channel, "op": command},
+            }
+        ]
+
+        if speed:
+            body[0]["param"]["speed"] = speed
+        if preset:
+            body[0]["param"]["id"] = preset
+
+        await self.send_setting(body)
+
+    async def ptz_callibrate(self, channel: int) -> None:
+        """Callibrate PTZ of the camera."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"ptz_callibrate: no camera connected to channel '{channel}'")
+
+        body: reolink_json = [{"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}]
+        await self.send_setting(body)
+
+    async def set_auto_tracking(self, channel: int, enable: bool) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_auto_tracking: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "auto_track"):
+            raise NotSupportedError(f"set_auto_tracking: Auto tracking on camera {self.camera_name(channel)} is not available")
+
+        body = [{"cmd": "SetAiCfg", "action": 0, "param": {"bSmartTrack": 1 if enable else 0, "channel": channel}}]
+        await self.send_setting(body)
+
     def validate_osd_pos(self, pos) -> bool:
         """Helper function for validating an OSD position
         Returns True, if a valid position is specified"""
@@ -2499,60 +2562,6 @@ class Host:
             if preset is None or preset == setting["id"]:
                 setting["sensitivity"] = int(51 - value)
 
-        await self.send_setting(body)
-
-    async def set_ptz_command(self, channel: int, command, preset: int | None = None, speed: int | None = None) -> None:
-        """Send PTZ command to the camera.
-
-        List of possible commands
-        --------------------------
-        Command     Speed   Preset
-        --------------------------
-        Right       X
-        RightUp     X
-        RightDown   X
-        Left        X
-        LeftUp      X
-        LeftDown    X
-        Up          X
-        Down        X
-        ZoomInc     X
-        ZoomDec     X
-        FocusInc    X
-        FocusDec    X
-        ToPos       X       X
-        Auto
-        Stop
-        """
-
-        if channel not in self._channels:
-            raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
-        if preset is not None and not isinstance(preset, int):
-            raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
-        if speed is not None and not isinstance(speed, int):
-            raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
-        body: reolink_json = [
-            {
-                "cmd": "PtzCtrl",
-                "action": 0,
-                "param": {"channel": channel, "op": command},
-            }
-        ]
-
-        if speed:
-            body[0]["param"]["speed"] = speed
-        if preset:
-            body[0]["param"]["id"] = preset
-
-        await self.send_setting(body)
-
-    async def set_auto_tracking(self, channel: int, enable: bool) -> None:
-        if channel not in self._channels:
-            raise InvalidParameterError(f"set_auto_tracking: no camera connected to channel '{channel}'")
-        if not self.supported(channel, "auto_track"):
-            raise NotSupportedError(f"set_auto_tracking: Auto tracking on camera {self.camera_name(channel)} is not available")
-
-        body = [{"cmd": "SetAiCfg", "action": 0, "param": {"bSmartTrack": 1 if enable else 0, "channel": channel}}]
         await self.send_setting(body)
 
     async def request_vod_files(
