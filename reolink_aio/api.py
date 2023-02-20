@@ -176,6 +176,7 @@ class Host:
         self._push_settings: dict[int, dict] = {}
         self._enc_settings: dict[int, dict] = {}
         self._ptz_presets_settings: dict[int, dict] = {}
+        self._ptz_guard_settings: dict[int, dict] = {}
         self._email_settings: dict[int, dict] = {}
         self._ir_settings: dict[int, dict] = {}
         self._status_led_settings: dict[int, dict] = {}
@@ -580,6 +581,20 @@ class Host:
 
         return self._ptz_presets[channel]
 
+    def ptz_guard_enabled(self, channel: int) -> bool:
+        if channel not in self._ptz_guard_settings:
+            return False
+
+        values = self._ptz_guard_settings[channel]["PtzGuard"]
+        return values["benable"] == 1 and values["bexistPos"] == 1
+
+    def ptz_guard_time(self, channel: int) -> int:
+        """Guard point return time in seconds"""
+        if channel not in self._ptz_guard_settings:
+            return 60
+
+        return self._ptz_guard_settings[channel]["PtzGuard"]["timeout"]
+
     def sensitivity_presets(self, channel: int) -> dict:
         if self._sensitivity_presets is not None and channel in self._sensitivity_presets:
             return self._sensitivity_presets[channel] if self._sensitivity_presets[channel] is not None else {}
@@ -868,6 +883,8 @@ class Host:
                 ch_body = [{"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetZoomFocus":
                 ch_body = [{"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetPtzGuard":
+                ch_body = [{"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAiCfg":
                 ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioCfg":
@@ -948,7 +965,6 @@ class Host:
             ch_body = [
                 {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}},
             ]
             if self.api_version("GetEvents") >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
@@ -963,11 +979,17 @@ class Host:
             if self.supported(channel, "floodLight"):
                 ch_body.append({"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}})
 
+            if self.supported(channel, "status_led"):
+                ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
+
             if self.supported(channel, "zoom"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "auto_focus"):
                 ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "ptz_guard"):
+                ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
@@ -1785,6 +1807,9 @@ class Host:
                             preset_name = preset["name"]
                             preset_id = int(preset["id"])
                             self._ptz_presets[channel][preset_name] = preset_id
+
+                elif data["cmd"] == "GetPtzGuard":
+                    self._ptz_guard_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetAiCfg":
                     self._auto_track_settings[channel] = data["value"]
