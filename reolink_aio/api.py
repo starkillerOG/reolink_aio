@@ -2151,7 +2151,7 @@ class Host:
         if command is not None and command not in command_list:
             raise InvalidParameterError(f"set_ptz_guard: command {command} not in {command_list}")
 
-        params = {"channel": channel}
+        params: dict[str, Any] = {"channel": channel}
         if command is not None:
             params["cmdStr"] = command
             if command == "setPos":
