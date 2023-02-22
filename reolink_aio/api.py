@@ -2650,7 +2650,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_md_sensitivity(self, channel: int, value: int, preset=None) -> None:
+    async def set_md_sensitivity(self, channel: int, value: int) -> None:
         """Set motion detection sensitivity.
         Here the camera web and windows application show a completely different value than set.
         So the calculation <51 - value> makes the "real" value.
@@ -2659,22 +2659,29 @@ class Host:
             raise InvalidParameterError(f"set_md_sensitivity: no camera connected to channel '{channel}'")
         if channel not in self._md_alarm_settings:
             raise NotSupportedError(f"set_md_sensitivity: alarm on camera {self.camera_name(channel)} is not available")
+        if not isinstance(value, int):
+            raise InvalidParameterError(f"set_md_sensitivity: sensitivity '{value}' is not integer")
+        if value < 1 or value > 50:
+            raise InvalidParameterError(f"set_md_sensitivity: sensitivity {value} not in range 0...100")
 
-        body: reolink_json = [
-            {
-                "cmd": "SetAlarm",
-                "action": 0,
-                "param": {
-                    "Alarm": {
-                        "channel": channel,
-                        "type": "md",
-                        "sens": self._md_alarm_settings[channel]["Alarm"]["sens"],
-                    }
-                },
-            }
-        ]
-        for setting in body[0]["param"]["Alarm"]["sens"]:
-            if preset is None or preset == setting["id"]:
+        body: reolink_json
+        if self.api_version("GetMdAlarm") >= 1:
+            body = [{"cmd": "SetMdAlarm", "action": 0, "param": {"MdAlarm": {"channel": channel, "useNewSens": 1, "newSens": {"sensDef": int(51 - value)}}}}]
+        else:
+            body = [
+                {
+                    "cmd": "SetAlarm",
+                    "action": 0,
+                    "param": {
+                        "Alarm": {
+                            "channel": channel,
+                            "type": "md",
+                            "sens": self._md_alarm_settings[channel]["Alarm"]["sens"],
+                        }
+                    },
+                }
+            ]
+            for setting in body[0]["param"]["Alarm"]["sens"]:
                 setting["sensitivity"] = int(51 - value)
 
         await self.send_setting(body)
