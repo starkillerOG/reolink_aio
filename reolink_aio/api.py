@@ -14,6 +14,7 @@ from os.path import basename
 from typing import Any, Literal, Optional, overload
 from urllib import parse
 from xml.etree import ElementTree as XML
+from statistics import mean
 
 import aiohttp
 
@@ -584,21 +585,21 @@ class Host:
     def md_sensitivity(self, channel: int) -> int:
         if channel not in self._md_alarm_settings:
             return 0
-        
+
         if self.api_version("GetMdAlarm") >= 1:
             if self._md_alarm_settings[channel]["MdAlarm"].get("useNewSens", 0) == 1:
                 return 51 - self._md_alarm_settings[channel]["MdAlarm"]["newSens"]["sensDef"]
 
             sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["MdAlarm"]["sens"]]
             return 51 - mean(sensitivities)
-        
+
         sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["Alarm"]["sens"]]
         return 51 - mean(sensitivities)
 
     def ai_sensitivity(self, channel: int, ai_type: str) -> int:
         if channel not in self._ai_alarm_settings or ai_type not in self._ai_alarm_settings[channel]:
             return 0
-        
+
         return self._ai_alarm_settings[channel][ai_type]["sensitivity"]
 
     def ptz_supported(self, channel: int) -> bool:
@@ -1422,7 +1423,7 @@ class Host:
             return self._rtsp_subStream[channel]
 
         if encoding is None and stream == "main":
-            if host.api_version("mainEncType", channel) > 0:
+            if self.api_version("mainEncType", channel) > 0:
                 encoding = "h265"
             else:
                 encoding = "h264"
@@ -2108,7 +2109,7 @@ class Host:
                 raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
 
         if command is None:
-            raise InvalidParameterError(f"set_ptz_command: No command or preset specified.")
+            raise InvalidParameterError("set_ptz_command: No command or preset specified.")
 
         body: reolink_json = [
             {

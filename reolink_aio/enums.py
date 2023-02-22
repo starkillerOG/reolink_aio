@@ -28,6 +28,7 @@ class PtzEnum(Enum):
     up = "Up"
     down = "Down"
 
+
 class GuardEnum(Enum):
     """Options for PTZ Guard"""
 
