@@ -2658,11 +2658,11 @@ class Host:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_md_sensitivity: no camera connected to channel '{channel}'")
         if channel not in self._md_alarm_settings:
-            raise NotSupportedError(f"set_md_sensitivity: alarm on camera {self.camera_name(channel)} is not available")
+            raise NotSupportedError(f"set_md_sensitivity: md sensitivity on camera {self.camera_name(channel)} is not available")
         if not isinstance(value, int):
             raise InvalidParameterError(f"set_md_sensitivity: sensitivity '{value}' is not integer")
         if value < 1 or value > 50:
-            raise InvalidParameterError(f"set_md_sensitivity: sensitivity {value} not in range 0...100")
+            raise InvalidParameterError(f"set_md_sensitivity: sensitivity {value} not in range 1...50")
 
         body: reolink_json
         if self.api_version("GetMdAlarm") >= 1:
@@ -2684,6 +2684,22 @@ class Host:
             for setting in body[0]["param"]["Alarm"]["sens"]:
                 setting["sensitivity"] = int(51 - value)
 
+        await self.send_setting(body)
+
+    async def set_ai_sensitivity(self, channel: int, value: int, ai_type: str) -> None:
+        """Set AI detection sensitivity."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_ai_sensitivity: no camera connected to channel '{channel}'")
+        if channel not in self._ai_alarm_settings:
+            raise NotSupportedError(f"set_ai_sensitivity: ai sensitivity on camera {self.camera_name(channel)} is not available")
+        if not isinstance(value, int):
+            raise InvalidParameterError(f"set_ai_sensitivity: sensitivity '{value}' is not integer")
+        if value < 0 or value > 100:
+            raise InvalidParameterError(f"set_ai_sensitivity: sensitivity {value} not in range 0...100")
+        if ai_type not in self.ai_supported_types(channel):
+            raise InvalidParameterError(f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, suppored types are {self.ai_supported_types(channel)}")
+
+        body: reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
         await self.send_setting(body)
 
     async def request_vod_files(
