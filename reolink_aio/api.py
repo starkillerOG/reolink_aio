@@ -768,6 +768,9 @@ class Host:
         if self.api_version("supportBuzzer") > 0:
             self._capabilities["Host"].append("buzzer")
 
+        if self.api_version("upgrade") >= 2:
+            self._capabilities["Host"].append("update")
+
         # Channel capabilities
         for channel in self._channels:
             self._capabilities[channel] = []
@@ -1304,6 +1307,9 @@ class Host:
 
     async def check_new_firmware(self) -> bool | str:
         """check for new firmware, returns False if no new firmware available."""
+        if not self.supported(None, "update"):
+            raise NotSupportedError(f"check_new_firmware: not supported by {self.nvr_name}")
+
         body: reolink_json = [
             {"cmd": "CheckFirmware"},
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
@@ -1318,7 +1324,11 @@ class Host:
 
         self.map_host_json_response(json_data)
 
-        new_firmware = json_data[0]["value"]["newFirmware"]
+        try:
+            new_firmware = json_data[0]["value"]["newFirmware"]
+        except KeyError as err:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
+
         if new_firmware == 0:
             return False
 
@@ -1329,11 +1339,17 @@ class Host:
 
     async def update_firmware(self) -> None:
         """check for new firmware."""
+        if not self.supported(None, "update"):
+            raise NotSupportedError(f"update_firmware: not supported by {self.nvr_name}")
+
         body = [{"cmd": "UpgradeOnline"}]
         await self.send_setting(body)
 
     async def update_progress(self) -> bool | int:
         """check progress of firmware update, returns False if not in progress."""
+        if not self.supported(None, "update"):
+            raise NotSupportedError(f"update_progress: not supported by {self.nvr_name}")
+
         body = [{"cmd": "UpgradeStatus"}]
 
         try:
