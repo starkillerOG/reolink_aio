@@ -3,8 +3,9 @@
 import re
 
 from .exceptions import UnexpectedDataError
+from datetime import datetime
 
-version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_([0-9]+)")
+version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_(?P<date>[0-9]+)")
 
 
 class SoftwareVersion:
@@ -35,7 +36,17 @@ class SoftwareVersion:
         if build is None:
             self.build = 0
         else:
-            self.build = int(match.group("build"))
+            self.build = int(build)
+        date = match.group("date")
+        if date is None:
+            date = "00010100"
+        try:
+            self.date = datetime.strptime(date, '%y%m%d%H')
+        except ValueError:
+            self.date = datetime.strptime("00010100", '%y%m%d%H')
+
+    def __repr__(self):
+        return f"<SoftwareVersion: {self.version_string}>"
 
     def is_greater_than(self, target_version: "SoftwareVersion"):
         if self.major > target_version.major:
@@ -49,6 +60,10 @@ class SoftwareVersion:
                 if target_version.minor == self.minor:
                     if self.build > target_version.build:
                         return True
+
+        # for beta firmware releases
+        if self.date > target_version.date:
+            return True
 
         return False
 
@@ -65,6 +80,10 @@ class SoftwareVersion:
                     if self.build >= target_version.build:
                         return True
 
+        # for beta firmware releases
+        if self.date >= target_version.date:
+            return True
+
         return False
 
     def is_lower_than(self, target_version: "SoftwareVersion"):
@@ -79,6 +98,11 @@ class SoftwareVersion:
                 if target_version.minor == self.minor:
                     if self.build < target_version.build:
                         return True
+
+        # for beta firmware releases
+        if self.date < target_version.date:
+            return True
+
         return False
 
     def is_lower_or_equal_than(self, target_version: "SoftwareVersion"):
@@ -93,10 +117,15 @@ class SoftwareVersion:
                 if target_version.minor == self.minor:
                     if self.build <= target_version.build:
                         return True
+
+        # for beta firmware releases
+        if self.date <= target_version.date:
+            return True
+
         return False
 
     def equals(self, target_version: "SoftwareVersion"):
-        if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build:
+        if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build and target_version.date == self.date:
             return True
         return False
 
