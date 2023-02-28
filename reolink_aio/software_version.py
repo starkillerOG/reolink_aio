@@ -5,6 +5,72 @@ import re
 from .exceptions import UnexpectedDataError
 from datetime import datetime
 
+MINIMUM_FIRMWARE = {
+    "RLN8-410": {
+        "N3MB01": "v3.2.0.218_23020151",
+        "H3MB02": "v2.0.0.4732_1728_21062800",
+        "H3MB16": "v2.0.0.280_21060101",
+        "N2MB02": "v3.2.0.218_23020153",
+        "H3MB18": "v3.2.0.218_23020153",
+        "N7MB01": "v3.2.0.218_23011221",
+    },
+    "RLN16-410": {
+        "H3MB02": "v2.0.0.4732_1728_21062800",
+        "H3MB18": "v3.2.0.218_23020154",
+        "N6MB01": "v3.2.0.218_23011215",
+    },
+    "RLN36": {
+        "N5MB01": "v3.2.0.218_23011219",
+    },
+    "E1 Zoom": {
+        "IPC_566SD65MP": "v3.1.0.1349_22092302",
+        "IPC_515BSD6": "v3.0.0.1107_22070508",
+        "IPC_515SD6": "v3.0.0.1107_22070508",
+    },
+    "RLC-410W": {
+        "IPC_30K128M4MP": "v3.1.0.739_22042505",
+        "IPC_51516M5M", "v3.0.0.136_20121102",
+        "IPC_515B16M5M", "v3.0.0.136_20121102",
+    },
+    "RLC-420": {
+        "IPC_51316M": "v3.0.0.136_20121101",
+        "IPC_51516M5M": "v3.0.0.136_20121101",
+        "IPC_515B16M5M": "v3.0.0.136_20121101",
+    },
+    "RLC-511": {
+        "IPC_51516M5M": "v3.0.0.142_20121803",
+    },
+    "RLC-511W": {
+        "IPC_51516M5M": "v3.0.0.142_20121804",
+    },
+    "RLC-511WA": {
+        "IPC_523128M5MP": "v3.1.0.956_22041509",
+    },
+    "RLC-520": {
+        "IPC_51516M5M": "v3.0.0.136_20121112",
+        "IPC_515B16M5M": "v3.0.0.136_20121112",
+    },
+    "RLC-520A": {
+        "IPC_523128M5MP": "v3.1.0.951_22041566",
+    },
+    "RLC-522": {
+        "IPC_51516M5M": "v3.0.0.136_20121111",
+    },
+    "RLC-810A": {
+        "IPC_523128M8MP": "v3.1.0.956_22041503",
+    },
+    "RLC-811A": {
+        "IPC_523128M8MP": "v3.1.0.989_22051908",
+    },
+    "RLC-820A": {
+        "IPC_523128M8MP": "v3.1.0.956_22041501",
+    },
+    "RLC-823A": {
+        "IPC_523128M8MP": "v3.1.0.989_22051911_v1.0.0.30",
+    },
+}
+
+
 version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_(?P<date>[0-9]+)")
 
 
@@ -12,7 +78,7 @@ class SoftwareVersion:
     """SoftwareVersion class"""
 
     def __init__(self, version_string: str):
-        self.version_string = version_string
+        self.version_string = version_string.lower()
 
         self.is_unknown = False
         self.major = 0
@@ -20,11 +86,11 @@ class SoftwareVersion:
         self.minor = 0
         self.build = 0
 
-        if version_string.lower() == "unknown":
+        if self.version_string == "unknown":
             self.is_unknown = True
             return
 
-        match = version_regex.match(version_string)
+        match = version_regex.match(self.version_string)
 
         if match is None:
             raise UnexpectedDataError(f"version_string has invalid version format: {version_string}")
