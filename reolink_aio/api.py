@@ -32,7 +32,7 @@ from .exceptions import (
     SubscriptionError,
     UnexpectedDataError,
 )
-from .software_version import SoftwareVersion
+from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
 from .typings import reolink_json
 
 MANUFACTURER = "Reolink"
@@ -52,9 +52,6 @@ VISITOR_DETECTION_TYPE = "visitor"
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
-
-# ref_sw_version_3_0_0_0_0 = SoftwareVersion("v3.0.0.0_0")
-# ref_sw_version_3_1_0_0_0 = SoftwareVersion("v3.1.0.0_0")
 
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.set_ciphers("DEFAULT")
@@ -291,6 +288,22 @@ class Host:
     @property
     def sw_version(self) -> Optional[str]:
         return self._nvr_sw_version
+
+    @property
+    def sw_version_required(self) -> SoftwareVersion:
+        """Return the minimum required firmware version for proper operation of this library"""
+        if self.model is None or self.hardware_version is None:
+            return SoftwareVersion(None)
+
+        return SoftwareVersion(MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version))
+
+    @property
+    def sw_version_update_required(self) -> bool:
+        """Check if a firmware version update is required for proper operation of this library"""
+        if self._nvr_sw_version_object is None:
+            return False
+
+        return not self._nvr_sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
 
     @property
     def model(self) -> Optional[str]:
