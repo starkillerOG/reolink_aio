@@ -292,6 +292,9 @@ class Host:
     @property
     def sw_version_required(self) -> SoftwareVersion:
         """Return the minimum required firmware version for proper operation of this library"""
+        if self.model is None or self.hardware_version is None:
+            return SoftwareVersion(None)
+
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version))
 
     @property
