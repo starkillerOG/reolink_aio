@@ -1,9 +1,10 @@
 """Reolink NVR/camera API."""
+from __future__ import annotations
 
 import re
+from datetime import datetime
 
 from .exceptions import UnexpectedDataError
-from datetime import datetime
 
 MINIMUM_FIRMWARE = {
     "RLN8-410": {
@@ -83,7 +84,7 @@ class SoftwareVersion:
         self.middle = 0
         self.minor = 0
         self.build = 0
-        self.date = datetime.strptime("00010100", '%y%m%d%H')
+        self.date = datetime.strptime("00010100", "%y%m%d%H")
 
         if version_string is None:
             self.is_unknown = True
@@ -108,7 +109,7 @@ class SoftwareVersion:
         date = match.group("date")
         if date is not None:
             try:
-                self.date = datetime.strptime(date, '%y%m%d%M')
+                self.date = datetime.strptime(date, "%y%m%d%M")
             except ValueError:
                 pass
 
@@ -192,7 +193,13 @@ class SoftwareVersion:
         return False
 
     def equals(self, target_version: "SoftwareVersion"):
-        if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build and target_version.date == self.date:
+        if (
+            target_version.major == self.major
+            and target_version.middle == self.middle
+            and target_version.minor == self.minor
+            and target_version.build == self.build
+            and target_version.date == self.date
+        ):
             return True
         return False
 

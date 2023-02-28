@@ -300,7 +300,7 @@ class Host:
         if self._nvr_sw_version_object is None:
             return False
 
-        return not self._nvr_sw_version_object >= self.sw_version_required
+        return not self._nvr_sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
 
     @property
     def model(self) -> Optional[str]:
