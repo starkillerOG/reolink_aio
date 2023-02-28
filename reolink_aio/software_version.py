@@ -29,8 +29,8 @@ MINIMUM_FIRMWARE = {
     },
     "RLC-410W": {
         "IPC_30K128M4MP": "v3.1.0.739_22042505",
-        "IPC_51516M5M", "v3.0.0.136_20121102",
-        "IPC_515B16M5M", "v3.0.0.136_20121102",
+        "IPC_51516M5M": "v3.0.0.136_20121102",
+        "IPC_515B16M5M": "v3.0.0.136_20121102",
     },
     "RLC-420": {
         "IPC_51316M": "v3.0.0.136_20121101",
@@ -77,15 +77,19 @@ version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>
 class SoftwareVersion:
     """SoftwareVersion class"""
 
-    def __init__(self, version_string: str):
-        self.version_string = version_string.lower()
-
+    def __init__(self, version_string: str | None):
         self.is_unknown = False
         self.major = 0
         self.middle = 0
         self.minor = 0
         self.build = 0
+        self.date = datetime.strptime("00010100", '%y%m%d%H')
 
+        if version_string is None:
+            self.is_unknown = True
+            return
+
+        self.version_string = version_string.lower()
         if self.version_string == "unknown":
             self.is_unknown = True
             return
@@ -99,17 +103,14 @@ class SoftwareVersion:
         self.middle = int(match.group("middle"))
         self.minor = int(match.group("minor"))
         build = match.group("build")
-        if build is None:
-            self.build = 0
-        else:
+        if build is not None:
             self.build = int(build)
         date = match.group("date")
-        if date is None:
-            date = "00010100"
-        try:
-            self.date = datetime.strptime(date, '%y%m%d%H')
-        except ValueError:
-            self.date = datetime.strptime("00010100", '%y%m%d%H')
+        if date is not None:
+            try:
+                self.date = datetime.strptime(date, '%y%m%d%M')
+            except ValueError:
+                pass
 
     def __repr__(self):
         return f"<SoftwareVersion: {self.version_string}>"
