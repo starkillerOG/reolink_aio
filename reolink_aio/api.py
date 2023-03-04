@@ -734,7 +734,7 @@ class Host:
                     # logout sometimes responds with a string of seemingly random caracters, which are always the same for a given camera.
                     await self.send(body, param, expected_response_type="text/html")
                 except ReolinkError as err:
-                    _LOGGER.warning("Error while logging out: %s", err)
+                    _LOGGER.warning("Error while logging out: %s", str(err))
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
             # Thus it is not available for now to exit the previous "stuck" sessions after sudden crash or power failure:
@@ -1299,12 +1299,12 @@ class Host:
 
         try:
             json_data = await self.send(body, expected_response_type="json")
-        except InvalidContentTypeError as e:
+        except InvalidContentTypeError as err:
             _LOGGER.error(
                 "Host %s:%s: error translating All Motion States response: %s",
                 self._host,
                 self._port,
-                e,
+                str(err),
             )
             for channel in self._channels:
                 self._motion_detection_states[channel] = False
@@ -1613,12 +1613,12 @@ class Host:
 
                     break
 
-            except Exception as e:  # pylint: disable=bare-except
+            except Exception as err:  # pylint: disable=bare-except
                 _LOGGER.error(
                     "Host %s:%s failed mapping JSON data: %s, traceback:\n%s\n",
                     self._host,
                     self._port,
-                    e,
+                    str(err),
                     traceback.format_exc(),
                 )
                 continue
@@ -1695,12 +1695,12 @@ class Host:
                 elif data["cmd"] == "GetAbility":
                     self._abilities = data["value"]["Ability"]
 
-            except Exception as e:  # pylint: disable=bare-except
+            except Exception as err:  # pylint: disable=bare-except
                 _LOGGER.error(
                     "Host %s:%s failed mapping JSON data: %s, traceback:\n%s\n",
                     self._host,
                     self._port,
-                    e,
+                    str(err),
                     traceback.format_exc(),
                 )
                 continue
@@ -1898,13 +1898,13 @@ class Host:
                     if "range" in data:
                         self._zoom_focus_range[channel] = data["range"]["ZoomFocus"]
 
-            except Exception as e:
+            except Exception as err:
                 _LOGGER.error(
                     "Host %s:%s (channel %s) failed mapping JSON data: %s, traceback:\n%s\n",
                     self._host,
                     self._port,
                     channel,
-                    e,
+                    str(err),
                     traceback.format_exc(),
                 )
                 continue
@@ -2823,12 +2823,12 @@ class Host:
                     json_data[0]["code"],
                     json_data,
                 )
-        except KeyError as e:
+        except KeyError as err:
             _LOGGER.error(
                 'Host %s:%s: received an unexpected response from "Search" command: %s',
                 self._host,
                 self._port,
-                e,
+                str(err),
             )
 
         return None, None
@@ -3026,7 +3026,7 @@ class Host:
                             f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
                             f"content type '{response.content_type}', data:\n{data}\n"
                         ) from err
-                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", err, data)
+                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), data)
                     await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
                 if json_data is None:
@@ -3171,8 +3171,8 @@ class Host:
 
                 return response_text
 
-        except aiohttp.ClientConnectorError as e:
-            _LOGGER.error("Host %s:%s: connection error: %s.", self._host, self._port, str(e))
+        except aiohttp.ClientConnectorError as err:
+            _LOGGER.error("Host %s:%s: connection error: %s.", self._host, self._port, str(err))
         except asyncio.TimeoutError:
             _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
         return None
