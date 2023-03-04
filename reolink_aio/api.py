@@ -830,7 +830,9 @@ class Host:
                     self._capabilities[channel].append("zoom_basic")
                     min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
                     max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
-                    if min_zoom is not None and max_zoom is not None:
+                    if min_zoom is None or max_zoom is None:
+                        _LOGGER.warning(f"Camera {self.camera_name(channel)} reported to support zoom, but zoom range not available")
+                    else:
                         self._capabilities[channel].append("zoom")
                         if self.api_version("disableAutoFocus", channel) > 0:
                             self._capabilities[channel].append("auto_focus")
