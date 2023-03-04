@@ -827,9 +827,13 @@ class Host:
             if ptz_ver != 0:
                 self._capabilities[channel].append("ptz")
                 if ptz_ver in [1, 2, 5]:
-                    self._capabilities[channel].append("zoom")
-                    if self.api_version("disableAutoFocus", channel) > 0:
-                        self._capabilities[channel].append("auto_focus")
+                    self._capabilities[channel].append("zoom_basic")
+                    min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
+                    max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
+                    if min_zoom is not None and max_zoom is not None:
+                        self._capabilities[channel].append("zoom")
+                        if self.api_version("disableAutoFocus", channel) > 0:
+                            self._capabilities[channel].append("auto_focus")
                 if ptz_ver in [2, 3, 5]:
                     self._capabilities[channel].append("pan_tilt")
                     if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
@@ -1114,7 +1118,7 @@ class Host:
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             # checking range
-            if self.supported(channel, "zoom"):
+            if self.supported(channel, "zoom_basic"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
