@@ -831,7 +831,7 @@ class Host:
                     min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
                     max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                     if min_zoom is None or max_zoom is None:
-                        _LOGGER.warning(f"Camera {self.camera_name(channel)} reported to support zoom, but zoom range not available")
+                        _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
                     else:
                         self._capabilities[channel].append("zoom")
                         if self.api_version("disableAutoFocus", channel) > 0:
@@ -1243,6 +1243,41 @@ class Host:
             if self._ai_detection_states is None or channel not in self._ai_detection_states or self._ai_detection_states[channel] is None
             else self._ai_detection_states[channel]
         )
+
+    async def get_ai_state_all_ch(self) -> bool:
+        """Fetch Ai and visitor state all channels at once (AI + visitor)."""
+        body = []
+        channels = []
+        for channel in self._channels:
+            if self.api_version("GetEvents") >= 1:
+                ch_body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
+            else:
+                if not self.ai_supported(channel):
+                    return False
+                ch_body = [{"cmd": "GetAiState", "action": 0, "param": {"channel": channel}}]
+            body.extend(ch_body)
+            channels.extend([channel] * len(ch_body))
+
+        try:
+            json_data = await self.send(body, expected_response_type="json")
+        except InvalidContentTypeError as err:
+            _LOGGER.error(
+                "Host %s:%s: error translating AI states all channel response: %s",
+                self._host,
+                self._port,
+                str(err),
+            )
+            return False
+        except NoDataError:
+            _LOGGER.error(
+                "Host %s:%s: error obtaining AI states all channel response.",
+                self._host,
+                self._port,
+            )
+            return False
+
+        self.map_channels_json_response(json_data, channels)
+        return True
 
     async def get_all_motion_states(self, channel: int) -> Optional[bool]:
         """Fetch All motions states at once (regular + AI + visitor)."""
@@ -3465,8 +3500,8 @@ class Host:
             if "ONVIF_only_motion" not in self._log_once:
                 self._log_once.append("ONVIF_only_motion")
                 _LOGGER.debug("Reolink model '%s' appears to not support rich notifications", self.model)
-            if not await self.get_motion_state_all_ch():
-                _LOGGER.error("Could not poll event state after receiving ONVIF event with only motion event")
+            if not await self.get_ai_state_all_ch():
+                _LOGGER.error("Could not poll AI event state after receiving ONVIF event with only motion event")
             return None
 
         return event_channels
