@@ -85,7 +85,7 @@ import asyncio
 
 async def print_mac_address():
     # initialize the host
-    host = Host('192.168.1.109', 80, 'admin', 'admin1234')
+    host = Host('192.168.1.109','admin', 'admin1234', port=80)
     # connect and obtain/cache device settings and capabilities
     await host.get_host_data()
     # check if it is a camera or an NVR
