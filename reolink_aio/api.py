@@ -291,7 +291,7 @@ class Host:
     @property
     def nvr_name(self) -> Optional[str]:
         if not self._is_nvr and (self._nvr_name is None or self._nvr_name == ""):
-            if len(self._channels) > 0 and self._channel_names is not None and self._channels[0] in self._channel_names:
+            if len(self._channels) > 0 and self._channels[0] in self._channel_names:
                 return self._channel_names[self._channels[0]]
 
             return "Unknown"
@@ -398,12 +398,16 @@ class Host:
         if channel is None:
             return self.nvr_name
 
-        if self._channel_names is None or channel not in self._channel_names:
+        if channel not in self._channel_names and channel in self._stream_channels and channel != 0:
+            return self.camera_name(0)  # Dual lens cameras
+        if channel not in self._channel_names:
             return "Unknown"
         return self._channel_names[channel]
 
     def camera_model(self, channel: int) -> Optional[str]:
-        if self._channel_models is None or channel not in self._channel_models:
+        if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
+            return self.camera_model(0)  # Dual lens cameras
+        if channel not in self._channel_models:
             return "Unknown"
         return self._channel_models[channel]
 
