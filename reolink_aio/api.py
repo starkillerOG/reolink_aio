@@ -58,6 +58,17 @@ SSL_CONTEXT.set_ciphers("DEFAULT")
 SSL_CONTEXT.check_hostname = False
 SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
+DUAL_LENS_MODELS: set[str] = {
+    "Reolink Duo PoE",
+    "Reolink Duo WiFi",
+    "Reolink Duo 2 PoE",
+    "Reolink Duo 2 WiFi",
+    "Reolink Duo Floodlight PoE",
+    "Reolink Duo Floodlight WiFi",
+    "Reolink TrackMix PoE",
+    "Reolink TrackMix WiFi",
+}
+
 
 ##########################################################################################################################################################
 # API class
@@ -129,6 +140,7 @@ class Host:
         self._GetChannelStatus_present: bool = False
         self._GetChannelStatus_has_name: bool = False
         self._channels: list[int] = []
+        self._stream_channels: list[int] = []
         self._channel_names: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
         self._is_doorbell: dict[int, bool] = {}
@@ -329,8 +341,13 @@ class Host:
 
     @property
     def channels(self) -> list[int]:
-        """Return the list of indices of channels' in use."""
+        """Return the list of indices of channels in use."""
         return self._channels
+
+    @property
+    def stream_channels(self) -> list[int]:
+        """Return the list of indices of stream channels available."""
+        return self._stream_channels
 
     @property
     def hdd_info(self) -> Optional[dict]:
@@ -891,11 +908,18 @@ class Host:
     async def get_state(self, cmd: str) -> None:
         body = []
         channels = []
-        for channel in self._channels:
+        for channel in self._stream_channels:
             ch_body = []
             if cmd == "GetEnc":
                 ch_body = [{"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetIsp":
+            elif cmd == "GetRtspUrl":
+                ch_body = [{"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}}]
+            body.extend(ch_body)
+            channels.extend([channel] * len(ch_body))
+
+        for channel in self._channels:
+            ch_body = []
+            if cmd == "GetIsp":
                 ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetIrLights":
                 ch_body = [{"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}]
@@ -994,11 +1018,13 @@ class Host:
     async def get_states(self) -> None:
         body = []
         channels = []
+        for channel in self._stream_channels:
+            ch_body = [{"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}]
+            body.extend(ch_body)
+            channels.extend([channel] * len(ch_body))
+
         for channel in self._channels:
-            ch_body = [
-                {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
-            ]
+            ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
             if self.api_version("GetEvents") >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
@@ -1104,17 +1130,28 @@ class Host:
         self.map_host_json_response(json_data)
         self.construct_capabilities()
 
+        if self.model in DUAL_LENS_MODELS:
+            self._stream_channels = [0, 1]
+        else:
+            self._stream_channels = self._channels
+
         body = []
         channels = []
+        for channel in self._stream_channels:
+            ch_body = [
+                {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
+            ]
+            body.extend(ch_body)
+            channels.extend([channel] * len(ch_body))
+
         for channel in self._channels:
             ch_body = [
                 {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
             ]
             # one time values
@@ -1420,7 +1457,7 @@ class Host:
 
     async def get_snapshot(self, channel: int) -> bytes | None:
         """Get the still image."""
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             return None
 
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
@@ -1440,7 +1477,7 @@ class Host:
         return response
 
     def get_flv_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             return None
 
         if stream is None:
@@ -1455,7 +1492,7 @@ class Host:
         return f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=channel{channel}_{stream}.bcs&user={self._username}&password={password}"
 
     def get_rtmp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             return None
 
         if stream is None:
@@ -1473,7 +1510,7 @@ class Host:
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
     async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             return None
 
         if stream is None:
@@ -1604,8 +1641,6 @@ class Host:
                     continue
 
                 if data["cmd"] == "GetChannelstatus":
-                    # Maybe later add a support of dynamic cameras' connect/disconnect, without API consumer re-init.
-                    # A callback from here to the API consumer would be needed I think if changes are seen.
                     if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
                         self._channel_models.clear()
@@ -1640,7 +1675,6 @@ class Host:
                         cur_status = data["value"]["status"]
                         for ch_info in cur_status:
                             if ch_info["online"] == 1:
-                                # Just a dynamic name change is OK for the current "non dynamic" behavior.
                                 self._channel_names[ch_info["channel"]] = ch_info["name"]
 
                     if not self._GetChannelStatus_present:
@@ -3380,7 +3414,7 @@ class Host:
 
         await self.unsubscribe()
 
-        if self._nvr_model in ["RLN8-410", "RLN16-410"]:
+        if self._is_nvr:
             _LOGGER.debug("Attempting to unsubscribe previous (dead) sessions notifications...")
 
             # These work for RLN8-410 NVR, so up to 3 maximum subscriptions on it
