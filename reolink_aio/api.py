@@ -779,7 +779,7 @@ class Host:
         self._token = None
         self._lease_time = None
 
-    def construct_capabilities(self) -> None:
+    def construct_capabilities(self, warnings=True) -> None:
         """Construct the capabilities list of the NVR/camera."""
         # Host capabilities
         self._capabilities["Host"] = []
@@ -848,7 +848,8 @@ class Host:
                     min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
                     max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                     if min_zoom is None or max_zoom is None:
-                        _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
+                        if warnings:
+                            _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
                     else:
                         self._capabilities[channel].append("zoom")
                         if self.api_version("disableAutoFocus", channel) > 0:
@@ -1128,7 +1129,7 @@ class Host:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings") from err
 
         self.map_host_json_response(json_data)
-        self.construct_capabilities()
+        self.construct_capabilities(warnings=False)
 
         if self.model in DUAL_LENS_MODELS:
             self._stream_channels = [0, 1]
