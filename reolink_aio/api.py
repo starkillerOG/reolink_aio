@@ -618,7 +618,7 @@ class Host:
         if channel not in self._audio_settings:
             return {}
 
-        audio_dict = {}
+        audio_dict = {-1: "off"}
         for audio_file in self._audio_file_list[channel]["AudioFileList"]:
             audio_dict[audio_file["id"]] = audio_file["fileName"]
         return audio_dict
@@ -630,14 +630,11 @@ class Host:
         return self._auto_reply_settings[channel]["AutoReply"]["enable"] == 1
 
     def quick_reply_file(self, channel: int) -> int | None:
+        """Return the quick replay audio file id, -1 means quick replay is off."""
         if channel not in self._auto_reply_settings:
             return None
 
-        file_id = self._auto_reply_settings[channel]["AutoReply"]["fileId"]
-        if file_id == -1:
-            return None
-
-        return file_id
+        return self._auto_reply_settings[channel]["AutoReply"]["fileId"]
 
     def quick_reply_time(self, channel: int) -> int:
         if channel not in self._auto_reply_settings:
@@ -2709,6 +2706,42 @@ class Host:
             raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
 
         body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": {"volume": volume, "channel": channel}}}]
+        await self.send_setting(body)
+
+    async def set_quick_reply(self, channel: int, enable: bool | None = None, file_id: int | None = None, time: int | None = None) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_quick_reply: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "quick_reply"):
+            raise NotSupportedError(f"set_quick_reply: Quick reply on camera {self.camera_name(channel)} is not available")
+        if file_id is not None and not isinstance(file_id, int):
+            raise InvalidParameterError(f"set_quick_reply: file_id {file_id} not integer")
+        if file_id is not None and file_id not in self.quick_reply_dict(channel):
+            raise InvalidParameterError(f"set_quick_reply: file_id {file_id} not in {list(self.quick_reply_dict(channel))}")
+        if time is not None and not isinstance(time, int):
+            raise InvalidParameterError(f"set_quick_reply: time {time} not integer")
+        if time is not None and time < 0:
+            raise InvalidParameterError(f"set_quick_reply: time {time} can not be < 0")
+
+        params: dict[str, Any] = {"channel": channel}
+        if enable is not None:
+            if enable:
+                params["enable"] = 1
+                current_file_id = self.quick_reply_file(channel)
+                if current_file_id == -1:
+                    current_file_id = list(self.quick_reply_dict(channel))[1]
+                params["fileId"] = current_file_id
+            else:
+                params["enable"] = 0
+        if file_id is not None:
+            if file_id >= 0:
+                params["enable"] = 1
+                params["fileId"] = file_id
+            else:
+                params["enable"] = 0
+        if time is not None:
+            params["timeout"] = time
+
+        body = [{"cmd": "SetAutoReply", "action": 0, "param": {"AutoReply": params}}]
         await self.send_setting(body)
 
     async def set_audio_alarm(self, channel: int, enable: bool) -> None:
