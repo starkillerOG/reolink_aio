@@ -127,7 +127,7 @@ class Host:
         ##############################################################################
         # NVR (host-level) attributes
         self._is_nvr: bool = False
-        self._nvr_name: Optional[str] = None
+        self._nvr_name: str = ""
         self._nvr_serial: Optional[str] = None
         self._nvr_model: Optional[str] = None
         self._nvr_num_channels: int = 0
@@ -290,7 +290,7 @@ class Host:
 
     @property
     def nvr_name(self) -> Optional[str]:
-        if not self._is_nvr and (self._nvr_name is None or self._nvr_name == ""):
+        if not self._is_nvr and self._nvr_name == "":
             if len(self._channels) > 0 and self._channels[0] in self._channel_names:
                 return self._channel_names[self._channels[0]]
 
@@ -401,6 +401,8 @@ class Host:
         if channel not in self._channel_names and channel in self._stream_channels and channel != 0:
             return self.camera_name(0)  # Dual lens cameras
         if channel not in self._channel_names:
+            if len(self._channels) == 1:
+                return self.nvr_name
             return "Unknown"
         return self._channel_names[channel]
 
@@ -3513,7 +3515,7 @@ class Host:
                 self._onvif_only_motion = False
 
             state = data_element.attrib["Value"] == "true"
-            _LOGGER.info("Reolink ONVIF event channel %s, %s: %s", channel, rule, state)
+            _LOGGER.info("Reolink %s ONVIF event channel %s, %s: %s", self.nvr_name, channel, rule, state)
 
             if rule == "Motion":
                 self._motion_detection_states[channel] = state
