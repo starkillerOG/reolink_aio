@@ -197,6 +197,8 @@ class Host:
         self._audio_alarm_settings: dict[int, dict] = {}
         self._buzzer_settings: dict[int, dict] = {}
         self._auto_track_settings: dict[int, dict] = {}
+        self._audio_file_list: dict[int, dict] = {}
+        self._auto_reply_settings: dict[int, dict] = {}
 
         ##############################################################################
         # States
@@ -612,6 +614,37 @@ class Host:
 
         return self._audio_settings[channel]["AudioCfg"]["volume"]
 
+    def quick_reply_dict(self, channel: int) -> dict[int, str]:
+        if channel not in self._audio_settings:
+            return {}
+
+        audio_dict = {}
+        for audio_file in self._audio_file_list[channel]["AudioFileList"]:
+            audio_dict[audio_file["id"]] = audio_file["fileName"]
+        return audio_dict
+
+    def quick_reply_enabled(self, channel: int) -> bool:
+        if channel not in self._auto_reply_settings:
+            return False
+
+        return self._auto_reply_settings[channel]["AutoReply"]["enable"] == 1
+
+    def quick_reply_file(self, channel: int) -> int | None:
+        if channel not in self._auto_reply_settings:
+            return None
+
+        file_id = self._auto_reply_settings[channel]["AutoReply"]["fileId"]
+        if file_id == -1:
+            return None
+
+        return file_id
+
+    def quick_reply_time(self, channel: int) -> int:
+        if channel not in self._auto_reply_settings:
+            return 0
+
+        return self._auto_reply_settings[channel]["AutoReply"]["timeout"]
+
     def audio_alarm_settings(self, channel: int) -> dict:
         if channel in self._audio_alarm_settings:
             return self._audio_alarm_settings[channel]
@@ -840,6 +873,9 @@ class Host:
             if self.api_version("GetAudioCfg") > 0:
                 self._capabilities[channel].append("volume")
 
+            if self.is_doorbell(channel) and self.api_version("GetAudioFileList") > 0 and self.api_version("GetAutoReply") > 0:
+                self._capabilities[channel].append("quick_reply")
+
             if channel in self._audio_alarm_settings:
                 self._capabilities[channel].append("siren")
 
@@ -946,6 +982,10 @@ class Host:
                 ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioCfg":
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetAudioFileList":
+                ch_body = [{"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetAutoReply":
+                ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBuzzerAlarmV20":
@@ -1063,6 +1103,9 @@ class Host:
             if self.supported(channel, "volume"):
                 ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
 
+            if self.supported(channel, "quick_reply"):
+                ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
+
             if self.supported(channel, "buzzer"):
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
 
@@ -1161,6 +1204,9 @@ class Host:
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
             ]
+            if self.is_doorbell(channel):
+                ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             # checking range
@@ -1205,6 +1251,8 @@ class Host:
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
         self._api_version["GetAudioCfg"] = check_command_exists("GetAudioCfg")
         self._api_version["GetPtzGuard"] = check_command_exists("GetPtzGuard")
+        self._api_version["GetAudioFileList"] = check_command_exists("GetAudioFileList")
+        self._api_version["GetAutoReply"] = check_command_exists("GetAutoReply")
         if self.api_version("scheduleVersion") >= 1:
             self._api_version["GetEmail"] = check_command_exists("GetEmailV20")
             self._api_version["GetPush"] = check_command_exists("GetPushV20")
@@ -1970,6 +2018,12 @@ class Host:
 
                 elif data["cmd"] == "GetAudioAlarmV20":
                     self._audio_alarm_settings[channel] = data["value"]
+
+                elif data["cmd"] == "GetAudioFileList":
+                    self._audio_file_list[channel] = data["value"]
+
+                elif data["cmd"] == "GetAutoReply":
+                    self._auto_reply_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetAutoFocus":
                     self._auto_focus_settings[channel] = data["value"]
