@@ -859,7 +859,7 @@ class Host:
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
                 self._capabilities[channel].append("ir_lights")
 
-            if self.api_version("powerLed", channel) > 0:
+            if self.api_version("powerLed", channel) > 0 or self.is_doorbell(channel):
                 # powerLed == statusLed
                 self._capabilities[channel].append("status_led")
 
