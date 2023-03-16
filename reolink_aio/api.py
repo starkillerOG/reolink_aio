@@ -1342,10 +1342,18 @@ class Host:
                 ch_body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
             else:
                 if not self.ai_supported(channel):
-                    return False
+                    continue
                 ch_body = [{"cmd": "GetAiState", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+
+        if not body:
+            _LOGGER.warning(
+                "Host %s:%s: get_ai_state_all_ch called while none of the channels support AI detection",
+                self._host,
+                self._port,
+            )
+            return False
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -3628,7 +3636,7 @@ class Host:
                 _LOGGER.error("Could not poll motion state after receiving ONVIF event without any known events")
             return None
 
-        if self._onvif_only_motion and all(self.ai_supported(ch) for ch in event_channels):
+        if self._onvif_only_motion and any(self.ai_supported(ch) for ch in event_channels):
             # Poll all other states since not all cameras have rich notifications including the specific events
             if "ONVIF_only_motion" not in self._log_once:
                 self._log_once.append("ONVIF_only_motion")
