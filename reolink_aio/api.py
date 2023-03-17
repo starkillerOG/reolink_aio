@@ -2922,10 +2922,10 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus] | None, list[typings.SearchFile] | None]:
+    ) -> tuple[list[typings.SearchStatus], list[typings.SearchFile] | None]:
         """Send search VOD-files command."""
         if channel not in self._channels:
-            return None, None
+            raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
 
         if stream is None:
             stream = self._stream
@@ -2961,54 +2961,26 @@ class Host:
         ]
 
         try:
-            # json_data = await self.send(body, {"cmd": "Search", "rs": "000000"}, expected_response_type = 'json')
             json_data = await self.send(body, {"cmd": "Search"}, expected_response_type="json")
-        except InvalidContentTypeError:
-            _LOGGER.error(
-                'Host %s:%s: error translating of "Search" command response.',
-                self._host,
-                self._port,
-            )
-            return None, None
-        except NoDataError:
-            _LOGGER.error(
-                'Host %s:%s: error receiving response for "Search" command.',
-                self._host,
-                self._port,
-            )
-            return None, None
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError(f"Request VOD files error: {str(err)}") from err
+        except NoDataError as err:
+            raise NoDataError(f"Request VOD files error: {str(err)}") from err
 
-        try:
-            if json_data[0]["code"] == 0:
-                search_result = json_data[0]["value"]["SearchResult"]
-                if status_only or "File" not in search_result:
-                    if "Status" in search_result:
-                        return search_result["Status"], None
-                    _LOGGER.info(
-                        'Host: %s:%s: no "Status" in the result of "Search" command:\n%s\n',
-                        self._host,
-                        self._port,
-                        json_data,
-                    )
-                else:
-                    return search_result["Status"], search_result["File"]
-            else:
-                _LOGGER.info(
-                    'Host: %s:%s: the "Search" command returned error code %s:\n%s\n',
-                    self._host,
-                    self._port,
-                    json_data[0]["code"],
-                    json_data,
-                )
-        except KeyError as err:
-            _LOGGER.error(
-                'Host %s:%s: received an unexpected response from "Search" command: %s',
-                self._host,
-                self._port,
-                str(err),
-            )
+        if json_data[0].get("code", -1) != 0:
+            raise ApiError(f"Host: {self._host}:{self._port}: Request VOD files: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
 
-        return None, None
+        search_result = json_data[0].get("value", {}).get("SearchResult", {})
+        if "Status" not in search_result:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
+
+        if status_only:
+            return search_result["Status"], None
+
+        if "File" not in search_result:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no file data in the response: {json_data}")
+
+        return search_result["Status"], search_result["File"]
 
     async def send_setting(self, body: reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
