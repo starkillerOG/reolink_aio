@@ -98,8 +98,6 @@ class Host:
         self._url: str = ""
         self._use_https: Optional[bool] = use_https
         self._host: str = host
-        self._external_host: Optional[str] = None
-        self._external_port: Optional[int] = None
         self._port: Optional[int] = port
         self._rtsp_port: Optional[int] = None
         self._rtmp_port: Optional[int] = None
@@ -232,24 +230,8 @@ class Host:
         return self._username
 
     @property
-    def external_host(self) -> Optional[str]:
-        return self._external_host
-
-    @external_host.setter
-    def external_host(self, value: Optional[str]):
-        self._external_host = value
-
-    @property
     def use_https(self) -> Optional[bool]:
         return self._use_https
-
-    @property
-    def external_port(self) -> Optional[int]:
-        return self._external_port
-
-    @external_port.setter
-    def external_port(self, value: Optional[int]):
-        self._external_port = value
 
     @property
     def port(self) -> Optional[int]:
@@ -1640,26 +1622,14 @@ class Host:
         self,
         channel: int,
         filename: str,
-        external_url: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str, str]:
         """Return the VOD source url."""
         if channel not in self._channels:
-            return None, None
+            raise InvalidParameterError(f"get_vod_source: no camera connected to channel '{channel}'")
 
+        # Since no request is made, make sure we are logged in.
         await self.login()
-
-        host_url: str
-        if external_url and self._external_host:
-            host_url = self._external_host
-        else:
-            host_url = self._host
-
-        host_port: int | None
-        if external_url and self._external_port:
-            host_port = self._external_port
-        else:
-            host_port = self._port
 
         if self._use_https:
             http_s = "https"
@@ -1671,29 +1641,28 @@ class Host:
             # NVR VoDs "type=1": mp4
             return (
                 "application/x-mpegURL",
-                f"{http_s}://{host_url}:{host_port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
+                f"{http_s}://{self._host}:{self._port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
                 f"&type=1&start={filename}&seek=0&user={self._username}&password={self._password}",
             )
 
-        if external_url:
-            return (
-                "application/x-mpegURL",
-                f"{http_s}://{host_url}:{host_port}/cgi-bin/api.cgi?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
-            )
+        # Alternative
+        #    return (
+        #        "application/x-mpegURL",
+        #        f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
+        #    )
 
         if stream is None:
             stream = self._stream
 
-        stream_type = None
+        stream_type: int
         if stream == "sub":
             stream_type = 1
         else:
             stream_type = 0
-        # Reolink uses an odd encoding, if the camera provides a / in the filename it needs to be encoded with %20
+        # If the camera provides a / in the filename it needs to be encoded with %20
         # Camera VoDs are only available over rtmp, rtsp is not an option
         file = filename.replace("/", "%20")
-        # Looks like it only works with login/password method
-        # return f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&token={self._token}"
+        # Looks like it only works with login/password method, not with token
         return (
             "application/x-mpegURL",
             f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}",
