@@ -2922,7 +2922,7 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus], list[typings.SearchFile] | None]:
+    ) -> tuple[list[typings.SearchStatus], list[typings.SearchFile]]:
         """Send search VOD-files command."""
         if channel not in self._channels:
             raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
@@ -2975,7 +2975,7 @@ class Host:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
 
         if status_only:
-            return search_result["Status"], None
+            return search_result["Status"], []
 
         if "File" not in search_result:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no file data in the response: {json_data}")
