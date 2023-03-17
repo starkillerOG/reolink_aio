@@ -67,6 +67,7 @@ DUAL_LENS_MODELS: set[str] = {
     "Reolink Duo Floodlight WiFi",
     "Reolink TrackMix PoE",
     "Reolink TrackMix WiFi",
+    "RLC-81MA",
 }
 
 
