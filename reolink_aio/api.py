@@ -70,12 +70,6 @@ DUAL_LENS_MODELS: set[str] = {
     "RLC-81MA",
 }
 
-# Some models report the GetAbility->Floodlight flag wrong, this list overwrites this.
-FLOODLIGHT_MODELS: set[str] = {
-    "Reolink TrackMix PoE",
-    "Reolink TrackMix WiFi",
-}
-
 
 ##########################################################################################################################################################
 # API class
@@ -845,7 +839,7 @@ class Host:
                 # powerLed == statusLed
                 self._capabilities[channel].append("status_led")
 
-            if self.api_version("GetWhiteLed") > 0 and (self.api_version("floodLight", channel) > 0 or self.model in FLOODLIGHT_MODELS):
+            if self.api_version("GetWhiteLed") > 0 and (self.api_version("floodLight", channel) > 0 or self.api_version("supportFLBrightness", channel) > 0):
                 # floodlight == spotlight == WhiteLed
                 self._capabilities[channel].append("floodLight")
 
