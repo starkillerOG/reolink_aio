@@ -1178,6 +1178,8 @@ class Host:
 
         if self.model in DUAL_LENS_MODELS:
             self._stream_channels = [0, 1]
+        elif not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0
+            self._stream_channels = [0, 1]
         else:
             self._stream_channels = self._channels
 
