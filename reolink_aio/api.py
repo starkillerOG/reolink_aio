@@ -201,6 +201,7 @@ class Host:
         self._audio_alarm_settings: dict[int, dict] = {}
         self._buzzer_settings: dict[int, dict] = {}
         self._auto_track_settings: dict[int, dict] = {}
+        self._auto_track_limits: dict[int, dict] = {}
         self._audio_file_list: dict[int, dict] = {}
         self._auto_reply_settings: dict[int, dict] = {}
 
@@ -897,6 +898,9 @@ class Host:
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].append("auto_track")
 
+            if self.api_version("supportAITrackLimit", channel) > 0:
+                self._capabilities[channel].append("auto_track_limit")
+
             if channel in self._md_alarm_settings:
                 self._capabilities[channel].append("md_sensitivity")
 
@@ -967,6 +971,8 @@ class Host:
                 ch_body = [{"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAiCfg":
                 ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetPtzTraceSection":
+                ch_body = [{"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection":{"channel": channel}}}]
             elif cmd == "GetAudioCfg":
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioFileList":
@@ -1086,6 +1092,9 @@ class Host:
 
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "auto_track_limit"):
+                ch_body.append({"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection":{"channel": channel}}})
 
             if self.supported(channel, "volume"):
                 ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
@@ -1992,6 +2001,9 @@ class Host:
                 elif data["cmd"] == "GetAiCfg":
                     self._auto_track_settings[channel] = data["value"]
 
+                elif data["cmd"] == "GetPtzTraceSection":
+                    self._auto_track_limits[channel] = data["value"]
+
                 elif data["cmd"] == "GetAudioCfg":
                     self._audio_settings[channel] = data["value"]
 
@@ -2339,6 +2351,42 @@ class Host:
             raise NotSupportedError(f"set_auto_tracking: Auto tracking on camera {self.camera_name(channel)} is not available")
 
         body = [{"cmd": "SetAiCfg", "action": 0, "param": {"bSmartTrack": 1 if enable else 0, "channel": channel}}]
+        await self.send_setting(body)
+
+    def auto_track_limit_left(self, channel: int) -> int:
+        """-1 = limit not set"""
+        if channel not in self._auto_track_limits:
+            return -1
+
+        return self._auto_track_limits[channel]["PtzTraceSection"]["LimitLeft"]
+
+    def auto_track_limit_right(self, channel: int) -> int:
+        """-1 = limit not set"""
+        if channel not in self._auto_track_limits:
+            return -1
+
+        return self._auto_track_limits[channel]["PtzTraceSection"]["LimitRight"]
+
+    async def set_auto_track_limit(self, channel: int, left: int | None = None, right: int | None = None) -> None:
+        """-1 = disable limit"""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_auto_track_limit: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "auto_track_limit"):
+            raise NotSupportedError(f"set_auto_track_limit: Auto track limits on camera {self.camera_name(channel)} is not available")
+        if left is None and right is None:
+            raise InvalidParameterError("set_auto_track_limit: either left or right limit needs to be specified")
+        if left is not None and (left < -1 or left > 2700):
+            raise InvalidParameterError(f"set_auto_track_limit: left limit {left} not in range -1...2700")
+        if right is not None and (right < -1 or right > 2700):
+            raise InvalidParameterError(f"set_auto_track_limit: right limit {right} not in range -1...2700")
+
+        params = {"channel": channel}
+        if left is not None:
+            params["LimitLeft"] = left 
+        if right is not None:
+            params["LimitRight"] = right 
+
+        body = [{"cmd": "SetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": params}}]
         await self.send_setting(body)
 
     def validate_osd_pos(self, pos) -> bool:
