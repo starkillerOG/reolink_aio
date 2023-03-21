@@ -34,3 +34,11 @@ class GuardEnum(Enum):
 
     set = "setPos"
     goto = "toPos"
+
+
+class TrackMethodEnum(Enum):
+    """Options for AI Track Method"""
+
+    digital = 2
+    digitalfirst = 3
+    pantiltfirst = 4

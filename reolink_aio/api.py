@@ -2371,7 +2371,13 @@ class Host:
 
         return self._auto_track_settings[channel].get("aiStopBackTime", -1)
 
-    async def set_auto_tracking(self, channel: int, enable: bool | None = None, disappear_time: int | None = None, stop_time: int | None = None) -> None:
+    def auto_track_method(self, channel: int) -> Optional[int]:
+        if channel not in self._auto_track_settings:
+            return None
+
+        return self._auto_track_settings[channel].get("aiTrack")
+
+    async def set_auto_tracking(self, channel: int, enable: bool | None = None, disappear_time: int | None = None, stop_time: int | None = None, method: int | str | None = None) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_auto_tracking: no camera connected to channel '{channel}'")
         if not self.supported(channel, "auto_track"):
@@ -2384,6 +2390,15 @@ class Host:
             params["aiDisappearBackTime"] = disappear_time
         if stop_time is not None:
             params["aiStopBackTime"] = stop_time
+        if method is not None:
+            if isinstance(method, str):
+                method_int = TrackMethodEnum[method].value
+            else:
+                method_int = method
+            params["aiTrack"] = method_int
+            method_list = [val.value for val in TrackMethodEnum]
+            if method_int not in method_list:
+                raise InvalidParameterError(f"set_auto_tracking: method {method_int} not in {method_list}")
 
         body = [{"cmd": "SetAiCfg", "action": 0, "param": params}]
         await self.send_setting(body)
