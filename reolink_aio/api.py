@@ -656,17 +656,8 @@ class Host:
 
         return self._ai_alarm_settings[channel][ai_type]["sensitivity"]
 
-    def ptz_supported(self, channel: int) -> bool:
-        return self.supported(channel, "ptz")
-
-    def zoom_supported(self, channel: int) -> bool:
-        return self.supported(channel, "zoom")
-
     def zoom_range(self, channel: int) -> dict:
         return self._zoom_focus_range[channel]
-
-    def pan_tilt_supported(self, channel: int) -> bool:
-        return self.supported(channel, "pan_tilt")
 
     def enable_https(self, enable: bool):
         self._use_https = enable
