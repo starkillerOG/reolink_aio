@@ -201,6 +201,7 @@ class Host:
         self._audio_alarm_settings: dict[int, dict] = {}
         self._buzzer_settings: dict[int, dict] = {}
         self._auto_track_settings: dict[int, dict] = {}
+        self._auto_track_range: dict[int, dict] = {}
         self._auto_track_limits: dict[int, dict] = {}
         self._audio_file_list: dict[int, dict] = {}
         self._auto_reply_settings: dict[int, dict] = {}
@@ -897,6 +898,14 @@ class Host:
 
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].append("auto_track")
+                track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
+                if isinstance(track_method, list):
+                    if len(track_method)>1:
+                        self._capabilities[channel].append("auto_track_method")
+                if self.auto_track_disappear_time(channel)>0:
+                    self._capabilities[channel].append("auto_track_disappear_time")
+                if self.auto_track_stop_time(channel)>0:
+                    self._capabilities[channel].append("auto_track_stop_time")
 
             if self.api_version("supportAITrackLimit", channel) > 0:
                 self._capabilities[channel].append("auto_track_limit")
@@ -1178,7 +1187,7 @@ class Host:
 
         if self.model in DUAL_LENS_MODELS:
             self._stream_channels = [0, 1]
-        elif not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0
+        elif not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0:
             self._stream_channels = [0, 1]
         else:
             self._stream_channels = self._channels
@@ -1213,6 +1222,8 @@ class Host:
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "auto_track"):
+                ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("scheduleVersion") >= 1:
                 ch_body.extend(
@@ -2002,6 +2013,8 @@ class Host:
 
                 elif data["cmd"] == "GetAiCfg":
                     self._auto_track_settings[channel] = data["value"]
+                    if "range" in data:
+                        self._auto_track_range[channel] = data["range"]
 
                 elif data["cmd"] == "GetPtzTraceSection":
                     self._auto_track_limits[channel] = data["value"]
@@ -2346,13 +2359,33 @@ class Host:
 
         return self._auto_track_settings[channel]["bSmartTrack"] == 1
 
-    async def set_auto_tracking(self, channel: int, enable: bool) -> None:
+    def auto_track_disappear_time(self, channel: int) -> int:
+        if channel not in self._auto_track_settings:
+            return -1
+
+        return self._auto_track_settings[channel].get("aiDisappearBackTime", -1)
+
+    def auto_track_stop_time(self, channel: int) -> int:
+        if channel not in self._auto_track_settings:
+            return -1
+
+        return self._auto_track_settings[channel].get("aiStopBackTime", -1)
+
+    async def set_auto_tracking(self, channel: int, enable: bool | None = None, disappear_time: int | None = None, stop_time: int | None = None) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_auto_tracking: no camera connected to channel '{channel}'")
         if not self.supported(channel, "auto_track"):
             raise NotSupportedError(f"set_auto_tracking: Auto tracking on camera {self.camera_name(channel)} is not available")
 
-        body = [{"cmd": "SetAiCfg", "action": 0, "param": {"bSmartTrack": 1 if enable else 0, "channel": channel}}]
+        params = {"channel": channel}
+        if enable is not None:
+            params["bSmartTrack"] = 1 if enable else 0
+        if disappear_time is not None:
+            params["aiDisappearBackTime"] = disappear_time
+        if stop_time is not None:
+            params["aiStopBackTime"] = stop_time
+
+        body = [{"cmd": "SetAiCfg", "action": 0, "param": params}]
         await self.send_setting(body)
 
     def auto_track_limit_left(self, channel: int) -> int:
