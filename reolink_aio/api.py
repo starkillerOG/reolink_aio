@@ -19,7 +19,7 @@ from statistics import mean
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, SpotlightModeEnum, PtzEnum, GuardEnum
+from .enums import DayNightEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -75,6 +75,7 @@ FLOODLIGHT_MODELS: set[str] = {
     "Reolink TrackMix PoE",
     "Reolink TrackMix WiFi",
 }
+
 
 ##########################################################################################################################################################
 # API class
@@ -900,11 +901,11 @@ class Host:
                 self._capabilities[channel].append("auto_track")
                 track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
                 if isinstance(track_method, list):
-                    if len(track_method)>1:
+                    if len(track_method) > 1:
                         self._capabilities[channel].append("auto_track_method")
-                if self.auto_track_disappear_time(channel)>0:
+                if self.auto_track_disappear_time(channel) > 0:
                     self._capabilities[channel].append("auto_track_disappear_time")
-                if self.auto_track_stop_time(channel)>0:
+                if self.auto_track_stop_time(channel) > 0:
                     self._capabilities[channel].append("auto_track_stop_time")
 
             if self.api_version("supportAITrackLimit", channel) > 0:
@@ -981,7 +982,7 @@ class Host:
             elif cmd == "GetAiCfg":
                 ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzTraceSection":
-                ch_body = [{"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection":{"channel": channel}}}]
+                ch_body = [{"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": {"channel": channel}}}]
             elif cmd == "GetAudioCfg":
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioFileList":
@@ -1103,7 +1104,7 @@ class Host:
                 ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "auto_track_limit"):
-                ch_body.append({"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection":{"channel": channel}}})
+                ch_body.append({"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": {"channel": channel}}})
 
             if self.supported(channel, "volume"):
                 ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
@@ -2377,7 +2378,9 @@ class Host:
 
         return self._auto_track_settings[channel].get("aiTrack")
 
-    async def set_auto_tracking(self, channel: int, enable: bool | None = None, disappear_time: int | None = None, stop_time: int | None = None, method: int | str | None = None) -> None:
+    async def set_auto_tracking(
+        self, channel: int, enable: bool | None = None, disappear_time: int | None = None, stop_time: int | None = None, method: int | str | None = None
+    ) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_auto_tracking: no camera connected to channel '{channel}'")
         if not self.supported(channel, "auto_track"):
@@ -2432,9 +2435,9 @@ class Host:
 
         params = {"channel": channel}
         if left is not None:
-            params["LimitLeft"] = left 
+            params["LimitLeft"] = left
         if right is not None:
-            params["LimitRight"] = right 
+            params["LimitRight"] = right
 
         body = [{"cmd": "SetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": params}}]
         await self.send_setting(body)
