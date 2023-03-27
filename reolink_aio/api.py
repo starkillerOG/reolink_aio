@@ -839,7 +839,9 @@ class Host:
                 # powerLed == statusLed
                 self._capabilities[channel].append("status_led")
 
-            if self.api_version("GetWhiteLed") > 0 and (self.api_version("floodLight", channel) > 0 or self.api_version("supportFLBrightness", channel) > 0):
+            if self.api_version("GetWhiteLed") > 0 and (
+                self.api_version("floodLight", channel) > 0 or self.api_version("supportFLswitch", channel) > 0 or self.api_version("supportFLBrightness", channel) > 0
+            ):
                 # floodlight == spotlight == WhiteLed
                 self._capabilities[channel].append("floodLight")
 
