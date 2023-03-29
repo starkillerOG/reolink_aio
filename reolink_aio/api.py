@@ -605,8 +605,14 @@ class Host:
 
         return self._audio_settings[channel]["AudioCfg"]["volume"]
 
-    def quick_reply_dict(self, channel: int) -> dict[int, str]:
+    def doorbell_button_sound(self, channel: int) -> bool:
         if channel not in self._audio_settings:
+            return False
+
+        return self._audio_settings[channel]["AudioCfg"].get("visitorLoudspeaker") == 1
+
+    def quick_reply_dict(self, channel: int) -> dict[int, str]:
+        if channel not in self._audio_file_list:
             return {}
 
         audio_dict = {-1: "off"}
@@ -858,6 +864,8 @@ class Host:
 
             if self.api_version("GetAudioCfg") > 0:
                 self._capabilities[channel].append("volume")
+                if self.api_version("supportVisitorLoudspeaker", channel) > 0:
+                    self._capabilities[channel].append("doorbell_button_sound")
 
             if self.is_doorbell(channel) and self.api_version("GetAudioFileList") > 0 and self.api_version("GetAutoReply") > 0:
                 self._capabilities[channel].append("quick_reply")
@@ -2796,17 +2804,29 @@ class Host:
         await self.set_spotlight_lighting_schedule(channel, 0, 0, 0, 0)
         await self.set_whiteled(channel, enable, 100, 1)
 
-    async def set_volume(self, channel: int, volume: int) -> None:
+    async def set_volume(self, channel: int, volume: int | None = None, doorbell_button_sound: bool | None = None) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_volume: no camera connected to channel '{channel}'")
-        if not self.supported(channel, "volume"):
-            raise NotSupportedError(f"set_volume: Volume control on camera {self.camera_name(channel)} is not available")
-        if not isinstance(volume, int):
-            raise InvalidParameterError(f"set_volume: volume {volume} not integer")
-        if volume < 0 or volume > 100:
-            raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
+        if volume is not None:
+            if not self.supported(channel, "volume"):
+                raise NotSupportedError(f"set_volume: Volume control on camera {self.camera_name(channel)} is not available")
+            if not isinstance(volume, int):
+                raise InvalidParameterError(f"set_volume: volume {volume} not integer")
+            if volume < 0 or volume > 100:
+                raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
+        if doorbell_button_sound is not None:
+            if not self.supported(channel, "doorbell_button_sound"):
+                raise NotSupportedError(f"set_volume: Doorbell button sound control on camera {self.camera_name(channel)} is not available")
+            if not isinstance(doorbell_button_sound, bool):
+                raise InvalidParameterError(f"set_volume: doorbell_button_sound {doorbell_button_sound} not boolean")
 
-        body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": {"volume": volume, "channel": channel}}}]
+        params = {"channel": channel}
+        if volume is not None:
+            params["volume"] = volume
+        if doorbell_button_sound is not None:
+            params["visitorLoudspeaker"] = 1 if doorbell_button_sound else 0
+
+        body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
         await self.send_setting(body)
 
     async def set_quick_reply(self, channel: int, enable: bool | None = None, file_id: int | None = None, time: int | None = None) -> None:
