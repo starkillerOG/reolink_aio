@@ -3593,6 +3593,7 @@ class Host:
         _LOGGER_DATA.debug("ONVIF event callback received payload:\n%s", data)
 
         event_channels: list[int] = []
+        contains_channels = False
 
         root = XML.fromstring(data)
         for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
@@ -3632,6 +3633,7 @@ class Host:
 
             if channel not in self.channels:
                 # Channel has no camera connected, ignoring this notification
+                contains_channels = True
                 continue
 
             key = "State"
@@ -3673,7 +3675,7 @@ class Host:
             elif rule == "Visitor":
                 self._visitor_states[channel] = state
 
-        if not event_channels:
+        if not event_channels and not contains_channels:
             # ONVIF notification withouth known events
             if "ONVIF_no_known" not in self._log_once:
                 self._log_once.append("ONVIF_no_known")
