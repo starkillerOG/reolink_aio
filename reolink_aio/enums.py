@@ -11,6 +11,14 @@ class SpotlightModeEnum(Enum):
     schedule = 3
 
 
+class StatusLedEnum(Enum):
+    """Options for the status led mode"""
+
+    stayoff = "KeepOff"
+    auto = "Off"
+    alwaysonatnight = "On"
+
+
 class DayNightEnum(Enum):
     """Options for the DayNight setting"""
 

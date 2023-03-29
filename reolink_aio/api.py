@@ -19,7 +19,7 @@ from statistics import mean
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum
+from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -477,6 +477,12 @@ class Host:
 
         return self._status_led_settings[channel]["PowerLed"].get("state", "Off") == "On"
 
+    def doorbell_led(self, channel: int) -> str:
+        if channel not in self._status_led_settings:
+            return "Off"
+
+        return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off")
+
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetFtp") >= 1:
@@ -835,9 +841,14 @@ class Host:
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
                 self._capabilities[channel].append("ir_lights")
 
-            if self.api_version("powerLed", channel) > 0 or self.is_doorbell(channel):
-                # powerLed == statusLed
-                self._capabilities[channel].append("status_led")
+            if self.api_version("powerLed", channel) > 0:
+                # powerLed == statusLed = doorbell_led
+                self._capabilities[channel].append("status_led")  # internal use only
+                self._capabilities[channel].append("power_led")
+            if self.api_version("supportDoorbellLight", channel) > 0:
+                # powerLed == statusLed = doorbell_led
+                self._capabilities[channel].append("status_led")  # internal use only
+                self._capabilities[channel].append("doorbell_led")
 
             if self.api_version("GetWhiteLed") > 0 and (
                 self.api_version("floodLight", channel) > 0 or self.api_version("supportFLswitch", channel) > 0 or self.api_version("supportFLBrightness", channel) > 0
@@ -2660,13 +2671,21 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_status_led(self, channel: int, state: bool) -> None:
+    async def set_status_led(self, channel: int, state: bool | str) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_status_led: no camera connected to channel '{channel}'")
         if not self.supported(channel, "status_led"):
             raise NotSupportedError(f"set_status_led: Status led on camera {self.camera_name(channel)} is not available")
 
-        value = "On" if state else "Off"
+        if isinstance(state, bool):
+            value = "On" if state else "Off"
+        else:
+            value = state
+
+        val_list = [val.value for val in StatusLedEnum]
+        if value not in val_list:
+            raise InvalidParameterError(f"set_status_led: value {value} not in {val_list}")
+
         if self.is_doorbell(channel):
             param = {"channel": channel, "eDoorbellLightState": value}
         else:
