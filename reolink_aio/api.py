@@ -1589,7 +1589,7 @@ class Host:
             stream = self._stream
 
         stream_type = None
-        if stream == "sub":
+        if stream in ["sub", "autotrack_sub"]:
             stream_type = 1
         else:
             stream_type = 0
@@ -1657,10 +1657,10 @@ class Host:
 
         if stream not in ["main", "sub", "ext", "autotrack_sub"]:
             return None
-        if self.protocol == "flv" or stream=="autotrack_sub":
-            return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtmp":
             return self.get_rtmp_stream_source(channel, stream)
+        if self.protocol == "flv" or stream == "autotrack_sub":
+            return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtsp":
             return await self.get_rtsp_stream_source(channel, stream)
         return None
