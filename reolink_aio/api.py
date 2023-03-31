@@ -867,7 +867,7 @@ class Host:
                 if self.api_version("supportVisitorLoudspeaker", channel) > 0:
                     self._capabilities[channel].append("doorbell_button_sound")
 
-            if self.is_doorbell(channel) and self.api_version("GetAudioFileList") > 0 and self.api_version("GetAutoReply") > 0:
+            if self.api_version("supportAudioFileList", channel) > 0 and self.api_version("supportAutoReply", channel) > 0:
                 self._capabilities[channel].append("quick_reply")
 
             if channel in self._audio_alarm_settings:
@@ -1227,11 +1227,10 @@ class Host:
                 {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
             ]
-            if self.is_doorbell(channel):
-                ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
-                ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "quick_reply"):
+                ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
             # checking range
             if self.supported(channel, "zoom_basic"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
@@ -1276,8 +1275,6 @@ class Host:
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
         self._api_version["GetAudioCfg"] = check_command_exists("GetAudioCfg")
         self._api_version["GetPtzGuard"] = check_command_exists("GetPtzGuard")
-        self._api_version["GetAudioFileList"] = check_command_exists("GetAudioFileList")
-        self._api_version["GetAutoReply"] = check_command_exists("GetAutoReply")
         if self.api_version("scheduleVersion") >= 1:
             self._api_version["GetEmail"] = check_command_exists("GetEmailV20")
             self._api_version["GetPush"] = check_command_exists("GetPushV20")
