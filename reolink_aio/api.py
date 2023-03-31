@@ -867,7 +867,9 @@ class Host:
                 if self.api_version("supportVisitorLoudspeaker", channel) > 0:
                     self._capabilities[channel].append("doorbell_button_sound")
 
-            if self.api_version("supportAudioFileList", channel) > 0 and self.api_version("supportAutoReply", channel) > 0:
+            if (self.api_version("supportAudioFileList", channel) > 0 and self.api_version("supportAutoReply", channel) > 0) or (
+                not self.is_nvr and self.api_version("supportAudioFileList") > 0 and self.api_version("supportAutoReply") > 0
+            ):
                 self._capabilities[channel].append("quick_reply")
 
             if channel in self._audio_alarm_settings:
