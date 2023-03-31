@@ -829,6 +829,9 @@ class Host:
         for channel in self._channels:
             self._capabilities[channel] = []
 
+            if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
+                self._capabilities[channel].append("autotrack_stream")
+
             if channel in self._ftp_settings:
                 self._capabilities[channel].append("ftp")
 
@@ -1652,14 +1655,14 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        if stream not in ["main", "sub", "ext"]:
+        if stream not in ["main", "sub", "ext", "autotrack_sub"]:
             return None
+        if self.protocol == "flv" or stream=="autotrack_sub":
+            return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtmp":
             return self.get_rtmp_stream_source(channel, stream)
         if self.protocol == "rtsp":
             return await self.get_rtsp_stream_source(channel, stream)
-        if self.protocol == "flv":
-            return self.get_flv_stream_source(channel, stream)
         return None
 
     async def get_vod_source(
