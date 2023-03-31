@@ -851,7 +851,7 @@ class Host:
                 # powerLed == statusLed = doorbell_led
                 self._capabilities[channel].append("status_led")  # internal use only
                 self._capabilities[channel].append("power_led")
-            if self.api_version("supportDoorbellLight", channel) > 0:
+            if self.api_version("supportDoorbellLight", channel) > 0 or self.is_doorbell(channel):
                 # powerLed == statusLed = doorbell_led
                 self._capabilities[channel].append("status_led")  # internal use only
                 self._capabilities[channel].append("doorbell_led")
