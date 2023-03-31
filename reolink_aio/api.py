@@ -1545,12 +1545,27 @@ class Host:
 
         return json_data[0]["value"]["Status"]["Persent"]
 
-    async def get_snapshot(self, channel: int) -> bytes | None:
+    async def get_snapshot(self, channel: int, stream: Optional[str] = None) -> bytes | None:
         """Get the still image."""
         if channel not in self._stream_channels:
             return None
 
+        if stream is None:
+            stream = "main"
+
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
+
+        if stream.startswith("autotrack_"):
+            param["iLogicChannel"] = 1
+            stream = stream.removeprefix("autotrack_")
+
+        if stream.startswith("snapshots_"):
+            stream = stream.removeprefix("snapshots_")
+
+        if stream not in ["main", "sub"]:
+            stream = "main"
+
+        param["snapType"] = stream
 
         body: reolink_json = [{}]
         response = await self.send(body, param, expected_response_type="image/jpeg")
