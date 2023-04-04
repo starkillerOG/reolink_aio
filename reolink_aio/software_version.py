@@ -83,6 +83,12 @@ MINIMUM_FIRMWARE = {
     "RLC-823A": {
         "IPC_523128M8MP": "v3.1.0.989_22051911_v1.0.0.30",
     },
+    "Reolink Video Doorbell PoE": {
+        "DB_566128M5MP_P": "v3.0.0.1859_23030902",
+    },
+    "Reolink Video Doorbell WiFi": {
+        "DB_566128M5MP_W": "v3.0.0.1859_23030900",
+    },
     "Reolink TrackMix PoE": {
         "IPC_529SD78MP": "v3.0.0.1817_23022700",
     },
