@@ -404,10 +404,6 @@ class Host:
         """Wether or not the camera is a doorbell"""
         return channel in self._is_doorbell and self._is_doorbell[channel]
 
-    def is_doorbell_enabled(self, channel: int) -> bool:
-        """Needs to be depricated"""
-        return self.is_doorbell(channel)
-
     def motion_detected(self, channel: int) -> bool:
         """Return the motion detection state (polled)."""
         return channel in self._motion_detection_states and self._motion_detection_states[channel]
