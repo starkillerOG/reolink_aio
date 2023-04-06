@@ -185,6 +185,7 @@ class Host:
         self._enc_settings: dict[int, dict] = {}
         self._ptz_presets_settings: dict[int, dict] = {}
         self._ptz_guard_settings: dict[int, dict] = {}
+        self._ptz_position: dict[int, dict] = {}
         self._email_settings: dict[int, dict] = {}
         self._ir_settings: dict[int, dict] = {}
         self._status_led_settings: dict[int, dict] = {}
@@ -898,6 +899,8 @@ class Host:
                         self._capabilities[channel].append("ptz_callibrate")
                     if self.api_version("GetPtzGuard", channel) > 0:
                         self._capabilities[channel].append("ptz_guard")
+                    if self.api_version("GetPtzCurPos", channel) > 0:
+                        self._capabilities[channel].append("ptz_position")
                 if ptz_ver in [2, 3]:
                     self._capabilities[channel].append("ptz_speed")
                 if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
@@ -995,6 +998,8 @@ class Host:
                 ch_body = [{"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzGuard":
                 ch_body = [{"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetPtzCurPos":
+                ch_body = [{"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}}]
             elif cmd == "GetAiCfg":
                 ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzTraceSection":
@@ -1115,6 +1120,9 @@ class Host:
 
             if self.supported(channel, "ptz_guard"):
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "ptz_position"):
+                ch_body.append({"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}})
 
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
@@ -1239,6 +1247,7 @@ class Host:
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}})
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
             # checking API versions
@@ -1277,6 +1286,7 @@ class Host:
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
         self._api_version["GetAudioCfg"] = check_command_exists("GetAudioCfg")
         self._api_version["GetPtzGuard"] = check_command_exists("GetPtzGuard")
+        self._api_version["GetPtzCurPos"] = check_command_exists("GetPtzCurPos")
         if self.api_version("scheduleVersion") >= 1:
             self._api_version["GetEmail"] = check_command_exists("GetEmailV20")
             self._api_version["GetPush"] = check_command_exists("GetPushV20")
@@ -2042,6 +2052,9 @@ class Host:
                 elif data["cmd"] == "GetPtzGuard":
                     self._ptz_guard_settings[channel] = data["value"]
 
+                elif data["cmd"] == "GetPtzCurPos":
+                    self._ptz_position[channel] = data["value"]
+
                 elif data["cmd"] == "GetAiCfg":
                     self._auto_track_settings[channel] = data["value"]
                     if "range" in data:
@@ -2335,6 +2348,13 @@ class Host:
             body[0]["param"]["id"] = preset
 
         await self.send_setting(body)
+
+    def ptz_pan_position(self, channel: int) -> int:
+        """pan position"""
+        if channel not in self._ptz_position:
+            return 0
+
+        return self._ptz_position[channel]["PtzCurPos"]["Ppos"]
 
     def ptz_guard_enabled(self, channel: int) -> bool:
         if channel not in self._ptz_guard_settings:
