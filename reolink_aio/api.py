@@ -1221,6 +1221,7 @@ class Host:
 
         for channel in self._channels:
             ch_body = [
+                {"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
@@ -1886,6 +1887,10 @@ class Host:
                 if data["code"] == 1:  # -->Error, like "ability error"
                     _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
+
+                if data["cmd"] == "GetChnTypeInfo":
+                    self._channel_models[channel] = data["value"]["typeInfo"]
+                    self._is_doorbell[channel] = "Doorbell" in self._channel_models[channel]
 
                 if data["cmd"] == "GetEvents":
                     response_channel = data["value"]["channel"]
