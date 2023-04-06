@@ -1231,6 +1231,7 @@ class Host:
         for channel in self._channels:
             ch_body = [
                 {"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
@@ -1261,6 +1262,17 @@ class Host:
                         {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
+                    ]
+                )
+            else:
+                ch_body.extend(
+                    [
+                        {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetPush", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetRec", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}},
                     ]
                 )
 
