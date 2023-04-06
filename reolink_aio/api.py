@@ -2421,7 +2421,10 @@ class Host:
         if channel not in self._auto_track_settings:
             return False
 
-        return self._auto_track_settings[channel]["bSmartTrack"] == 1
+        if "bSmartTrack" in self._auto_track_settings[channel]:
+            return self._auto_track_settings[channel]["bSmartTrack"] == 1
+
+        return self._auto_track_settings[channel]["aiTrack"] == 1
 
     def auto_track_disappear_time(self, channel: int) -> int:
         if channel not in self._auto_track_settings:
@@ -2451,7 +2454,10 @@ class Host:
 
         params = {"channel": channel}
         if enable is not None:
-            params["bSmartTrack"] = 1 if enable else 0
+            if "bSmartTrack" in self._auto_track_settings[channel]:
+                params["bSmartTrack"] = 1 if enable else 0
+            else:
+                params["aiTrack"] = 1 if enable else 0
         if disappear_time is not None:
             params["aiDisappearBackTime"] = disappear_time
         if stop_time is not None:
