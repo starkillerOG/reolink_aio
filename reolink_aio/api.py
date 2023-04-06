@@ -522,7 +522,7 @@ class Host:
             return False
 
         if self.api_version("GetPush") >= 1:
-            return self._push_settings[channel]["Push"]['scheduleEnable'] == 1
+            return self._push_settings[channel]["Push"]["scheduleEnable"] == 1
 
         return self._push_settings[channel]["Push"]["schedule"]["enable"] == 1
 
