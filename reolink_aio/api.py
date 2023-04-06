@@ -40,6 +40,7 @@ DEFAULT_STREAM = "sub"
 DEFAULT_PROTOCOL = "rtmp"
 DEFAULT_TIMEOUT = 60
 RETRY_ATTEMPTS = 3
+MAX_CHUNK_ITEMS = 40
 DEFAULT_RTMP_AUTH_METHOD = "PASSWORD"
 SUBSCRIPTION_TERMINATION_TIME = 15
 
@@ -3230,6 +3231,59 @@ class Host:
         expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] = "json",
         retry: int = RETRY_ATTEMPTS,
     ) -> reolink_json | bytes | str:
+        """
+        If a body contains more than MAX_CHUNK_ITEMS requests, split it up in chunks.
+        Otherwise you get a 'error': {'detail': 'send failed', 'rspCode': -16} response.
+        """
+        len_body = len(body)
+        if len_body <= MAX_CHUNK_ITEMS or expected_response_type != "json":
+            return await self.send_chunk(body, param, expected_response_type, retry)
+
+        response: reolink_json = []
+        for chunk in range(0, len_body, MAX_CHUNK_ITEMS):
+            chunk_end = min(chunk + MAX_CHUNK_ITEMS, len_body)
+            _LOGGER.debug("sending chunks %i:%i of total %i requests", chunk + 1, chunk_end, len_body)
+            response.extend(await self.send_chunk(body[chunk:chunk_end], param, expected_response_type, retry))
+
+        return response
+
+    @overload
+    async def send_chunk(
+        self,
+        body: reolink_json,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["json"],
+        retry: int,
+    ) -> reolink_json:
+        ...
+
+    @overload
+    async def send_chunk(
+        self,
+        body: reolink_json,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["image/jpeg"],
+        retry: int,
+    ) -> bytes:
+        ...
+
+    @overload
+    async def send_chunk(
+        self,
+        body: reolink_json,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["text/html"],
+        retry: int,
+    ) -> str:
+        ...
+
+    async def send_chunk(
+        self,
+        body: reolink_json,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"],
+        retry: int,
+    ) -> reolink_json | bytes | str:
         """Generic send method."""
         retry = retry - 1
 
@@ -3664,7 +3718,7 @@ class Host:
 
     async def ONVIF_event_callback(self, data: str) -> list[int] | None:
         """Handle incoming ONVIF event from the webhook called by the Reolink device."""
-        _LOGGER_DATA.debug("ONVIF event callback received payload:\n%s", data)
+        _LOGGER_DATA.debug("ONVIF event callback from '%s' received payload:\n%s", self.nvr_name, data)
 
         event_channels: list[int] = []
         contains_channels = False
