@@ -1740,7 +1740,6 @@ class Host:
                 if data["cmd"] == "GetChannelstatus":
                     if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
-                        self._channel_models.clear()
                         self._is_doorbell.clear()
 
                         cur_value = data["value"]
@@ -1763,8 +1762,10 @@ class Host:
                                     if self._GetChannelStatus_has_name:
                                         self._channel_names[cur_channel] = ch_info["name"]
 
-                                    self._channel_models[cur_channel] = ch_info.get("typeInfo", "Unknown")  # Not all Reolink devices respond with "typeInfo" attribute.
-                                    self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
+                                    if "typeInfo" in ch_info:  # Not all Reolink devices respond with "typeInfo" attribute.
+                                        self._channel_models[cur_channel] = ch_info["typeInfo"]
+                                        self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
+
                                     self._channels.append(cur_channel)
                         else:
                             self._channel_names.clear()
@@ -1808,8 +1809,6 @@ class Host:
                     # In case the "GetChannelStatus" command not supported by the device.
                     if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
                         self._channels.clear()
-                        self._channel_models.clear()
-                        self._is_doorbell.clear()
 
                         self._nvr_num_channels = dev_info["channelNum"]
 
@@ -1822,14 +1821,12 @@ class Host:
                                 self._nvr_num_channels,
                             )
 
-                        if self._nvr_num_channels > 0 and self._nvr_model is not None:
-                            is_doorbell = "Doorbell" in self._nvr_model
-                            for i in range(self._nvr_num_channels):
-                                self._channel_models[i] = self._nvr_model
-                                self._is_doorbell[i] = is_doorbell
-                                self._channels.append(i)
-                        else:
-                            self._channel_names.clear()
+                        if self._nvr_num_channels > 0:
+                            for ch in range(self._nvr_num_channels):
+                                self._channels.append(ch)
+                                if ch not in self._channel_models and self._nvr_model is not None:
+                                    self._channel_models[ch] = self._nvr_model
+                                    self._is_doorbell[ch] = "Doorbell" in self._nvr_model
 
                 elif data["cmd"] == "GetHddInfo":
                     self._hdd_info = data["value"]["HddInfo"]
