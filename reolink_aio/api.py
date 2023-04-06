@@ -492,7 +492,7 @@ class Host:
             return False
 
         if self.api_version("GetFtp") >= 1:
-            return self._ftp_settings[channel]["Ftp"]["enable"] == 1
+            return self._ftp_settings[channel]["Ftp"]["scheduleEnable"] == 1
 
         return self._ftp_settings[channel]["Ftp"]["schedule"]["enable"] == 1
 
@@ -507,7 +507,7 @@ class Host:
             return False
 
         if self.api_version("GetEmail") >= 1:
-            return self._email_settings[channel]["Email"]["enable"] == 1
+            return self._email_settings[channel]["Email"]["scheduleEnable"] == 1
 
         return self._email_settings[channel]["Email"]["schedule"]["enable"] == 1
 
@@ -522,7 +522,7 @@ class Host:
             return False
 
         if self.api_version("GetPush") >= 1:
-            return self._push_settings[channel]["Push"]["enable"] == 1
+            return self._push_settings[channel]["Push"]['scheduleEnable'] == 1
 
         return self._push_settings[channel]["Push"]["schedule"]["enable"] == 1
 
@@ -537,7 +537,7 @@ class Host:
             return False
 
         if self.api_version("GetRec") >= 1:
-            return self._recording_settings[channel]["Rec"]["enable"] == 1
+            return self._recording_settings[channel]["Rec"]["scheduleEnable"] == 1
 
         return self._recording_settings[channel]["Rec"]["schedule"]["enable"] == 1
 
@@ -548,7 +548,7 @@ class Host:
         if channel not in self._buzzer_settings:
             return False
 
-        return self._buzzer_settings[channel]["Buzzer"]["enable"] == 1
+        return self._buzzer_settings[channel]["Buzzer"]["scheduleEnable"] == 1
 
     def whiteled_state(self, channel: int) -> bool:
         return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
@@ -2576,7 +2576,7 @@ class Host:
             raise InvalidParameterError(f"set_push: no camera connected to channel '{channel}'")
 
         if self.api_version("GetPush") >= 1:
-            body = [{"cmd": "SetPushV20", "action": 0, "param": {"Push": {"enable": on_off, "schedule": {"channel": channel}}}}]
+            body = [{"cmd": "SetPushV20", "action": 0, "param": {"Push": {"scheduleEnable": on_off, "schedule": {"channel": channel}}}}]
         else:
             body = [{"cmd": "SetPush", "action": 0, "param": {"Push": {"schedule": {"enable": on_off, "channel": channel}}}}]
 
@@ -2605,7 +2605,7 @@ class Host:
             raise InvalidParameterError(f"set_ftp: no camera connected to channel '{channel}'")
 
         if self.api_version("GetFtp") >= 1:
-            body = [{"cmd": "SetFtpV20", "action": 0, "param": {"Ftp": {"enable": on_off, "schedule": {"channel": channel}}}}]
+            body = [{"cmd": "SetFtpV20", "action": 0, "param": {"Ftp": {"scheduleEnable": on_off, "schedule": {"channel": channel}}}}]
         else:
             body = [{"cmd": "SetFtp", "action": 0, "param": {"Ftp": {"schedule": {"enable": on_off, "channel": channel}}}}]
 
@@ -2633,7 +2633,7 @@ class Host:
             raise InvalidParameterError(f"set_email: no camera connected to channel '{channel}'")
 
         if self.api_version("GetEmail") >= 1:
-            body = [{"cmd": "SetEmailV20", "action": 0, "param": {"Email": {"enable": on_off, "schedule": {"channel": channel}}}}]
+            body = [{"cmd": "SetEmailV20", "action": 0, "param": {"Email": {"scheduleEnable": on_off, "schedule": {"channel": channel}}}}]
         else:
             body = [{"cmd": "SetEmail", "action": 0, "param": {"Email": {"schedule": {"enable": on_off, "channel": channel}}}}]
 
@@ -2662,7 +2662,7 @@ class Host:
             raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
         if self.api_version("GetRec") >= 1:
-            body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec": {"enable": on_off, "schedule": {"channel": channel}}}}]
+            body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec": {"scheduleEnable": on_off, "schedule": {"channel": channel}}}}]
         else:
             body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": {"schedule": {"enable": on_off, "channel": channel}}}}]
 
@@ -2683,7 +2683,7 @@ class Host:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
-        body = [{"cmd": "SetBuzzerAlarmV20", "action": 0, "param": {"Buzzer": {"enable": on_off, "schedule": {"channel": channel}}}}]
+        body = [{"cmd": "SetBuzzerAlarmV20", "action": 0, "param": {"Buzzer": {"scheduleEnable": on_off, "schedule": {"channel": channel}}}}]
         await self.send_setting(body)
 
     async def set_audio(self, channel: int, enable: bool) -> None:
