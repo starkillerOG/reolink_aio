@@ -2025,7 +2025,8 @@ class Host:
                     self._push_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetEnc":
-                    response_channel = data["value"]["Enc"]["channel"]
+                    # GetEnc returns incorrect channel for DUO camera
+                    #response_channel = data["value"]["Enc"]["channel"]
                     self._enc_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetRtspUrl":
