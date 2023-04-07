@@ -686,6 +686,9 @@ class Host:
 
         await self._login_mutex.acquire()
 
+        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
+            return  # succes, in case multiple async courotines are waiting on login_mutex.acquire
+
         try:
             await self.logout(login_mutex_owned=True)  # Ensure there would be no "max session" error
 
