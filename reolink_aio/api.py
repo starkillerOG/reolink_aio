@@ -815,6 +815,10 @@ class Host:
         """Construct the capabilities list of the NVR/camera."""
         # Host capabilities
         self._capabilities["Host"] = []
+        if self.sw_version_object.date > datetime(year=2018, month=1, day=1):
+            # Check if this camera publishes its inital state upon ONVIF subscription
+            self._capabilities["Host"].append("initial_ONVIF_state")
+
         if self._ftp_settings:
             self._capabilities["Host"].append("ftp")
 
