@@ -1225,10 +1225,10 @@ class Host:
         self.map_host_json_response(json_data)
         self.construct_capabilities(warnings=False)
 
-        if self.model in DUAL_LENS_MODELS:
+        if self.model in DUAL_LENS_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
             self._stream_channels = [0, 1]
-        elif not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0:
-            self._stream_channels = [0, 1]
+            self._nvr_num_channels = 1
+            self._channels = [0]
         else:
             self._stream_channels = self._channels
 
@@ -2026,7 +2026,7 @@ class Host:
 
                 elif data["cmd"] == "GetEnc":
                     # GetEnc returns incorrect channel for DUO camera
-                    #response_channel = data["value"]["Enc"]["channel"]
+                    # response_channel = data["value"]["Enc"]["channel"]
                     self._enc_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetRtspUrl":
