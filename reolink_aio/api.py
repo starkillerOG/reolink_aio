@@ -291,6 +291,13 @@ class Host:
         return self._nvr_sw_version
 
     @property
+    def sw_version_object(self) -> SoftwareVersion:
+        if self._nvr_sw_version_object is None:
+            return SoftwareVersion(None)
+
+        return self._nvr_sw_version_object
+
+    @property
     def sw_version_required(self) -> SoftwareVersion:
         """Return the minimum required firmware version for proper operation of this library"""
         if self.model is None or self.hardware_version is None:
