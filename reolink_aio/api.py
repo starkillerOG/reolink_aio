@@ -62,14 +62,10 @@ SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 DUAL_LENS_MODELS: set[str] = {
     "Reolink Duo PoE",
     "Reolink Duo WiFi",
-    "Reolink Duo 2 PoE",
-    "Reolink Duo 2 WiFi",
-    "Reolink Duo Floodlight PoE",
-    "Reolink Duo Floodlight WiFi",
     "Reolink TrackMix PoE",
     "Reolink TrackMix WiFi",
     "RLC-81MA",
-}
+}  # with 2 streaming channels
 
 
 ##########################################################################################################################################################
