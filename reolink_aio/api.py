@@ -31,6 +31,7 @@ from .exceptions import (
     ReolinkError,
     SubscriptionError,
     UnexpectedDataError,
+    UnexpectedSearchDataError,
 )
 from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
 from .typings import reolink_json
@@ -3155,7 +3156,10 @@ class Host:
             return search_result["Status"], []
 
         if "File" not in search_result:
-            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no file data in the response: {json_data}")
+            raise UnexpectedSearchDataError(
+                f"Host {self._host}:{self._port}: Request VOD files: no file data in the response: {json_data}",
+                statuses=search_result["Status"],
+            )
 
         return search_result["Status"], search_result["File"]
 

@@ -1,6 +1,10 @@
 """Reolink NVR/camera API."""
 
 
+from typing import Optional
+from . import typings
+
+
 class ReolinkError(Exception):
     """Base Reolink error class"""
 
@@ -27,6 +31,18 @@ class NoDataError(ReolinkError):
 
 class UnexpectedDataError(ReolinkError):
     """Raised when an API call returns unexpected data which can not be handled properly"""
+
+
+class UnexpectedSearchDataError(UnexpectedDataError):
+    """Raised when the search API call returns unexpected data which can not be handled properly"""
+
+    statuses: Optional[list[typings.SearchStatus]]
+
+    def __init__(
+        self, *args: object, statuses: Optional[list[typings.SearchStatus]] = None
+    ) -> None:
+        super().__init__(*args)
+        self.statuses = statuses
 
 
 class InvalidParameterError(ReolinkError):
