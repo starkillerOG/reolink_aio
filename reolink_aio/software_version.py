@@ -87,10 +87,10 @@ MINIMUM_FIRMWARE = {
         "IPC_523128M8MP": "v3.1.0.989_22051911_v1.0.0.30",
     },
     "Reolink Video Doorbell PoE": {
-        "DB_566128M5MP_P": "v3.0.0.2017_23041202",
+        "DB_566128M5MP_P": "v3.0.0.1459_22102808",
     },
     "Reolink Video Doorbell WiFi": {
-        "DB_566128M5MP_W": "v3.0.0.2017_23041200",
+        "DB_566128M5MP_W": "v3.0.0.1459_22102806",
     },
     "Reolink TrackMix PoE": {
         "IPC_529SD78MP": "v3.0.0.1817_23022700",
