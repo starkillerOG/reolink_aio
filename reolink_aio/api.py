@@ -33,7 +33,8 @@ from .exceptions import (
     UnexpectedDataError,
 )
 from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
-from .typings import reolink_json
+from .typings import reolink_json, VOD_file
+from .utils import datetime_to_reolink_time, reolink_time_to_datetime
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
@@ -169,6 +170,7 @@ class Host:
         # Saved settings response-blocks
         # Host-level
         self._time_settings: Optional[dict] = None
+        self._host_time_difference: float = 0
         self._ntp_settings: Optional[dict] = None
         self._netport_settings: Optional[dict] = None
         # Camera-level
@@ -1883,6 +1885,10 @@ class Host:
                     self._ntp_settings = data["value"]
 
                 elif data["cmd"] == "GetTime":
+                    time_diffrence = (datetime.now() - reolink_time_to_datetime(data["value"]["Time"])).total_seconds()
+                    if abs(time_diffrence) < 10:
+                        time_diffrence = 0
+                    self._host_time_difference = time_diffrence
                     self._time_settings = data["value"]
 
                 elif data["cmd"] == "GetAbility":
@@ -3099,7 +3105,7 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus], list[typings.SearchFile]]:
+    ) -> tuple[list[typings.SearchStatus], list[VOD_file]]:
         """Send search VOD-files command."""
         if channel not in self._channels:
             raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
@@ -3116,22 +3122,8 @@ class Host:
                         "channel": channel,
                         "onlyStatus": 1 if status_only else 0,
                         "streamType": stream,
-                        "StartTime": {
-                            "year": start.year,
-                            "mon": start.month,
-                            "day": start.day,
-                            "hour": start.hour,
-                            "min": start.minute,
-                            "sec": start.second,
-                        },
-                        "EndTime": {
-                            "year": end.year,
-                            "mon": end.month,
-                            "day": end.day,
-                            "hour": end.hour,
-                            "min": end.minute,
-                            "sec": end.second,
-                        },
+                        "StartTime": datetime_to_reolink_time(start),
+                        "EndTime": datetime_to_reolink_time(end),
                     }
                 },
             }
@@ -3155,9 +3147,10 @@ class Host:
             return search_result["Status"], []
 
         if "File" not in search_result:
-            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no file data in the response: {json_data}")
+            # When there are now recordings available in the indicated time window, "File" will not be in the response.
+            return search_result["Status"], []
 
-        return search_result["Status"], search_result["File"]
+        return search_result["Status"], [VOD_file(file, self._host_time_difference) for file in search_result["File"]]
 
     async def send_setting(self, body: reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
