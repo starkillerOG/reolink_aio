@@ -1,8 +1,11 @@
 """ Typings for type validation and documentation """
 
-from typing import Any, TypedDict
-from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, TypedDict
+from datetime import datetime, timedelta, timezone, date, time, tzinfo
 from .utils import reolink_time_to_datetime
+
+if TYPE_CHECKING:
+    from typing import cast
 
 reolink_json = list[dict[str, Any]]
 
@@ -26,6 +29,177 @@ SearchFile = TypedDict(
         "type": str,
     },
 )
+
+GetTimeDst = TypedDict(
+    "GetTimeDst",
+    {
+        "enable": bool,
+        "offset": int,
+    }
+)
+
+GetTimeDstRule = TypedDict(
+    "GetTimeDstRule",
+    {
+        "Mon": int,
+        "Week": int,
+        "Weekday": int,
+        "Hour": int,
+        "Min": int,
+        "Sec": int,
+    }
+)
+
+GetTime = TypedDict(
+    "GetTime",
+    {
+        "year": int,
+        "mon": int,
+        "day": int,
+        "hour": int,
+        "min": int,
+        "sec": int,
+        "hourFmt": int,
+        "timeFmt": str,
+        "timeZone": int,
+    }
+)
+
+GetTimeResponse = TypedDict(
+    "GetTimeResponse",
+    {
+        "Dst": GetTimeDst,
+        "Time": GetTime,
+    }
+)
+
+class _DST_Rule:
+
+    def __init__(self, data:dict[str,Any], prefix:str) -> None:
+        self.data:GetTimeDstRule = data
+        self.prefix = prefix
+
+    @property
+    def month(self)->int:
+        """rule month"""
+        return self.data[f"{self.prefix}Mon"]
+    
+    @property
+    def week(self)->int:
+        """rule week"""
+        return self.data[f"{self.prefix}Week"]
+
+    @property
+    def weekday(self)->int:
+        """rule weekday"""
+        # reolink sun=0, python mon = 0, sun = 6
+        return (self.data[f"{self.prefix}Weekday"] - 1) % 7
+    
+    @property
+    def hour(self)->int:
+        """rule hour"""
+        return self.data[f"{self.prefix}Hour"]
+
+    @property
+    def minute(self)->int:
+        """rule minute"""
+        return self.data[f"{self.prefix}Min"]
+
+    @property
+    def second(self)->int:
+        """rule second"""
+        return self.data[f"{self.prefix}Sec"]
+
+    def time(self)->time:
+        """rule as time"""
+        return time(self.hour, self.minute, self.second)
+    
+    def date(self, year:int)->date:
+        """rule as date with year"""
+        weekday =  self.weekday
+        # 5 is the last week of the month, not necessarily the 5th week
+        if self.week == 5:
+            if self.month < 12:
+                month = self.month + 1
+            else:
+                month = 1
+                year += 1
+            __date = date(year, month, 1)
+            if __date.weekday() < weekday:
+                __date -= timedelta(weeks=1)
+            __date -= timedelta(days=__date.weekday() - weekday)
+        else:
+            __date = date(year, self.month, 1) + timedelta(weeks=self.week)
+            __date += timedelta(days=__date.weekday() - weekday)
+        return __date
+
+    def datetime(self, year:int)->datetime:
+        """rule as datetime with year"""
+        return datetime.combine(self.date(year), self.time())
+
+class _YearStartStopCache(dict[str,tuple[datetime,datetime]]):
+    def __init__(self, factory:Callable[[int], tuple[datetime,datetime]]):
+        super().__init__()
+        self.factory = factory
+
+    def __missing__(self, key:int)->tuple[datetime,datetime]:
+        self[key] = self.factory(key)
+        return self[key]
+
+
+class Reolink_timezone(tzinfo):
+    """Reolink DST timezone implementation"""
+
+    _cache:ClassVar[dict[tuple,"Reolink_timezone"]] = {}
+
+    @classmethod
+    def get(cls, data:dict[str,Any])->"Reolink_timezone":
+        """get or create timzeone based on data"""
+        if TYPE_CHECKING:
+            __data:GetTimeResponse = data
+        else:
+            __data = data
+
+        key = tuple([__data["Time"]["timeZone"]]) + tuple(__data["Dst"].values())
+        return cls._cache.setdefault(key, cls(data))
+
+    def __init__(self, data:dict[str,Any]) -> None:
+        super().__init__()
+        if TYPE_CHECKING:
+            __data = cast(GetTimeResponse, data)
+        else:
+            __data = data
+        self._dst = timedelta(hours=__data["Dst"]["offset"]) if bool(__data["Dst"]["enable"]) else timedelta(hours=0)
+        # Reolink does a positive UTC offset but python expects a negative one
+        self._offset = timedelta(seconds=-__data["Time"]["timeZone"])
+        start_rule = _DST_Rule(__data["Dst"], "start")
+        end_rule = _DST_Rule(__data["Dst"], "end")
+        self._year_cache = _YearStartStopCache(lambda year: (start_rule.datetime(year), end_rule.datetime(year)))
+
+    def tzname(self, __dt: datetime | None) -> str | None:
+        # we have no friendly name though we could do GMT/UTC{self._offset}
+        return None
+
+    def utcoffset(self, __dt: datetime | None) -> timedelta | None:
+        if __dt is None:
+            return self._offset
+        if __dt.tzinfo is not None:
+            __dt = __dt.replace(tzinfo=None)
+        (start, end) = self._year_cache[__dt.year]
+        if start <= __dt <= end:
+            return self._offset + self._dst
+        return self._offset
+
+    def dst(self, __dt: datetime | None) -> timedelta | None:
+        if __dt is None:
+            return self._dst
+        if __dt.tzinfo is not None:
+            __dt = __dt.replace(tzinfo=None)
+        (start, end) = self._year_cache[__dt.year]
+        if start <= __dt <= end:
+            self._dst
+        return timedelta(seconds=0)
+
 
 
 class VOD_file:

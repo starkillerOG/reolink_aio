@@ -9,7 +9,7 @@ import logging
 import ssl
 import traceback
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from os.path import basename
 from typing import Any, Literal, Optional, overload
 from urllib import parse
@@ -33,7 +33,7 @@ from .exceptions import (
     UnexpectedDataError,
 )
 from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
-from .typings import reolink_json, VOD_file
+from .typings import reolink_json, VOD_file, Reolink_timezone
 from .utils import datetime_to_reolink_time, reolink_time_to_datetime
 
 MANUFACTURER = "Reolink"
@@ -384,6 +384,26 @@ class Host:
         Only admin users can change camera settings, not everything will work if account is not admin
         """
         return self.user_level == "admin"
+
+    def get_timezone(self) -> tzinfo|None:
+        """Get the timezone of the device"""
+        if self._time_settings is None:
+            return None
+        return Reolink_timezone.get(self._time_settings)
+
+    def get_time(self) -> datetime|None:
+        """Get the approximate "current" time of the camera"""
+        if self._time_settings is None:
+            return None
+        return datetime.now().astimezone(self.get_timezone()) + timedelta(seconds=self._host_time_difference)
+
+    async def async_get_time(self) -> datetime:
+        """Get the current time of the camera"""
+        await self.get_state("GetTime")
+        if self._time_settings is None:
+            raise NotSupportedError(f"get_time: failed to retrieve current time settings from {self._host}:{self._port}")
+        return reolink_time_to_datetime(self._time_settings["Time"]).replace(tzinfo=self.get_timezone())
+
 
     ##############################################################################
     # Channel-level getters/setters
