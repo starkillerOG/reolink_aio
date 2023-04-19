@@ -7,6 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/sponsors/starkillerOG"><img src="https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86" alt="Sponsor"></a>
+  <a href="https://reolink.pxf.io/q44QWq"><img src="https://img.shields.io/static/v1?label=Affiliate link&message=%E2%9D%A4&color=%23fe8e86" alt="Affiliate link"></a>
   <a href="https://pypi.org/project/reolink-aio"><img src="https://img.shields.io/pypi/dm/reolink-aio"></a>
   <a href="https://github.com/starkillerOG/reolink_aio/releases"><img src="https://img.shields.io/github/v/release/StarkillerOG/reolink_aio?display_name=tag&include_prereleases&sort=semver" alt="Current version"></a>
 </p>
@@ -16,6 +17,10 @@ The `reolink_aio` Python package allows you to integrate your [Reolink](https://
 ### Description
 
 This is a package implementing Reolink IP NVR and camera API. Also it’s providing a way to subscribe to Reolink ONVIF SWN events, so that real-time events can be received on a webhook.
+
+### Show your appreciation
+
+If you appreciate the reolink integration and want to support its development, please consider [sponsering](https://github.com/sponsors/starkillerOG) the upstream library or purchase Reolink products through [this affiliate link](https://reolink.pxf.io/q44QWq).
 
 ### Prerequisites
 
