@@ -1,11 +1,8 @@
 """ Typings for type validation and documentation """
 
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, TypedDict
+from typing import Any, ClassVar, Mapping, TypedDict
 from datetime import datetime, timedelta, timezone, date, time, tzinfo
 from .utils import reolink_time_to_datetime
-
-if TYPE_CHECKING:
-    from typing import cast
 
 reolink_json = list[dict[str, Any]]
 
@@ -35,7 +32,7 @@ GetTimeDst = TypedDict(
     {
         "enable": bool,
         "offset": int,
-    }
+    },
 )
 
 GetTimeDstRule = TypedDict(
@@ -47,7 +44,7 @@ GetTimeDstRule = TypedDict(
         "Hour": int,
         "Min": int,
         "Sec": int,
-    }
+    },
 )
 
 GetTime = TypedDict(
@@ -62,7 +59,7 @@ GetTime = TypedDict(
         "hourFmt": int,
         "timeFmt": str,
         "timeZone": int,
-    }
+    },
 )
 
 GetTimeResponse = TypedDict(
@@ -70,121 +67,105 @@ GetTimeResponse = TypedDict(
     {
         "Dst": GetTimeDst,
         "Time": GetTime,
-    }
+    },
 )
-
-class _DST_Rule:
-
-    def __init__(self, data:dict[str,Any], prefix:str) -> None:
-        self.data:GetTimeDstRule = data
-        self.prefix = prefix
-
-    @property
-    def month(self)->int:
-        """rule month"""
-        return self.data[f"{self.prefix}Mon"]
-    
-    @property
-    def week(self)->int:
-        """rule week"""
-        return self.data[f"{self.prefix}Week"]
-
-    @property
-    def weekday(self)->int:
-        """rule weekday"""
-        # reolink sun=0, python mon = 0, sun = 6
-        return (self.data[f"{self.prefix}Weekday"] - 1) % 7
-    
-    @property
-    def hour(self)->int:
-        """rule hour"""
-        return self.data[f"{self.prefix}Hour"]
-
-    @property
-    def minute(self)->int:
-        """rule minute"""
-        return self.data[f"{self.prefix}Min"]
-
-    @property
-    def second(self)->int:
-        """rule second"""
-        return self.data[f"{self.prefix}Sec"]
-
-    def time(self)->time:
-        """rule as time"""
-        return time(self.hour, self.minute, self.second)
-    
-    def date(self, year:int)->date:
-        """rule as date with year"""
-        weekday =  self.weekday
-        # 5 is the last week of the month, not necessarily the 5th week
-        if self.week == 5:
-            if self.month < 12:
-                month = self.month + 1
-            else:
-                month = 1
-                year += 1
-            __date = date(year, month, 1)
-            if __date.weekday() < weekday:
-                __date -= timedelta(weeks=1)
-            __date -= timedelta(days=__date.weekday() - weekday)
-        else:
-            __date = date(year, self.month, 1) + timedelta(weeks=self.week)
-            __date += timedelta(days=__date.weekday() - weekday)
-        return __date
-
-    def datetime(self, year:int)->datetime:
-        """rule as datetime with year"""
-        return datetime.combine(self.date(year), self.time())
-
-class _YearStartStopCache(dict[str,tuple[datetime,datetime]]):
-    def __init__(self, factory:Callable[[int], tuple[datetime,datetime]]):
-        super().__init__()
-        self.factory = factory
-
-    def __missing__(self, key:int)->tuple[datetime,datetime]:
-        self[key] = self.factory(key)
-        return self[key]
 
 
 class Reolink_timezone(tzinfo):
     """Reolink DST timezone implementation"""
 
-    _cache:ClassVar[dict[tuple,"Reolink_timezone"]] = {}
+    __slots__ = ("_dst", "_offset", "_year_cache")
+    _cache: ClassVar[dict[tuple, tzinfo]] = {}
 
     @classmethod
-    def get(cls, data:dict[str,Any])->"Reolink_timezone":
-        """get or create timzeone based on data"""
-        if TYPE_CHECKING:
-            __data:GetTimeResponse = data
-        else:
-            __data = data
+    def get(cls, data: GetTimeResponse) -> tzinfo:
+        """get or create timezone based on data"""
 
-        key = tuple([__data["Time"]["timeZone"]]) + tuple(__data["Dst"].values())
+        # if dst is not enabled, just make a tz off of the offset only
+        if not bool(data["Dst"]["enable"]):
+            key = tuple(data["Dst"]["enable"], data["Time"]["timeZone"])
+        else:
+            # key is full dst ruleset incase two devices (or the rules on a device) change/are different
+            key = tuple([data["Time"]["timeZone"]]) + tuple(data["Dst"].values())
+        _tzinfo = cls._cache.get(key)
+        if _tzinfo is not None:
+            return _tzinfo
+        if not bool(data["Dst"]["enable"]):
+            # simple tz info
+            offset = timedelta(seconds=data["Time"]["timeZone"])
+            return cls._cache.setdefault(key, timezone(offset))
+        # this class
         return cls._cache.setdefault(key, cls(data))
 
-    def __init__(self, data:dict[str,Any]) -> None:
+    @staticmethod
+    def _create_dst_rule_caclulator(data: dict[str, Any], prefix: str):
+        month: int = data[f"{prefix}Mon"]
+        week: int = data[f"{prefix}Week"]
+        weekday: int = data[f"{prefix}Weekday"]
+        # reolink start of week is sunday, python start of week is monday
+        weekday = (weekday - 1) % 7
+        hour: int = data[f"{prefix}Hour"]
+        minute: int = data[f"{prefix}Min"]
+        second: int = data[f"{prefix}Sec"]
+        __time = time(hour, minute, second)
+
+        def _date(year: int):
+            # 5 is the last week of the month, not necessarily the 5th week
+            if week == 5:
+                if month < 12:
+                    _month = month + 1
+                else:
+                    _month = 1
+                    year += 1
+                __date = date(year, _month, 1)
+            else:
+                __date = date(year, month, 1) + timedelta(weeks=week)
+            if __date.weekday() < weekday:
+                __date -= timedelta(weeks=1)
+            __date += timedelta(days=__date.weekday() - weekday)
+            return __date
+
+        def _datetime(year: int):
+            return datetime.combine(_date(year), __time)
+
+        return _datetime
+
+    @classmethod
+    def _create_cache_missed(cls, data: dict[str, Any]):
+        start_rule = cls._create_dst_rule_caclulator(data, "start")
+        end_rule = cls._create_dst_rule_caclulator(data, "end")
+
+        def __missing__(self: dict, key: int):
+            self[key] = tuple(start_rule(key), end_rule(key))
+            return self[key]
+
+        return __missing__
+
+    def __init__(self, data: GetTimeResponse) -> None:
         super().__init__()
-        if TYPE_CHECKING:
-            __data = cast(GetTimeResponse, data)
-        else:
-            __data = data
-        self._dst = timedelta(hours=__data["Dst"]["offset"]) if bool(__data["Dst"]["enable"]) else timedelta(hours=0)
+        self._dst = timedelta(hours=data["Dst"]["offset"]) if bool(data["Dst"]["enable"]) else timedelta(hours=0)
         # Reolink does a positive UTC offset but python expects a negative one
-        self._offset = timedelta(seconds=-__data["Time"]["timeZone"])
-        start_rule = _DST_Rule(__data["Dst"], "start")
-        end_rule = _DST_Rule(__data["Dst"], "end")
-        self._year_cache = _YearStartStopCache(lambda year: (start_rule.datetime(year), end_rule.datetime(year)))
+        self._offset = timedelta(seconds=-data["Time"]["timeZone"])
+        self._year_cache: Mapping[int, tuple[datetime, datetime]] = {}
+        setattr(self._year_cache, "__missing__", self._create_cache_missed(data))
 
     def tzname(self, __dt: datetime | None) -> str | None:
         # we have no friendly name though we could do GMT/UTC{self._offset}
         return None
 
+    def _normalize(self, __dt: datetime) -> datetime:
+        if __dt.tzinfo is not None:
+            if __dt.tzinfo is not self:
+                # flatten to utc plus our offset to shift into our timezone
+                __dt = __dt.astimezone(timezone.utc) + self._offset
+            # treat datetime as "local time" by removing tzinfo
+            __dt = __dt.replace(tzinfo=None)
+        return __dt
+
     def utcoffset(self, __dt: datetime | None) -> timedelta | None:
         if __dt is None:
             return self._offset
-        if __dt.tzinfo is not None:
-            __dt = __dt.replace(tzinfo=None)
+        __dt = self._normalize(__dt)
         (start, end) = self._year_cache[__dt.year]
         if start <= __dt <= end:
             return self._offset + self._dst
@@ -193,13 +174,11 @@ class Reolink_timezone(tzinfo):
     def dst(self, __dt: datetime | None) -> timedelta | None:
         if __dt is None:
             return self._dst
-        if __dt.tzinfo is not None:
-            __dt = __dt.replace(tzinfo=None)
+        __dt = self._normalize(__dt)
         (start, end) = self._year_cache[__dt.year]
         if start <= __dt <= end:
-            self._dst
+            return self._dst
         return timedelta(seconds=0)
-
 
 
 class VOD_file:
