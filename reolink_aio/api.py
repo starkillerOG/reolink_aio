@@ -33,7 +33,6 @@ from .exceptions import (
     UnexpectedDataError,
 )
 from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
-from .typings import reolink_json, VOD_file
 from .utils import datetime_to_reolink_time, reolink_time_to_datetime
 
 MANUFACTURER = "Reolink"
@@ -704,7 +703,7 @@ class Host:
                 self._username,
             )
 
-            body: reolink_json = [
+            body: typings.reolink_json = [
                 {
                     "cmd": "Login",
                     "action": 0,
@@ -1201,7 +1200,7 @@ class Host:
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
-        body: reolink_json = [
+        body: typings.reolink_json = [
             {"cmd": "Getchannelstatus"},
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
             {"cmd": "GetLocalLink", "action": 0, "param": {}},
@@ -1523,7 +1522,7 @@ class Host:
         if not self.supported(None, "update"):
             raise NotSupportedError(f"check_new_firmware: not supported by {self.nvr_name}")
 
-        body: reolink_json = [
+        body: typings.reolink_json = [
             {"cmd": "CheckFirmware"},
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
         ]
@@ -1599,7 +1598,7 @@ class Host:
 
         param["snapType"] = stream
 
-        body: reolink_json = [{}]
+        body: typings.reolink_json = [{}]
         response = await self.send(body, param, expected_response_type="image/jpeg")
         if response is None or response == b"":
             _LOGGER.error(
@@ -1762,7 +1761,7 @@ class Host:
             f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}",
         )
 
-    def map_host_json_response(self, json_data: reolink_json):
+    def map_host_json_response(self, json_data: typings.reolink_json):
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
             try:
@@ -2142,7 +2141,7 @@ class Host:
         if self._netport_settings is None:
             raise NotSupportedError(f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}")
 
-        body: reolink_json = [{"cmd": "SetNetPort", "param": self._netport_settings}]
+        body: typings.reolink_json = [{"cmd": "SetNetPort", "param": self._netport_settings}]
 
         if enable_onvif is not None:
             body[0]["param"]["NetPort"]["onvifEnable"] = 1 if enable_onvif else 0
@@ -2166,7 +2165,7 @@ class Host:
         if self._time_settings is None:
             raise NotSupportedError(f"set_time: failed to retrieve current time settings from {self._host}:{self._port}")
 
-        body: reolink_json = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
+        body: typings.reolink_json = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
 
         if dateFmt is not None:
             if dateFmt in ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY/MM/DD"]:
@@ -2204,7 +2203,7 @@ class Host:
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body: reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
+        body: typings.reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
 
         if enable is not None:
             if enable:
@@ -2239,7 +2238,7 @@ class Host:
         if self._ntp_settings is None:
             raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body: reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
+        body: typings.reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
         body[0]["param"]["Ntp"]["interval"] = 0
 
         await self.send_setting(body)
@@ -2294,7 +2293,7 @@ class Host:
         if channel not in self._auto_focus_settings:
             raise NotSupportedError(f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json = [{"cmd": "SetAutoFocus", "action": 0, "param": {"AutoFocus": {"disable": 0 if enable else 1, "channel": channel}}}]
+        body: typings.reolink_json = [{"cmd": "SetAutoFocus", "action": 0, "param": {"AutoFocus": {"disable": 0 if enable else 1, "channel": channel}}}]
         await self.send_setting(body)
 
     def get_zoom(self, channel: int):
@@ -2364,7 +2363,7 @@ class Host:
         if command is None:
             raise InvalidParameterError("set_ptz_command: No command or preset specified.")
 
-        body: reolink_json = [
+        body: typings.reolink_json = [
             {
                 "cmd": "PtzCtrl",
                 "action": 0,
@@ -2423,7 +2422,7 @@ class Host:
         if time is not None:
             params["timeout"] = time
 
-        body: reolink_json = [{"cmd": "SetPtzGuard", "action": 0, "param": {"PtzGuard": params}}]
+        body: typings.reolink_json = [{"cmd": "SetPtzGuard", "action": 0, "param": {"PtzGuard": params}}]
         await self.send_setting(body)
 
     async def ptz_callibrate(self, channel: int) -> None:
@@ -2431,7 +2430,7 @@ class Host:
         if channel not in self._channels:
             raise InvalidParameterError(f"ptz_callibrate: no camera connected to channel '{channel}'")
 
-        body: reolink_json = [{"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}]
+        body: typings.reolink_json = [{"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}]
         await self.send_setting(body)
 
     def auto_track_enabled(self, channel: int) -> bool:
@@ -2554,7 +2553,7 @@ class Host:
         if channel not in self._osd_settings or not self._osd_settings[channel]:
             raise NotSupportedError(f"set_osd: OSD on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
 
         if namePos is not None:
             if namePos == "Off":
@@ -2593,7 +2592,7 @@ class Host:
         if not self.supported(channel, "push"):
             raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
-        body: reolink_json
+        body: typings.reolink_json
         on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetPush") >= 1:
@@ -2622,7 +2621,7 @@ class Host:
         if not self.supported(channel, "ftp"):
             raise NotSupportedError(f"set_ftp: FTP on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json
+        body: typings.reolink_json
         on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetFtp") >= 1:
@@ -2650,7 +2649,7 @@ class Host:
         if not self.supported(channel, "email"):
             raise NotSupportedError(f"set_email: Email on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json
+        body: typings.reolink_json
         on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetEmail") >= 1:
@@ -2679,7 +2678,7 @@ class Host:
         if not self.supported(channel, "recording"):
             raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json
+        body: typings.reolink_json
         on_off = 1 if enable else 0
         if channel is None:
             if self.api_version("GetRec") >= 1:
@@ -2708,7 +2707,7 @@ class Host:
         if not self.supported(channel, "buzzer"):
             raise NotSupportedError(f"set_buzzer: NVR buzzer on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json
+        body: typings.reolink_json
         on_off = 1 if enable else 0
         if channel is None:
             body = [{"cmd": "SetBuzzerAlarmV20", "action": 0, "param": {"Buzzer": {"enable": on_off}}}]
@@ -2728,7 +2727,7 @@ class Host:
         if channel not in self._enc_settings:
             raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
         body[0]["param"]["Enc"]["audio"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -2740,7 +2739,7 @@ class Host:
             raise NotSupportedError(f"set_ir_lights: IR light on camera {self.camera_name(channel)} is not available")
 
         state = "Auto" if enable else "Off"
-        body: reolink_json = [
+        body: typings.reolink_json = [
             {
                 "cmd": "SetIrLights",
                 "action": 0,
@@ -2770,7 +2769,7 @@ class Host:
         else:
             param = {"channel": channel, "state": value}
 
-        body: reolink_json = [{"cmd": "SetPowerLed", "action": 0, "param": {"PowerLed": param}}]
+        body: typings.reolink_json = [{"cmd": "SetPowerLed", "action": 0, "param": {"PowerLed": param}}]
         await self.send_setting(body)
 
     async def set_whiteled(self, channel: int, state: bool | None = None, brightness: int | None = None, mode: int | str | None = None) -> None:
@@ -3014,7 +3013,7 @@ class Host:
         if value not in val_list:
             raise InvalidParameterError(f"set_daynight: value {value} not in {val_list}")
 
-        body: reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
 
         await self.send_setting(body)
@@ -3029,7 +3028,7 @@ class Host:
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
             raise InvalidParameterError(f"set_backlight: value {value} not in ['BackLightControl', 'DynamicRangeControl', 'Off']")
 
-        body: reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["backLight"] = value
 
         await self.send_setting(body)
@@ -3041,7 +3040,7 @@ class Host:
         if channel not in self._md_alarm_settings:
             raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
-        body: reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -3060,7 +3059,7 @@ class Host:
         if value < 1 or value > 50:
             raise InvalidParameterError(f"set_md_sensitivity: sensitivity {value} not in range 1...50")
 
-        body: reolink_json
+        body: typings.reolink_json
         if self.api_version("GetMdAlarm") >= 1:
             body = [{"cmd": "SetMdAlarm", "action": 0, "param": {"MdAlarm": {"channel": channel, "useNewSens": 1, "newSens": {"sensDef": int(51 - value)}}}}]
         else:
@@ -3095,7 +3094,7 @@ class Host:
         if ai_type not in self.ai_supported_types(channel):
             raise InvalidParameterError(f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, suppored types are {self.ai_supported_types(channel)}")
 
-        body: reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
+        body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
         await self.send_setting(body)
 
     async def request_vod_files(
@@ -3105,7 +3104,7 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus], list[VOD_file]]:
+    ) -> tuple[list[typings.SearchStatus], list[typings.VOD_file]]:
         """Send search VOD-files command."""
         if channel not in self._channels:
             raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
@@ -3150,9 +3149,9 @@ class Host:
             # When there are now recordings available in the indicated time window, "File" will not be in the response.
             return search_result["Status"], []
 
-        return search_result["Status"], [VOD_file(file, self._host_time_difference) for file in search_result["File"]]
+        return search_result["Status"], [typings.VOD_file(file, self._host_time_difference) for file in search_result["File"]]
 
-    async def send_setting(self, body: reolink_json, wait_before_get: int = 0) -> None:
+    async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(
             'Sending command: "%s" to: %s:%s with body: %s',
@@ -3189,17 +3188,17 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> reolink_json:
+    ) -> typings.reolink_json:
         ...
 
     @overload
     async def send(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["image/jpeg"],
         retry: int = RETRY_ATTEMPTS,
@@ -3209,7 +3208,7 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["text/html"],
         retry: int = RETRY_ATTEMPTS,
@@ -3219,17 +3218,17 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         *,
         expected_response_type: Literal["json"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> reolink_json:
+    ) -> typings.reolink_json:
         ...
 
     @overload
     async def send(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         *,
         expected_response_type: Literal["image/jpeg"],
         retry: int = RETRY_ATTEMPTS,
@@ -3239,7 +3238,7 @@ class Host:
     @overload
     async def send(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         *,
         expected_response_type: Literal["text/html"],
         retry: int = RETRY_ATTEMPTS,
@@ -3248,11 +3247,11 @@ class Host:
 
     async def send(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None = None,
         expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] = "json",
         retry: int = RETRY_ATTEMPTS,
-    ) -> reolink_json | bytes | str:
+    ) -> typings.reolink_json | bytes | str:
         """
         If a body contains more than MAX_CHUNK_ITEMS requests, split it up in chunks.
         Otherwise you get a 'error': {'detail': 'send failed', 'rspCode': -16} response.
@@ -3261,7 +3260,7 @@ class Host:
         if len_body <= MAX_CHUNK_ITEMS or expected_response_type != "json":
             return await self.send_chunk(body, param, expected_response_type, retry)
 
-        response: reolink_json = []
+        response: typings.reolink_json = []
         for chunk in range(0, len_body, MAX_CHUNK_ITEMS):
             chunk_end = min(chunk + MAX_CHUNK_ITEMS, len_body)
             _LOGGER.debug("sending chunks %i:%i of total %i requests", chunk + 1, chunk_end, len_body)
@@ -3272,17 +3271,17 @@ class Host:
     @overload
     async def send_chunk(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"],
         retry: int,
-    ) -> reolink_json:
+    ) -> typings.reolink_json:
         ...
 
     @overload
     async def send_chunk(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["image/jpeg"],
         retry: int,
@@ -3292,7 +3291,7 @@ class Host:
     @overload
     async def send_chunk(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["text/html"],
         retry: int,
@@ -3301,11 +3300,11 @@ class Host:
 
     async def send_chunk(
         self,
-        body: reolink_json,
+        body: typings.reolink_json,
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"],
         retry: int,
-    ) -> reolink_json | bytes | str:
+    ) -> typings.reolink_json | bytes | str:
         """Generic send method."""
         retry = retry - 1
 

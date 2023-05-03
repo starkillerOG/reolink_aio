@@ -1,7 +1,7 @@
 """ Typings for type validation and documentation """
 
 from typing import Any, TypedDict
-from datetime import datetime, timedelta, timezone
+import datetime as dtc
 from .utils import reolink_time_to_datetime
 
 reolink_json = list[dict[str, Any]]
@@ -52,31 +52,31 @@ class VOD_file:
         return self.data["type"]
 
     @property
-    def start_time(self) -> datetime:
+    def start_time(self) -> dtc.datetime:
         """Start time of the recording."""
         return reolink_time_to_datetime(self.data["StartTime"])
 
     @property
-    def utc_start_time(self) -> datetime:
+    def utc_start_time(self) -> dtc.datetime:
         """Start time of the recording."""
         cam_hour_offset = round(self.time_offset / 3600)
-        utc_offset = datetime.now(timezone.utc).astimezone().utcoffset()
+        utc_offset = dtc.datetime.now(dtc.timezone.utc).astimezone().utcoffset()
         if utc_offset is None:
-            utc_offset = timedelta(0)
-        return self.start_time - timedelta(seconds=utc_offset.total_seconds(), hours=cam_hour_offset)
+            utc_offset = dtc.timedelta(0)
+        return self.start_time - dtc.timedelta(seconds=utc_offset.total_seconds(), hours=cam_hour_offset)
 
     @property
-    def end_time(self) -> datetime:
+    def end_time(self) -> dtc.datetime:
         """End time of the recording."""
         return reolink_time_to_datetime(self.data["EndTime"])
 
     @property
-    def playback_time(self) -> datetime:
+    def playback_time(self) -> dtc.datetime:
         """Playback time of the recording."""
         return reolink_time_to_datetime(self.data["PlaybackTime"])
 
     @property
-    def duration(self) -> timedelta:
+    def duration(self) -> dtc.timedelta:
         """duration of the recording."""
         return self.end_time - self.start_time
 
