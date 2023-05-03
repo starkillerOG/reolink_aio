@@ -1,6 +1,6 @@
 """ Typings for type validation and documentation """
 
-from typing import Any, ClassVar, Mapping, TypedDict
+from typing import Any, ClassVar, TypedDict
 import datetime as dtc
 from .utils import reolink_time_to_datetime
 
@@ -110,42 +110,39 @@ class Reolink_timezone(dtc.tzinfo):
 
         return _datetime
 
-    @classmethod
-    def _create_cache_missed(cls, data: dict[str, Any]):
-        start_rule = cls._create_dst_rule_caclulator(data, "start")
-        end_rule = cls._create_dst_rule_caclulator(data, "end")
-
-        def __missing__(self: dict, key: int):
-            self[key] = tuple(start_rule(key), end_rule(key))
-            return self[key]
-
-        return __missing__
-
     def __new__(cls, data: GetTimeResponse) -> dtc.tzinfo:
-        key = tuple(data["Time"]["timeZone"])
+        key = (data["Time"]["timeZone"],)
         # if dst is not enabled, just make a tz off of the offset only
         if bool(data["Dst"]["enable"]):
             # key is full dst ruleset incase two devices (or the rules on a device) change/are different
-            key += tuple(data["Dst"].values())
+            dst_keys = list(data["Dst"].items())
+            dst_keys.sort(key=lambda kvp: kvp[0])
+            key += tuple(dst_keys)
         if cached := cls._cache.get(key):
             return cached
         if not bool(data["Dst"]["enable"]):
             # simple tz info
             offset = dtc.timedelta(seconds=data["Time"]["timeZone"])
             return cls._cache.setdefault(key, dtc.timezone(offset))
-        # this class
-        self = object.__new__(cls)
-        cls.__init__(self, data)
-        return cls._cache.setdefault(key, self)
 
-    def __init__(self, data: GetTimeResponse) -> None:
-        super().__init__()
+        self = super(Reolink_timezone, cls).__new__(cls)
+
+        # one time init
         self._dst = dtc.timedelta(hours=data["Dst"]["offset"]) if bool(data["Dst"]["enable"]) else dtc.timedelta(hours=0)
         # Reolink does a positive UTC offset but python expects a negative one
         self._offset = dtc.timedelta(seconds=-data["Time"]["timeZone"])
-        self._year_cache: Mapping[int, tuple[dtc.datetime, dtc.datetime]] = {}
+
+        start_rule = self._create_dst_rule_caclulator(data["Dst"], "start")
+        end_rule = self._create_dst_rule_caclulator(data["Dst"], "end")
+
+        class _Cache(dict[int, tuple[dtc.datetime, dtc.datetime]]):
+            def __missing__(self, key):
+                self[key] = (start_rule(key), end_rule(key))
+                return self[key]
+
+        self._year_cache = _Cache()
         self._name = None
-        setattr(self._year_cache, "__missing__", self._create_cache_missed(data))
+        return cls._cache.setdefault(key, self)
 
     def tzname(self, __dt: dtc.datetime | None) -> str:
         if not (isinstance(__dt, dtc.datetime) or __dt is None):
