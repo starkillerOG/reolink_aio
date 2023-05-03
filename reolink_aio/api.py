@@ -384,7 +384,7 @@ class Host:
         """
         return self.user_level == "admin"
 
-    def get_timezone(self) -> Optional[tzinfo]:
+    def timezone(self) -> Optional[tzinfo]:
         """Get the timezone of the device
 
         Returns None if there is no current time information
@@ -393,7 +393,7 @@ class Host:
             return None
         return typings.Reolink_timezone(self._time_settings)
 
-    def get_time(self) -> Optional[datetime]:
+    def time(self) -> Optional[datetime]:
         """Get the approximate "current" time of the device using existing data.
 
         Returns None if there is no current time information.
@@ -405,7 +405,7 @@ class Host:
         # the _host_time_difference is basically the diff in "localtime" between the system and the device
         # so we will add that then set the tzinfo to our timezone rule so the resulting time
         # can be converted to other timezones correctly
-        return (datetime.now() + timedelta(seconds=self._host_time_difference)).replace(tzinfo=self.get_timezone())
+        return (datetime.now() + timedelta(seconds=self._host_time_difference)).replace(tzinfo=self.timezone())
 
     async def async_get_time(self) -> datetime:
         """Get the current time of the device
@@ -416,7 +416,7 @@ class Host:
         await self.get_state("GetTime")
         if self._time_settings is None:
             raise NotSupportedError(f"get_time: failed to retrieve current time settings from {self._host}:{self._port}")
-        return reolink_time_to_datetime(self._time_settings["Time"]).replace(tzinfo=self.get_timezone())
+        return reolink_time_to_datetime(self._time_settings["Time"]).replace(tzinfo=self.timezone())
 
     ##############################################################################
     # Channel-level getters/setters
