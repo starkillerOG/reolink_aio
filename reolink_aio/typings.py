@@ -1,4 +1,5 @@
 """ Typings for type validation and documentation """
+from __future__ import annotations
 
 from typing import Any, ClassVar, TypedDict
 import datetime as dtc
