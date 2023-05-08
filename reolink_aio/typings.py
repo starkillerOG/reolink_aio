@@ -78,7 +78,7 @@ class Reolink_timezone(dtc.tzinfo):
     _cache: ClassVar[dict[tuple, dtc.tzinfo]] = {}
 
     @staticmethod
-    def _create_dst_rule_caclulator(data: dict[str, Any], prefix: str):
+    def _create_dst_rule_calculator(data: dict[str, Any], prefix: str):
         month: int = data[f"{prefix}Mon"]
         week: int = data[f"{prefix}Week"]
         weekday: int = data[f"{prefix}Weekday"]
@@ -132,8 +132,8 @@ class Reolink_timezone(dtc.tzinfo):
         # Reolink does a positive UTC offset but python expects a negative one
         self._offset = dtc.timedelta(seconds=-data["Time"]["timeZone"])
 
-        start_rule = self._create_dst_rule_caclulator(data["Dst"], "start")
-        end_rule = self._create_dst_rule_caclulator(data["Dst"], "end")
+        start_rule = self._create_dst_rule_calculator(data["Dst"], "start")
+        end_rule = self._create_dst_rule_calculator(data["Dst"], "end")
 
         class _Cache(dict[int, tuple[dtc.datetime, dtc.datetime]]):
             def __missing__(self, key):
