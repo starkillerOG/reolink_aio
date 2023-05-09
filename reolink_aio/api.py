@@ -887,6 +887,7 @@ class Host:
 
             if channel in self._audio_alarm_settings:
                 self._capabilities[channel].append("siren")
+                self._capabilities[channel].append("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
 
             if self.audio_record(channel) is not None:
                 self._capabilities[channel].append("audio")
@@ -2942,7 +2943,7 @@ class Host:
 
         if channel not in self._channels:
             raise InvalidParameterError(f"set_audio_alarm: no camera connected to channel '{channel}'")
-        if channel not in self._audio_alarm_settings or not self._audio_alarm_settings[channel]:
+        if not self.supported(channel, "siren"):
             raise NotSupportedError(f"set_audio_alarm: AudioAlarm on camera {self.camera_name(channel)} is not available")
 
         if self.api_version("GetAudioAlarm") >= 1:
@@ -2972,6 +2973,8 @@ class Host:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
         if duration is not None and not isinstance(duration, int):
             raise InvalidParameterError(f"set_siren: duration '{duration}' is not integer")
+        if not self.supported(channel, "siren_play"):
+            raise NotSupportedError(f"set_siren: AudioAlarmPlay on camera {self.camera_name(channel)} is not available")
 
         if enable:
             if duration is not None:
