@@ -113,6 +113,8 @@ class Reolink_timezone(dtc.tzinfo):
 
     @classmethod
     def create_or_get(cls, data: Mapping[str, Any]) -> dtc.tzinfo:
+        """return cached or new tzinfo instance for the provided GetTimeResponse"""
+
         key: tuple = (data["Time"]["timeZone"],)
         # if dst is not enabled, just make a tz off of the offset only
         if bool(data["Dst"]["enable"]):
