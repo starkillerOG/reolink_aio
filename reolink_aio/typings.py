@@ -134,11 +134,7 @@ class Reolink_timezone(dtc.tzinfo):
     def __init__(self, data: Mapping[str, Any]) -> None:
         super().__init__()
 
-        self._dst = (
-            dtc.timedelta(hours=data["Dst"]["offset"])
-            if bool(data["Dst"]["enable"])
-            else dtc.timedelta(hours=0)
-        )
+        self._dst = dtc.timedelta(hours=data["Dst"]["offset"]) if bool(data["Dst"]["enable"]) else dtc.timedelta(hours=0)
         # Reolink does a positive UTC offset but python expects a negative one
         self._offset = dtc.timedelta(seconds=-data["Time"]["timeZone"])
 
@@ -178,9 +174,7 @@ class Reolink_timezone(dtc.tzinfo):
         seconds = rest.seconds
         microseconds = rest.microseconds
         if microseconds:
-            return (
-                f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}" f".{microseconds:06d}"
-            )
+            return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}" f".{microseconds:06d}"
         if seconds:
             return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"
 
@@ -261,9 +255,7 @@ class VOD_file:
         utc_offset = dtc.datetime.now(dtc.timezone.utc).astimezone().utcoffset()
         if utc_offset is None:
             utc_offset = dtc.timedelta(0)
-        return self.start_time - dtc.timedelta(
-            seconds=utc_offset.total_seconds(), hours=cam_hour_offset
-        )
+        return self.start_time - dtc.timedelta(seconds=utc_offset.total_seconds(), hours=cam_hour_offset)
 
     @property
     def end_time(self) -> dtc.datetime:
