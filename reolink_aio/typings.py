@@ -1,7 +1,7 @@
 """ Typings for type validation and documentation """
 from __future__ import annotations
 
-from typing import Any, ClassVar, TypedDict
+from typing import Any, ClassVar, Mapping, TypedDict
 import datetime as dtc
 from .utils import reolink_time_to_datetime
 
@@ -79,7 +79,7 @@ class Reolink_timezone(dtc.tzinfo):
     _cache: ClassVar[dict[tuple, dtc.tzinfo]] = {}
 
     @staticmethod
-    def _create_dst_rule_calculator(data: dict[str, Any], prefix: str):
+    def _create_dst_rule_calculator(data: Mapping[str, Any], prefix: str):
         month: int = data[f"{prefix}Mon"]
         week: int = data[f"{prefix}Week"]
         weekday: int = data[f"{prefix}Weekday"]
@@ -111,8 +111,9 @@ class Reolink_timezone(dtc.tzinfo):
 
         return _datetime
 
-    def __new__(cls, data: GetTimeResponse) -> dtc.tzinfo:
-        key = (data["Time"]["timeZone"],)
+    @classmethod
+    def create_or_get(cls, data: Mapping[str, Any]) -> dtc.tzinfo:
+        key: tuple = (data["Time"]["timeZone"],)
         # if dst is not enabled, just make a tz off of the offset only
         if bool(data["Dst"]["enable"]):
             # key is full dst ruleset incase two devices (or the rules on a device) change/are different
@@ -126,10 +127,16 @@ class Reolink_timezone(dtc.tzinfo):
             offset = dtc.timedelta(seconds=data["Time"]["timeZone"])
             return cls._cache.setdefault(key, dtc.timezone(offset))
 
-        self = super(Reolink_timezone, cls).__new__(cls)
+        return cls._cache.setdefault(key, cls(data))
 
-        # one time init
-        self._dst = dtc.timedelta(hours=data["Dst"]["offset"]) if bool(data["Dst"]["enable"]) else dtc.timedelta(hours=0)
+    def __init__(self, data: Mapping[str, Any]) -> None:
+        super().__init__()
+
+        self._dst = (
+            dtc.timedelta(hours=data["Dst"]["offset"])
+            if bool(data["Dst"]["enable"])
+            else dtc.timedelta(hours=0)
+        )
         # Reolink does a positive UTC offset but python expects a negative one
         self._offset = dtc.timedelta(seconds=-data["Time"]["timeZone"])
 
@@ -142,8 +149,7 @@ class Reolink_timezone(dtc.tzinfo):
                 return self[key]
 
         self._year_cache = _Cache()
-        self._name = None
-        return cls._cache.setdefault(key, self)
+        self._name: str | None = None
 
     def tzname(self, __dt: dtc.datetime | None) -> str:
         if not (isinstance(__dt, dtc.datetime) or __dt is None):
@@ -170,7 +176,9 @@ class Reolink_timezone(dtc.tzinfo):
         seconds = rest.seconds
         microseconds = rest.microseconds
         if microseconds:
-            return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}" f".{microseconds:06d}"
+            return (
+                f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}" f".{microseconds:06d}"
+            )
         if seconds:
             return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"
 
@@ -251,7 +259,9 @@ class VOD_file:
         utc_offset = dtc.datetime.now(dtc.timezone.utc).astimezone().utcoffset()
         if utc_offset is None:
             utc_offset = dtc.timedelta(0)
-        return self.start_time - dtc.timedelta(seconds=utc_offset.total_seconds(), hours=cam_hour_offset)
+        return self.start_time - dtc.timedelta(
+            seconds=utc_offset.total_seconds(), hours=cam_hour_offset
+        )
 
     @property
     def end_time(self) -> dtc.datetime:
