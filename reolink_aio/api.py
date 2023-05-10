@@ -413,8 +413,7 @@ class Host:
         The preferred method is to check get_time first, and if it returns none; call this, to save
         an async round trip to the device.
         """
-        if self._time_settings is None:
-            await self.get_state("GetTime")
+        await self.get_state("GetTime")
         if self._time_settings is None:
             raise NotSupportedError(f"get_time: failed to retrieve current time settings from {self._host}:{self._port}")
         return reolink_time_to_datetime(self._time_settings["Time"]).replace(tzinfo=self.timezone())
