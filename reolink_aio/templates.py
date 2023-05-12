@@ -6,6 +6,8 @@ HEADERS = {"Content-Type": "application/soap+xml;charset=UTF-8"}
 SUBSCRIBE_ACTION = {"action": "http://docs.oasis-open.org/wsn/bw-2/NotificationProducer/SubscribeRequest"}
 RENEW_ACTION = {"action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/RenewRequest"}
 UNSUBSCRIBE_ACTION = {"action": "http://docs.oasis-open.org/wsn/bw-2/SubscriptionManager/UnsubscribeRequest"}
+PULLPOINT_ACTION = {"action": "http://www.onvif.org/ver10/events/wsdl/EventPortType/CreatePullPointSubscriptionRequest"}
+PULLMESSAGE_ACTION = {"action": "http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/PullMessagesRequest"}
 
 
 SUBSCRIBE_XML = """
