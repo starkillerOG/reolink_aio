@@ -1,8 +1,12 @@
 """ Typings for type validation and documentation """
 from __future__ import annotations
 
-from typing import Any, ClassVar, Mapping, TypedDict
+from enum import IntFlag, auto
+from typing import Any, ClassVar, Collection, Iterator, Mapping, NamedTuple, Optional, TypedDict
 import datetime as dtc
+from typing_extensions import SupportsIndex
+
+from aiohttp import StreamReader
 from .utils import reolink_time_to_datetime
 
 reolink_json = list[dict[str, Any]]
@@ -219,11 +223,84 @@ class Reolink_timezone(dtc.tzinfo):
     def __str__(self):
         return self.tzname(None)
 
+class VOD_search_status(Collection[dtc.date]):
+    """Contains information about a VOD search."""
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        # {'year': 2023, 'mon': 4, 'table':'001000000000001000000000001000'}
+        self.data = data
+        # "cache" so we only parse the table once on demand
+        self._days: Optional[tuple[int, ...]] = None
+
+    def __repr__(self):
+        return f"<VOD_search_status: year {self.year}, month {self.month}, days {self.days}>"
+
+    @property
+    def year(self) -> int:
+        """Year of the status"""
+        return self.data["year"]
+
+    @property
+    def month(self) -> int:
+        """Month of the status"""
+        return self.data["mon"]
+
+    def _ensure_days(self):
+        if self._days is None:
+            self._days = tuple(day for day, set in enumerate(self.data["table"], 1) if set == "1")
+        return self._days
+
+    @property
+    def days(self) -> tuple[int, ...]:
+        return self._ensure_days()
+
+    def __getitem__(self, __index: SupportsIndex) -> dtc.date:
+        return dtc.date(self.year, self.month, self._ensure_days()[__index])
+
+    def __iter__(self) -> Iterator[dtc.date]:
+        def _date(day: int):
+            return dtc.date(self.year, self.month, day)
+
+        return map(_date, self._ensure_days())
+
+    def __len__(self) -> int:
+        return len(self._days)
+
+    def __contains__(self, __x: object) -> bool:
+        return isinstance(__x, dtc.date) and self.year == __x.year and self.month == __x.month and __x.day in self._ensure_days()
+
+
+class VOD_trigger(IntFlag):
+    """VOD triggers"""
+
+    NONE = 0
+    TIMER = auto()
+    MOTION = auto()
+    VEHICLE = auto()
+    PET = auto()
+    PERSON = auto()
+
+
+Parsed_VOD_file_name = NamedTuple(
+    "Parsed_VOD_file_name",
+    [
+        ("path", str),
+        ("ext", str),
+        ("dst", bool),
+        ("date", dtc.date),
+        ("start", dtc.time),
+        ("end", dtc.time),
+        ("triggers", VOD_trigger),
+    ],
+)
+
+VOD_download = NamedTuple("VOD_download", [("length", int), ("filename", str), ("stream", StreamReader), ("etag", str | None)])
+
 
 class VOD_file:
     """Contains information about the VOD file."""
 
-    def __init__(self, data: dict[str, Any], time_offset: float = 0) -> None:
+    def __init__(self, data: dict[str, Any], tzinfo: Optional[dtc.tzinfo] = None) -> None:
         # {'EndTime': {'day': 17, 'hour': 2, 'min': 43, 'mon': 4, 'sec': 50, 'year': 2023},
         # 'PlaybackTime': {'day': 16, 'hour': 23, 'min': 59, 'mon': 4, 'sec': 57, 'year': 2023},
         # 'StartTime': {'day': 17, 'hour': 1, 'min': 59, 'mon': 4, 'sec': 57, 'year': 2023},
@@ -233,7 +310,8 @@ class VOD_file:
         # 'type': 'sub',
         # 'width': 0}
         self.data = data
-        self.time_offset = time_offset
+        self.tzinfo = tzinfo
+        self.__parsed_name: Parsed_VOD_file_name | None = None
 
     def __repr__(self):
         return f"<VOD_file: {self.type} stream, start {self.start_time}, duration {self.duration}>"
@@ -246,26 +324,17 @@ class VOD_file:
     @property
     def start_time(self) -> dtc.datetime:
         """Start time of the recording."""
-        return reolink_time_to_datetime(self.data["StartTime"])
-
-    @property
-    def utc_start_time(self) -> dtc.datetime:
-        """Start time of the recording."""
-        cam_hour_offset = round(self.time_offset / 3600)
-        utc_offset = dtc.datetime.now(dtc.timezone.utc).astimezone().utcoffset()
-        if utc_offset is None:
-            utc_offset = dtc.timedelta(0)
-        return self.start_time - dtc.timedelta(seconds=utc_offset.total_seconds(), hours=cam_hour_offset)
+        return reolink_time_to_datetime(self.data["StartTime"], self.tzinfo)
 
     @property
     def end_time(self) -> dtc.datetime:
         """End time of the recording."""
-        return reolink_time_to_datetime(self.data["EndTime"])
+        return reolink_time_to_datetime(self.data["EndTime"], self.tzinfo)
 
     @property
     def playback_time(self) -> dtc.datetime:
         """Playback time of the recording."""
-        return reolink_time_to_datetime(self.data["PlaybackTime"])
+        return reolink_time_to_datetime(self.data["PlaybackTime"], self.tzinfo)
 
     @property
     def duration(self) -> dtc.timedelta:
@@ -274,8 +343,97 @@ class VOD_file:
 
     @property
     def file_name(self) -> str:
-        """duration of the recording."""
+        """file name of recording."""
         if "name" in self.data:
             return self.data["name"]
 
-        return self.utc_start_time.strftime("%Y%m%d%H%M%S")
+        return self.start_time.strftime("%Y%m%d%H%M%S")
+
+    @property
+    def size(self) -> int:
+        """file size of the recording."""
+        return self.data["size"]
+
+    @property
+    def triggers(self) -> VOD_trigger:
+        """events that triggered the recording"""
+        parsed = self._ensure_parsed_file_name()
+        if parsed is None:
+            return VOD_trigger.NONE
+        return parsed.triggers
+
+    def _ensure_parsed_file_name(self) -> Parsed_VOD_file_name | None:
+        if "name" not in self.data:
+            return None
+        if self.__parsed_name is None:
+            self.__parsed_name = self.parse_file_name(self.data["name"], self.tzinfo)
+        return self.__parsed_name
+
+    @staticmethod
+    def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Parsed_VOD_file_name:
+        # Rec_20230517_043229_541_M.mp4
+        # Mp4Record_2023-05-15_RecM02_20230515_071811_071835_6D28900_13CE8C7.mp4
+        # Mp4Record/2023-04-26/RecS02_DST20230426_145918_150032_2B14808_32F1DF.mp4
+        # Mp4Record_2020-12-21_RecM01_20201221_121551_121553_6D28808_2240A8.mp4
+        # Mp4Record/2020-12-22/RecM01_20201222_075939_080140_6D28808_1A468F9.mp4
+        # |----------name------------|YYYYMMDD|HHmmss|HHmmss|????Ttr|???????|ext
+        # Y - year digit
+        # M - month digit
+        # D - day digit
+        # H - hour digit
+        # m - minute digit
+        # s - second digit
+        # T - trigger nibble1 -  1111 ?|Person|?|Vehicle
+        # t - trigger nibble2 -  1111 ?|?|Pet|Timer
+        # r - trigger nibble3 -  1111 Motion|?|?|?
+
+        (name, ext) = file_name.rsplit(".", 2)
+        if len(_split := name.rsplit("_", 6)) == 6:
+            (name, start_date, start_time, end_time, _unk1, _unk2) = _split
+            nibs = tuple(int(nib, 16) for nib in _unk1[-3:])
+            _unk1 = _unk1[:-3]
+        elif _split[-1] == 'M':
+            tzInfo = dtc.timezone.utc
+            (name, start_date, start_time, _unk1) = _split
+            end_time = "000000"
+            nibs = (0, 0, 8)
+        else:
+        #     _LOGGER.debug("%s does not match known formats", file_name)
+            return
+
+
+        triggers = VOD_trigger.NONE
+        # if nibs[0] & 8 == 8:
+        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 8, 0)
+        if nibs[0] & 4 == 4:
+            triggers |= VOD_trigger.PERSON
+        # if nibs[0] & 2 == 2:
+        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 2, 0)
+        if nibs[0] & 1 == 1:
+            triggers |= VOD_trigger.VEHICLE
+
+        if nibs[1] & 8 == 8:
+            triggers |= VOD_trigger.PET
+        # if nibs[1] & 4 == 4:
+        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 4, 1)
+        # if nibs[1] & 2 == 2:
+        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 2, 1)
+        if nibs[1] & 1 == 1:
+            triggers |= VOD_trigger.TIMER
+        if nibs[2] & 8 == 8:
+            triggers |= VOD_trigger.MOTION
+        # if nibs[2] & 4 == 4:
+        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 4, 2)
+        # if nibs[2] & 2 == 2:
+        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 2, 2)
+        # if nibs[2] & 1 == 1:
+        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 1, 2)
+
+        if start_date[0:3].lower() == "dst":
+            dst = True
+            start_date = start_date[3:]
+        else:
+            dst = False
+        start = dtc.datetime.strptime(start_date + start_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo)
+        end = dtc.datetime.strptime(start_date + end_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo) if end_time != "000000" else start
+        return Parsed_VOD_file_name(name, ext, dst, start.date(), start.time(), end.time(), triggers)

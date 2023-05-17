@@ -1796,6 +1796,13 @@ class Host:
             f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}",
         )
 
+    async def download_vod(self, filename: str, wanted_filename: Optional[str] = None) -> typings.VOD_download:
+        if wanted_filename is None:
+            wanted_filename = filename.replace("/", "_")
+
+        body: typings.reolink_json = [{}]
+        return await self.send_chunk(body, {"cmd": "Download", "source": filename, "output": wanted_filename}, "application/octet-stream", 0)
+
     def map_host_json_response(self, json_data: typings.reolink_json):
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
@@ -3143,7 +3150,7 @@ class Host:
         stream: Optional[str] = None,
     ) -> tuple[list[typings.SearchStatus], list[typings.VOD_file]]:
         """Send search VOD-files command."""
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
 
         if stream is None:
@@ -3179,14 +3186,15 @@ class Host:
         if "Status" not in search_result:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
 
+        statuses = [typings.VOD_search_status(status) for status in search_result["Status"]]
         if status_only:
-            return search_result["Status"], []
+            return statuses, []
 
         if "File" not in search_result:
             # When there are now recordings available in the indicated time window, "File" will not be in the response.
-            return search_result["Status"], []
+            return statuses, []
 
-        return search_result["Status"], [typings.VOD_file(file, self._host_time_difference) for file in search_result["File"]]
+        return statuses, [typings.VOD_file(file, self.timezone()) for file in search_result["File"]]
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
@@ -3335,17 +3343,30 @@ class Host:
     ) -> str:
         ...
 
+    @overload
     async def send_chunk(
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"],
+        expected_response_type: Literal["application/octet-stream"],
         retry: int,
-    ) -> typings.reolink_json | bytes | str:
+    ) -> typings.VOD_download:
+        ...
+
+    async def send_chunk(
+        self,
+        body: typings.reolink_json,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"],
+        retry: int,
+    ) -> typings.reolink_json | bytes | str | typings.VOD_download:
         """Generic send method."""
         retry = retry - 1
 
         if expected_response_type == "image/jpeg":
+            cur_command = "" if param is None else param.get("cmd", "")
+            is_login_logout = False
+        elif expected_response_type == "application/octet-stream":
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
         else:
@@ -3374,6 +3395,11 @@ class Host:
                     response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
 
                 data = await response.read()  # returns bytes
+            elif expected_response_type == "application/octet-stream":
+                async with self._send_mutex:
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
+
+                data = ""  # the response will be large and we should not read it ourselves
             else:
                 _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
 
@@ -3447,6 +3473,9 @@ class Host:
 
             if expected_response_type == "text/html" and isinstance(data, str):
                 return data
+
+            if expected_response_type == "application/octet-stream":
+                return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"))
 
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
