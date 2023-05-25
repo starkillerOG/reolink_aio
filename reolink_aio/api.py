@@ -1231,6 +1231,14 @@ class Host:
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
+        if not body:
+            _LOGGER.debug(
+                "Host %s:%s: get_states, no channels connected so skipping request.",
+                self._host,
+                self._port,
+            )
+            return
+
         try:
             json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
@@ -1331,6 +1339,14 @@ class Host:
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+
+        if not body:
+            _LOGGER.debug(
+                "Host %s:%s: get_host_data, no channels connected so skipping channel specific requests.",
+                self._host,
+                self._port,
+            )
+            return
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -1531,6 +1547,14 @@ class Host:
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+
+        if not body:
+            _LOGGER.debug(
+                "Host %s:%s: get_motion_state_all_ch, no channels connected so skipping request.",
+                self._host,
+                self._port,
+            )
+            return True
 
         try:
             json_data = await self.send(body, expected_response_type="json")
