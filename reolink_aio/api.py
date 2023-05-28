@@ -3165,6 +3165,40 @@ class Host:
         body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
         await self.send_setting(body)
 
+
+    async def set_image(self, channel: int, bright: int, contrast: int, saturation: int, hue: int, sharpen: int) -> None:
+        """Set image adjustments."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_image: no camera connected to channel '{channel}'")
+        if not isinstance(bright, int):
+            raise InvalidParameterError(f"set_image: sensitivity '{bright}' is not integer")
+        if not isinstance(contrast, int):
+            raise InvalidParameterError(f"set_image: sensitivity '{contrast}' is not integer")
+        if not isinstance(saturation, int):
+            raise InvalidParameterError(f"set_image: sensitivity '{saturation}' is not integer")
+        if not isinstance(hue, int):
+            raise InvalidParameterError(f"set_image: sensitivity '{hue}' is not integer")
+        if not isinstance(sharpen, int):
+            raise InvalidParameterError(f"set_image: sensitivity '{sharpen}' is not integer")
+
+
+        if bright < 0 or bright > 255:
+            raise InvalidParameterError(f"set_image: bright {bright} not in range 0...255")
+        if contrast < 0 or contrast > 255:
+            raise InvalidParameterError(f"set_image: contrast {contrast} not in range 0...255")
+        if saturation < 0 or saturation > 255:
+            raise InvalidParameterError(f"set_image: saturation {saturation} not in range 0...255")
+        if hue < 0 or hue > 255:
+            raise InvalidParameterError(f"set_image: hue {hue} not in range 0...255")
+        if sharpen < 0 or sharpen > 255:
+            raise InvalidParameterError(f"set_image: sharpen {sharpen} not in range 0...255")
+
+
+
+        body: typings.reolink_json = [{"cmd": "SetImage", "param": {"Image": {"channel": channel, "bright":bright, "contrast":contrast, "saturation":saturation, "hue":hue, "sharpen":sharpen}}}]
+        await self.send_setting(body)
+
+
     async def request_vod_files(
         self,
         channel: int,
