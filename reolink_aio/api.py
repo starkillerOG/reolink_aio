@@ -3166,36 +3166,55 @@ class Host:
         await self.send_setting(body)
 
 
-    async def set_image(self, channel: int, bright: int, contrast: int, saturation: int, hue: int, sharpen: int) -> None:
+    async def set_image(self, channel: int, bright: int=None, contrast: int=None, saturation: int=None, hue: int=None, sharpen: int=None) -> None:
         """Set image adjustments."""
-        if channel not in self._channels:
-            raise InvalidParameterError(f"set_image: no camera connected to channel '{channel}'")
-        if not isinstance(bright, int):
-            raise InvalidParameterError(f"set_image: sensitivity '{bright}' is not integer")
-        if not isinstance(contrast, int):
-            raise InvalidParameterError(f"set_image: sensitivity '{contrast}' is not integer")
-        if not isinstance(saturation, int):
-            raise InvalidParameterError(f"set_image: sensitivity '{saturation}' is not integer")
-        if not isinstance(hue, int):
-            raise InvalidParameterError(f"set_image: sensitivity '{hue}' is not integer")
-        if not isinstance(sharpen, int):
-            raise InvalidParameterError(f"set_image: sensitivity '{sharpen}' is not integer")
+        _image={"Image":{"channel": channel}}
+        
+        if bright is not None:
+            if not isinstance(bright, int):
+                raise InvalidParameterError(f"set_image: sensitivity '{bright}' is not integer")
+            if bright < 0 or bright > 255:
+                raise InvalidParameterError(f"set_image: bright {bright} not in range 0...255")
+            else:
+                _parameters={"bright":bright}
+                _image['Image'].update(_parameters)
 
+        if contrast is not None:
+            if not isinstance(contrast, int):
+                raise InvalidParameterError(f"set_image: sensitivity '{contrast}' is not integer")
+            if contrast < 0 or contrast > 255:
+                raise InvalidParameterError(f"set_image: contrast {contrast} not in range 0...255")
+            else:
+                _parameters={"contrast":contrast}
+                _image['Image'].update(_parameters)
 
-        if bright < 0 or bright > 255:
-            raise InvalidParameterError(f"set_image: bright {bright} not in range 0...255")
-        if contrast < 0 or contrast > 255:
-            raise InvalidParameterError(f"set_image: contrast {contrast} not in range 0...255")
-        if saturation < 0 or saturation > 255:
-            raise InvalidParameterError(f"set_image: saturation {saturation} not in range 0...255")
-        if hue < 0 or hue > 255:
-            raise InvalidParameterError(f"set_image: hue {hue} not in range 0...255")
-        if sharpen < 0 or sharpen > 255:
-            raise InvalidParameterError(f"set_image: sharpen {sharpen} not in range 0...255")
-
-
-
-        body: typings.reolink_json = [{"cmd": "SetImage", "param": {"Image": {"channel": channel, "bright":bright, "contrast":contrast, "saturation":saturation, "hue":hue, "sharpen":sharpen}}}]
+        if saturation is not None:
+            if not isinstance(saturation, int):
+                raise InvalidParameterError(f"set_image: sensitivity '{saturation}' is not integer")
+            if saturation < 0 or saturation > 255:
+                raise InvalidParameterError(f"set_image: saturation {saturation} not in range 0...255")
+            else:
+                _parameters={"saturation":saturation}
+                _image['Image'].update(_parameters)
+                
+        if hue is not None:
+            if not isinstance(hue, int):
+                raise InvalidParameterError(f"set_image: sensitivity '{hue}' is not integer")
+            if hue < 0 or hue > 255:
+                raise InvalidParameterError(f"set_image: hue {hue} not in range 0...255")
+            else:
+                _parameters={"hue":hue}
+                _image['Image'].update(_parameters)
+                
+        if sharpen is not None:
+            if not isinstance(sharpen, int):
+                raise InvalidParameterError(f"set_image: sensitivity '{sharpen}' is not integer")
+            if sharpen < 0 or sharpen > 255:
+                raise InvalidParameterError(f"set_image: sharpen {sharpen} not in range 0...255")
+            else:
+                _parameters={"sharpen":sharpen}
+                _image['Image'].update(_parameters)
+        body: typings.reolink_json = [{"cmd": "SetImage", "param": _image}]
         await self.send_setting(body)
 
 
