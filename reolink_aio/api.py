@@ -723,11 +723,15 @@ class Host:
             return  # succes
 
         await self._login_mutex.acquire()
-
-        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
-            return  # succes, in case multiple async courotines are waiting on login_mutex.acquire
-
         try:
+            if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
+                _LOGGER.debug(
+                    "Host %s:%s, after login mutex aquired, login already completed by another coroutine",
+                    self._host,
+                    self._port,
+                )
+                return  # succes, in case multiple async coroutine are waiting on login_mutex.acquire
+
             await self.logout(login_mutex_owned=True)  # Ensure there would be no "max session" error
 
             _LOGGER.debug(
@@ -941,7 +945,10 @@ class Host:
                         if self.api_version("disableAutoFocus", channel) > 0:
                             self._capabilities[channel].append("auto_focus")
                 if ptz_ver in [2, 3, 5]:
+                    self._capabilities[channel].append("tilt")
+                if ptz_ver in [2, 3, 5, 7]:
                     self._capabilities[channel].append("pan_tilt")
+                    self._capabilities[channel].append("pan")
                     if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
                         self._capabilities[channel].append("ptz_callibrate")
                     if self.api_version("GetPtzGuard", channel) > 0:
@@ -1224,6 +1231,14 @@ class Host:
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
+        if not body:
+            _LOGGER.debug(
+                "Host %s:%s: get_states, no channels connected so skipping request.",
+                self._host,
+                self._port,
+            )
+            return
+
         try:
             json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
@@ -1324,6 +1339,14 @@ class Host:
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+
+        if not body:
+            _LOGGER.debug(
+                "Host %s:%s: get_host_data, no channels connected so skipping channel specific requests.",
+                self._host,
+                self._port,
+            )
+            return
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -1524,6 +1547,14 @@ class Host:
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+
+        if not body:
+            _LOGGER.debug(
+                "Host %s:%s: get_motion_state_all_ch, no channels connected so skipping request.",
+                self._host,
+                self._port,
+            )
+            return True
 
         try:
             json_data = await self.send(body, expected_response_type="json")
