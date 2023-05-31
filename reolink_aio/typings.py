@@ -294,7 +294,7 @@ Parsed_VOD_file_name = NamedTuple(
     ],
 )
 
-VOD_download = NamedTuple("VOD_download", [("length", int), ("filename", str), ("stream", StreamReader), ("etag", str | None)])
+VOD_download = NamedTuple("VOD_download", [("length", int), ("filename", str), ("stream", StreamReader), ("etag", Optional[str])])
 
 
 class VOD_file:
@@ -399,7 +399,7 @@ class VOD_file:
             nibs = (0, 0, 8)
         else:
         #     _LOGGER.debug("%s does not match known formats", file_name)
-            return
+            return None
 
 
         triggers = VOD_trigger.NONE
