@@ -3441,7 +3441,9 @@ class Host:
             if expected_response_type == "json":
                 expected_content_type = "text/html"
             if response.content_type != expected_content_type:
-                raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
+                # looks like reolink has a typo in the firmware on my 1st GEN DUO. we will "override" for this situ.
+                if response.content_type != "apolication/octet-stream" or expected_content_type != "application/octet-stream":
+                    raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
             if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
