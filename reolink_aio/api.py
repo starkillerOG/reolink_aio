@@ -3172,48 +3172,44 @@ class Host:
         
         if bright is not None:
             if not isinstance(bright, int):
-                raise InvalidParameterError(f"set_image: sensitivity '{bright}' is not integer")
+                raise InvalidParameterError(f"set_image: bright '{bright}' is not integer")
             if bright < 0 or bright > 255:
                 raise InvalidParameterError(f"set_image: bright {bright} not in range 0...255")
             else:
-                _parameters={"bright":bright}
-                _image['Image'].update(_parameters)
+                _image['Image']['bright'] = bright
 
         if contrast is not None:
             if not isinstance(contrast, int):
-                raise InvalidParameterError(f"set_image: sensitivity '{contrast}' is not integer")
+                raise InvalidParameterError(f"set_image: contrast '{contrast}' is not integer")
             if contrast < 0 or contrast > 255:
                 raise InvalidParameterError(f"set_image: contrast {contrast} not in range 0...255")
             else:
-                _parameters={"contrast":contrast}
-                _image['Image'].update(_parameters)
+                _image['Image']['contrast'] = contrast
 
         if saturation is not None:
             if not isinstance(saturation, int):
-                raise InvalidParameterError(f"set_image: sensitivity '{saturation}' is not integer")
+                raise InvalidParameterError(f"set_image: saturation '{saturation}' is not integer")
             if saturation < 0 or saturation > 255:
                 raise InvalidParameterError(f"set_image: saturation {saturation} not in range 0...255")
             else:
-                _parameters={"saturation":saturation}
-                _image['Image'].update(_parameters)
+                _image['Image']['saturation'] = saturation
                 
         if hue is not None:
             if not isinstance(hue, int):
-                raise InvalidParameterError(f"set_image: sensitivity '{hue}' is not integer")
+                raise InvalidParameterError(f"set_image: hue '{hue}' is not integer")
             if hue < 0 or hue > 255:
                 raise InvalidParameterError(f"set_image: hue {hue} not in range 0...255")
             else:
-                _parameters={"hue":hue}
-                _image['Image'].update(_parameters)
+                _image['Image']['hue'] = hue
                 
         if sharpen is not None:
             if not isinstance(sharpen, int):
-                raise InvalidParameterError(f"set_image: sensitivity '{sharpen}' is not integer")
+                raise InvalidParameterError(f"set_image: sharpen '{sharpen}' is not integer")
             if sharpen < 0 or sharpen > 255:
                 raise InvalidParameterError(f"set_image: sharpen {sharpen} not in range 0...255")
             else:
-                _parameters={"sharpen":sharpen}
-                _image['Image'].update(_parameters)
+                _image['Image']['sharpen'] = sharpen
+
         body: typings.reolink_json = [{"cmd": "SetImage", "param": _image}]
         await self.send_setting(body)
 
