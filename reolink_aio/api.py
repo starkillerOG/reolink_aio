@@ -3165,54 +3165,49 @@ class Host:
         body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
         await self.send_setting(body)
 
-
-    async def set_image(self, channel: int, bright: int=None, contrast: int=None, saturation: int=None, hue: int=None, sharpen: int=None) -> None:
+    async def set_image(
+        self, channel: int, bright: int | None = None, contrast: int | None = None, saturation: int | None = None, hue: int | None = None, sharpen: int | None = None
+    ) -> None:
         """Set image adjustments."""
-        _image={"Image":{"channel": channel}}
-        
+        _image = {"Image": {"channel": channel}}
+
         if bright is not None:
             if not isinstance(bright, int):
                 raise InvalidParameterError(f"set_image: bright '{bright}' is not integer")
             if bright < 0 or bright > 255:
                 raise InvalidParameterError(f"set_image: bright {bright} not in range 0...255")
-            else:
-                _image['Image']['bright'] = bright
+            _image["Image"]["bright"] = bright
 
         if contrast is not None:
             if not isinstance(contrast, int):
                 raise InvalidParameterError(f"set_image: contrast '{contrast}' is not integer")
             if contrast < 0 or contrast > 255:
                 raise InvalidParameterError(f"set_image: contrast {contrast} not in range 0...255")
-            else:
-                _image['Image']['contrast'] = contrast
+            _image["Image"]["contrast"] = contrast
 
         if saturation is not None:
             if not isinstance(saturation, int):
                 raise InvalidParameterError(f"set_image: saturation '{saturation}' is not integer")
             if saturation < 0 or saturation > 255:
                 raise InvalidParameterError(f"set_image: saturation {saturation} not in range 0...255")
-            else:
-                _image['Image']['saturation'] = saturation
-                
+            _image["Image"]["saturation"] = saturation
+
         if hue is not None:
             if not isinstance(hue, int):
                 raise InvalidParameterError(f"set_image: hue '{hue}' is not integer")
             if hue < 0 or hue > 255:
                 raise InvalidParameterError(f"set_image: hue {hue} not in range 0...255")
-            else:
-                _image['Image']['hue'] = hue
-                
+            _image["Image"]["hue"] = hue
+
         if sharpen is not None:
             if not isinstance(sharpen, int):
                 raise InvalidParameterError(f"set_image: sharpen '{sharpen}' is not integer")
             if sharpen < 0 or sharpen > 255:
                 raise InvalidParameterError(f"set_image: sharpen {sharpen} not in range 0...255")
-            else:
-                _image['Image']['sharpen'] = sharpen
+            _image["Image"]["sharpen"] = sharpen
 
         body: typings.reolink_json = [{"cmd": "SetImage", "param": _image}]
         await self.send_setting(body)
-
 
     async def request_vod_files(
         self,
