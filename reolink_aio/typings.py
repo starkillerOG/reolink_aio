@@ -1,6 +1,7 @@
 """ Typings for type validation and documentation """
 from __future__ import annotations
 
+import logging
 from enum import IntFlag, auto
 from typing import Any, ClassVar, Collection, Iterator, Mapping, NamedTuple, Optional, TypedDict
 import datetime as dtc
@@ -8,6 +9,8 @@ from typing_extensions import SupportsIndex
 
 from aiohttp import StreamReader
 from .utils import reolink_time_to_datetime
+
+_LOGGER = logging.getLogger(__name__)
 
 reolink_json = list[dict[str, Any]]
 
@@ -398,7 +401,7 @@ class VOD_file:
             end_time = "000000"
             nibs = (0, 0, 8)
         else:
-        #     _LOGGER.debug("%s does not match known formats", file_name)
+            _LOGGER.debug("%s does not match known formats", file_name)
             return None
 
 
