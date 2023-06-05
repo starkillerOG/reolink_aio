@@ -1835,6 +1835,11 @@ class Host:
         body: typings.reolink_json = [{}]
         response = await self.send(body, param, expected_response_type="application/octet-stream")
 
+        if response.content_length is None:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_length' in the response")
+        if response.content_disposition is None or response.content_disposition.filename is None:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_disposition.filename' in the response")
+
         return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"))
 
     def map_host_json_response(self, json_data: typings.reolink_json):
@@ -3182,7 +3187,7 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus], list[typings.VOD_file]]:
+    ) -> tuple[list[typings.VOD_search_status], list[typings.VOD_file]]:
         """Send search VOD-files command."""
         if channel not in self._stream_channels:
             raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
@@ -3350,7 +3355,7 @@ class Host:
         param: dict[str, Any] | None = None,
         expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"] = "json",
         retry: int = RETRY_ATTEMPTS,
-    ) -> typings.reolink_json | bytes | str:
+    ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """
         If a body contains more than MAX_CHUNK_ITEMS requests, split it up in chunks.
         Otherwise you get a 'error': {'detail': 'send failed', 'rspCode': -16} response.
@@ -3492,7 +3497,7 @@ class Host:
             if expected_response_type == "json":
                 expected_content_type = "text/html"
             # Reolink typo "apolication/octet-stream" instead of "application/octet-stream"
-            if response.content_type != expected_content_type and response.content_type != "apolication/octet-stream":
+            if response.content_type not in [expected_content_type, "apolication/octet-stream"]:
                 raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
             if response.status == 502 and retry > 0:
