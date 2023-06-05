@@ -1827,6 +1827,21 @@ class Host:
             f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}",
         )
 
+    async def download_vod(self, filename: str, wanted_filename: Optional[str] = None) -> typings.VOD_download:
+        if wanted_filename is None:
+            wanted_filename = filename.replace("/", "_")
+
+        param: dict[str, Any] = {"cmd": "Download", "source": filename, "output": wanted_filename}
+        body: typings.reolink_json = [{}]
+        response = await self.send(body, param, expected_response_type="application/octet-stream")
+
+        if response.content_length is None:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_length' in the response")
+        if response.content_disposition is None or response.content_disposition.filename is None:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_disposition.filename' in the response")
+
+        return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"))
+
     def map_host_json_response(self, json_data: typings.reolink_json):
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
@@ -3216,9 +3231,9 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
-    ) -> tuple[list[typings.SearchStatus], list[typings.VOD_file]]:
+    ) -> tuple[list[typings.VOD_search_status], list[typings.VOD_file]]:
         """Send search VOD-files command."""
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
 
         if stream is None:
@@ -3254,14 +3269,15 @@ class Host:
         if "Status" not in search_result:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
 
+        statuses = [typings.VOD_search_status(status) for status in search_result["Status"]]
         if status_only:
-            return search_result["Status"], []
+            return statuses, []
 
         if "File" not in search_result:
             # When there are now recordings available in the indicated time window, "File" will not be in the response.
-            return search_result["Status"], []
+            return statuses, []
 
-        return search_result["Status"], [typings.VOD_file(file, self._host_time_difference) for file in search_result["File"]]
+        return statuses, [typings.VOD_file(file, self.timezone()) for file in search_result["File"]]
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
@@ -3331,6 +3347,16 @@ class Host:
     async def send(
         self,
         body: typings.reolink_json,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["application/octet-stream"],
+        retry: int = RETRY_ATTEMPTS,
+    ) -> aiohttp.ClientResponse:
+        ...
+
+    @overload
+    async def send(
+        self,
+        body: typings.reolink_json,
         *,
         expected_response_type: Literal["json"],
         retry: int = RETRY_ATTEMPTS,
@@ -3357,13 +3383,23 @@ class Host:
     ) -> str:
         ...
 
+    @overload
+    async def send(
+        self,
+        body: typings.reolink_json,
+        *,
+        expected_response_type: Literal["application/octet-stream"],
+        retry: int = RETRY_ATTEMPTS,
+    ) -> aiohttp.ClientResponse:
+        ...
+
     async def send(
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None = None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] = "json",
+        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"] = "json",
         retry: int = RETRY_ATTEMPTS,
-    ) -> typings.reolink_json | bytes | str:
+    ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """
         If a body contains more than MAX_CHUNK_ITEMS requests, split it up in chunks.
         Otherwise you get a 'error': {'detail': 'send failed', 'rspCode': -16} response.
@@ -3410,17 +3446,27 @@ class Host:
     ) -> str:
         ...
 
+    @overload
     async def send_chunk(
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"],
+        expected_response_type: Literal["application/octet-stream"],
         retry: int,
-    ) -> typings.reolink_json | bytes | str:
+    ) -> aiohttp.ClientResponse:
+        ...
+
+    async def send_chunk(
+        self,
+        body: typings.reolink_json,
+        param: dict[str, Any] | None,
+        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"],
+        retry: int,
+    ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """Generic send method."""
         retry = retry - 1
 
-        if expected_response_type == "image/jpeg":
+        if expected_response_type in ["image/jpeg", "application/octet-stream"]:
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
         else:
@@ -3449,6 +3495,11 @@ class Host:
                     response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
 
                 data = await response.read()  # returns bytes
+            elif expected_response_type == "application/octet-stream":
+                async with self._send_mutex:
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
+
+                data = ""  # Response will be a file and be large, pass the response instead of reading it here.
             else:
                 _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
 
@@ -3460,8 +3511,8 @@ class Host:
             _LOGGER.debug("%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).", self.nvr_name, self._host, self._port, response.status, response.content_type)
             if cur_command == "Search" and len(data) > 500:
                 _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (VOD search) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
-            elif cur_command == "Snap":
-                _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (snapshot) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
+            elif cur_command in ["Snap", "Download"]:
+                _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (snapshot/download) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
             else:
                 _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, data)
 
@@ -3489,7 +3540,8 @@ class Host:
             expected_content_type: str = expected_response_type
             if expected_response_type == "json":
                 expected_content_type = "text/html"
-            if response.content_type != expected_content_type:
+            # Reolink typo "apolication/octet-stream" instead of "application/octet-stream"
+            if response.content_type not in [expected_content_type, "apolication/octet-stream"]:
                 raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
             if response.status == 502 and retry > 0:
@@ -3522,6 +3574,9 @@ class Host:
 
             if expected_response_type == "text/html" and isinstance(data, str):
                 return data
+
+            if expected_response_type == "application/octet-stream":
+                return response
 
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
