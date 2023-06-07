@@ -1583,8 +1583,75 @@ class Host:
         self.map_channels_json_response(json_data, channels)
         return True
 
+    async def _check_reolink_firmware(self):
+        """Check for new firmware from reolink.com"""
+        if self._aiohttp_session.closed:
+            self._aiohttp_session = self._get_aiohttp_session()
+
+        request_URL = "https://reolink.com/wp-json/reo-v2/download/hardware-version/selection-list"
+        response = await self._aiohttp_session.get(url=request_URL)
+        
+        if response.content_type != "application/json" or response.status != 200:
+            _LOGGER.debug("Could not get firmware hardware version list from reolink.com, HTTP status %s, content_type %s", response.status , response.content_type)
+            response.release()
+            return
+
+        data = await response.text()
+
+        try:
+            json_data = json.loads(data)
+        except (TypeError, json.JSONDecodeError) as err:
+            _LOGGER.debug("Error translating JSON response from reolink.com: %s, data:\n%s\n", str(err), data)
+            return
+
+        if json_data.get("result", {}).get("code") != 0:
+            _LOGGER.debug("Received error code when requesting firmware hardware version list from reolink.com: %s, data:\n%s\n", str(err), json_data)
+            return
+        
+        hardware_id = None
+        model_id = None
+        for device in json_data["data"]:
+            if device["title"] == self.hardware_version and device["dlProduct"]["title"].startswith(self.model):
+                hardware_id = device["id"]
+                model_id = device["dlProduct"]["id"]
+                break
+
+        if hardware_id is None or model_id is None:
+            _LOGGER.debug("Could not find model '%s' hardware '%s' in list from reolink.com", self.model, self.hardware_version)
+
+        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={model_id}&hardwareVersion={hardware_id}&lang=en"
+        response = await self._aiohttp_session.get(url=request_URL)
+
+        if response.content_type != "application/json" or response.status != 200:
+            _LOGGER.debug("Could not get firmware info from reolink.com, HTTP status %s, content_type %s", response.status , response.content_type)
+            response.release()
+            return
+
+        data = await response.text()
+
+        try:
+            json_data = json.loads(data)
+        except (TypeError, json.JSONDecodeError) as err:
+            _LOGGER.debug("Error translating firmware info JSON response from reolink.com: %s, data:\n%s\n", str(err), data)
+            return
+
+        if json_data.get("result", {}).get("code") != 0:
+            _LOGGER.debug("Received error code when requesting firmware info from reolink.com: %s, data:\n%s\n", str(err), json_data)
+            return
+            
+        firmware_info = json_data["data"][0]["firmwares"][0]
+        hw_ver = firmware_info["hardwareVersion"][0]["title"]
+        mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"]
+        if hw_ver != self.hardware_version or not mod_ver.startswith(self.model):
+            _LOGGER.debug("Hardware version of firmware info from reolink.com does not match: '%s' != '%s' or '%s' != '%s'", hw_ver, self.hardware_version, mod_ver, self.model)
+            return
+        
+        print(firmware_info["version"])
+        print(firmware_info["url"])
+        print(firmware_info["new"])
+
     async def check_new_firmware(self) -> bool | str:
-        """check for new firmware, returns False if no new firmware available."""
+        """check for new firmware using camera API, returns False if no new firmware available."""
         if not self.supported(None, "update"):
             raise NotSupportedError(f"check_new_firmware: not supported by {self.nvr_name}")
 
@@ -1836,8 +1903,10 @@ class Host:
         response = await self.send(body, param, expected_response_type="application/octet-stream")
 
         if response.content_length is None:
+            response.release()
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_length' in the response")
         if response.content_disposition is None or response.content_disposition.filename is None:
+            response.release()
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_disposition.filename' in the response")
 
         return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"))
@@ -3524,6 +3593,7 @@ class Host:
                         '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or 'detail" : "please login first' in data
                     ) and cur_command != "Logout"
                 if login_err:
+                    response.release()
                     if is_login_logout:
                         raise CredentialsInvalidError()
 
@@ -3542,14 +3612,17 @@ class Host:
                 expected_content_type = "text/html"
             # Reolink typo "apolication/octet-stream" instead of "application/octet-stream"
             if response.content_type not in [expected_content_type, "apolication/octet-stream"]:
+                response.release()
                 raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
             if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
+                response.release()
                 await self.expire_session()
                 return await self.send(body, param, expected_response_type, retry)
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
+                response.release()
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
 
             if expected_response_type == "json" and isinstance(data, str):
@@ -3576,8 +3649,10 @@ class Host:
                 return data
 
             if expected_response_type == "application/octet-stream":
+                # response needs to be read or released from the calling function
                 return response
 
+            response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
             await self.expire_session()
