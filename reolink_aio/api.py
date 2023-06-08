@@ -31,6 +31,8 @@ from .exceptions import (
     ReolinkError,
     SubscriptionError,
     UnexpectedDataError,
+    ReolinkConnectionError,
+    ReolinkTimeoutError,
 )
 from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
 from .utils import datetime_to_reolink_time, reolink_time_to_datetime
@@ -759,7 +761,7 @@ class Host:
                 json_data = await self.send(body, param, expected_response_type="json")
             except ApiError as err:
                 raise LoginError(f"API error during login of host {self._host}:{self._port}: {str(err)}") from err
-            except aiohttp.ClientConnectorError as err:
+            except ReolinkConnectionError as err:
                 raise LoginError(f"Client connector error during login of host {self._host}:{self._port}: {str(err)}") from err
             except InvalidContentTypeError as err:
                 raise LoginError(f"Invalid content error during login of host {self._host}:{self._port}: {str(err)}") from err
@@ -3303,7 +3305,7 @@ class Host:
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
                 rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
                 detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
-                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, " f"response code {rspCode}/{detail}")
+                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}")
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
 
@@ -3582,7 +3584,7 @@ class Host:
         except aiohttp.ClientConnectorError as err:
             await self.expire_session()
             _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(err))
-            raise err
+            raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}") from err
         except asyncio.TimeoutError as err:
             await self.expire_session()
             _LOGGER.error(
@@ -3590,7 +3592,7 @@ class Host:
                 self._host,
                 self._port,
             )
-            raise err
+            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: Timeout error: {str(err)}") from err
         except ApiError as err:
             await self.expire_session()
             _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
