@@ -34,7 +34,7 @@ from .exceptions import (
     ReolinkConnectionError,
     ReolinkTimeoutError,
 )
-from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
+from .software_version import SoftwareVersion, NewSoftwareVersion, MINIMUM_FIRMWARE
 from .utils import datetime_to_reolink_time, reolink_time_to_datetime
 
 MANUFACTURER = "Reolink"
@@ -132,6 +132,8 @@ class Host:
         self._nvr_hw_version: Optional[str] = None
         self._nvr_sw_version: Optional[str] = None
         self._nvr_sw_version_object: Optional[SoftwareVersion] = None
+        self._nvr_sw_hardware_id: Optional[int] = None
+        self._nvr_sw_model_id: Optional[int] = None
 
         ##############################################################################
         # Channels of cameras, used in this NVR ([0] for a directly connected camera)
@@ -1585,104 +1587,78 @@ class Host:
         self.map_channels_json_response(json_data, channels)
         return True
 
-    async def _check_reolink_firmware(self):
+
+
+
+
+    async def _check_reolink_firmware(self) -> NewSoftwareVersion:
         """Check for new firmware from reolink.com"""
-        if self._aiohttp_session.closed:
-            self._aiohttp_session = self._get_aiohttp_session()
+        if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
+            request_URL = "https://reolink.com/wp-json/reo-v2/download/hardware-version/selection-list"
+            json_data = await self.send_reolink_com(request_URL)
 
-        request_URL = "https://reolink.com/wp-json/reo-v2/download/hardware-version/selection-list"
-        response = await self._aiohttp_session.get(url=request_URL)
-        
-        if response.content_type != "application/json" or response.status != 200:
-            _LOGGER.debug("Could not get firmware hardware version list from reolink.com, HTTP status %s, content_type %s", response.status , response.content_type)
-            response.release()
-            return
+            for device in json_data["data"]:
+                if device["title"] == self.hardware_version and device["dlProduct"]["title"].startswith(self.model):
+                    self._nvr_sw_hardware_id = device["id"]
+                    self._nvr_sw_model_id = device["dlProduct"]["id"]
+                    break
 
-        data = await response.text()
+        if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
+            raise UnexpectedDataError(f"Could not find model '{self.model}' hardware '{self.hardware_version}' in list from reolink.com")
 
-        try:
-            json_data = json.loads(data)
-        except (TypeError, json.JSONDecodeError) as err:
-            _LOGGER.debug("Error translating JSON response from reolink.com: %s, data:\n%s\n", str(err), data)
-            return
-
-        if json_data.get("result", {}).get("code") != 0:
-            _LOGGER.debug("Received error code when requesting firmware hardware version list from reolink.com: %s, data:\n%s\n", str(err), json_data)
-            return
-        
-        hardware_id = None
-        model_id = None
-        for device in json_data["data"]:
-            if device["title"] == self.hardware_version and device["dlProduct"]["title"].startswith(self.model):
-                hardware_id = device["id"]
-                model_id = device["dlProduct"]["id"]
-                break
-
-        if hardware_id is None or model_id is None:
-            _LOGGER.debug("Could not find model '%s' hardware '%s' in list from reolink.com", self.model, self.hardware_version)
-
-        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={model_id}&hardwareVersion={hardware_id}&lang=en"
-        response = await self._aiohttp_session.get(url=request_URL)
-
-        if response.content_type != "application/json" or response.status != 200:
-            _LOGGER.debug("Could not get firmware info from reolink.com, HTTP status %s, content_type %s", response.status , response.content_type)
-            response.release()
-            return
-
-        data = await response.text()
-
-        try:
-            json_data = json.loads(data)
-        except (TypeError, json.JSONDecodeError) as err:
-            _LOGGER.debug("Error translating firmware info JSON response from reolink.com: %s, data:\n%s\n", str(err), data)
-            return
-
-        if json_data.get("result", {}).get("code") != 0:
-            _LOGGER.debug("Received error code when requesting firmware info from reolink.com: %s, data:\n%s\n", str(err), json_data)
-            return
+        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._nvr_sw_model_id}&hardwareVersion={self._nvr_sw_hardware_id}&lang=en"
+        json_data = await self.send_reolink_com(request_URL)
             
         firmware_info = json_data["data"][0]["firmwares"][0]
         hw_ver = firmware_info["hardwareVersion"][0]["title"]
         mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"]
         if hw_ver != self.hardware_version or not mod_ver.startswith(self.model):
-            _LOGGER.debug("Hardware version of firmware info from reolink.com does not match: '%s' != '%s' or '%s' != '%s'", hw_ver, self.hardware_version, mod_ver, self.model)
-            return
+            raise UnexpectedDataError(f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{self.hardware_version}' or '{mod_ver}' != '{self.model}'")
         
-        print(firmware_info["version"])
-        print(firmware_info["url"])
-        print(firmware_info["new"])
+        return NewSoftwareVersion(firmware_info["version"], download_url = firmware_info["url"], release_notes = firmware_info["new"])
 
-    async def check_new_firmware(self) -> bool | str:
+    async def check_new_firmware(self) -> bool | NewSoftwareVersion | str:
         """check for new firmware using camera API, returns False if no new firmware available."""
-        if not self.supported(None, "update"):
-            raise NotSupportedError(f"check_new_firmware: not supported by {self.nvr_name}")
+        new_firmware = 0
+        if self.supported(None, "update"):
+            body: typings.reolink_json = [
+                {"cmd": "CheckFirmware"},
+                {"cmd": "GetDevInfo", "action": 0, "param": {}},
+            ]
 
-        body: typings.reolink_json = [
-            {"cmd": "CheckFirmware"},
-            {"cmd": "GetDevInfo", "action": 0, "param": {}},
-        ]
+            try:
+                json_data = await self.send(body, expected_response_type="json")
+            except InvalidContentTypeError as err:
+                raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
+            except NoDataError as err:
+                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
+
+            self.map_host_json_response(json_data)
+
+            try:
+                new_firmware = json_data[0]["value"]["newFirmware"]
+            except KeyError as err:
+                raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
 
         try:
-            json_data = await self.send(body, expected_response_type="json")
-        except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
-        except NoDataError as err:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
+            latest_software_version = await self._check_reolink_firmware()
+        except ReolinkError as err:
+            _LOGGER.debug(err)
+            if new_firmware == 0:
+                return False
+            if new_firmware == 1:
+                return "New firmware available"
+            return str(new_firmware)
 
-        self.map_host_json_response(json_data)
+        if self._nvr_sw_version_object is None or self._nvr_sw_version_object >= latest_software_version:
+            if new_firmware == 0:
+                return False
+            if new_firmware == 1:
+                return "New firmware available"
+            return str(new_firmware)
 
-        try:
-            new_firmware = json_data[0]["value"]["newFirmware"]
-        except KeyError as err:
-            raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
-
-        if new_firmware == 0:
-            return False
-
-        if new_firmware == 1:
-            return "New firmware available"
-
-        return str(new_firmware)
+        latest_software_version.online_update_available = new_firmware == 1
+        return latest_software_version
 
     async def update_firmware(self) -> None:
         """check for new firmware."""
@@ -3684,6 +3660,55 @@ class Host:
             await self.expire_session()
             _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
             raise err
+
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/json"] = "application/json",
+    ) -> dict[str, Any]:
+        """Generic send method for reolink.com site."""
+
+        if self._aiohttp_session.closed:
+            self._aiohttp_session = self._get_aiohttp_session()
+
+        try:
+            response = await self._aiohttp_session.get(url=URL)
+        except aiohttp.ClientConnectorError as err:
+            raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Timeout requesting {URL}: {str(err)}") from err
+        
+        if response.status != 200:
+            response.release()
+            raise ApiError(f"Request to {URL} returned HTTP status ERROR code {response.status}/{response.reason}")
+        
+        if response.content_type != expected_response_type:
+            response.release()
+            raise InvalidContentTypeError(f"Request to {URL}, expected type '{expected_response_type}' but received '{response.content_type}'")
+
+        try:
+            data = await response.text()
+        except aiohttp.ClientConnectorError as err:
+            raise ReolinkConnectionError(f"Connetion error reading response from {URL}: {str(err)}") from err
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Timeout reading response from {URL}: {str(err)}") from err
+
+        try:
+            json_data = json.loads(data)
+        except (TypeError, json.JSONDecodeError) as err:
+            raise InvalidContentTypeError(
+                f"Error translating JSON response: {str(err)}, from {URL}, "
+                f"content type '{response.content_type}', data:\n{data}\n"
+            ) from err
+
+        if json_data is None:
+            raise NoDataError(f"Request to {URL} returned no data: {data}")
+
+        resp_code = json_data.get("result", {}).get("code")
+        if resp_code != 0:
+            raise ApiError(f"Request to {URL} returned error code {resp_code}, data:\n{json_data}")
+        
+        return json_data
 
     ##############################################################################
     # SUBSCRIPTION managing
