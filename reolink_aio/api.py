@@ -997,6 +997,17 @@ class Host:
             if channel in self._motion_detection_states:
                 self._capabilities[channel].append("motion_detection")
 
+            if self.api_version("ispHue", channel) > 0:
+                self._capabilities[channel].append("isp_hue")
+            if self.api_version("ispSatruation", channel) > 0:
+                self._capabilities[channel].append("isp_satruation")
+            if self.api_version("ispSharpen", channel) > 0:
+                self._capabilities[channel].append("isp_sharpen")
+            if self.api_version("ispContrast", channel) > 0:
+                self._capabilities[channel].append("isp_contrast")
+            if self.api_version("ispBright", channel) > 0:
+                self._capabilities[channel].append("isp_bright")
+
             if self.daynight_state(channel) is not None:
                 self._capabilities[channel].append("dayNight")
 
@@ -3232,6 +3243,8 @@ class Host:
         _image = {"Image": {"channel": channel}}
 
         if bright is not None:
+            if not self.supported(channel, "isp_bright"):
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(bright, int):
                 raise InvalidParameterError(f"set_image: bright '{bright}' is not integer")
             if bright < 0 or bright > 255:
@@ -3239,6 +3252,8 @@ class Host:
             _image["Image"]["bright"] = bright
 
         if contrast is not None:
+            if not self.supported(channel, "isp_contrast"):
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(contrast, int):
                 raise InvalidParameterError(f"set_image: contrast '{contrast}' is not integer")
             if contrast < 0 or contrast > 255:
@@ -3246,6 +3261,8 @@ class Host:
             _image["Image"]["contrast"] = contrast
 
         if saturation is not None:
+            if not self.supported(channel, "isp_satruation"):
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(saturation, int):
                 raise InvalidParameterError(f"set_image: saturation '{saturation}' is not integer")
             if saturation < 0 or saturation > 255:
@@ -3253,6 +3270,8 @@ class Host:
             _image["Image"]["saturation"] = saturation
 
         if hue is not None:
+            if not self.supported(channel, "isp_hue"):
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(hue, int):
                 raise InvalidParameterError(f"set_image: hue '{hue}' is not integer")
             if hue < 0 or hue > 255:
@@ -3260,6 +3279,8 @@ class Host:
             _image["Image"]["hue"] = hue
 
         if sharpen is not None:
+            if not self.supported(channel, "isp_sharpen"):
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(sharpen, int):
                 raise InvalidParameterError(f"set_image: sharpen '{sharpen}' is not integer")
             if sharpen < 0 or sharpen > 255:
