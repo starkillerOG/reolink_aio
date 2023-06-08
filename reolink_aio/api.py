@@ -34,7 +34,7 @@ from .exceptions import (
     ReolinkConnectionError,
     ReolinkTimeoutError,
 )
-from .software_version import SoftwareVersion, MINIMUM_FIRMWARE
+from .software_version import SoftwareVersion, NewSoftwareVersion, MINIMUM_FIRMWARE
 from .utils import datetime_to_reolink_time, reolink_time_to_datetime
 
 MANUFACTURER = "Reolink"
@@ -132,6 +132,8 @@ class Host:
         self._nvr_hw_version: Optional[str] = None
         self._nvr_sw_version: Optional[str] = None
         self._nvr_sw_version_object: Optional[SoftwareVersion] = None
+        self._nvr_sw_hardware_id: Optional[int] = None
+        self._nvr_sw_model_id: Optional[int] = None
 
         ##############################################################################
         # Channels of cameras, used in this NVR ([0] for a directly connected camera)
@@ -1585,37 +1587,76 @@ class Host:
         self.map_channels_json_response(json_data, channels)
         return True
 
-    async def check_new_firmware(self) -> bool | str:
-        """check for new firmware, returns False if no new firmware available."""
-        if not self.supported(None, "update"):
-            raise NotSupportedError(f"check_new_firmware: not supported by {self.nvr_name}")
+    async def _check_reolink_firmware(self) -> NewSoftwareVersion:
+        """Check for new firmware from reolink.com"""
+        if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
+            request_URL = "https://reolink.com/wp-json/reo-v2/download/hardware-version/selection-list"
+            json_data = await self.send_reolink_com(request_URL)
 
-        body: typings.reolink_json = [
-            {"cmd": "CheckFirmware"},
-            {"cmd": "GetDevInfo", "action": 0, "param": {}},
-        ]
+            for device in json_data["data"]:
+                if device["title"] == self.hardware_version and device["dlProduct"]["title"].startswith(self.model):
+                    self._nvr_sw_hardware_id = device["id"]
+                    self._nvr_sw_model_id = device["dlProduct"]["id"]
+                    break
+
+        if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
+            raise UnexpectedDataError(f"Could not find model '{self.model}' hardware '{self.hardware_version}' in list from reolink.com")
+
+        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._nvr_sw_model_id}&hardwareVersion={self._nvr_sw_hardware_id}&lang=en"
+        json_data = await self.send_reolink_com(request_URL)
+
+        firmware_info = json_data["data"][0]["firmwares"][0]
+        hw_ver = firmware_info["hardwareVersion"][0]["title"]
+        mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"]
+        if hw_ver != self.hardware_version or not mod_ver.startswith(self.model):
+            raise UnexpectedDataError(
+                f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{self.hardware_version}' or '{mod_ver}' != '{self.model}'"
+            )
+
+        return NewSoftwareVersion(firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"])
+
+    async def check_new_firmware(self) -> bool | NewSoftwareVersion | str:
+        """check for new firmware using camera API, returns False if no new firmware available."""
+        new_firmware = 0
+        if self.supported(None, "update"):
+            body: typings.reolink_json = [
+                {"cmd": "CheckFirmware"},
+                {"cmd": "GetDevInfo", "action": 0, "param": {}},
+            ]
+
+            try:
+                json_data = await self.send(body, expected_response_type="json")
+            except InvalidContentTypeError as err:
+                raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
+            except NoDataError as err:
+                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
+
+            self.map_host_json_response(json_data)
+
+            try:
+                new_firmware = json_data[0]["value"]["newFirmware"]
+            except KeyError as err:
+                raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
 
         try:
-            json_data = await self.send(body, expected_response_type="json")
-        except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
-        except NoDataError as err:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
+            latest_software_version = await self._check_reolink_firmware()
+        except ReolinkError as err:
+            _LOGGER.debug(err)
+            if new_firmware == 0:
+                return False
+            if new_firmware == 1:
+                return "New firmware available"
+            return str(new_firmware)
 
-        self.map_host_json_response(json_data)
+        if self._nvr_sw_version_object is None or self._nvr_sw_version_object >= latest_software_version:
+            if new_firmware == 0:
+                return False
+            if new_firmware == 1:
+                return "New firmware available"
+            return str(new_firmware)
 
-        try:
-            new_firmware = json_data[0]["value"]["newFirmware"]
-        except KeyError as err:
-            raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
-
-        if new_firmware == 0:
-            return False
-
-        if new_firmware == 1:
-            return "New firmware available"
-
-        return str(new_firmware)
+        latest_software_version.online_update_available = new_firmware == 1
+        return latest_software_version
 
     async def update_firmware(self) -> None:
         """check for new firmware."""
@@ -1838,8 +1879,10 @@ class Host:
         response = await self.send(body, param, expected_response_type="application/octet-stream")
 
         if response.content_length is None:
+            response.release()
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_length' in the response")
         if response.content_disposition is None or response.content_disposition.filename is None:
+            response.release()
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_disposition.filename' in the response")
 
         return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"))
@@ -3526,6 +3569,7 @@ class Host:
                         '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or 'detail" : "please login first' in data
                     ) and cur_command != "Logout"
                 if login_err:
+                    response.release()
                     if is_login_logout:
                         raise CredentialsInvalidError()
 
@@ -3544,14 +3588,17 @@ class Host:
                 expected_content_type = "text/html"
             # Reolink typo "apolication/octet-stream" instead of "application/octet-stream"
             if response.content_type not in [expected_content_type, "apolication/octet-stream"]:
+                response.release()
                 raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
 
             if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
+                response.release()
                 await self.expire_session()
                 return await self.send(body, param, expected_response_type, retry)
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
+                response.release()
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
 
             if expected_response_type == "json" and isinstance(data, str):
@@ -3578,8 +3625,10 @@ class Host:
                 return data
 
             if expected_response_type == "application/octet-stream":
+                # response needs to be read or released from the calling function
                 return response
 
+            response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
             await self.expire_session()
@@ -3609,6 +3658,52 @@ class Host:
             await self.expire_session()
             _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
             raise err
+
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/json"] = "application/json",
+    ) -> dict[str, Any]:
+        """Generic send method for reolink.com site."""
+
+        if self._aiohttp_session.closed:
+            self._aiohttp_session = self._get_aiohttp_session()
+
+        try:
+            response = await self._aiohttp_session.get(url=URL)
+        except aiohttp.ClientConnectorError as err:
+            raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Timeout requesting {URL}: {str(err)}") from err
+
+        if response.status != 200:
+            response.release()
+            raise ApiError(f"Request to {URL} returned HTTP status ERROR code {response.status}/{response.reason}")
+
+        if response.content_type != expected_response_type:
+            response.release()
+            raise InvalidContentTypeError(f"Request to {URL}, expected type '{expected_response_type}' but received '{response.content_type}'")
+
+        try:
+            data = await response.text()
+        except aiohttp.ClientConnectorError as err:
+            raise ReolinkConnectionError(f"Connetion error reading response from {URL}: {str(err)}") from err
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Timeout reading response from {URL}: {str(err)}") from err
+
+        try:
+            json_data = json.loads(data)
+        except (TypeError, json.JSONDecodeError) as err:
+            raise InvalidContentTypeError(f"Error translating JSON response: {str(err)}, from {URL}, " f"content type '{response.content_type}', data:\n{data}\n") from err
+
+        if json_data is None:
+            raise NoDataError(f"Request to {URL} returned no data: {data}")
+
+        resp_code = json_data.get("result", {}).get("code")
+        if resp_code != 0:
+            raise ApiError(f"Request to {URL} returned error code {resp_code}, data:\n{json_data}")
+
+        return json_data
 
     ##############################################################################
     # SUBSCRIPTION managing
