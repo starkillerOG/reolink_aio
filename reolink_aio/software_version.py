@@ -112,10 +112,11 @@ MINIMUM_FIRMWARE = {
     },
 }
 
-DEFAULT_VERSION_DATA = datetime(2000, 1, 1, 0, 0) #2000-01-01 00:00
+DEFAULT_VERSION_DATA = datetime(2000, 1, 1, 0, 0)  # 2000-01-01 00:00
 
 version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_(?P<date>[0-9]+)")
 version_regex_no_date = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)")
+
 
 class SoftwareVersion:
     """SoftwareVersion class"""

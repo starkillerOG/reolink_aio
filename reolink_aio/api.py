@@ -1587,10 +1587,6 @@ class Host:
         self.map_channels_json_response(json_data, channels)
         return True
 
-
-
-
-
     async def _check_reolink_firmware(self) -> NewSoftwareVersion:
         """Check for new firmware from reolink.com"""
         if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
@@ -1608,14 +1604,16 @@ class Host:
 
         request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._nvr_sw_model_id}&hardwareVersion={self._nvr_sw_hardware_id}&lang=en"
         json_data = await self.send_reolink_com(request_URL)
-            
+
         firmware_info = json_data["data"][0]["firmwares"][0]
         hw_ver = firmware_info["hardwareVersion"][0]["title"]
         mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"]
         if hw_ver != self.hardware_version or not mod_ver.startswith(self.model):
-            raise UnexpectedDataError(f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{self.hardware_version}' or '{mod_ver}' != '{self.model}'")
-        
-        return NewSoftwareVersion(firmware_info["version"], download_url = firmware_info["url"], release_notes = firmware_info["new"])
+            raise UnexpectedDataError(
+                f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{self.hardware_version}' or '{mod_ver}' != '{self.model}'"
+            )
+
+        return NewSoftwareVersion(firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"])
 
     async def check_new_firmware(self) -> bool | NewSoftwareVersion | str:
         """check for new firmware using camera API, returns False if no new firmware available."""
@@ -3677,11 +3675,11 @@ class Host:
             raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Timeout requesting {URL}: {str(err)}") from err
-        
+
         if response.status != 200:
             response.release()
             raise ApiError(f"Request to {URL} returned HTTP status ERROR code {response.status}/{response.reason}")
-        
+
         if response.content_type != expected_response_type:
             response.release()
             raise InvalidContentTypeError(f"Request to {URL}, expected type '{expected_response_type}' but received '{response.content_type}'")
@@ -3696,10 +3694,7 @@ class Host:
         try:
             json_data = json.loads(data)
         except (TypeError, json.JSONDecodeError) as err:
-            raise InvalidContentTypeError(
-                f"Error translating JSON response: {str(err)}, from {URL}, "
-                f"content type '{response.content_type}', data:\n{data}\n"
-            ) from err
+            raise InvalidContentTypeError(f"Error translating JSON response: {str(err)}, from {URL}, " f"content type '{response.content_type}', data:\n{data}\n") from err
 
         if json_data is None:
             raise NoDataError(f"Request to {URL} returned no data: {data}")
@@ -3707,7 +3702,7 @@ class Host:
         resp_code = json_data.get("result", {}).get("code")
         if resp_code != 0:
             raise ApiError(f"Request to {URL} returned error code {resp_code}, data:\n{json_data}")
-        
+
         return json_data
 
     ##############################################################################
