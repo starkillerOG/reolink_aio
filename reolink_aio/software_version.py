@@ -112,8 +112,10 @@ MINIMUM_FIRMWARE = {
     },
 }
 
+DEFAULT_VERSION_DATA = datetime(2000, 1, 1, 0, 0)  # 2000-01-01 00:00
 
 version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_(?P<date>[0-9]+)")
+version_regex_no_date = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)")
 
 
 class SoftwareVersion:
@@ -125,7 +127,7 @@ class SoftwareVersion:
         self.middle = 0
         self.minor = 0
         self.build = 0
-        self.date = datetime.strptime("00010100", "%y%m%d%H")
+        self.date = DEFAULT_VERSION_DATA
 
         if version_string is None:
             self.is_unknown = True
@@ -137,9 +139,10 @@ class SoftwareVersion:
             return
 
         match = version_regex.match(self.version_string)
-
         if match is None:
-            raise UnexpectedDataError(f"version_string has invalid version format: {version_string}")
+            match = version_regex_no_date.match(self.version_string)
+            if match is None:
+                raise UnexpectedDataError(f"version_string has invalid version format: {version_string}")
 
         self.major = int(match.group("major"))
         self.middle = int(match.group("middle"))
@@ -147,7 +150,10 @@ class SoftwareVersion:
         build = match.group("build")
         if build is not None:
             self.build = int(build)
-        date = match.group("date")
+        try:
+            date = match.group("date")
+        except IndexError:
+            date = None
         if date is not None:
             try:
                 self.date = datetime.strptime(date, "%y%m%d%M")
@@ -171,7 +177,7 @@ class SoftwareVersion:
                         return True
 
         # for beta firmware releases
-        if self.date > target_version.date:
+        if self.date > target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
 
         return False
@@ -190,7 +196,7 @@ class SoftwareVersion:
                         return True
 
         # for beta firmware releases
-        if self.date >= target_version.date:
+        if self.date >= target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
 
         return False
@@ -209,7 +215,7 @@ class SoftwareVersion:
                         return True
 
         # for beta firmware releases
-        if self.date < target_version.date:
+        if self.date < target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
 
         return False
@@ -228,7 +234,7 @@ class SoftwareVersion:
                         return True
 
         # for beta firmware releases
-        if self.date <= target_version.date:
+        if self.date <= target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
 
         return False
@@ -263,3 +269,13 @@ class SoftwareVersion:
 
     def generate_str_from_numbers(self):
         return f"{self.major}.{self.middle}.{self.minor}-{self.build}"
+
+
+class NewSoftwareVersion(SoftwareVersion):
+    """SoftwareVersion class for available software updates"""
+
+    def __init__(self, version_string: str | None, download_url: str | None = None, release_notes: str = "", online_update_available: bool = False):
+        self.download_url = download_url
+        self.release_notes = release_notes
+        self.online_update_available = online_update_available
+        super().__init__(version_string)

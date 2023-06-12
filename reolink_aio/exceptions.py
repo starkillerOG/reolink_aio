@@ -1,4 +1,5 @@
 """Reolink NVR/camera API."""
+from asyncio import TimeoutError as AsyncioTimeoutError
 
 
 class ReolinkError(Exception):
@@ -39,3 +40,11 @@ class NotSupportedError(ReolinkError):
 
 class SubscriptionError(ReolinkError):
     """Raised when a function is called with invalid parameters"""
+
+
+class ReolinkConnectionError(ReolinkError):
+    """Wraps around aiohttp.ClientConnectorError for API calls"""
+
+
+class ReolinkTimeoutError(ReolinkError, AsyncioTimeoutError):
+    """Wraps around asyncio.TimeoutError for API calls"""
