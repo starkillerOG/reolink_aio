@@ -4048,8 +4048,13 @@ class Host:
 
         return await self.ONVIF_event_callback(response, root)
 
-    async def unsubscribe(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] = PUSH):
+    async def unsubscribe(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] | Literal[ALL] = ALL):
         """Unsubscribe from ONVIF events."""
+        if sub_type == ALL:
+            await self.unsubscribe(PUSH)
+            await self.unsubscribe(LONG_POLL)
+            return
+
         if sub_type in self._subscription_manager_url:
             headers = templates.HEADERS
             headers.update(templates.UNSUBSCRIBE_ACTION)
@@ -4066,16 +4071,11 @@ class Host:
 
         self._subscription_termination_time.pop(sub_type, None)
         self._subscription_time_difference.pop(sub_type, None)
-
-        return True
+        return
 
     async def unsubscribe_all(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] | Literal[ALL] = ALL):
         """Unsubscribe from ONVIF events. Normally only needed during entry initialization/setup, to free possibly dangling subscriptions."""
-        if sub_type == ALL:
-            await self.unsubscribe(PUSH)
-            await self.unsubscribe(LONG_POLL)
-        else:
-            await self.unsubscribe(sub_type)
+        await self.unsubscribe(sub_type)
 
         if self._is_nvr and sub_type in [PUSH, ALL]:
             _LOGGER.debug("Attempting to unsubscribe previous (dead) sessions notifications...")
