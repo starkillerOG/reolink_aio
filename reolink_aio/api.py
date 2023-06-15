@@ -3891,7 +3891,7 @@ class Host:
         parameters = {
             "InitialTerminationTime": f"PT{SUBSCRIPTION_TERMINATION_TIME}M",
         }
-        if webhook_url is not None:
+        if webhook_url is not None and sub_type == PUSH:
             parameters["Address"] = webhook_url
 
         parameters.update(await self.get_digest())
