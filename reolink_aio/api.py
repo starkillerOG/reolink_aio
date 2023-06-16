@@ -3813,7 +3813,7 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data, logger=True) -> str:
+    async def subscription_send(self, headers, data) -> str:
         """Send subscription data to the camera."""
         if self._subscribe_url is None:
             await self.get_state("GetNetPort")
@@ -3856,8 +3856,8 @@ class Host:
 
         except aiohttp.ClientConnectorError as err:
             raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}.") from err
-        except asyncio.TimeoutError:
-            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.")
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.") from err
 
     async def subscribe(self, webhook_url: str | None = None, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push, retry: bool = False):
         """Subscribe to ONVIF events."""
@@ -3884,7 +3884,7 @@ class Host:
             response = await self.subscription_send(headers, xml)
         except ReolinkError as err:
             if not retry:
-                _LOGGER.debug(f"Reolink {sub_type} subscribe error: {str(err)}")
+                _LOGGER.debug("Reolink %s subscribe error: %s", sub_type, str(err))
                 await self.unsubscribe_all(sub_type)
                 return await self.subscribe(webhook_url, sub_type, retry=True)
             raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}: {str(err)}") from err
