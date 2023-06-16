@@ -4032,12 +4032,12 @@ class Host:
         parameters.update(await self.get_digest())
 
         xml = template.format(**parameters)
-        _LOGGER.info("Reolink %s requesting ONVIF pull point message", self.nvr_name)
+        _LOGGER.debug("Reolink %s requesting ONVIF pull point message", self.nvr_name)
 
         response = await self.subscription_send(headers, xml)
         root = XML.fromstring(response)
         if root.find(".//{http://docs.oasis-open.org/wsn/b-2}NotificationMessage") is None:
-            _LOGGER.info("Reolink %s received ONVIF pull point message without event", self.nvr_name)
+            _LOGGER.debug("Reolink %s received ONVIF pull point message without event", self.nvr_name)
             return []
 
         _LOGGER.info("Reolink %s received ONVIF pull point event", self.nvr_name)
