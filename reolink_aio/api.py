@@ -3821,36 +3821,38 @@ class Host:
         if self._subscribe_url is None:
             raise NotSupportedError(f"subscription_send: failed to retrieve subscribe_url from {self._host}:{self._port}")
 
+        _LOGGER.debug(
+            "Host %s:%s: subscription request data:\n%s\n",
+            self._host,
+            self._port,
+            data,
+        )
+
+        if self._aiohttp_session.closed:
+            self._aiohttp_session = self._get_aiohttp_session()
+
         try:
-            async with aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
-                _LOGGER.debug(
-                    "Host %s:%s: subscription request data:\n%s\n",
-                    self._host,
-                    self._port,
-                    data,
+            async with self._send_mutex:
+                response = await self._aiohttp_session.post(
+                    url=self._subscribe_url,
+                    data=data,
+                    headers=headers,
+                    allow_redirects=False,
                 )
 
-                async with self._send_mutex:
-                    response = await session.post(
-                        url=self._subscribe_url,
-                        data=data,
-                        headers=headers,
-                        allow_redirects=False,
-                    )
+            response_text = await response.text()
+            _LOGGER.debug(
+                "Host %s:%s: subscription got response status: %s. Payload:\n%s\n",
+                self._host,
+                self._port,
+                response.status,
+                response_text,
+            )
 
-                response_text = await response.text()
-                _LOGGER.debug(
-                    "Host %s:%s: subscription got response status: %s. Payload:\n%s\n",
-                    self._host,
-                    self._port,
-                    response.status,
-                    response_text,
-                )
+            if response.status != 200:
+                raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}")
 
-                if response.status != 200:
-                    raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}")
-
-                return response_text
+            return response_text
 
         except aiohttp.ClientConnectorError as err:
             raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}.") from err
