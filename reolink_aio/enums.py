@@ -3,6 +3,20 @@
 from enum import Enum
 
 
+class SubType(str, Enum):
+    """Subscription type"""
+
+    push = "push"
+    long_poll = "long_poll"
+    all = "all"
+
+    def __repr__(self):
+        return self.value
+
+    def __str__(self):
+        return self.value
+
+
 class SpotlightModeEnum(Enum):
     """Options for the spotlight mode"""
 

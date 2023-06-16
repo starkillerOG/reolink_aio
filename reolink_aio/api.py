@@ -19,7 +19,7 @@ from statistics import mean
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum
+from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -45,10 +45,6 @@ RETRY_ATTEMPTS = 3
 MAX_CHUNK_ITEMS = 40
 DEFAULT_RTMP_AUTH_METHOD = "PASSWORD"
 SUBSCRIPTION_TERMINATION_TIME = 15
-
-PUSH = "push"
-LONG_POLL = "long_poll"
-ALL = "all"
 
 MOTION_DETECTION_TYPE = "motion"
 FACE_DETECTION_TYPE = "face"
@@ -226,7 +222,7 @@ class Host:
         self._subscription_manager_url: dict[str, str] = {}
         self._subscription_termination_time: dict[str, datetime] = {}
         self._subscription_time_difference: dict[str, float] = {}
-        self._onvif_only_motion = {PUSH: True, LONG_POLL: True}
+        self._onvif_only_motion = {SubType.push: True, SubType.long_poll: True}
         self._log_once: list[str] = []
 
     ##############################################################################
@@ -2763,7 +2759,7 @@ class Host:
         await self.send_setting(body)
 
     async def set_push(self, channel: int | None, enable: bool) -> None:
-        """Set the PUSH-notifications parameter."""
+        """Set the Push-notifications parameter."""
         if not self.supported(channel, "push"):
             raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
@@ -3501,7 +3497,7 @@ class Host:
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None = None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"] = "json",
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"] = "json",
         retry: int = RETRY_ATTEMPTS,
     ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """
@@ -3564,7 +3560,7 @@ class Host:
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"],
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"],
         retry: int,
     ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """Generic send method."""
@@ -3766,11 +3762,11 @@ class Host:
 
     ##############################################################################
     # SUBSCRIPTION managing
-    def renewtimer(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] | Literal[ALL] = ALL) -> int:
+    def renewtimer(self, sub_type: SubType = SubType.all) -> int:
         """Return the renew time in seconds. Negative if expired."""
-        if sub_type == ALL:
-            t_push = self.renewtimer(PUSH)
-            t_long_poll = self.renewtimer(LONG_POLL)       
+        if sub_type == SubType.all:
+            t_push = self.renewtimer(SubType.push)
+            t_long_poll = self.renewtimer(SubType.long_poll)
             if t_long_poll == -1:
                 return t_push
             if t_push == -1:
@@ -3783,7 +3779,7 @@ class Host:
         diff = self._subscription_termination_time[sub_type] - datetime.utcnow()
         return int(diff.total_seconds())
 
-    def subscribed(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] = PUSH) -> bool:
+    def subscribed(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push) -> bool:
         return sub_type in self._subscription_manager_url and self.renewtimer(sub_type) > 0
 
     def convert_time(self, time) -> Optional[datetime]:
@@ -3878,20 +3874,20 @@ class Host:
             _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
         return None
 
-    async def subscribe(self, webhook_url: str | None = None, sub_type: Literal[PUSH] | Literal[LONG_POLL] = PUSH, retry: bool = False):
+    async def subscribe(self, webhook_url: str | None = None, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push, retry: bool = False):
         """Subscribe to ONVIF events."""
         headers = templates.HEADERS
-        if sub_type == PUSH:
+        if sub_type == SubType.push:
             headers.update(templates.SUBSCRIBE_ACTION)
             template = templates.SUBSCRIBE_XML
-        elif sub_type == LONG_POLL:
+        elif sub_type == SubType.long_poll:
             headers.update(templates.PULLPOINT_ACTION)
             template = templates.PULLPOINT_XML
 
         parameters = {
             "InitialTerminationTime": f"PT{SUBSCRIPTION_TERMINATION_TIME}M",
         }
-        if webhook_url is not None and sub_type == PUSH:
+        if webhook_url is not None and sub_type == SubType.push:
             parameters["Address"] = webhook_url
 
         parameters.update(await self.get_digest())
@@ -3962,7 +3958,7 @@ class Host:
 
         return
 
-    async def renew(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] = PUSH):
+    async def renew(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push):
         """Renew the ONVIF event subscription."""
         if not self.subscribed(sub_type):
             raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, not previously subscribed")
@@ -4025,14 +4021,14 @@ class Host:
 
     async def pull_point_request(self):
         """Request message from ONVIF pull point."""
-        if not self.subscribed(LONG_POLL):
+        if not self.subscribed(SubType.long_poll):
             raise SubscriptionError(f"Host {self._host}:{self._port}: failed to request pull point message, not yet subscribed")
 
         headers = templates.HEADERS
         headers.update(templates.PULLMESSAGE_ACTION)
         template = templates.PULLMESSAGE_XML
 
-        parameters = {"To": self._subscription_manager_url[LONG_POLL]}
+        parameters = {"To": self._subscription_manager_url[SubType.long_poll]}
         parameters.update(await self.get_digest())
 
         xml = template.format(**parameters)
@@ -4048,11 +4044,11 @@ class Host:
 
         return await self.ONVIF_event_callback(response, root)
 
-    async def unsubscribe(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] | Literal[ALL] = ALL):
+    async def unsubscribe(self, sub_type: SubType = SubType.all):
         """Unsubscribe from ONVIF events."""
-        if sub_type == ALL:
-            await self.unsubscribe(PUSH)
-            await self.unsubscribe(LONG_POLL)
+        if sub_type == SubType.all:
+            await self.unsubscribe(SubType.push)
+            await self.unsubscribe(SubType.long_poll)
             return
 
         if sub_type in self._subscription_manager_url:
@@ -4073,11 +4069,11 @@ class Host:
         self._subscription_time_difference.pop(sub_type, None)
         return
 
-    async def unsubscribe_all(self, sub_type: Literal[PUSH] | Literal[LONG_POLL] | Literal[ALL] = ALL):
+    async def unsubscribe_all(self, sub_type: SubType = SubType.all):
         """Unsubscribe from ONVIF events. Normally only needed during entry initialization/setup, to free possibly dangling subscriptions."""
         await self.unsubscribe(sub_type)
 
-        if self._is_nvr and sub_type in [PUSH, ALL]:
+        if self._is_nvr and sub_type in [SubType.push, SubType.all]:
             _LOGGER.debug("Attempting to unsubscribe previous (dead) sessions notifications...")
 
             headers = templates.HEADERS
@@ -4109,11 +4105,12 @@ class Host:
         event_channels: list[int] = []
         contains_channels = False
 
+        sub_type: Literal[SubType.push, SubType.long_poll]
         if root is None:
-            sub_type = PUSH
+            sub_type = SubType.push
             root = XML.fromstring(data)
         else:
-            sub_type = LONG_POLL
+            sub_type = SubType.long_poll
         for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
             channel = None
 
