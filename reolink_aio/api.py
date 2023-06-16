@@ -4081,20 +4081,11 @@ class Host:
             template = templates.UNSUBSCRIBE_XML
 
             # These work for RLN8-410 NVR, so up to 3 maximum subscriptions on it
-            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_0"}
-            parameters.update(await self.get_digest())
-            xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger=False)
-
-            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_1"}
-            parameters.update(await self.get_digest())
-            xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger=False)
-
-            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_2"}
-            parameters.update(await self.get_digest())
-            xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger=False)
+            for idx in range(0, 3):
+                parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_{idx}"}
+                parameters.update(await self.get_digest())
+                xml = template.format(**parameters)
+                await self.subscription_send(headers, xml, logger=False)
 
         return True
 
