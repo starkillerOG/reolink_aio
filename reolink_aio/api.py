@@ -19,7 +19,7 @@ from statistics import mean
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum
+from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -219,10 +219,10 @@ class Host:
         # SUBSCRIPTION managing
         self._subscribe_url: Optional[str] = None
 
-        self._subscription_manager_url: Optional[str] = None
-        self._subscription_termination_time: Optional[datetime] = None
-        self._subscription_time_difference: Optional[float] = None
-        self._onvif_only_motion = True
+        self._subscription_manager_url: dict[str, str] = {}
+        self._subscription_termination_time: dict[str, datetime] = {}
+        self._subscription_time_difference: dict[str, float] = {}
+        self._onvif_only_motion = {SubType.push: True, SubType.long_poll: True}
         self._log_once: list[str] = []
 
     ##############################################################################
@@ -2759,7 +2759,7 @@ class Host:
         await self.send_setting(body)
 
     async def set_push(self, channel: int | None, enable: bool) -> None:
-        """Set the PUSH-notifications parameter."""
+        """Set the Push-notifications parameter."""
         if not self.supported(channel, "push"):
             raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
@@ -3497,7 +3497,7 @@ class Host:
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None = None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"] = "json",
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"] = "json",
         retry: int = RETRY_ATTEMPTS,
     ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """
@@ -3560,7 +3560,7 @@ class Host:
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None,
-        expected_response_type: Literal["json"] | Literal["image/jpeg"] | Literal["text/html"] | Literal["application/octet-stream"],
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"],
         retry: int,
     ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """Generic send method."""
@@ -3762,20 +3762,27 @@ class Host:
 
     ##############################################################################
     # SUBSCRIPTION managing
-    @property
-    def renewtimer(self) -> int:
+    def renewtimer(self, sub_type: SubType = SubType.all) -> int:
         """Return the renew time in seconds. Negative if expired."""
-        if self._subscription_time_difference is None or self._subscription_termination_time is None:
+        if sub_type == SubType.all:
+            t_push = self.renewtimer(SubType.push)
+            t_long_poll = self.renewtimer(SubType.long_poll)
+            if t_long_poll == -1:
+                return t_push
+            if t_push == -1:
+                return t_long_poll
+            return min(t_push, t_long_poll)
+
+        if sub_type not in self._subscription_time_difference or sub_type not in self._subscription_termination_time:
             return -1
 
-        diff = self._subscription_termination_time - datetime.utcnow()
+        diff = self._subscription_termination_time[sub_type] - datetime.utcnow()
         return int(diff.total_seconds())
 
-    @property
-    def subscribed(self) -> bool:
-        return self._subscription_manager_url is not None and self.renewtimer > 0
+    def subscribed(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push) -> bool:
+        return sub_type in self._subscription_manager_url and self.renewtimer(sub_type) > 0
 
-    async def convert_time(self, time) -> Optional[datetime]:
+    def convert_time(self, time) -> Optional[datetime]:
         """Convert time object to printable."""
         try:
             return datetime.strptime(time, "%Y-%m-%dT%H:%M:%SZ")
@@ -3806,7 +3813,7 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data, logger=True) -> str | None:
+    async def subscription_send(self, headers, data) -> str:
         """Send subscription data to the camera."""
         if self._subscribe_url is None:
             await self.get_state("GetNetPort")
@@ -3814,147 +3821,141 @@ class Host:
         if self._subscribe_url is None:
             raise NotSupportedError(f"subscription_send: failed to retrieve subscribe_url from {self._host}:{self._port}")
 
+        _LOGGER.debug(
+            "Host %s:%s: subscription request data:\n%s\n",
+            self._host,
+            self._port,
+            data,
+        )
+
+        if self._aiohttp_session.closed:
+            self._aiohttp_session = self._get_aiohttp_session()
+
         try:
-            async with aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(verify_ssl=False)) as session:
-                _LOGGER.debug(
-                    "Host %s:%s: subscription request data:\n%s\n",
-                    self._host,
-                    self._port,
-                    data,
+            async with self._send_mutex:
+                response = await self._aiohttp_session.post(
+                    url=self._subscribe_url,
+                    data=data,
+                    headers=headers,
+                    allow_redirects=False,
                 )
 
-                async with self._send_mutex:
-                    response = await session.post(
-                        url=self._subscribe_url,
-                        data=data,
-                        headers=headers,
-                        allow_redirects=False,
-                    )
+            response_text = await response.text()
+            _LOGGER.debug(
+                "Host %s:%s: subscription got response status: %s. Payload:\n%s\n",
+                self._host,
+                self._port,
+                response.status,
+                response_text,
+            )
 
-                response_text = await response.text()
-                _LOGGER.debug(
-                    "Host %s:%s: subscription got response status: %s. Payload:\n%s\n",
-                    self._host,
-                    self._port,
-                    response.status,
-                    response_text,
-                )
+            if response.status != 200:
+                raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}")
 
-                if response.status != 200:
-                    if logger:
-                        _LOGGER.warning(
-                            "Host %s:%s: subscription request got a response with wrong HTTP status %s: %s",
-                            self._host,
-                            self._port,
-                            response.status,
-                            response.reason,
-                        )
-                    else:
-                        _LOGGER.debug(
-                            "Host %s:%s: unsubscribe request for unsubscribing all got a response with wrong HTTP status %s: %s, this is expected.",
-                            self._host,
-                            self._port,
-                            response.status,
-                            response.reason,
-                        )
-                    return None
-
-                return response_text
+            return response_text
 
         except aiohttp.ClientConnectorError as err:
-            _LOGGER.error("Host %s:%s: connection error: %s.", self._host, self._port, str(err))
-        except asyncio.TimeoutError:
-            _LOGGER.error("Host %s:%s: connection timeout exception.", self._host, self._port)
-        return None
+            raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}.") from err
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.") from err
 
-    async def subscribe(self, webhook_url: str, retry: bool = False):
+    async def subscribe(self, webhook_url: str | None = None, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push, retry: bool = False):
         """Subscribe to ONVIF events."""
         headers = templates.HEADERS
-        headers.update(templates.SUBSCRIBE_ACTION)
-        template = templates.SUBSCRIBE_XML
+        if sub_type == SubType.push:
+            headers.update(templates.SUBSCRIBE_ACTION)
+            template = templates.SUBSCRIBE_XML
+        elif sub_type == SubType.long_poll:
+            headers.update(templates.PULLPOINT_ACTION)
+            template = templates.PULLPOINT_XML
 
         parameters = {
-            "Address": webhook_url,
             "InitialTerminationTime": f"PT{SUBSCRIPTION_TERMINATION_TIME}M",
         }
+        if webhook_url is not None and sub_type == SubType.push:
+            parameters["Address"] = webhook_url
 
         parameters.update(await self.get_digest())
         local_time = datetime.utcnow()
 
         xml = template.format(**parameters)
 
-        response = await self.subscription_send(headers, xml)
-        if response is None:
+        try:
+            response = await self.subscription_send(headers, xml)
+        except ReolinkError as err:
             if not retry:
-                await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, None response")
+                _LOGGER.debug("Reolink %s subscribe error: %s", sub_type, str(err))
+                await self.unsubscribe_all(sub_type)
+                return await self.subscribe(webhook_url, sub_type, retry=True)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}: {str(err)}") from err
         root = XML.fromstring(response)
 
         address_element = root.find(".//{http://www.w3.org/2005/08/addressing}Address")
         if address_element is None:
             if not retry:
-                await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, could not find subscription manager url")
-        self._subscription_manager_url = address_element.text
+                await self.unsubscribe_all(sub_type)
+                return await self.subscribe(webhook_url, sub_type, retry=True)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find subscription manager url")
+        sub_manager_url = address_element.text
 
-        if self._subscription_manager_url is None:
+        if sub_manager_url is None:
             if not retry:
-                await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, subscription manager url not available")
+                await self.unsubscribe_all(sub_type)
+                return await self.subscribe(webhook_url, sub_type, retry=True)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, subscription manager url not available")
+        self._subscription_manager_url[sub_type] = sub_manager_url
 
         current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             if not retry:
-                await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, could not find CurrentTime")
-        remote_time = await self.convert_time(current_time_element.text)
+                await self.unsubscribe_all(sub_type)
+                return await self.subscribe(webhook_url, sub_type, retry=True)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find CurrentTime")
+        remote_time = self.convert_time(current_time_element.text)
 
         if remote_time is None:
             if not retry:
-                await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, CurrentTime not available")
+                await self.unsubscribe_all(sub_type)
+                return await self.subscribe(webhook_url, sub_type, retry=True)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, CurrentTime not available")
 
-        self._subscription_time_difference = await self.calc_time_difference(local_time, remote_time)
+        self._subscription_time_difference[sub_type] = await self.calc_time_difference(local_time, remote_time)
 
         termination_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}TerminationTime")
         if termination_time_element is None:
             if not retry:
-                await self.unsubscribe_all()
-                return await self.subscribe(webhook_url, retry=True)
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, could not find TerminationTime")
+                await self.unsubscribe_all(sub_type)
+                return await self.subscribe(webhook_url, sub_type, retry=True)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find TerminationTime")
 
-        termination_time = await self.convert_time(termination_time_element.text)
+        termination_time = self.convert_time(termination_time_element.text)
         if termination_time is None:
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe, TerminationTime not available")
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, TerminationTime not available")
 
-        self._subscription_termination_time = termination_time - timedelta(seconds=self._subscription_time_difference)
+        self._subscription_termination_time[sub_type] = termination_time - timedelta(seconds=self._subscription_time_difference[sub_type])
 
         _LOGGER.debug(
-            "Local time: %s, camera time: %s (difference: %s), termination time: %s",
+            "%s, local time: %s, camera time: %s (difference: %s), termination time: %s",
+            sub_type,
             local_time.strftime("%Y-%m-%d %H:%M"),
             remote_time.strftime("%Y-%m-%d %H:%M"),
-            self._subscription_time_difference,
-            self._subscription_termination_time.strftime("%Y-%m-%d %H:%M"),
+            self._subscription_time_difference[sub_type],
+            self._subscription_termination_time[sub_type].strftime("%Y-%m-%d %H:%M"),
         )
 
         return
 
-    async def renew(self):
+    async def renew(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push):
         """Renew the ONVIF event subscription."""
-        if not self.subscribed:
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, not previously subscribed")
+        if not self.subscribed(sub_type):
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, not previously subscribed")
 
         headers = templates.HEADERS
         headers.update(templates.RENEW_ACTION)
         template = templates.RENEW_XML
 
         parameters = {
-            "To": self._subscription_manager_url,
+            "To": self._subscription_manager_url[sub_type],
             "TerminationTime": f"PT{SUBSCRIPTION_TERMINATION_TIME}M",
         }
 
@@ -3963,107 +3964,142 @@ class Host:
 
         xml = template.format(**parameters)
 
-        response = await self.subscription_send(headers, xml)
-        if response is None:
-            await self.unsubscribe_all()
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, None response")
+        try:
+            response = await self.subscription_send(headers, xml)
+        except ReolinkError as err:
+            await self.unsubscribe_all(sub_type)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription: {str(err)}") from err
         root = XML.fromstring(response)
 
         current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
-            await self.unsubscribe_all()
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, could not find CurrentTime")
-        remote_time = await self.convert_time(current_time_element.text)
+            await self.unsubscribe_all(sub_type)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, could not find CurrentTime")
+        remote_time = self.convert_time(current_time_element.text)
 
         if remote_time is None:
-            await self.unsubscribe_all()
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, CurrentTime not available")
+            await self.unsubscribe_all(sub_type)
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, CurrentTime not available")
 
-        self._subscription_time_difference = await self.calc_time_difference(local_time, remote_time)
+        self._subscription_time_difference[sub_type] = await self.calc_time_difference(local_time, remote_time)
 
         # The Reolink renew functionality has a bug: it always returns the INITIAL TerminationTime.
         # By adding the duration to the CurrentTime parameter, the new termination time can be calculated.
         # This will not work before the Reolink bug gets fixed on all devices
         # termination_time_element = root.find('.//{http://docs.oasis-open.org/wsn/b-2}TerminationTime')
         # if termination_time_element is None:
-        #     await self.unsubscribe_all()
-        #     _LOGGER.error("Host %s:%s: failed to subscribe.", self._host, self._port)
-        #     return False
-        # self._subscription_termination_time = await self.convert_time(termination_time_element.text) - timedelta(seconds = self._subscription_time_difference)
-        self._subscription_termination_time = local_time + timedelta(minutes=SUBSCRIPTION_TERMINATION_TIME)
-
-        if self._subscription_termination_time is None:
-            await self.unsubscribe_all()
-            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew subscription, unexpected response")
+        #     await self.unsubscribe_all(sub_type)
+        #     raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, unexpected response")
+        # remote_termination_time = self.convert_time(termination_time_element.text)
+        # if remote_termination_time is None:
+        #     await self.unsubscribe_all(sub_type)
+        #     raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, unexpected response")
+        # self._subscription_termination_time[sub_type] = remote_termination_time - timedelta(seconds = self._subscription_time_difference[sub_type])
+        self._subscription_termination_time[sub_type] = local_time + timedelta(minutes=SUBSCRIPTION_TERMINATION_TIME)
 
         _LOGGER.debug(
             "Renewed subscription successfully, local time: %s, camera time: %s (difference: %s), termination time: %s",
             local_time.strftime("%Y-%m-%d %H:%M"),
             remote_time.strftime("%Y-%m-%d %H:%M"),
-            self._subscription_time_difference,
-            self._subscription_termination_time.strftime("%Y-%m-%d %H:%M"),
+            self._subscription_time_difference[sub_type],
+            self._subscription_termination_time[sub_type].strftime("%Y-%m-%d %H:%M"),
         )
 
         return
 
-    async def unsubscribe(self):
+    async def pull_point_request(self):
+        """Request message from ONVIF pull point."""
+        if not self.subscribed(SubType.long_poll):
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to request pull point message, not yet subscribed")
+
+        headers = templates.HEADERS
+        headers.update(templates.PULLMESSAGE_ACTION)
+        template = templates.PULLMESSAGE_XML
+
+        parameters = {"To": self._subscription_manager_url[SubType.long_poll]}
+        parameters.update(await self.get_digest())
+
+        xml = template.format(**parameters)
+        _LOGGER.debug("Reolink %s requesting ONVIF pull point message", self.nvr_name)
+
+        try:
+            response = await self.subscription_send(headers, xml)
+        except ReolinkError as err:
+            raise SubscriptionError(f"Failed to request pull point message: {str(err)}") from err
+
+        root = XML.fromstring(response)
+        if root.find(".//{http://docs.oasis-open.org/wsn/b-2}NotificationMessage") is None:
+            _LOGGER.debug("Reolink %s received ONVIF pull point message without event", self.nvr_name)
+            return []
+
+        _LOGGER.info("Reolink %s received ONVIF pull point event", self.nvr_name)
+
+        return await self.ONVIF_event_callback(response, root)
+
+    async def unsubscribe(self, sub_type: SubType = SubType.all):
         """Unsubscribe from ONVIF events."""
-        if self._subscription_manager_url is not None:
+        if sub_type == SubType.all:
+            await self.unsubscribe(SubType.push)
+            await self.unsubscribe(SubType.long_poll)
+            return
+
+        if sub_type in self._subscription_manager_url:
             headers = templates.HEADERS
             headers.update(templates.UNSUBSCRIBE_ACTION)
             template = templates.UNSUBSCRIBE_XML
 
-            parameters = {"To": self._subscription_manager_url}
+            parameters = {"To": self._subscription_manager_url[sub_type]}
             parameters.update(await self.get_digest())
 
             xml = template.format(**parameters)
 
-            await self.subscription_send(headers, xml)
+            try:
+                await self.subscription_send(headers, xml)
+            except ReolinkError as err:
+                _LOGGER.error("Error while unsubscribing %s: %s", sub_type, str(err))
 
-            self._subscription_manager_url = None
+            self._subscription_manager_url.pop(sub_type, None)
 
-        self._subscription_termination_time = None
-        self._subscription_time_difference = None
+        self._subscription_termination_time.pop(sub_type, None)
+        self._subscription_time_difference.pop(sub_type, None)
+        return
 
-        return True
-
-    async def unsubscribe_all(self):
+    async def unsubscribe_all(self, sub_type: SubType = SubType.all):
         """Unsubscribe from ONVIF events. Normally only needed during entry initialization/setup, to free possibly dangling subscriptions."""
-        headers = templates.HEADERS
-        headers.update(templates.UNSUBSCRIBE_ACTION)
-        template = templates.UNSUBSCRIBE_XML
+        await self.unsubscribe(sub_type)
 
-        await self.unsubscribe()
-
-        if self._is_nvr:
+        if self._is_nvr and sub_type in [SubType.push, SubType.all]:
             _LOGGER.debug("Attempting to unsubscribe previous (dead) sessions notifications...")
 
+            headers = templates.HEADERS
+            headers.update(templates.UNSUBSCRIBE_ACTION)
+            template = templates.UNSUBSCRIBE_XML
+
             # These work for RLN8-410 NVR, so up to 3 maximum subscriptions on it
-            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_0"}
-            parameters.update(await self.get_digest())
-            xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger=False)
-
-            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_1"}
-            parameters.update(await self.get_digest())
-            xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger=False)
-
-            parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_2"}
-            parameters.update(await self.get_digest())
-            xml = template.format(**parameters)
-            await self.subscription_send(headers, xml, logger=False)
+            for idx in range(0, 3):
+                parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_{idx}"}
+                parameters.update(await self.get_digest())
+                xml = template.format(**parameters)
+                try:
+                    await self.subscription_send(headers, xml)
+                except ReolinkError as err:
+                    _LOGGER.debug("Expected error from unsubscribing all: %s", str(err))
 
         return True
 
-    async def ONVIF_event_callback(self, data: str) -> list[int] | None:
+    async def ONVIF_event_callback(self, data: str, root: XML.Element | None = None) -> list[int] | None:
         """Handle incoming ONVIF event from the webhook called by the Reolink device."""
         _LOGGER_DATA.debug("ONVIF event callback from '%s' received payload:\n%s", self.nvr_name, data)
 
         event_channels: list[int] = []
         contains_channels = False
 
-        root = XML.fromstring(data)
+        sub_type: Literal[SubType.push, SubType.long_poll]
+        if root is None:
+            sub_type = SubType.push
+            root = XML.fromstring(data)
+        else:
+            sub_type = SubType.long_poll
         for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
             channel = None
 
@@ -4123,7 +4159,7 @@ class Host:
             if channel not in event_channels:
                 event_channels.append(channel)
             if rule in ["FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
-                self._onvif_only_motion = False
+                self._onvif_only_motion[sub_type] = False
 
             state = data_element.attrib["Value"] == "true"
             _LOGGER.info("Reolink %s ONVIF event channel %s, %s: %s", self.nvr_name, channel, rule, state)
@@ -4152,11 +4188,11 @@ class Host:
                 _LOGGER.error("Could not poll motion state after receiving ONVIF event without any known events")
             return None
 
-        if self._onvif_only_motion and any(self.ai_supported(ch) for ch in event_channels):
+        if self._onvif_only_motion[sub_type] and any(self.ai_supported(ch) for ch in event_channels):
             # Poll all other states since not all cameras have rich notifications including the specific events
-            if "ONVIF_only_motion" not in self._log_once:
-                self._log_once.append("ONVIF_only_motion")
-                _LOGGER.debug("Reolink model '%s' appears to not support rich notifications", self.model)
+            if f"ONVIF_only_motion_{sub_type}" not in self._log_once:
+                self._log_once.append(f"ONVIF_only_motion_{sub_type}")
+                _LOGGER.debug("Reolink model '%s' appears to not support rich notifications for %s", self.model, sub_type)
             if not await self.get_ai_state_all_ch():
                 _LOGGER.error("Could not poll AI event state after receiving ONVIF event with only motion event")
             return None

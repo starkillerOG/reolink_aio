@@ -35,11 +35,11 @@ class InvalidParameterError(ReolinkError):
 
 
 class NotSupportedError(ReolinkError):
-    """Raised when a function is called with invalid parameters"""
+    """Raised when a function is not supported by that device"""
 
 
 class SubscriptionError(ReolinkError):
-    """Raised when a function is called with invalid parameters"""
+    """Raised when a a error occurs related to a ONVIF subscription"""
 
 
 class ReolinkConnectionError(ReolinkError):
