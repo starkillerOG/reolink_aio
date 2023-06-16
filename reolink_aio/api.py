@@ -3855,7 +3855,7 @@ class Host:
         except aiohttp.ClientConnectorError as err:
             raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}.") from err
         except asyncio.TimeoutError:
-            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.") from err
+            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.")
 
     async def subscribe(self, webhook_url: str | None = None, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push, retry: bool = False):
         """Subscribe to ONVIF events."""
