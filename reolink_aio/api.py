@@ -894,6 +894,9 @@ class Host:
         if self.api_version("wifi") > 0:
             self._capabilities["Host"].append("wifi")
 
+        if self.api_version("reboot") > 0:
+            self._capabilities["Host"].append("reboot")
+
         # Channel capabilities
         for channel in self._channels:
             self._capabilities[channel] = []
@@ -1723,6 +1726,19 @@ class Host:
             return False
 
         return json_data[0]["value"]["Status"]["Persent"]
+
+    async def reboot(self) -> None:
+        """Reboot the camera."""
+        if not self.supported(None, "reboot"):
+            raise NotSupportedError(f"Reboot: not supported by {self.nvr_name}")
+
+        body = [{"cmd": "Reboot"}]
+        json_data = await self.send(body, expected_response_type="json")
+
+        if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
+            rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
+            detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
+            raise ApiError(f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}")
 
     async def get_snapshot(self, channel: int, stream: Optional[str] = None) -> bytes | None:
         """Get the still image."""
