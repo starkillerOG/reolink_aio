@@ -44,7 +44,8 @@ DEFAULT_TIMEOUT = 60
 RETRY_ATTEMPTS = 3
 MAX_CHUNK_ITEMS = 40
 DEFAULT_RTMP_AUTH_METHOD = "PASSWORD"
-SUBSCRIPTION_TERMINATION_TIME = 15
+SUBSCRIPTION_TERMINATION_TIME = 15  # minutes
+LONG_POLL_TIMEOUT = 5  # minutes
 
 MOTION_DETECTION_TYPE = "motion"
 FACE_DETECTION_TYPE = "face"
@@ -3813,7 +3814,7 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data) -> str:
+    async def subscription_send(self, headers, data, timeout: aiohttp.ClientTimeout | None = None) -> str:
         """Send subscription data to the camera."""
         if self._subscribe_url is None:
             await self.get_state("GetNetPort")
@@ -3831,6 +3832,9 @@ class Host:
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
 
+        if timeout is None:
+            timeout = self._timeout
+
         try:
             async with self._send_mutex:
                 response = await self._aiohttp_session.post(
@@ -3838,6 +3842,7 @@ class Host:
                     data=data,
                     headers=headers,
                     allow_redirects=False,
+                    timeout=timeout,
                 )
 
             response_text = await response.text()
@@ -4016,14 +4021,19 @@ class Host:
         headers.update(templates.PULLMESSAGE_ACTION)
         template = templates.PULLMESSAGE_XML
 
-        parameters = {"To": self._subscription_manager_url[SubType.long_poll]}
+        parameters = {
+            "To": self._subscription_manager_url[SubType.long_poll],
+            "Timeout": f"PT{LONG_POLL_TIMEOUT}M",
+        }
         parameters.update(await self.get_digest())
 
         xml = template.format(**parameters)
         _LOGGER.debug("Reolink %s requesting ONVIF pull point message", self.nvr_name)
 
+        timeout = aiohttp.ClientTimeout(total=LONG_POLL_TIMEOUT*60 + 30, connect=self.timeout)
+
         try:
-            response = await self.subscription_send(headers, xml)
+            response = await self.subscription_send(headers, xml, timeout)
         except ReolinkError as err:
             raise SubscriptionError(f"Failed to request pull point message: {str(err)}") from err
 
