@@ -122,7 +122,7 @@ PULLMESSAGE_XML = """
         </soap:Header>
         <soap:Body>
             <wsdl:PullMessages>
-                <wsdl:Timeout>PT1M</wsdl:Timeout>
+                <wsdl:Timeout>{Timeout}</wsdl:Timeout>
                 <wsdl:MessageLimit>100</wsdl:MessageLimit>
             </wsdl:PullMessages>
         </soap:Body>
