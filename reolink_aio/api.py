@@ -3614,7 +3614,8 @@ class Host:
                 data = await response.read()  # returns bytes
             elif expected_response_type == "application/octet-stream":
                 async with self._send_mutex:
-                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
+                    # disable timeout because downloads can be large
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=None)
 
                 data = ""  # Response will be a file and be large, pass the response instead of reading it here.
             else:
@@ -3697,8 +3698,7 @@ class Host:
                 return data
 
             if expected_response_type == "application/octet-stream":
-                # response needs to be read or released from the calling function
-                return response
+                return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"), response.close)
 
             response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
