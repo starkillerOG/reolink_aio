@@ -3698,7 +3698,7 @@ class Host:
                 return data
 
             if expected_response_type == "application/octet-stream":
-                return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"), response.close)
+                return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"), response.release)
 
             response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
