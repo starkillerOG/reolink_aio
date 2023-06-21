@@ -1940,7 +1940,7 @@ class Host:
             response.release()
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_disposition.filename' in the response")
 
-        return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"))
+        return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.release, response.headers.get("ETag"))
 
     def map_host_json_response(self, json_data: typings.reolink_json):
         """Map the JSON objects to internal cache-objects."""
@@ -3698,7 +3698,8 @@ class Host:
                 return data
 
             if expected_response_type == "application/octet-stream":
-                return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"), response.release)
+                # response needs to be read or released from the calling function
+                return response
 
             response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")

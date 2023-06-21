@@ -316,8 +316,8 @@ VOD_download = NamedTuple(
         ("length", int),
         ("filename", str),
         ("stream", StreamReader),
-        ("etag", Optional[str]),
         ("close", Callable[[], None]),
+        ("etag", Optional[str]),
     ],
 )
 
