@@ -3615,7 +3615,7 @@ class Host:
             elif expected_response_type == "application/octet-stream":
                 async with self._send_mutex:
                     # disable timeout because downloads can be large
-                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=None)
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=aiohttp.ClientTimeout(connect=30,sock_read=30))
 
                 data = ""  # Response will be a file and be large, pass the response instead of reading it here.
             else:
