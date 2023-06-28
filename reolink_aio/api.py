@@ -1940,7 +1940,7 @@ class Host:
             response.release()
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: Download VOD: no 'content_disposition.filename' in the response")
 
-        return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.headers.get("ETag"))
+        return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.release, response.headers.get("ETag"))
 
     def map_host_json_response(self, json_data: typings.reolink_json):
         """Map the JSON objects to internal cache-objects."""
@@ -3614,7 +3614,8 @@ class Host:
                 data = await response.read()  # returns bytes
             elif expected_response_type == "application/octet-stream":
                 async with self._send_mutex:
-                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
+                    dl_timeout = aiohttp.ClientTimeout(connect=self.timeout, sock_read=self.timeout)
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=dl_timeout)
 
                 data = ""  # Response will be a file and be large, pass the response instead of reading it here.
             else:

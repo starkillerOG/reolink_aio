@@ -3,7 +3,17 @@ from __future__ import annotations
 
 import logging
 from enum import IntFlag, auto
-from typing import Any, ClassVar, Collection, Iterator, Mapping, NamedTuple, Optional, TypedDict
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Collection,
+    Iterator,
+    Mapping,
+    NamedTuple,
+    Optional,
+    TypedDict,
+)
 import datetime as dtc
 from typing_extensions import SupportsIndex
 
@@ -300,7 +310,16 @@ Parsed_VOD_file_name = NamedTuple(
     ],
 )
 
-VOD_download = NamedTuple("VOD_download", [("length", int), ("filename", str), ("stream", StreamReader), ("etag", Optional[str])])
+VOD_download = NamedTuple(
+    "VOD_download",
+    [
+        ("length", int),
+        ("filename", str),
+        ("stream", StreamReader),
+        ("close", Callable[[], None]),
+        ("etag", Optional[str]),
+    ],
+)
 
 
 class VOD_file:
