@@ -3006,7 +3006,7 @@ class Host:
             }
         ]
 
-        await self.send_setting(body, wait_before_get=2)
+        await self.send_setting(body, wait_before_get=3)
 
     async def set_spotlight_lighting_schedule(self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0) -> None:
         """Stub to handle setting the time period where spotlight (WhiteLed) will be on when NightMode set and AUTO is off.
