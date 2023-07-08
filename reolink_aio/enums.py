@@ -23,6 +23,8 @@ class SpotlightModeEnum(Enum):
     off = 0
     auto = 1
     schedule = 3
+    adaptive = 5
+    autoadaptive = 4
 
 
 class StatusLedEnum(Enum):
