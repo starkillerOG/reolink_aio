@@ -616,6 +616,12 @@ class Host:
 
         return self._whiteled_settings[channel]["WhiteLed"].get("mode")
 
+    def whiteled_mode_list(self, channel: int) -> list[str]:
+        mode_values = [SpotlightModeEnum.off, SpotlightModeEnum.auto, SpotlightModeEnum.schedule]
+        if self.api_version("supportLightAutoBrightness", channel) > 0:
+            mode_values.extend([SpotlightModeEnum.adaptive, SpotlightModeEnum.autoadaptive])
+        return [val.name for val in mode_values]
+
     def whiteled_brightness(self, channel: int) -> Optional[int]:
         if channel not in self._whiteled_settings:
             return None
@@ -1029,7 +1035,7 @@ class Host:
             if self.api_version("ispBright", channel) > 0:
                 self._capabilities[channel].append("isp_bright")
 
-            if host.api_version("ispDayNight", channel) > 0 and self.daynight_state(channel) is not None:
+            if self.api_version("ispDayNight", channel) > 0 and self.daynight_state(channel) is not None:
                 self._capabilities[channel].append("dayNight")
 
             if self.backlight_state(channel) is not None:
