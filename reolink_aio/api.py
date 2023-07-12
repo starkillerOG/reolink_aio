@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
-import json
+import orjson
 import logging
 import ssl
 import traceback
@@ -3682,8 +3682,8 @@ class Host:
 
             if expected_response_type == "json" and isinstance(data, str):
                 try:
-                    json_data = json.loads(data)
-                except (TypeError, json.JSONDecodeError) as err:
+                    json_data = orjson.loads(data)
+                except (TypeError, orjson.JSONDecodeError) as err:
                     if retry <= 0:
                         raise InvalidContentTypeError(
                             f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
@@ -3771,8 +3771,8 @@ class Host:
             raise ReolinkTimeoutError(f"Timeout reading response from {URL}: {str(err)}") from err
 
         try:
-            json_data = json.loads(data)
-        except (TypeError, json.JSONDecodeError) as err:
+            json_data = orjson.loads(data)
+        except (TypeError, orjson.JSONDecodeError) as err:
             raise InvalidContentTypeError(f"Error translating JSON response: {str(err)}, from {URL}, " f"content type '{response.content_type}', data:\n{data}\n") from err
 
         if json_data is None:

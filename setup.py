@@ -24,7 +24,8 @@ setup(name='reolink_aio',
       install_requires=[
         'ffmpeg',
         'requests',
-        'aiohttp'
+        'aiohttp',
+        'orjson'
         ],
       tests_require=[],
       platforms=['any'],
