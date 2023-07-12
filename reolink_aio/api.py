@@ -15,7 +15,7 @@ from urllib import parse
 from xml.etree import ElementTree as XML
 from statistics import mean
 
-from orjson import JSONDecodeError, loads as json_loads # pylint: disable=no-name-in-module
+from orjson import JSONDecodeError, loads as json_loads  # pylint: disable=no-name-in-module
 import aiohttp
 
 from . import templates, typings
