@@ -912,19 +912,19 @@ class Host:
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._capabilities[channel].append("autotrack_stream")
 
-            if channel in self._ftp_settings:
+            if channel in self._ftp_settings and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]):
                 self._capabilities[channel].append("ftp")
 
-            if channel in self._push_settings:
+            if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
                 self._capabilities[channel].append("push")
 
-            if channel in self._recording_settings:
+            if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
                 self._capabilities[channel].append("recording")
 
-            if channel in self._email_settings:
+            if channel in self._email_settings and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"]):
                 self._capabilities[channel].append("email")
 
-            if self.api_version("supportBuzzer") > 0:
+            if self.api_version("supportBuzzer") > 0 and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]:
                 self._capabilities[channel].append("buzzer")
 
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
