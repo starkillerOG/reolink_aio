@@ -3710,17 +3710,27 @@ class Host:
             response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except aiohttp.ClientConnectorError as err:
-            await self.expire_session()
-            _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(err))
-            raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}") from err
+            if retry <= 0:
+                await self.expire_session()
+                _LOGGER.error("Host %s:%s: connection error: %s", self._host, self._port, str(err))
+                raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}") from err
+            _LOGGER.debug("Host %s:%s: connection error, trying again: %s", self._host, self._port, str(err))
+            return await self.send(body, param, expected_response_type, retry)
         except asyncio.TimeoutError as err:
-            await self.expire_session()
-            _LOGGER.error(
-                "Host %s:%s: connection timeout exception. Please check the connection to this host.",
+            if retry <= 0:
+                await self.expire_session()
+                _LOGGER.error(
+                    "Host %s:%s: connection timeout exception. Please check the connection to this host.",
+                    self._host,
+                    self._port,
+                )
+                raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: Timeout error: {str(err)}") from err
+            _LOGGER.debug(
+                "Host %s:%s: connection timeout exception, trying again.",
                 self._host,
                 self._port,
             )
-            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: Timeout error: {str(err)}") from err
+            return await self.send(body, param, expected_response_type, retry)
         except ApiError as err:
             await self.expire_session()
             _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
