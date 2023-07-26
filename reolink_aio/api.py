@@ -862,7 +862,7 @@ class Host:
             if not login_mutex_owned:
                 self._login_mutex.release()
 
-    async def expire_session(self, unsubscribe:bool=True):
+    async def expire_session(self, unsubscribe: bool = True):
         if self._lease_time is not None:
             self._lease_time = datetime.now() - timedelta(seconds=5)
         if unsubscribe:
