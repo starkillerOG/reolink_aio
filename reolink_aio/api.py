@@ -862,9 +862,11 @@ class Host:
             if not login_mutex_owned:
                 self._login_mutex.release()
 
-    async def expire_session(self):
+    async def expire_session(self, unsubscribe:bool=True):
         if self._lease_time is not None:
             self._lease_time = datetime.now() - timedelta(seconds=5)
+        if unsubscribe:
+            await self.unsubscribe()
         await self._aiohttp_session.close()
 
     def clear_token(self):
@@ -1777,7 +1779,7 @@ class Host:
                 self._port,
                 channel,
             )
-            await self.expire_session()
+            await self.expire_session(unsubscribe=False)
             return None
 
         return response
@@ -3690,10 +3692,10 @@ class Host:
                             f"content type '{response.content_type}', data:\n{data}\n"
                         ) from err
                     _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), data)
-                    await self.expire_session()
+                    await self.expire_session(unsubscribe=False)
                     return await self.send(body, param, expected_response_type, retry)
                 if json_data is None:
-                    await self.expire_session()
+                    await self.expire_session(unsubscribe=False)
                     raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
                 return json_data
 
@@ -3732,7 +3734,7 @@ class Host:
             )
             return await self.send(body, param, expected_response_type, retry)
         except ApiError as err:
-            await self.expire_session()
+            await self.expire_session(unsubscribe=False)
             _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
             raise err
         except CredentialsInvalidError as err:
@@ -3740,7 +3742,7 @@ class Host:
             _LOGGER.error("Host %s:%s: login attempt failed.", self._host, self._port)
             raise err
         except InvalidContentTypeError as err:
-            await self.expire_session()
+            await self.expire_session(unsubscribe=False)
             _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
             raise err
         except Exception as err:
