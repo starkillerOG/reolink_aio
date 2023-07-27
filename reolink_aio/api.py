@@ -1037,7 +1037,7 @@ class Host:
             if self.api_version("ispBright", channel) > 0:
                 self._capabilities[channel].append("isp_bright")
 
-            if self.api_version("ispDayNight", channel) > 0 and self.daynight_state(channel) is not None:
+            if self.api_version("ispDayNight", channel, no_key_return=1) > 0 and self.daynight_state(channel) is not None:
                 self._capabilities[channel].append("dayNight")
 
             if self.backlight_state(channel) is not None:
@@ -1053,7 +1053,7 @@ class Host:
 
         return capability in self._capabilities[channel]
 
-    def api_version(self, capability: str, channel: int | None = None) -> int:
+    def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
         if capability in self._api_version:
             return self._api_version[capability]
@@ -1064,7 +1064,7 @@ class Host:
         if channel >= len(self._abilities["abilityChn"]):
             return 0
 
-        return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", 0)
+        return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", no_key_return)
 
     async def get_state(self, cmd: str) -> None:
         body = []
