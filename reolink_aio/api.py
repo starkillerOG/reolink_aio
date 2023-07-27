@@ -924,7 +924,7 @@ class Host:
             if channel in self._email_settings and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"]):
                 self._capabilities[channel].append("email")
 
-            if self.api_version("supportBuzzer") > 0 and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]:
+            if channel in self._buzzer_settings and self.api_version("supportBuzzer") > 0 and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]:
                 self._capabilities[channel].append("buzzer")
 
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
@@ -1368,6 +1368,8 @@ class Host:
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
             # checking API versions
+            if self.api_version("supportBuzzer") > 0:
+                ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
             if self.api_version("scheduleVersion") >= 1:
                 ch_body.extend(
                     [
