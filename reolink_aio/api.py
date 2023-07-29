@@ -40,7 +40,7 @@ from .utils import datetime_to_reolink_time, reolink_time_to_datetime
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
 DEFAULT_PROTOCOL = "rtmp"
-DEFAULT_TIMEOUT = 60
+DEFAULT_TIMEOUT = 30
 RETRY_ATTEMPTS = 3
 MAX_CHUNK_ITEMS = 40
 DEFAULT_RTMP_AUTH_METHOD = "PASSWORD"
