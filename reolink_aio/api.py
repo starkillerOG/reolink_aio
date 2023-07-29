@@ -92,6 +92,7 @@ class Host:
     ):
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
+        self._long_poll_mutex = asyncio.Lock()
 
         ##############################################################################
         # Host
@@ -3852,7 +3853,7 @@ class Host:
             "Created": time_created,
         }
 
-    async def subscription_send(self, headers, data, timeout: aiohttp.ClientTimeout | None = None) -> str:
+    async def subscription_send(self, headers, data, timeout: aiohttp.ClientTimeout | None = None, mutex: asyncio.Lock | None = None) -> str:
         """Send subscription data to the camera."""
         if self._subscribe_url is None:
             await self.get_state("GetNetPort")
@@ -3872,9 +3873,11 @@ class Host:
 
         if timeout is None:
             timeout = self._timeout
+        if mutex is None:
+            mutex = self._send_mutex
 
         try:
-            async with self._send_mutex:
+            async with mutex:
                 response = await self._aiohttp_session.post(
                     url=self._subscribe_url,
                     data=data,
@@ -4071,7 +4074,7 @@ class Host:
         timeout = aiohttp.ClientTimeout(total=LONG_POLL_TIMEOUT * 60 + 30, connect=self.timeout)
 
         try:
-            response = await self.subscription_send(headers, xml, timeout)
+            response = await self.subscription_send(headers, xml, timeout, mutex=self._long_poll_mutex)
         except ReolinkError as err:
             raise SubscriptionError(f"Failed to request pull point message: {str(err)}") from err
 
