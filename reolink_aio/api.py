@@ -3762,8 +3762,9 @@ class Host:
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
 
+        com_timeout = aiohttp.ClientTimeout(total=2*self.timeout)
         try:
-            response = await self._aiohttp_session.get(url=URL)
+            response = await self._aiohttp_session.get(url=URL, timeout=com_timeout)
         except aiohttp.ClientConnectorError as err:
             raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
