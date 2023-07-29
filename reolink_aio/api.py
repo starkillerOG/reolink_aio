@@ -381,7 +381,9 @@ class Host:
         return False
 
     @property
-    def timeout(self) -> Optional[float]:
+    def timeout(self) -> float:
+        if self._timeout.total is None:
+            return DEFAULT_TIMEOUT
         return self._timeout.total
 
     @property
@@ -3763,7 +3765,7 @@ class Host:
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
 
-        com_timeout = aiohttp.ClientTimeout(total=2*self.timeout)
+        com_timeout = aiohttp.ClientTimeout(total=2 * self.timeout)
         try:
             response = await self._aiohttp_session.get(url=URL, timeout=com_timeout)
         except (aiohttp.ClientConnectorError, aiohttp.ServerConnectionError) as err:
