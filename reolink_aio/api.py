@@ -3716,19 +3716,19 @@ class Host:
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except (aiohttp.ClientConnectorError, aiohttp.ServerConnectionError) as err:
             if retry <= 0:
-                await self.expire_session()
                 _LOGGER.debug("Host %s:%s: connection error: %s", self._host, self._port, str(err))
+                await self.expire_session()
                 raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}") from err
             _LOGGER.debug("Host %s:%s: connection error, trying again: %s", self._host, self._port, str(err))
             return await self.send(body, param, expected_response_type, retry)
         except asyncio.TimeoutError as err:
             if retry <= 0:
-                await self.expire_session()
                 _LOGGER.debug(
                     "Host %s:%s: connection timeout. Please check the connection to this host.",
                     self._host,
                     self._port,
                 )
+                await self.expire_session()
                 raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: Timeout error: {str(err)}") from err
             _LOGGER.debug(
                 "Host %s:%s: connection timeout, trying again.",
@@ -3737,20 +3737,20 @@ class Host:
             )
             return await self.send(body, param, expected_response_type, retry)
         except ApiError as err:
-            await self.expire_session(unsubscribe=False)
             _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
+            await self.expire_session(unsubscribe=False)
             raise err
         except CredentialsInvalidError as err:
-            await self.expire_session()
             _LOGGER.error("Host %s:%s: login attempt failed.", self._host, self._port)
+            await self.expire_session()
             raise err
         except InvalidContentTypeError as err:
-            await self.expire_session(unsubscribe=False)
             _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
+            await self.expire_session(unsubscribe=False)
             raise err
         except Exception as err:
-            await self.expire_session()
             _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
+            await self.expire_session()
             raise err
 
     async def send_reolink_com(
