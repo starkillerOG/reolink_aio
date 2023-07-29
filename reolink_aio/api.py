@@ -3714,7 +3714,7 @@ class Host:
 
             response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
-        except aiohttp.ClientConnectorError as err:
+        except (aiohttp.ClientConnectorError, aiohttp.ServerConnectionError) as err:
             if retry <= 0:
                 await self.expire_session()
                 _LOGGER.debug("Host %s:%s: connection error: %s", self._host, self._port, str(err))
@@ -3766,7 +3766,7 @@ class Host:
         com_timeout = aiohttp.ClientTimeout(total=2*self.timeout)
         try:
             response = await self._aiohttp_session.get(url=URL, timeout=com_timeout)
-        except aiohttp.ClientConnectorError as err:
+        except (aiohttp.ClientConnectorError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Timeout requesting {URL}: {str(err)}") from err
@@ -3781,7 +3781,7 @@ class Host:
 
         try:
             data = await response.text()
-        except aiohttp.ClientConnectorError as err:
+        except (aiohttp.ClientConnectorError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Connetion error reading response from {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Timeout reading response from {URL}: {str(err)}") from err
@@ -3900,7 +3900,7 @@ class Host:
 
             return response_text
 
-        except aiohttp.ClientConnectorError as err:
+        except (aiohttp.ClientConnectorError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}.") from err
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.") from err
