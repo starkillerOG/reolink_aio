@@ -548,9 +548,9 @@ class Host:
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetFtp") >= 1:
-                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels)
+                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
-            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
         if channel not in self._ftp_settings:
             return False
@@ -563,9 +563,9 @@ class Host:
     def email_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetEmail") >= 1:
-                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels)
+                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
-            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
         if channel not in self._email_settings:
             return False
@@ -578,9 +578,9 @@ class Host:
     def push_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetPush") >= 1:
-                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels)
+                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
-            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
         if channel not in self._push_settings:
             return False
@@ -593,9 +593,9 @@ class Host:
     def recording_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetRec") >= 1:
-                return all(self._recording_settings[ch]["Rec"]["enable"] == 1 for ch in self._channels)
+                return all(self._recording_settings[ch]["Rec"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
-            return all(self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
         if channel not in self._recording_settings:
             return False
@@ -607,7 +607,7 @@ class Host:
 
     def buzzer_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
-            return all(self._buzzer_settings[ch]["Buzzer"]["enable"] == 1 for ch in self._channels)
+            return all(self._buzzer_settings[ch]["Buzzer"]["enable"] == 1 for ch in self._channels if ch in self._buzzer_settings)
 
         if channel not in self._buzzer_settings:
             return False
