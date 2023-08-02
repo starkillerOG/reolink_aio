@@ -1092,7 +1092,22 @@ class Host:
             ch_body = []
             if cmd == "GetIsp":
                 ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetIrLights":
+            elif cmd in ["GetAlarm", "GetMdAlarm"]:
+                if self.api_version("GetMdAlarm") >= 1:
+                    ch_body = [{"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}}]
+                else:
+                    ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
+            elif cmd == "GetAiAlarm":
+                ch_body = []
+                for ai_type in self.ai_supported_types(channel):
+                    ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
+
+            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                body.extend(ch_body)
+                channels.extend([channel] * len(ch_body))
+                continue
+
+            if cmd == "GetIrLights":
                 ch_body = [{"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPowerLed":
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
@@ -1122,15 +1137,6 @@ class Host:
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBuzzerAlarmV20":
                 ch_body = [{"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetAlarm", "GetMdAlarm"]:
-                if self.api_version("GetMdAlarm") >= 1:
-                    ch_body = [{"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}}]
-                else:
-                    ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
-            elif cmd == "GetAiAlarm":
-                ch_body = []
-                for ai_type in self.ai_supported_types(channel):
-                    ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
             elif cmd in ["GetEmail", "GetEmailV20"]:
                 if self.api_version("GetEmail") >= 1:
                     ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
@@ -1364,11 +1370,25 @@ class Host:
                 {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
             ]
+            if self.api_version("scheduleVersion") >= 1:
+                ch_body.append({"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}})
+            else:
+                ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
+
+            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                body.extend(ch_body)
+                channels.extend([channel] * len(ch_body))
+                continue
+
+            ch_body.extend(
+                [
+                    {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
+                    {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
+                    {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
+                ]
+            )
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
@@ -1393,7 +1413,6 @@ class Host:
                         {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}},
-                        {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
             else:
@@ -1404,7 +1423,6 @@ class Host:
                         {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetRec", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}},
-                        {"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}},
                     ]
                 )
 
