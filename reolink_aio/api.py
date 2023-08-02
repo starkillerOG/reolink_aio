@@ -62,13 +62,17 @@ SSL_CONTEXT.set_ciphers("DEFAULT")
 SSL_CONTEXT.check_hostname = False
 SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
-DUAL_LENS_MODELS: set[str] = {
+# with 2 streaming channels
+DUAL_LENS_DUAL_MOTION_MODELS: set[str] = {
     "Reolink Duo PoE",
     "Reolink Duo WiFi",
+}
+DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
     "Reolink TrackMix PoE",
     "Reolink TrackMix WiFi",
     "RLC-81MA",
-}  # with 2 streaming channels
+}
+DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
 
 
 ##########################################################################################################################################################
@@ -915,6 +919,18 @@ class Host:
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._capabilities[channel].append("autotrack_stream")
 
+            if channel in self._md_alarm_settings:
+                self._capabilities[channel].append("md_sensitivity")
+
+            if self.api_version("supportAiSensitivity", channel) > 0:
+                self._capabilities[channel].append("ai_sensitivity")
+
+            if channel in self._motion_detection_states:
+                self._capabilities[channel].append("motion_detection")
+
+            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                continue
+
             if channel in self._ftp_settings and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]):
                 self._capabilities[channel].append("ftp")
 
@@ -1019,15 +1035,6 @@ class Host:
 
             if self.api_version("supportAITrackLimit", channel) > 0:
                 self._capabilities[channel].append("auto_track_limit")
-
-            if channel in self._md_alarm_settings:
-                self._capabilities[channel].append("md_sensitivity")
-
-            if self.api_version("supportAiSensitivity", channel) > 0:
-                self._capabilities[channel].append("ai_sensitivity")
-
-            if channel in self._motion_detection_states:
-                self._capabilities[channel].append("motion_detection")
 
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].append("isp_hue")
@@ -1329,7 +1336,7 @@ class Host:
         self.map_host_json_response(json_data)
         self.construct_capabilities(warnings=False)
 
-        if self.model in DUAL_LENS_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
+        if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
             self._stream_channels = [0, 1]
             self._nvr_num_channels = 1
             self._channels = [0]
