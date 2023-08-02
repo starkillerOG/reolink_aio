@@ -1249,30 +1249,35 @@ class Host:
             if self.supported(channel, "buzzer"):
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetEmail") >= 1:
-                ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "email"):
+                if self.api_version("GetEmail") >= 1:
+                    ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetPush") >= 1:
-                ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "push"):
+                if self.api_version("GetPush") >= 1:
+                    ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetFtp") >= 1:
-                ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "ftp"):
+                if self.api_version("GetFtp") >= 1:
+                    ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetRec") >= 1:
-                ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "recording"):
+                if self.api_version("GetRec") >= 1:
+                    ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetAudioAlarm") >= 1:
-                ch_body.append({"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "siren"):
+                if self.api_version("GetAudioAlarm") >= 1:
+                    ch_body.append({"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "md_sensitivity"):
                 if self.api_version("GetMdAlarm") >= 1:
