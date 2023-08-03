@@ -919,12 +919,6 @@ class Host:
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._capabilities[channel].append("autotrack_stream")
 
-            if channel in self._md_alarm_settings:
-                self._capabilities[channel].append("md_sensitivity")
-
-            if self.api_version("supportAiSensitivity", channel) > 0:
-                self._capabilities[channel].append("ai_sensitivity")
-
             if channel in self._motion_detection_states:
                 self._capabilities[channel].append("motion_detection")
 
@@ -1036,6 +1030,12 @@ class Host:
             if self.api_version("supportAITrackLimit", channel) > 0:
                 self._capabilities[channel].append("auto_track_limit")
 
+            if channel in self._md_alarm_settings:
+                self._capabilities[channel].append("md_sensitivity")
+
+            if self.api_version("supportAiSensitivity", channel) > 0:
+                self._capabilities[channel].append("ai_sensitivity")
+
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].append("isp_hue")
             if self.api_version("ispSatruation", channel) > 0:
@@ -1092,15 +1092,6 @@ class Host:
             ch_body = []
             if cmd == "GetIsp":
                 ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetAlarm", "GetMdAlarm"]:
-                if self.api_version("GetMdAlarm") >= 1:
-                    ch_body = [{"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}}]
-                else:
-                    ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
-            elif cmd == "GetAiAlarm":
-                ch_body = []
-                for ai_type in self.ai_supported_types(channel):
-                    ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 body.extend(ch_body)
@@ -1137,6 +1128,15 @@ class Host:
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBuzzerAlarmV20":
                 ch_body = [{"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}}]
+            elif cmd in ["GetAlarm", "GetMdAlarm"]:
+                if self.api_version("GetMdAlarm") >= 1:
+                    ch_body = [{"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}}]
+                else:
+                    ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
+            elif cmd == "GetAiAlarm":
+                ch_body = []
+                for ai_type in self.ai_supported_types(channel):
+                    ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
             elif cmd in ["GetEmail", "GetEmailV20"]:
                 if self.api_version("GetEmail") >= 1:
                     ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
@@ -1372,10 +1372,6 @@ class Host:
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
             ]
-            if self.api_version("scheduleVersion") >= 1:
-                ch_body.append({"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 body.extend(ch_body)
@@ -1413,6 +1409,7 @@ class Host:
                         {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
             else:
@@ -1423,6 +1420,7 @@ class Host:
                         {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetRec", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}},
                     ]
                 )
 
