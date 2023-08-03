@@ -62,13 +62,17 @@ SSL_CONTEXT.set_ciphers("DEFAULT")
 SSL_CONTEXT.check_hostname = False
 SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
-DUAL_LENS_MODELS: set[str] = {
+# with 2 streaming channels
+DUAL_LENS_DUAL_MOTION_MODELS: set[str] = {
     "Reolink Duo PoE",
     "Reolink Duo WiFi",
+}
+DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
     "Reolink TrackMix PoE",
     "Reolink TrackMix WiFi",
     "RLC-81MA",
-}  # with 2 streaming channels
+}
+DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
 
 
 ##########################################################################################################################################################
@@ -544,9 +548,9 @@ class Host:
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetFtp") >= 1:
-                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels)
+                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
-            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
         if channel not in self._ftp_settings:
             return False
@@ -559,9 +563,9 @@ class Host:
     def email_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetEmail") >= 1:
-                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels)
+                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
-            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
         if channel not in self._email_settings:
             return False
@@ -574,9 +578,9 @@ class Host:
     def push_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetPush") >= 1:
-                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels)
+                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
-            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
         if channel not in self._push_settings:
             return False
@@ -589,9 +593,9 @@ class Host:
     def recording_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetRec") >= 1:
-                return all(self._recording_settings[ch]["Rec"]["enable"] == 1 for ch in self._channels)
+                return all(self._recording_settings[ch]["Rec"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
-            return all(self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1 for ch in self._channels)
+            return all(self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
         if channel not in self._recording_settings:
             return False
@@ -603,7 +607,7 @@ class Host:
 
     def buzzer_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
-            return all(self._buzzer_settings[ch]["Buzzer"]["enable"] == 1 for ch in self._channels)
+            return all(self._buzzer_settings[ch]["Buzzer"]["enable"] == 1 for ch in self._channels if ch in self._buzzer_settings)
 
         if channel not in self._buzzer_settings:
             return False
@@ -915,6 +919,12 @@ class Host:
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._capabilities[channel].append("autotrack_stream")
 
+            if channel in self._motion_detection_states:
+                self._capabilities[channel].append("motion_detection")
+
+            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                continue
+
             if channel in self._ftp_settings and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]):
                 self._capabilities[channel].append("ftp")
 
@@ -1026,9 +1036,6 @@ class Host:
             if self.api_version("supportAiSensitivity", channel) > 0:
                 self._capabilities[channel].append("ai_sensitivity")
 
-            if channel in self._motion_detection_states:
-                self._capabilities[channel].append("motion_detection")
-
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].append("isp_hue")
             if self.api_version("ispSatruation", channel) > 0:
@@ -1085,7 +1092,13 @@ class Host:
             ch_body = []
             if cmd == "GetIsp":
                 ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetIrLights":
+
+            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                body.extend(ch_body)
+                channels.extend([channel] * len(ch_body))
+                continue
+
+            if cmd == "GetIrLights":
                 ch_body = [{"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPowerLed":
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
@@ -1242,30 +1255,35 @@ class Host:
             if self.supported(channel, "buzzer"):
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetEmail") >= 1:
-                ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "email"):
+                if self.api_version("GetEmail") >= 1:
+                    ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetPush") >= 1:
-                ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "push"):
+                if self.api_version("GetPush") >= 1:
+                    ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetFtp") >= 1:
-                ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "ftp"):
+                if self.api_version("GetFtp") >= 1:
+                    ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetRec") >= 1:
-                ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "recording"):
+                if self.api_version("GetRec") >= 1:
+                    ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
 
-            if self.api_version("GetAudioAlarm") >= 1:
-                ch_body.append({"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}})
-            else:
-                ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "siren"):
+                if self.api_version("GetAudioAlarm") >= 1:
+                    ch_body.append({"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}})
+                else:
+                    ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "md_sensitivity"):
                 if self.api_version("GetMdAlarm") >= 1:
@@ -1329,7 +1347,7 @@ class Host:
         self.map_host_json_response(json_data)
         self.construct_capabilities(warnings=False)
 
-        if self.model in DUAL_LENS_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
+        if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
             self._stream_channels = [0, 1]
             self._nvr_num_channels = 1
             self._channels = [0]
@@ -1352,11 +1370,21 @@ class Host:
                 {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
             ]
+
+            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                body.extend(ch_body)
+                channels.extend([channel] * len(ch_body))
+                continue
+
+            ch_body.extend(
+                [
+                    {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
+                    {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
+                    {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
+                ]
+            )
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
