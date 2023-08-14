@@ -733,6 +733,13 @@ class Host:
 
         return self._ai_alarm_settings[channel][ai_type]["sensitivity"]
 
+    def ai_delay(self, channel: int, ai_type: str) -> int:
+        """AI detection delay time in seconds"""
+        if channel not in self._ai_alarm_settings or ai_type not in self._ai_alarm_settings[channel]:
+            return 0
+
+        return self._ai_alarm_settings[channel][ai_type]["stay_time"]
+
     def zoom_range(self, channel: int) -> dict:
         return self._zoom_focus_range[channel]
 
@@ -1035,6 +1042,9 @@ class Host:
 
             if self.api_version("supportAiSensitivity", channel) > 0:
                 self._capabilities[channel].append("ai_sensitivity")
+
+            if self.api_version("supportAiStayTime", channel) > 0:
+                self._capabilities[channel].append("ai_delay")
 
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].append("isp_hue")
@@ -3326,6 +3336,22 @@ class Host:
             raise InvalidParameterError(f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, suppored types are {self.ai_supported_types(channel)}")
 
         body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
+        await self.send_setting(body)
+
+    async def set_ai_delay(self, channel: int, value: int, ai_type: str) -> None:
+        """Set AI detection delay time in seconds."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_ai_delay: no camera connected to channel '{channel}'")
+        if channel not in self._ai_alarm_settings:
+            raise NotSupportedError(f"set_ai_delay: ai delay on camera {self.camera_name(channel)} is not available")
+        if not isinstance(value, int):
+            raise InvalidParameterError(f"set_ai_delay: delay '{value}' is not integer")
+        if value < 0 or value > 8:
+            raise InvalidParameterError(f"set_ai_delay: delay {value} not in range 0...8")
+        if ai_type not in self.ai_supported_types(channel):
+            raise InvalidParameterError(f"set_ai_delay: ai type '{ai_type}' not supported for channel {channel}, suppored types are {self.ai_supported_types(channel)}")
+
+        body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "stay_time": value}}}]
         await self.send_setting(body)
 
     async def set_image(
