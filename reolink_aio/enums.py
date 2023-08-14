@@ -51,8 +51,8 @@ class PtzEnum(Enum):
     right = "Right"
     up = "Up"
     down = "Down"
-    zoomin = "ZoomDec"
-    zoomout = "ZoomInc"
+    zoomin = "ZoomInc"
+    zoomout = "ZoomDec"
 
 
 class GuardEnum(Enum):
