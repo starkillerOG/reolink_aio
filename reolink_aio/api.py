@@ -975,7 +975,7 @@ class Host:
             ):
                 self._capabilities[channel].append("quick_reply")
 
-            if channel in self._audio_alarm_settings:
+            if self.api_version("alarmAudio", channel) > 0 and channel in self._audio_alarm_settings:
                 self._capabilities[channel].append("siren")
                 self._capabilities[channel].append("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
 
