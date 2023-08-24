@@ -115,7 +115,9 @@ MINIMUM_FIRMWARE = {
 DEFAULT_VERSION_DATA = datetime(2000, 1, 1, 0, 0)  # 2000-01-01 00:00
 
 version_regex = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_(?P<date>[0-9]+)")
+version_regex_long = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)_(?P<unknown>[0-9]+)_(?P<date>[0-9]+)")
 version_regex_no_date = re.compile(r"^v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)")
+version_regex_old_format = re.compile(r"^(?P<unknown>[0-9]+)_(?P<date>[0-9]+)_v(?P<major>[0-9]+)\.(?P<middle>[0-9]+)\.(?P<minor>[0-9]+).(?P<build>[0-9]+)")
 
 
 class SoftwareVersion:
@@ -138,11 +140,15 @@ class SoftwareVersion:
             self.is_unknown = True
             return
 
-        match = version_regex.match(self.version_string)
+        match = version_regex_long.match(self.version_string)
+        if match is None:
+            match = version_regex.match(self.version_string)
         if match is None:
             match = version_regex_no_date.match(self.version_string)
-            if match is None:
-                raise UnexpectedDataError(f"version_string has invalid version format: {version_string}")
+        if match is None:
+            match = version_regex_old_format.match(self.version_string)
+        if match is None:
+            raise UnexpectedDataError(f"version_string has invalid version format: {version_string}")
 
         self.major = int(match.group("major"))
         self.middle = int(match.group("middle"))
