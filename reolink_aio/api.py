@@ -891,6 +891,14 @@ class Host:
         """Construct the capabilities list of the NVR/camera."""
         # Host capabilities
         self._capabilities["Host"] = []
+
+        if self.api_version("onvif") > 0 and self._onvif_port is not None:
+            self._capabilities["Host"].append("ONVIF")
+        if self.api_version("rtsp") > 0 and self._rtsp_port is not None:
+            self._capabilities["Host"].append("RTSP")
+        if self.api_version("rtmp") > 0 and self._rtmp_port is not None:
+            self._capabilities["Host"].append("RTMP")
+
         if self.sw_version_object.date > datetime(year=2021, month=6, day=1):
             # Check if this camera publishes its inital state upon ONVIF subscription
             self._capabilities["Host"].append("initial_ONVIF_state")
@@ -2104,9 +2112,9 @@ class Host:
                 elif data["cmd"] == "GetNetPort":
                     self._netport_settings = data["value"]
                     net_port = data["value"]["NetPort"]
-                    self._rtsp_port = net_port["rtspPort"]
-                    self._rtmp_port = net_port["rtmpPort"]
-                    self._onvif_port = net_port["onvifPort"]
+                    self._rtsp_port = net_port.get("rtspPort", 554)
+                    self._rtmp_port = net_port.get("rtmpPort", 1935)
+                    self._onvif_port = net_port.get("onvifPort", 8000)
                     self._rtsp_enabled = net_port.get("rtspEnable", 1) == 1
                     self._rtmp_enabled = net_port.get("rtmpEnable", 1) == 1
                     self._onvif_enabled = net_port.get("onvifEnable", 1) == 1
