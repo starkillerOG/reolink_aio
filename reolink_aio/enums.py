@@ -65,6 +65,8 @@ class GuardEnum(Enum):
 class TrackMethodEnum(Enum):
     """Options for AI Track Method"""
 
+    # off = 0
+    # pantilt = 1
     digital = 2
     digitalfirst = 3
     pantiltfirst = 4

@@ -1035,7 +1035,7 @@ class Host:
                 self._capabilities[channel].append("auto_track")
                 track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
                 if isinstance(track_method, list):
-                    if len(track_method) > 1:
+                    if len(track_method) > 1 and sorted(track_method) != [0, 1]:
                         self._capabilities[channel].append("auto_track_method")
                 if self.auto_track_disappear_time(channel) > 0:
                     self._capabilities[channel].append("auto_track_disappear_time")
