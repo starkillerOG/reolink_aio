@@ -107,7 +107,6 @@ if __name__ == "__main__":
 ### Acknowledgment
 This library is based on the work of:
 - fwestenberg: https://github.com/fwestenberg/reolink_dev
-- JimStar: https://github.com/JimStar/reolink_ip
 
 **Author**
 
