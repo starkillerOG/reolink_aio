@@ -3800,6 +3800,14 @@ class Host:
                 self._port,
             )
             return await self.send(body, param, expected_response_type, retry)
+        except RuntimeError as err:
+            if self._aiohttp_session.closed and retry > 0:
+                # catch RuntimeError("Session is closed") from aiohttp, can happen due to async
+                _LOGGER.debug("Host %s:%s: aiohttp session closed, retrying.", self._host, self._port)
+                return await self.send(body, param, expected_response_type, retry)
+            _LOGGER.error('Host %s:%s: RuntimeError "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
+            await self.expire_session()
+            raise err
         except ApiError as err:
             _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
             await self.expire_session(unsubscribe=False)
