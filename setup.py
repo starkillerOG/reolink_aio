@@ -23,7 +23,8 @@ setup(name='reolink_aio',
       python_requires='>=3.9',
       install_requires=[
         'aiohttp',
-        'orjson'
+        'orjson',
+        'typing_extensions'
         ],
       tests_require=[],
       platforms=['any'],
