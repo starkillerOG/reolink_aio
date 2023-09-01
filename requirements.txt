@@ -1,4 +1,2 @@
-ffmpeg
-requests
 aiohttp
 orjson

@@ -22,8 +22,6 @@ setup(name='reolink_aio',
       packages=find_packages(),
       python_requires='>=3.9',
       install_requires=[
-        'ffmpeg',
-        'requests',
         'aiohttp',
         'orjson'
         ],
