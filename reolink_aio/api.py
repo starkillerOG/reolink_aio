@@ -3968,6 +3968,11 @@ class Host:
             )
 
             if response.status != 200:
+                if response.status == 400 and "NotAuthorized" in response_text and self.api_version("onvif") <= 1:
+                    raise NotSupportedError(
+                        f"Host {self._host}:{self._port}: subscription request got HTTP status response "
+                        f"{response.status}: {response.reason} with 'NotAuthorized' as response text"
+                    )
                 raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}")
 
             return response_text
@@ -4000,6 +4005,8 @@ class Host:
 
         try:
             response = await self.subscription_send(headers, xml)
+        except NotSupportedError as err:
+            raise err
         except ReolinkError as err:
             if not retry:
                 _LOGGER.debug("Reolink %s subscribe error: %s", sub_type, str(err))
