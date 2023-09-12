@@ -3968,10 +3968,10 @@ class Host:
             )
 
             if response.status != 200:
-                if response.status == 400 and "NotAuthorized" in response_text and self.api_version("onvif") <= 1:
+                if response.status == 400 and "SOAP-ENV:Fault" in response_text and self.api_version("onvif") <= 1:
                     raise NotSupportedError(
                         f"Host {self._host}:{self._port}: subscription request got HTTP status response "
-                        f"{response.status}: {response.reason} with 'NotAuthorized' as response text"
+                        f"{response.status}: {response.reason} with 'SOAP-ENV:Fault' as response text"
                     )
                 raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}")
 
