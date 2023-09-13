@@ -625,6 +625,8 @@ class Host:
 
     def whiteled_mode_list(self, channel: int) -> list[str]:
         mode_values = [SpotlightModeEnum.off, SpotlightModeEnum.auto, SpotlightModeEnum.schedule]
+        if self.api_version("supportFLKeepOn", channel) > 0:
+            mode_values.extend([SpotlightModeEnum.onatnight])
         if self.api_version("supportLightAutoBrightness", channel) > 0:
             mode_values.extend([SpotlightModeEnum.adaptive, SpotlightModeEnum.autoadaptive])
         return [val.name for val in mode_values]

@@ -22,6 +22,7 @@ class SpotlightModeEnum(Enum):
 
     off = 0
     auto = 1
+    onatnight = 2
     schedule = 3
     adaptive = 5
     autoadaptive = 4
