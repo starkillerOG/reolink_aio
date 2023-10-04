@@ -1272,28 +1272,28 @@ class Host:
             if self.supported(channel, "quick_reply"):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "buzzer"):
+            if self.supported(channel, "buzzer") or (self.supported(None, "buzzer") and channel == 0):
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "email"):
+            if self.supported(channel, "email") or (self.supported(None, "email") and channel == 0):
                 if self.api_version("GetEmail") >= 1:
                     ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "push"):
+            if self.supported(channel, "push") or (self.supported(None, "push") and channel == 0):
                 if self.api_version("GetPush") >= 1:
                     ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ftp"):
+            if self.supported(channel, "ftp") or (self.supported(None, "ftp") and channel == 0):
                 if self.api_version("GetFtp") >= 1:
                     ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "recording"):
+            if self.supported(channel, "recording") or (self.supported(None, "recording") and channel == 0):
                 if self.api_version("GetRec") >= 1:
                     ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
                 else:
