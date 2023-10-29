@@ -372,7 +372,7 @@ class VOD_file:
         if "name" in self.data:
             return self.data["name"]
 
-        return self.start_time.strftime("%Y%m%d%H%M%S")
+        return self.start_time.astimezone(tz=dtc.timezone.utc).strftime("%Y%m%d%H%M%S")
 
     @property
     def size(self) -> int:
