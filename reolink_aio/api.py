@@ -1954,21 +1954,6 @@ class Host:
         else:
             http_s = "http"
 
-        if self._is_nvr:
-            # NVR VoDs "type=0": Adobe flv
-            # NVR VoDs "type=1": mp4
-            return (
-                "application/x-mpegURL",
-                f"{http_s}://{self._host}:{self._port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
-                f"&type=1&start={filename}&seek=0&user={self._username}&password={self._password}",
-            )
-
-        # Alternative
-        #    return (
-        #        "application/x-mpegURL",
-        #        f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
-        #    )
-
         if stream is None:
             stream = self._stream
 
@@ -1977,6 +1962,21 @@ class Host:
             stream_type = 1
         else:
             stream_type = 0
+
+        if self._is_nvr:
+            # seek = start x seconds into the file
+            return (
+                "application/x-mpegURL",
+                f"{http_s}://{self._host}:{self._port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
+                f"&type={stream_type}&start={filename}&seek=0&user={self._username}&password={self._password}",
+            )
+        # Alternative
+        #    return (
+        #        "application/x-mpegURL",
+        #        f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
+        #    )
+            
+
         # If the camera provides a / in the filename it needs to be encoded with %20
         # Camera VoDs are only available over rtmp, rtsp is not an option
         file = filename.replace("/", "%20")
