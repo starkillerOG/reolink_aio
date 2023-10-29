@@ -1954,6 +1954,9 @@ class Host:
         else:
             http_s = "http"
 
+        # Looks like it only works with login/password method, not with token
+        credentials = f"user={self._username}&password={self._password}"
+
         if stream is None:
             stream = self._stream
 
@@ -1968,22 +1971,20 @@ class Host:
             return (
                 "application/x-mpegURL",
                 f"{http_s}://{self._host}:{self._port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
-                f"&type={stream_type}&start={filename}&seek=0&user={self._username}&password={self._password}",
+                f"&type={stream_type}&start={filename}&seek=0&{credentials}",
             )
-        # Alternative
-        #    return (
-        #        "application/x-mpegURL",
-        #        f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
-        #    )
-            
+          # Alternative
+          # return (
+          #     "application/x-mpegURL",
+          #     f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
+          # )
 
         # If the camera provides a / in the filename it needs to be encoded with %20
         # Camera VoDs are only available over rtmp, rtsp is not an option
         file = filename.replace("/", "%20")
-        # Looks like it only works with login/password method, not with token
         return (
             "application/x-mpegURL",
-            f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}",
+            f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&{credentials}",
         )
 
     async def download_vod(self, filename: str, wanted_filename: Optional[str] = None) -> typings.VOD_download:
