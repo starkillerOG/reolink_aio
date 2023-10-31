@@ -10,10 +10,10 @@ class SubType(str, Enum):
     long_poll = "long_poll"
     all = "all"
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.value
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.value
 
 
