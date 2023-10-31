@@ -299,7 +299,7 @@ class Host:
         return self._is_nvr
 
     @property
-    def nvr_name(self) -> Optional[str]:
+    def nvr_name(self) -> str:
         if not self._is_nvr and self._nvr_name == "":
             if len(self._channels) > 0 and self._channels[0] in self._channel_names:
                 return self._channel_names[self._channels[0]]
@@ -308,7 +308,9 @@ class Host:
         return self._nvr_name
 
     @property
-    def sw_version(self) -> Optional[str]:
+    def sw_version(self) -> str:
+        if self._nvr_sw_version is None:
+            return "Unknown"
         return self._nvr_sw_version
 
     @property
@@ -321,7 +323,7 @@ class Host:
     @property
     def sw_version_required(self) -> SoftwareVersion:
         """Return the minimum required firmware version for proper operation of this library"""
-        if self.model is None or self.hardware_version is None:
+        if self._nvr_model is None or self._nvr_hw_version is None:
             return SoftwareVersion(None)
 
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version))
@@ -335,11 +337,15 @@ class Host:
         return not self._nvr_sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
 
     @property
-    def model(self) -> Optional[str]:
+    def model(self) -> str:
+        if self._nvr_model is None:
+            return "Unknown"
         return self._nvr_model
 
     @property
-    def hardware_version(self) -> Optional[str]:
+    def hardware_version(self) -> str:
+        if self._nvr_hw_version is None:
+            return "Unknown"
         return self._nvr_hw_version
 
     @property
@@ -696,10 +702,10 @@ class Host:
 
         return self._auto_reply_settings[channel]["AutoReply"]["enable"] == 1
 
-    def quick_reply_file(self, channel: int) -> int | None:
+    def quick_reply_file(self, channel: int) -> int:
         """Return the quick replay audio file id, -1 means quick replay is off."""
         if channel not in self._auto_reply_settings:
-            return None
+            return -1
 
         return self._auto_reply_settings[channel]["AutoReply"]["fileId"]
 
@@ -2509,7 +2515,7 @@ class Host:
 
         await self.send_setting(body)
 
-    def get_focus(self, channel: int) -> None:
+    def get_focus(self, channel: int) -> int:
         """Get absolute focus value."""
         if channel not in self._channels:
             raise InvalidParameterError(f"get_focus: no camera connected to channel '{channel}'")
@@ -2562,7 +2568,7 @@ class Host:
         body: typings.reolink_json = [{"cmd": "SetAutoFocus", "action": 0, "param": {"AutoFocus": {"disable": 0 if enable else 1, "channel": channel}}}]
         await self.send_setting(body)
 
-    def get_zoom(self, channel: int):
+    def get_zoom(self, channel: int) -> int:
         """Get absolute zoom value."""
         if channel not in self._channels:
             raise InvalidParameterError(f"get_zoom: no camera connected to channel '{channel}'")
