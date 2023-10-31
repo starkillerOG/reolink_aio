@@ -1870,6 +1870,22 @@ class Host:
 
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
+    async def get_encoding(self, channel: int, stream: str = "main") -> str:
+        if not self._enc_settings:
+            try:
+                await self.get_state(cmd="GetEnc")
+            except ReolinkError:
+                pass
+
+        encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
+        if encoding is not None:
+            return encoding
+        if stream == "sub":
+            return "h264"
+        if self.api_version("mainEncType", channel) > 0:
+            return "h265"
+        return "h264"
+
     async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._stream_channels:
             return None
@@ -1973,11 +1989,11 @@ class Host:
                 f"{http_s}://{self._host}:{self._port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
                 f"&type={stream_type}&start={filename}&seek=0&{credentials}",
             )
-          # Alternative
-          # return (
-          #     "application/x-mpegURL",
-          #     f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
-          # )
+        # Alternative
+        # return (
+        #     "application/x-mpegURL",
+        #     f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
+        # )
 
         # If the camera provides a / in the filename it needs to be encoded with %20
         # Camera VoDs are only available over rtmp, rtsp is not an option
