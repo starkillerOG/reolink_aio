@@ -359,7 +359,7 @@ class VOD_file:
     @property
     def playback_time(self) -> dtc.datetime:
         """Playback time of the recording."""
-        return reolink_time_to_datetime(self.data["PlaybackTime"], self.tzinfo)
+        return reolink_time_to_datetime(self.data["PlaybackTime"], dtc.timezone.utc)
 
     @property
     def duration(self) -> dtc.timedelta:
@@ -372,7 +372,7 @@ class VOD_file:
         if "name" in self.data:
             return self.data["name"]
 
-        return self.start_time.astimezone(tz=dtc.timezone.utc).strftime("%Y%m%d%H%M%S")
+        return self.playback_time.astimezone(tz=dtc.timezone.utc).strftime("%Y%m%d%H%M%S")
 
     @property
     def size(self) -> int:
