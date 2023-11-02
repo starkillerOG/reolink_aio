@@ -274,7 +274,9 @@ class Host:
         return self._rtsp_enabled
 
     @property
-    def mac_address(self) -> Optional[str]:
+    def mac_address(self) -> str:
+        if self._mac_address is None:
+            raise NoDataError("Mac address not yet retrieved")
         return self._mac_address
 
     @property
@@ -1724,7 +1726,7 @@ class Host:
 
         return NewSoftwareVersion(firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"])
 
-    async def check_new_firmware(self) -> bool | NewSoftwareVersion | str:
+    async def check_new_firmware(self) -> Literal[False] | NewSoftwareVersion | str:
         """check for new firmware using camera API, returns False if no new firmware available."""
         new_firmware = 0
         if self.supported(None, "update"):
