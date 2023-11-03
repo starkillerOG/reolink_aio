@@ -1470,7 +1470,14 @@ class Host:
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
 
-        self.map_channels_json_response(json_data, channels)
+        try:
+            self.map_channels_json_response(json_data, channels)
+        except UnexpectedDataError as err:
+            _LOGGER.debug("get_host_data: %s, retrying by sending each command separately", err)
+            json_data = []
+            for command in body:
+                json_data.extend(await self.send([command], expected_response_type="json"))
+            self.map_channels_json_response(json_data, channels)
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
@@ -1607,7 +1614,12 @@ class Host:
             )
             return False
 
-        self.map_channels_json_response(json_data, channels)
+        try:
+            self.map_channels_json_response(json_data, channels)
+        except UnexpectedDataError as err:
+            _LOGGER.error("Error in get_ai_state_all_ch: %s", err)
+            return False
+
         return True
 
     async def get_all_motion_states(self, channel: int) -> Optional[bool]:
@@ -1695,7 +1707,12 @@ class Host:
                 self._ai_detection_states[channel] = {}
             return False
 
-        self.map_channels_json_response(json_data, channels)
+        try:
+            self.map_channels_json_response(json_data, channels)
+        except UnexpectedDataError as err:
+            _LOGGER.error("Error in get_motion_state_all_ch: %s", err)
+            return False
+
         return True
 
     async def _check_reolink_firmware(self) -> NewSoftwareVersion:
@@ -2175,14 +2192,9 @@ class Host:
 
     def map_channels_json_response(self, json_data, channels: list[int]):
         if len(json_data) != len(channels):
-            _LOGGER.error(
-                "Host %s:%s error mapping response to channels, received %i responses while requesting %i responses",
-                self._host,
-                self._port,
-                len(json_data),
-                len(channels),
+            raise UnexpectedDataError(
+                f"Host {self._host}:{self._port} error mapping response to channels, received {len(json_data)} responses while requesting {len(channels)} responses",
             )
-            return
 
         for data, channel in zip(json_data, channels):
             if channel == -1:
