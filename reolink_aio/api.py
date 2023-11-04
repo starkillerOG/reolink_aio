@@ -3473,8 +3473,12 @@ class Host:
         times = [(start, end)]
         if status_only:
             times = []
-            for month in range(start.month, end.month + 1):
-                times.append((start.replace(month=month, day=1, hour=0, minute=0), end.replace(month=month, day=1, hour=0, minute=5)))
+            for month in range(end.month, start.month - 1, -2):
+                if month > start.month:
+                    start_month = start.replace(month=month, day=1, hour=0, minute=0) - timedelta(minutes=5)
+                else:
+                    start_month = start.replace(month=month, day=1, hour=0, minute=0)
+                times.append((start_month, start.replace(month=month, day=1, hour=0, minute=5)))
 
         body = []
         for time in times:
@@ -3509,7 +3513,7 @@ class Host:
 
             search_result = data.get("value", {}).get("SearchResult", {})
             if "Status" not in search_result:
-                raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
+                continue
 
             statuses.extend([typings.VOD_search_status(status) for status in search_result["Status"]])
             if status_only:
@@ -3520,6 +3524,9 @@ class Host:
                 continue
 
             vod_files.extend([typings.VOD_file(file, self.timezone()) for file in search_result["File"]])
+
+        if not statuses:
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
 
         return statuses, vod_files
 
