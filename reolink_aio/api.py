@@ -3470,21 +3470,29 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        body = [
-            {
-                "cmd": "Search",
-                "action": 0,
-                "param": {
-                    "Search": {
-                        "channel": channel,
-                        "onlyStatus": 1 if status_only else 0,
-                        "streamType": stream,
-                        "StartTime": datetime_to_reolink_time(start),
-                        "EndTime": datetime_to_reolink_time(end),
-                    }
-                },
-            }
-        ]
+        times = [(start, end)]
+        if status_only:
+            times = []
+            for month in range(start.month, end.month+1):
+                times.append((start.replace(month=month, day=1, hour=0, minute=0), end.replace(month=month, day=1, hour=0, minute=5)))
+
+        body = []
+        for time in times:
+            body.append(
+                {
+                    "cmd": "Search",
+                    "action": 0,
+                    "param": {
+                        "Search": {
+                            "channel": channel,
+                            "onlyStatus": 1 if status_only else 0,
+                            "streamType": stream,
+                            "StartTime": datetime_to_reolink_time(time[0]),
+                            "EndTime": datetime_to_reolink_time(time[1]),
+                        }
+                    },
+                }
+            )
 
         try:
             json_data = await self.send(body, {"cmd": "Search"}, expected_response_type="json")
@@ -3493,22 +3501,27 @@ class Host:
         except NoDataError as err:
             raise NoDataError(f"Request VOD files error: {str(err)}") from err
 
-        if json_data[0].get("code", -1) != 0:
-            raise ApiError(f"Host: {self._host}:{self._port}: Request VOD files: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
+        statuses = []
+        vod_files = []
+        for data in json_data:
+            if data.get("code", -1) != 0:
+                raise ApiError(f"Host: {self._host}:{self._port}: Request VOD files: API returned error code {data.get('code', -1)}, response: {json_data}")
 
-        search_result = json_data[0].get("value", {}).get("SearchResult", {})
-        if "Status" not in search_result:
-            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
+            search_result = data.get("value", {}).get("SearchResult", {})
+            if "Status" not in search_result:
+                raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
 
-        statuses = [typings.VOD_search_status(status) for status in search_result["Status"]]
-        if status_only:
-            return statuses, []
+            statuses.extend([typings.VOD_search_status(status) for status in search_result["Status"]])
+            if status_only:
+                continue
 
-        if "File" not in search_result:
-            # When there are now recordings available in the indicated time window, "File" will not be in the response.
-            return statuses, []
+            if "File" not in search_result:
+                # When there are now recordings available in the indicated time window, "File" will not be in the response.
+                continue
 
-        return statuses, [typings.VOD_file(file, self.timezone()) for file in search_result["File"]]
+            vod_files.extend([typings.VOD_file(file, self.timezone()) for file in search_result["File"]])
+
+        return statuses, vod_files
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
