@@ -3473,7 +3473,7 @@ class Host:
         times = [(start, end)]
         if status_only:
             times = []
-            for month in range(start.month, end.month+1):
+            for month in range(start.month, end.month + 1):
                 times.append((start.replace(month=month, day=1, hour=0, minute=0), end.replace(month=month, day=1, hour=0, minute=5)))
 
         body = []
