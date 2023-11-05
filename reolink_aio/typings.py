@@ -397,6 +397,8 @@ class VOD_file:
     @staticmethod
     def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Parsed_VOD_file_name | None:
         # Rec_20230517_043229_541_M.mp4
+        # Rec_20231104_041801_281_S.mp4
+        # |--|YYYYMMDD|HHmmss|???|?|ext
         # Mp4Record_2023-05-15_RecM02_20230515_071811_071835_6D28900_13CE8C7.mp4
         # Mp4Record/2023-04-26/RecS02_DST20230426_145918_150032_2B14808_32F1DF.mp4
         # Mp4Record_2020-12-21_RecM01_20201221_121551_121553_6D28808_2240A8.mp4
@@ -414,12 +416,12 @@ class VOD_file:
 
         (name, ext) = file_name.rsplit(".", 2)
         if len(_split := name.rsplit("_", 6)) == 6:
-            (name, start_date, start_time, end_time, _unk1, _unk2) = _split
+            (name, start_date, start_time, end_time, _unk1, *_) = _split
             nibs = tuple(int(nib, 16) for nib in _unk1[-3:])
             _unk1 = _unk1[:-3]
-        elif _split[-1] == "M":
+        elif _split[-1] == "M" or _split[-1] == "S":
             tzInfo = dtc.timezone.utc
-            (name, start_date, start_time, _unk1) = _split
+            (name, start_date, start_time, *_) = _split
             end_time = "000000"
             nibs = (0, 0, 8)
         else:
