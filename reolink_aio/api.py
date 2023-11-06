@@ -171,7 +171,7 @@ class Host:
 
         ##############################################################################
         # Saved info response-blocks
-        self._hdd_info: Optional[dict] = None
+        self._hdd_info: list[dict] = []
         self._local_link: Optional[dict] = None
         self._wifi_signal: Optional[int] = None
         self._users: Optional[dict] = None
@@ -375,7 +375,7 @@ class Host:
         return self._stream_channels
 
     @property
-    def hdd_info(self) -> Optional[dict]:
+    def hdd_info(self) -> list[dict]:
         return self._hdd_info
 
     @property
