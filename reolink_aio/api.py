@@ -666,6 +666,16 @@ class Host:
 
         return self._isp_settings[channel]["Isp"]["dayNight"]
 
+    def HDR_on(self, channel: int) -> bool | None:
+        if channel not in self._isp_settings:
+            return None
+
+        hdr = self._isp_settings[channel]["Isp"].get("hdr")
+        if hdr is None:
+            return None
+
+        return hdr > 0
+
     def backlight_state(self, channel: int) -> Optional[str]:
         if channel not in self._isp_settings:
             return None
@@ -1075,6 +1085,8 @@ class Host:
                 self._capabilities[channel].append("isp_contrast")
             if self.api_version("ispBright", channel) > 0:
                 self._capabilities[channel].append("isp_bright")
+            if self.api_version("supportIspHdr", channel) > 0 and self.HDR_on(channel) is not None:
+                self._capabilities[channel].append("HDR")
 
             if self.api_version("ispDayNight", channel, no_key_return=1) > 0 and self.daynight_state(channel) is not None:
                 self._capabilities[channel].append("dayNight")
@@ -3304,6 +3316,20 @@ class Host:
 
         body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
+
+        await self.send_setting(body)
+
+    async def set_HDR(self, channel: int, value: bool) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_HDR: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "HDR"):
+            raise NotSupportedError(f"set_HDR: ISP HDR on camera {self.camera_name(channel)} is not available")
+        await self.get_state(cmd="GetIsp")
+        if channel not in self._isp_settings or not self._isp_settings[channel]:
+            raise NotSupportedError(f"set_HDR: ISP on camera {self.camera_name(channel)} is not available")
+
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body[0]["param"]["Isp"]["hdr"] = 2 if value else 0
 
         await self.send_setting(body)
 
