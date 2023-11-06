@@ -637,6 +637,7 @@ class Host:
             mode_values.extend([SpotlightModeEnum.onatnight])
         if self.api_version("supportLightAutoBrightness", channel) > 0:
             mode_values.extend([SpotlightModeEnum.adaptive, SpotlightModeEnum.autoadaptive])
+            mode_values.remove(SpotlightModeEnum.auto)
         return [val.name for val in mode_values]
 
     def whiteled_brightness(self, channel: int) -> Optional[int]:
