@@ -1759,23 +1759,23 @@ class Host:
     async def check_new_firmware(self) -> Literal[False] | NewSoftwareVersion | str:
         """check for new firmware using camera API, returns False if no new firmware available."""
         new_firmware = 0
+
+        body: typings.reolink_json = [{"cmd": "GetDevInfo", "action": 0, "param": {}}]
         if self.supported(None, "update"):
-            body: typings.reolink_json = [
-                {"cmd": "CheckFirmware"},
-                {"cmd": "GetDevInfo", "action": 0, "param": {}},
-            ]
+            body.append({"cmd": "CheckFirmware"})
 
+        try:
+            json_data = await self.send(body, expected_response_type="json")
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
+        except NoDataError as err:
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
+
+        self.map_host_json_response(json_data)
+
+        if self.supported(None, "update"):
             try:
-                json_data = await self.send(body, expected_response_type="json")
-            except InvalidContentTypeError as err:
-                raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
-            except NoDataError as err:
-                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
-
-            self.map_host_json_response(json_data)
-
-            try:
-                new_firmware = json_data[0]["value"]["newFirmware"]
+                new_firmware = json_data[1]["value"]["newFirmware"]
             except KeyError as err:
                 raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
 
