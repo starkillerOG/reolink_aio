@@ -1931,9 +1931,9 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        if self._is_nvr and stream == "main" and channel in self._rtsp_mainStream:
+        if self.api_version("rtsp") >= 3 and stream == "main" and channel in self._rtsp_mainStream:
             return self._rtsp_mainStream[channel]
-        if self._is_nvr and stream == "sub" and channel in self._rtsp_subStream:
+        if self.api_version("rtsp") >= 3 and stream == "sub" and channel in self._rtsp_subStream:
             return self._rtsp_subStream[channel]
 
         if not self._enc_settings:
