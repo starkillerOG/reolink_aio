@@ -149,6 +149,8 @@ class Host:
         self._stream_channels: list[int] = []
         self._channel_names: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
+        self._channel_sw_versions: dict[int, str] = {}
+        self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
         self._is_doorbell: dict[int, bool] = {}
 
         ##############################################################################
@@ -473,6 +475,16 @@ class Host:
         if channel not in self._channel_models:
             return "Unknown"
         return self._channel_models[channel]
+
+    def camera_sw_version(self, channel: int) -> str:
+        if channel not in self._channel_sw_versions:
+            return "Unknown"
+        return self._channel_sw_versions[channel]
+
+    def camera_sw_version_object(self, channel: int) -> SoftwareVersion:
+        if channel not in self._channel_sw_version_objects:
+            return SoftwareVersion(None)
+        return self._channel_sw_version_objects[channel]
 
     def is_doorbell(self, channel: int) -> bool:
         """Wether or not the camera is a doorbell"""
@@ -2237,6 +2249,10 @@ class Host:
                 if data["cmd"] == "GetChnTypeInfo":
                     self._channel_models[channel] = data["value"]["typeInfo"]
                     self._is_doorbell[channel] = "Doorbell" in self._channel_models[channel]
+                    if "firmVer" in data["value"]:
+                        self._channel_sw_versions[channel] = data["value"]["firmVer"]
+                        if self._channel_sw_versions[channel] is not None:
+                            self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
 
                 if data["cmd"] == "GetEvents":
                     response_channel = data["value"]["channel"]
