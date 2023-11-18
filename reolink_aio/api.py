@@ -477,11 +477,15 @@ class Host:
         return self._channel_models[channel]
 
     def camera_sw_version(self, channel: int) -> str:
+        if not self.is_nvr:
+            return self.sw_version
         if channel not in self._channel_sw_versions:
             return "Unknown"
         return self._channel_sw_versions[channel]
 
     def camera_sw_version_object(self, channel: int) -> SoftwareVersion:
+        if not self.is_nvr:
+            return self.sw_version_object
         if channel not in self._channel_sw_version_objects:
             return SoftwareVersion(None)
         return self._channel_sw_version_objects[channel]
