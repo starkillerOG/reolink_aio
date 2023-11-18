@@ -688,6 +688,12 @@ class Host:
 
         return hdr > 0
 
+    def daynight_threshold(self, channel: int) -> int | None:
+        if channel not in self._isp_settings:
+            return None
+
+        return self._isp_settings[channel]["Isp"].get("dayNightThreshold")
+
     def backlight_state(self, channel: int) -> Optional[str]:
         if channel not in self._isp_settings:
             return None
@@ -1102,6 +1108,8 @@ class Host:
 
             if self.api_version("ispDayNight", channel, no_key_return=1) > 0 and self.daynight_state(channel) is not None:
                 self._capabilities[channel].append("dayNight")
+                if self.daynight_threshold(channel) is not None:
+                    self._capabilities[channel].append("dayNightThreshold")
 
             if self.backlight_state(channel) is not None:
                 self._capabilities[channel].append("backLight")
@@ -3355,6 +3363,20 @@ class Host:
 
         body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["hdr"] = 2 if value else 0
+
+        await self.send_setting(body)
+
+    async def set_daynight_threshold(self, channel: int, value: int) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_daynight_threshold: no camera connected to channel '{channel}'")
+        await self.get_state(cmd="GetIsp")
+        if channel not in self._isp_settings or not self._isp_settings[channel]:
+            raise NotSupportedError(f"set_daynight_threshold: ISP on camera {self.camera_name(channel)} is not available")
+        if value < 0 or value > 100:
+            raise InvalidParameterError(f"set_daynight_threshold: value {value} not in 0-100")
+
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body[0]["param"]["Isp"]["dayNightThreshold"] = value
 
         await self.send_setting(body)
 
