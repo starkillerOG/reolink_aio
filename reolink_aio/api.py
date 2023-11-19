@@ -981,7 +981,7 @@ class Host:
             if channel in self._motion_detection_states:
                 self._capabilities[channel].append("motion_detection")
 
-            if self.api_version("supportAiAnimal", channel):
+            if self.api_version("supportAiAnimal", channel) and self.ai_supported(channel, PET_DETECTION_TYPE):
                 self._capabilities[channel].append("ai_animal")
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
