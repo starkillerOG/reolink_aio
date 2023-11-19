@@ -193,6 +193,7 @@ class Host:
         self._ftp_settings: dict[int, dict] = {}
         self._osd_settings: dict[int, dict] = {}
         self._push_settings: dict[int, dict] = {}
+        self._webhook_settings: dict[int, dict] = {}
         self._enc_settings: dict[int, dict] = {}
         self._ptz_presets_settings: dict[int, dict] = {}
         self._ptz_guard_settings: dict[int, dict] = {}
@@ -980,11 +981,14 @@ class Host:
             if channel in self._motion_detection_states:
                 self._capabilities[channel].append("motion_detection")
 
-            if channel in self.api_version("supportAiAnimal", channel):
+            if self.api_version("supportAiAnimal", channel):
                 self._capabilities[channel].append("ai_animal")
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 continue
+
+            if self.api_version("supportWebhook", channel) > 0:
+                self._capabilities[channel].append("webhook")
 
             if channel in self._ftp_settings and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]):
                 self._capabilities[channel].append("ftp")
@@ -1172,6 +1176,8 @@ class Host:
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWhiteLed":
                 ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetWebHook":
+                ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset":
                 ch_body = [{"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAutoFocus":
@@ -1466,6 +1472,8 @@ class Host:
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
                 ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "webhook"):
+                ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
             # checking range
             if self.supported(channel, "zoom_basic"):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
@@ -2363,6 +2371,9 @@ class Host:
 
                 elif data["cmd"] == "GetPushV20":
                     self._push_settings[channel] = data["value"]
+
+                elif data["cmd"] == "GetWebHook":
+                    self._webhook_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetEnc":
                     # GetEnc returns incorrect channel for DUO camera
@@ -3461,7 +3472,7 @@ class Host:
         if value < 0 or value > 100:
             raise InvalidParameterError(f"set_ai_sensitivity: sensitivity {value} not in range 0...100")
         if ai_type not in self.ai_supported_types(channel):
-            raise InvalidParameterError(f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, suppored types are {self.ai_supported_types(channel)}")
+            raise InvalidParameterError(f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}")
 
         body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
         await self.send_setting(body)
@@ -3477,7 +3488,7 @@ class Host:
         if value < 0 or value > 8:
             raise InvalidParameterError(f"set_ai_delay: delay {value} not in range 0...8")
         if ai_type not in self.ai_supported_types(channel):
-            raise InvalidParameterError(f"set_ai_delay: ai type '{ai_type}' not supported for channel {channel}, suppored types are {self.ai_supported_types(channel)}")
+            raise InvalidParameterError(f"set_ai_delay: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}")
 
         body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "stay_time": value}}}]
         await self.send_setting(body)
@@ -4011,6 +4022,110 @@ class Host:
             raise ApiError(f"Request to {URL} returned error code {resp_code}, data:\n{json_data}")
 
         return json_data
+
+    ##############################################################################
+    # WEBHOOK managing
+    async def webhook_add(self, channel: int, webhook_url: str):
+        """
+        Add a new webhook, reolink web interface -> settings -> survailance -> push -> For developers.
+        Webhook will be called on motion or AI person/vehicle/animal.
+        Webhook will only be called if push is on, the corresponding type is on and the scheduale on that time is enabled.
+        """
+        if not self.supported(channel, "webhook"):
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
+
+        await self.get_state("GetWebHook")
+
+        index = None
+        # use same index if webhook already used before
+        for webhook in self._webhook_settings[channel]["WebHook"]:
+            if webhook_url == webhook["hookUrl"]:
+                index = webhook["index"]
+                break
+
+        # if not used before find the first index not in use, if all in use default to idx 0
+        if index is None:
+            index = 0
+            for webhook in self._webhook_settings[channel]["WebHook"]:
+                if webhook["indexEnable"] == -1:
+                    index = webhook["index"]
+                    break
+
+        body: typings.reolink_json = [
+            {
+                "cmd": "SetWebHook",
+                "action": 0,
+                "param": {"WebHook": {"channel": channel, "index": index, "indexEnable": 1, "hookUrl": webhook_url, "bCustom": 0, "hookBody": ""}},
+            }
+        ]
+        await self.send_setting(body)
+
+    async def webhook_test(self, channel: int, webhook_url: str):
+        """Send a test message to a webhook"""
+        if not self.supported(channel, "webhook"):
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
+
+        body: typings.reolink_json = [
+            {
+                "cmd": "TestWebHook",
+                "action": 0,
+                "param": {"WebHook": {"alarmChannel": channel, "type": 3, "source": "hook", "hookUrl": webhook_url, "bCustom": 0, "hookBody": ""}},
+            }
+        ]
+        try:
+            await self.send_setting(body)
+        except ApiError as err:
+            raise ApiError(f"Webhook test for url '{webhook_url}' failed: {err}") from err
+
+    async def webhook_remove(self, channel: int, webhook_url: str):
+        """Remove a webhook"""
+        if not self.supported(channel, "webhook"):
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
+
+        await self.get_state("GetWebHook")
+
+        index = None
+        for webhook in self._webhook_settings[channel]["WebHook"]:
+            if webhook_url == webhook["hookUrl"]:
+                index = webhook["index"]
+                break
+
+        if index is None:
+            return
+
+        body: typings.reolink_json = [
+            {
+                "cmd": "SetWebHook",
+                "action": 0,
+                "param": {"WebHook": {"channel": channel, "index": index, "indexEnable": -1, "hookUrl": webhook_url, "bCustom": 0, "hookBody": ""}},
+            }
+        ]
+        await self.send_setting(body)
+
+    async def webhook_disable(self, channel: int, webhook_url: str):
+        """Disable a webhook"""
+        if not self.supported(channel, "webhook"):
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
+
+        await self.get_state("GetWebHook")
+
+        index = None
+        for webhook in self._webhook_settings[channel]["WebHook"]:
+            if webhook_url == webhook["hookUrl"]:
+                index = webhook["index"]
+                break
+
+        if index is None:
+            return
+
+        body: typings.reolink_json = [
+            {
+                "cmd": "SetWebHook",
+                "action": 0,
+                "param": {"WebHook": {"channel": channel, "index": index, "indexEnable": 0, "hookUrl": webhook_url, "bCustom": 0, "hookBody": ""}},
+            }
+        ]
+        await self.send_setting(body)
 
     ##############################################################################
     # SUBSCRIPTION managing
