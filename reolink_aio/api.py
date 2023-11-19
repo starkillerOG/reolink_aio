@@ -1845,6 +1845,11 @@ class Host:
 
     async def update_firmware(self) -> None:
         """check for new firmware."""
+        try:
+            await self.get_state(cmd="GetDevInfo")
+        except ReolinkError:
+            pass
+
         if not self.supported(None, "update"):
             raise NotSupportedError(f"update_firmware: not supported by {self.nvr_name}")
 
