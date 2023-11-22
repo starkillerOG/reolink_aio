@@ -133,6 +133,7 @@ class Host:
         self._is_nvr: bool = False
         self._nvr_name: str = ""
         self._nvr_serial: Optional[str] = None
+        self._nvr_uid: Optional[str] = None
         self._nvr_model: Optional[str] = None
         self._nvr_num_channels: int = 0
         self._nvr_hw_version: Optional[str] = None
@@ -285,6 +286,12 @@ class Host:
     @property
     def serial(self) -> Optional[str]:
         return self._nvr_serial
+
+    @property
+    def uid(self) -> str:
+        if self._nvr_uid is None:
+            return "Unknown"
+        return self._nvr_uid
 
     @property
     def wifi_connection(self) -> bool:
@@ -943,6 +950,9 @@ class Host:
         if self.api_version("rtmp") > 0 and self._rtmp_port is not None:
             self._capabilities["Host"].append("RTMP")
 
+        if self._nvr_uid is not None:
+            self._capabilities["Host"].append("UID")
+
         if self.sw_version_object.date > datetime(year=2021, month=6, day=1):
             # Check if this camera publishes its inital state upon ONVIF subscription
             self._capabilities["Host"].append("initial_ONVIF_state")
@@ -1413,6 +1423,7 @@ class Host:
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
             {"cmd": "GetLocalLink", "action": 0, "param": {}},
             {"cmd": "GetNetPort", "action": 0, "param": {}},
+            {"cmd": "GetP2p", "action": 0, "param": {}},
             {"cmd": "GetHddInfo", "action": 0, "param": {}},
             {"cmd": "GetUser", "action": 0, "param": {}},
             {"cmd": "GetNtp", "action": 0, "param": {}},
@@ -2225,6 +2236,9 @@ class Host:
                     self._rtmp_enabled = net_port.get("rtmpEnable", 1) == 1
                     self._onvif_enabled = net_port.get("onvifEnable", 1) == 1
                     self._subscribe_url = f"http://{self._host}:{self._onvif_port}/onvif/event_service"
+
+                elif data["cmd"] == "GetP2p":
+                    self._nvr_uid = data["value"]["P2p"]["uid"]
 
                 elif data["cmd"] == "GetUser":
                     self._users = data["value"]["User"]
