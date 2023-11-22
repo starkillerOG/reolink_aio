@@ -3874,7 +3874,9 @@ class Host:
                 data = await response.text(encoding="utf-8")  # returns str
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
-                _LOGGER.debug("%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).", self.nvr_name, self._host, self._port, response.status, response.content_type)
+                _LOGGER.debug(
+                    "%s/%s:%s::send() HTTP Response status = %s, content-type = (%s).", self.nvr_name, self._host, self._port, response.status, response.content_type
+                )
                 if cur_command == "Search" and len(data) > 10000:
                     _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (VOD search) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
                 elif cur_command in ["Snap", "Download"]:
