@@ -938,6 +938,18 @@ class Host:
         self._token = None
         self._lease_time = None
 
+    @property
+    def capabilities(self) -> dict[int | str, list[str]]:
+        return self._capabilities
+
+    @property
+    def checked_api_versions(self) -> dict[str, int]:
+        return self._api_version
+
+    @property
+    def abilities(self) -> dict[str, Any]:
+        return self._abilities
+
     def construct_capabilities(self, warnings=True) -> None:
         """Construct the capabilities list of the NVR/camera."""
         # Host capabilities
