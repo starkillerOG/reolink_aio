@@ -3876,6 +3876,8 @@ class Host:
                     response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=dl_timeout)
 
                 data = ""  # Response will be a file and be large, pass the response instead of reading it here.
+                if response.content_type == "text/html":
+                    data = await response.text(encoding="utf-8")  # Error occured, read the error message
             else:
                 if _LOGGER.isEnabledFor(logging.DEBUG):
                     _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
@@ -3918,14 +3920,6 @@ class Host:
                     await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
 
-            expected_content_type: str = expected_response_type
-            if expected_response_type == "json":
-                expected_content_type = "text/html"
-            # Reolink typo "apolication/octet-stream" instead of "application/octet-stream"
-            if response.content_type not in [expected_content_type, "apolication/octet-stream"]:
-                response.release()
-                raise InvalidContentTypeError(f"Expected type '{expected_content_type}' but received '{response.content_type}'")
-
             if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
                 response.release()
@@ -3935,6 +3929,21 @@ class Host:
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 response.release()
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
+
+            expected_content_type: list[str] = [expected_response_type]
+            if expected_response_type == "json":
+                expected_content_type = ["text/html"]
+            if expected_response_type == "application/octet-stream":
+                # Reolink typo "apolication/octet-stream" instead of "application/octet-stream"
+                expected_content_type = ["application/octet-stream", "apolication/octet-stream"]
+            if response.content_type not in expected_content_type:
+                response.release()
+                err_mess = f"Expected type '{expected_content_type[0]}' but received '{response.content_type}'"
+                if response.content_type == "text/html":
+                    if isinstance(data, bytes):
+                        data = data.decode("utf-8")
+                    err_mess = f"{err_mess}, response: {data}"
+                raise InvalidContentTypeError(err_mess)
 
             if expected_response_type == "json" and isinstance(data, str):
                 try:
