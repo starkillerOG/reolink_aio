@@ -2113,12 +2113,63 @@ class Host:
             f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&{credentials}",
         )
 
-    async def download_vod(self, filename: str, wanted_filename: Optional[str] = None) -> typings.VOD_download:
+    async def download_vod(
+        self,
+        filename: str,
+        wanted_filename: Optional[str] = None,
+        start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        channel: Optional[str] = None,
+        stream: Optional[str] = None,
+    ) -> typings.VOD_download:
         if wanted_filename is None:
             wanted_filename = filename.replace("/", "_")
 
+        body: typings.reolink_json
+        if self.is_nvr:
+            # NVRs require a additional NvrDownload command to prepare the file for download
+            if start_time is None or end_time is None or channel is None or stream is None:
+                raise InvalidParameterError("download_vod: for a NVR 'start_time', 'end_time', 'channel' and 'stream' parameters are required")
+
+            start = datetime_to_reolink_time(start_time)
+            end = datetime_to_reolink_time(end_time)
+            body = [
+                {
+                    "cmd": "NvrDownload",
+                    "action": 1,
+                    "param": {
+                        "NvrDownload": {
+                            "channel": channel,
+                            "iLogicChannel": 0,
+                            "streamType": stream,
+                            "StartTime": start,
+                            "EndTime": end,
+                        }
+                    },
+                }
+            ]
+
+            try:
+                json_data = await self.send(body, expected_response_type="json")
+            except InvalidContentTypeError as err:
+                raise InvalidContentTypeError(f"Request NvrDownload error: {str(err)}") from err
+            except NoDataError as err:
+                raise NoDataError(f"Request NvrDownload error: {str(err)}") from err
+
+            if json_data[0].get("code") != 0:
+                raise ApiError(f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
+
+            max_filesize = 0
+            for file in json_data[0]["value"]["fileList"]:
+                filesize = int(file["fileSize"])
+                if filesize > max_filesize:
+                    max_filesize = filesize
+                    filename = file["fileName"]
+
+            _LOGGER.debug("NVR prepared file %s", filename)
+
         param: dict[str, Any] = {"cmd": "Download", "source": filename, "output": wanted_filename}
-        body: typings.reolink_json = [{}]
+        body = [{}]
         response = await self.send(body, param, expected_response_type="application/octet-stream")
 
         if response.content_length is None:
