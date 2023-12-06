@@ -2075,6 +2075,12 @@ class Host:
         # Since no request is made, make sure we are logged in.
         await self.login()
 
+        # RTMP port needs to be enabled for playback to work
+        if self._rtmp_enabled is None:
+            await self.get_state("GetNetPort")
+        if self._rtmp_enabled is False:
+            await self.set_net_port(enable_rtmp=True)
+
         if self._use_https:
             http_s = "https"
         else:
