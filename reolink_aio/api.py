@@ -191,6 +191,7 @@ class Host:
         self._zoom_focus_range: dict[int, dict] = {}
         self._auto_focus_settings: dict[int, dict] = {}
         self._isp_settings: dict[int, dict] = {}
+        self._image_settings: dict[int, dict] = {}
         self._ftp_settings: dict[int, dict] = {}
         self._osd_settings: dict[int, dict] = {}
         self._push_settings: dict[int, dict] = {}
@@ -712,6 +713,36 @@ class Host:
 
         return self._isp_settings[channel]["Isp"]["backLight"]
 
+    def image_brightness(self, channel: int) -> int | None:
+        if channel not in self._image_settings:
+            return None
+
+        return self._image_settings[channel]["Image"].get("bright")
+
+    def image_contrast(self, channel: int) -> int | None:
+        if channel not in self._image_settings:
+            return None
+
+        return self._image_settings[channel]["Image"].get("contrast")
+
+    def image_saturation(self, channel: int) -> int | None:
+        if channel not in self._image_settings:
+            return None
+
+        return self._image_settings[channel]["Image"].get("saturation")
+
+    def image_sharpness(self, channel: int) -> int | None:
+        if channel not in self._image_settings:
+            return None
+
+        return self._image_settings[channel]["Image"].get("sharpen")
+
+    def image_hue(self, channel: int) -> int | None:
+        if channel not in self._image_settings:
+            return None
+
+        return self._image_settings[channel]["Image"].get("hue")
+
     def audio_record(self, channel: int) -> bool:
         if channel not in self._enc_settings:
             return False
@@ -1222,6 +1253,8 @@ class Host:
                 ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetImage":
+                ch_body = [{"cmd": "GetImage", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBuzzerAlarmV20":
                 ch_body = [{"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetAlarm", "GetMdAlarm"]:
@@ -1355,6 +1388,15 @@ class Host:
 
             if self.supported(channel, "quick_reply") and ("GetAutoReply" in cmd_list or not cmd_list):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
+
+            if (
+                self.supported(channel, "isp_hue")
+                or self.supported(channel, "isp_satruation")
+                or self.supported(channel, "isp_sharpen")
+                or self.supported(channel, "isp_contrast")
+                or self.supported(channel, "isp_bright")
+            ) and ("GetImage" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetImage", "action": 0, "param": {"channel": channel}})
 
             if (self.supported(channel, "buzzer") or (self.supported(None, "buzzer") and channel == 0)) and ("GetBuzzerAlarmV20" in cmd_list or not cmd_list):
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
@@ -2488,6 +2530,9 @@ class Host:
                 elif data["cmd"] == "GetIsp":
                     response_channel = data["value"]["Isp"]["channel"]
                     self._isp_settings[channel] = data["value"]
+
+                elif data["cmd"] == "GetImage":
+                    self._image_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetIrLights":
                     self._ir_settings[channel] = data["value"]
