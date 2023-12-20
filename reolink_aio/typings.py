@@ -151,11 +151,7 @@ class Reolink_timezone(dtc.tzinfo):
     def __init__(self, data: Mapping[str, Any]) -> None:
         super().__init__()
 
-        self._dst = (
-            dtc.timedelta(hours=data["Dst"]["offset"])
-            if bool(data["Dst"]["enable"])
-            else dtc.timedelta(hours=0)
-        )
+        self._dst = dtc.timedelta(hours=data["Dst"]["offset"]) if bool(data["Dst"]["enable"]) else dtc.timedelta(hours=0)
         # Reolink does a positive UTC offset but python expects a negative one
         self._offset = dtc.timedelta(seconds=-data["Time"]["timeZone"])
 
@@ -195,9 +191,7 @@ class Reolink_timezone(dtc.tzinfo):
         seconds = rest.seconds
         microseconds = rest.microseconds
         if microseconds:
-            return (
-                f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}" f".{microseconds:06d}"
-            )
+            return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}" f".{microseconds:06d}"
         if seconds:
             return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"
 
@@ -276,9 +270,7 @@ class VOD_search_status(Collection[dtc.date]):
 
     def _ensure_days(self):
         if self._days is None:
-            self._days = tuple(
-                day for day, set in enumerate(self.data["table"], 1) if set == "1"
-            )
+            self._days = tuple(day for day, set in enumerate(self.data["table"], 1) if set == "1")
         return self._days
 
     @property
@@ -300,12 +292,7 @@ class VOD_search_status(Collection[dtc.date]):
         return len(self._days)
 
     def __contains__(self, __x: object) -> bool:
-        return (
-            isinstance(__x, dtc.date)
-            and self.year == __x.year
-            and self.month == __x.month
-            and __x.day in self._ensure_days()
-        )
+        return isinstance(__x, dtc.date) and self.year == __x.year and self.month == __x.month and __x.day in self._ensure_days()
 
 
 class VOD_trigger(IntFlag):
@@ -347,9 +334,7 @@ VOD_download = NamedTuple(
 class VOD_file:
     """Contains information about the VOD file."""
 
-    def __init__(
-        self, data: dict[str, Any], tzinfo: Optional[dtc.tzinfo] = None
-    ) -> None:
+    def __init__(self, data: dict[str, Any], tzinfo: Optional[dtc.tzinfo] = None) -> None:
         # {'EndTime': {'day': 17, 'hour': 2, 'min': 43, 'mon': 4, 'sec': 50, 'year': 2023},
         # 'PlaybackTime': {'day': 16, 'hour': 23, 'min': 59, 'mon': 4, 'sec': 57, 'year': 2023},
         # 'StartTime': {'day': 17, 'hour': 1, 'min': 59, 'mon': 4, 'sec': 57, 'year': 2023},
@@ -396,9 +381,7 @@ class VOD_file:
         if "name" in self.data:
             return self.data["name"]
 
-        return self.playback_time.astimezone(tz=dtc.timezone.utc).strftime(
-            "%Y%m%d%H%M%S"
-        )
+        return self.playback_time.astimezone(tz=dtc.timezone.utc).strftime("%Y%m%d%H%M%S")
 
     @property
     def size(self) -> int:
@@ -421,9 +404,7 @@ class VOD_file:
         return self.__parsed_name
 
     @staticmethod
-    def parse_file_name(
-        file_name: str, tzInfo: Optional[dtc.tzinfo] = None
-    ) -> Parsed_VOD_file_name | None:
+    def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Parsed_VOD_file_name | None:
         # Rec_20230517_043229_541_M.mp4
         # Rec_20231104_041801_281_S.mp4
         # |--|YYYYMMDD|HHmmss|???|?|ext
@@ -488,16 +469,6 @@ class VOD_file:
             start_date = start_date[3:]
         else:
             dst = False
-        start = dtc.datetime.strptime(start_date + start_time, "%Y%m%d%H%M%S").replace(
-            tzinfo=tzInfo
-        )
-        end = (
-            dtc.datetime.strptime(start_date + end_time, "%Y%m%d%H%M%S").replace(
-                tzinfo=tzInfo
-            )
-            if end_time != "000000"
-            else start
-        )
-        return Parsed_VOD_file_name(
-            name, ext, dst, start.date(), start.time(), end.time(), triggers
-        )
+        start = dtc.datetime.strptime(start_date + start_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo)
+        end = dtc.datetime.strptime(start_date + end_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo) if end_time != "000000" else start
+        return Parsed_VOD_file_name(name, ext, dst, start.date(), start.time(), end.time(), triggers)

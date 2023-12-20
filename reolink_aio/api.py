@@ -80,9 +80,7 @@ DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
     "Reolink TrackMix WiFi",
     "RLC-81MA",
 }
-DUAL_LENS_MODELS: set[str] = (
-    DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
-)
+DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
 
 
 ##########################################################################################################################################################
@@ -135,9 +133,7 @@ class Host:
         if aiohttp_get_session_callback is not None:
             self._get_aiohttp_session = aiohttp_get_session_callback
         else:
-            self._get_aiohttp_session = lambda: aiohttp.ClientSession(
-                timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT)
-            )
+            self._get_aiohttp_session = lambda: aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
         self._aiohttp_session: aiohttp.ClientSession = self._get_aiohttp_session()
 
         ##############################################################################
@@ -170,9 +166,7 @@ class Host:
         # API-versions and capabilities
         self._api_version: dict[str, int] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
-        self._capabilities: dict[int | str, list[str]] = {
-            "Host": []
-        }  # processed by construct_capabilities
+        self._capabilities: dict[int | str, list[str]] = {"Host": []}  # processed by construct_capabilities
 
         ##############################################################################
         # Video-stream formats
@@ -353,9 +347,7 @@ class Host:
         if self._nvr_model is None or self._nvr_hw_version is None:
             return SoftwareVersion(None)
 
-        return SoftwareVersion(
-            MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version)
-        )
+        return SoftwareVersion(MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version))
 
     @property
     def sw_version_update_required(self) -> bool:
@@ -415,11 +407,7 @@ class Host:
 
     @property
     def session_active(self) -> bool:
-        if (
-            self._token is not None
-            and self._lease_time is not None
-            and self._lease_time > (datetime.now() + timedelta(seconds=5))
-        ):
+        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
             return True
         return False
 
@@ -470,9 +458,7 @@ class Host:
         # the _host_time_difference is basically the diff in "localtime" between the system and the device
         # so we will add that then set the tzinfo to our timezone rule so the resulting time
         # can be converted to other timezones correctly
-        return (datetime.now() + timedelta(seconds=self._host_time_difference)).replace(
-            tzinfo=self.timezone()
-        )
+        return (datetime.now() + timedelta(seconds=self._host_time_difference)).replace(tzinfo=self.timezone())
 
     async def async_get_time(self) -> datetime:
         """Get the current time of the device
@@ -482,12 +468,8 @@ class Host:
         """
         await self.get_state("GetTime")
         if self._time_settings is None:
-            raise NotSupportedError(
-                f"get_time: failed to retrieve current time settings from {self._host}:{self._port}"
-            )
-        return reolink_time_to_datetime(self._time_settings["Time"]).replace(
-            tzinfo=self.timezone()
-        )
+            raise NotSupportedError(f"get_time: failed to retrieve current time settings from {self._host}:{self._port}")
+        return reolink_time_to_datetime(self._time_settings["Time"]).replace(tzinfo=self.timezone())
 
     ##############################################################################
     # Channel-level getters/setters
@@ -496,11 +478,7 @@ class Host:
         if channel is None:
             return self.nvr_name
 
-        if (
-            channel not in self._channel_names
-            and channel in self._stream_channels
-            and channel != 0
-        ):
+        if channel not in self._channel_names and channel in self._stream_channels and channel != 0:
             return self.camera_name(0)  # Dual lens cameras
         if channel not in self._channel_names:
             if len(self._channels) == 1:
@@ -509,11 +487,7 @@ class Host:
         return self._channel_names[channel]
 
     def camera_model(self, channel: int) -> Optional[str]:
-        if (
-            channel not in self._channel_models
-            and channel in self._stream_channels
-            and channel != 0
-        ):
+        if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
             return self.camera_model(0)  # Dual lens cameras
         if channel not in self._channel_models:
             return "Unknown"
@@ -539,25 +513,15 @@ class Host:
 
     def motion_detected(self, channel: int) -> bool:
         """Return the motion detection state (polled)."""
-        return (
-            channel in self._motion_detection_states
-            and self._motion_detection_states[channel]
-        )
+        return channel in self._motion_detection_states and self._motion_detection_states[channel]
 
     def ai_detected(self, channel: int, object_type: str) -> bool:
         """Return the AI object detection state (polled)."""
-        if (
-            channel not in self._ai_detection_states
-            or self._ai_detection_states[channel] is None
-        ):
+        if channel not in self._ai_detection_states or self._ai_detection_states[channel] is None:
             return False
 
         for key, value in self._ai_detection_states[channel].items():
-            if (
-                key == object_type
-                or (object_type == PERSON_DETECTION_TYPE and key == "people")
-                or (object_type == PET_DETECTION_TYPE and key == "dog_cat")
-            ):
+            if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
                 return value
 
         return False
@@ -572,19 +536,12 @@ class Host:
 
     def ai_supported(self, channel: int, object_type: Optional[str] = None) -> bool:
         """Return if the AI object type detection is supported or not."""
-        if (
-            channel not in self._ai_detection_support
-            or not self._ai_detection_support[channel]
-        ):
+        if channel not in self._ai_detection_support or not self._ai_detection_support[channel]:
             return False
 
         if object_type is not None:
             for key, value in self._ai_detection_support[channel].items():
-                if (
-                    key == object_type
-                    or (object_type == PERSON_DETECTION_TYPE and key == "people")
-                    or (object_type == PET_DETECTION_TYPE and key == "dog_cat")
-                ):
+                if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
                     return value
             return False
 
@@ -612,49 +569,29 @@ class Host:
         return self._audio_alarm_settings[channel]["Audio"]["schedule"]["enable"] == 1
 
     def ir_enabled(self, channel: int) -> bool:
-        return (
-            channel in self._ir_settings
-            and self._ir_settings[channel]["IrLights"]["state"] == "Auto"
-        )
+        return channel in self._ir_settings and self._ir_settings[channel]["IrLights"]["state"] == "Auto"
 
     def status_led_enabled(self, channel: int) -> bool:
         if channel not in self._status_led_settings:
             return False
 
         if self.is_doorbell(channel):
-            return (
-                self._status_led_settings[channel]["PowerLed"].get(
-                    "eDoorbellLightState", "Off"
-                )
-                == "On"
-            )
+            return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off") == "On"
 
-        return (
-            self._status_led_settings[channel]["PowerLed"].get("state", "Off") == "On"
-        )
+        return self._status_led_settings[channel]["PowerLed"].get("state", "Off") == "On"
 
     def doorbell_led(self, channel: int) -> str:
         if channel not in self._status_led_settings:
             return "Off"
 
-        return self._status_led_settings[channel]["PowerLed"].get(
-            "eDoorbellLightState", "Off"
-        )
+        return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off")
 
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetFtp") >= 1:
-                return all(
-                    self._ftp_settings[ch]["Ftp"]["enable"] == 1
-                    for ch in self._channels
-                    if ch in self._ftp_settings
-                )
+                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
-            return all(
-                self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1
-                for ch in self._channels
-                if ch in self._ftp_settings
-            )
+            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
         if channel not in self._ftp_settings:
             return False
@@ -667,17 +604,9 @@ class Host:
     def email_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetEmail") >= 1:
-                return all(
-                    self._email_settings[ch]["Email"]["enable"] == 1
-                    for ch in self._channels
-                    if ch in self._email_settings
-                )
+                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
-            return all(
-                self._email_settings[ch]["Email"]["schedule"]["enable"] == 1
-                for ch in self._channels
-                if ch in self._email_settings
-            )
+            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
         if channel not in self._email_settings:
             return False
@@ -690,17 +619,9 @@ class Host:
     def push_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetPush") >= 1:
-                return all(
-                    self._push_settings[ch]["Push"]["enable"] == 1
-                    for ch in self._channels
-                    if ch in self._push_settings
-                )
+                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
-            return all(
-                self._push_settings[ch]["Push"]["schedule"]["enable"] == 1
-                for ch in self._channels
-                if ch in self._push_settings
-            )
+            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
         if channel not in self._push_settings:
             return False
@@ -713,17 +634,9 @@ class Host:
     def recording_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetRec") >= 1:
-                return all(
-                    self._recording_settings[ch]["Rec"]["enable"] == 1
-                    for ch in self._channels
-                    if ch in self._recording_settings
-                )
+                return all(self._recording_settings[ch]["Rec"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
-            return all(
-                self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1
-                for ch in self._channels
-                if ch in self._recording_settings
-            )
+            return all(self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
         if channel not in self._recording_settings:
             return False
@@ -735,11 +648,7 @@ class Host:
 
     def buzzer_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
-            return all(
-                self._buzzer_settings[ch]["Buzzer"]["enable"] == 1
-                for ch in self._channels
-                if ch in self._buzzer_settings
-            )
+            return all(self._buzzer_settings[ch]["Buzzer"]["enable"] == 1 for ch in self._channels if ch in self._buzzer_settings)
 
         if channel not in self._buzzer_settings:
             return False
@@ -747,10 +656,7 @@ class Host:
         return self._buzzer_settings[channel]["Buzzer"]["scheduleEnable"] == 1
 
     def whiteled_state(self, channel: int) -> bool:
-        return (
-            channel in self._whiteled_settings
-            and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
-        )
+        return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
         if channel not in self._whiteled_settings:
@@ -767,9 +673,7 @@ class Host:
         if self.api_version("supportFLKeepOn", channel) > 0:
             mode_values.extend([SpotlightModeEnum.onatnight])
         if self.api_version("supportLightAutoBrightness", channel) > 0:
-            mode_values.extend(
-                [SpotlightModeEnum.adaptive, SpotlightModeEnum.autoadaptive]
-            )
+            mode_values.extend([SpotlightModeEnum.adaptive, SpotlightModeEnum.autoadaptive])
             mode_values.remove(SpotlightModeEnum.auto)
         return [val.name for val in mode_values]
 
@@ -909,38 +813,23 @@ class Host:
 
         if self.api_version("GetMdAlarm") >= 1:
             if self._md_alarm_settings[channel]["MdAlarm"].get("useNewSens", 0) == 1:
-                return (
-                    51
-                    - self._md_alarm_settings[channel]["MdAlarm"]["newSens"]["sensDef"]
-                )
+                return 51 - self._md_alarm_settings[channel]["MdAlarm"]["newSens"]["sensDef"]
 
-            sensitivities = [
-                sens["sensitivity"]
-                for sens in self._md_alarm_settings[channel]["MdAlarm"]["sens"]
-            ]
+            sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["MdAlarm"]["sens"]]
             return 51 - mean(sensitivities)
 
-        sensitivities = [
-            sens["sensitivity"]
-            for sens in self._md_alarm_settings[channel]["Alarm"]["sens"]
-        ]
+        sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["Alarm"]["sens"]]
         return 51 - mean(sensitivities)
 
     def ai_sensitivity(self, channel: int, ai_type: str) -> int:
-        if (
-            channel not in self._ai_alarm_settings
-            or ai_type not in self._ai_alarm_settings[channel]
-        ):
+        if channel not in self._ai_alarm_settings or ai_type not in self._ai_alarm_settings[channel]:
             return 0
 
         return self._ai_alarm_settings[channel][ai_type]["sensitivity"]
 
     def ai_delay(self, channel: int, ai_type: str) -> int:
         """AI detection delay time in seconds"""
-        if (
-            channel not in self._ai_alarm_settings
-            or ai_type not in self._ai_alarm_settings[channel]
-        ):
+        if channel not in self._ai_alarm_settings or ai_type not in self._ai_alarm_settings[channel]:
             return 0
 
         return self._ai_alarm_settings[channel][ai_type]["stay_time"]
@@ -963,20 +852,12 @@ class Host:
             await self._login_try_ports()
             return  # succes
 
-        if (
-            self._token is not None
-            and self._lease_time is not None
-            and self._lease_time > (datetime.now() + timedelta(seconds=300))
-        ):
+        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
             return  # succes
 
         await self._login_mutex.acquire()
         try:
-            if (
-                self._token is not None
-                and self._lease_time is not None
-                and self._lease_time > (datetime.now() + timedelta(seconds=300))
-            ):
+            if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
                 _LOGGER.debug(
                     "Host %s:%s, after login mutex aquired, login already completed by another coroutine",
                     self._host,
@@ -984,9 +865,7 @@ class Host:
                 )
                 return  # succes, in case multiple async coroutine are waiting on login_mutex.acquire
 
-            await self.logout(
-                login_mutex_owned=True
-            )  # Ensure there would be no "max session" error
+            await self.logout(login_mutex_owned=True)  # Ensure there would be no "max session" error
 
             _LOGGER.debug(
                 "Host %s:%s, trying to login with user %s...",
@@ -1012,41 +891,25 @@ class Host:
             try:
                 json_data = await self.send(body, param, expected_response_type="json")
             except ApiError as err:
-                raise LoginError(
-                    f"API error during login of host {self._host}:{self._port}: {str(err)}"
-                ) from err
+                raise LoginError(f"API error during login of host {self._host}:{self._port}: {str(err)}") from err
             except ReolinkConnectionError as err:
-                raise LoginError(
-                    f"Client connector error during login of host {self._host}:{self._port}: {str(err)}"
-                ) from err
+                raise LoginError(f"Client connector error during login of host {self._host}:{self._port}: {str(err)}") from err
             except InvalidContentTypeError as err:
-                raise LoginError(
-                    f"Invalid content error during login of host {self._host}:{self._port}: {str(err)}"
-                ) from err
+                raise LoginError(f"Invalid content error during login of host {self._host}:{self._port}: {str(err)}") from err
             except NoDataError as err:
-                raise LoginError(
-                    f"Error receiving Reolink login response of host {self._host}:{self._port}"
-                ) from err
+                raise LoginError(f"Error receiving Reolink login response of host {self._host}:{self._port}") from err
 
-            _LOGGER.debug(
-                "Got login response from %s:%s: %s", self._host, self._port, json_data
-            )
+            _LOGGER.debug("Got login response from %s:%s: %s", self._host, self._port, json_data)
 
             try:
                 if json_data[0]["code"] != 0:
-                    raise LoginError(
-                        f"API returned error code {json_data[0]['code']} during login of host {self._host}:{self._port}"
-                    )
+                    raise LoginError(f"API returned error code {json_data[0]['code']} during login of host {self._host}:{self._port}")
 
-                self._lease_time = datetime.now() + timedelta(
-                    seconds=float(json_data[0]["value"]["Token"]["leaseTime"])
-                )
+                self._lease_time = datetime.now() + timedelta(seconds=float(json_data[0]["value"]["Token"]["leaseTime"]))
                 self._token = str(json_data[0]["value"]["Token"]["name"])
             except Exception as err:
                 self.clear_token()
-                raise LoginError(
-                    f"Login error, unknown response format from host {self._host}:{self._port}: {json_data}"
-                ) from err
+                raise LoginError(f"Login error, unknown response format from host {self._host}:{self._port}: {json_data}") from err
 
             _LOGGER.debug(
                 "Logged in at host %s:%s. Leasetime %s, token %s",
@@ -1183,9 +1046,7 @@ class Host:
             if channel in self._motion_detection_states:
                 self._capabilities[channel].append("motion_detection")
 
-            if self.api_version("supportAiAnimal", channel) and self.ai_supported(
-                channel, PET_DETECTION_TYPE
-            ):
+            if self.api_version("supportAiAnimal", channel) and self.ai_supported(channel, PET_DETECTION_TYPE):
                 self._capabilities[channel].append("ai_animal")
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
@@ -1194,58 +1055,35 @@ class Host:
             if self.api_version("supportWebhook", channel) > 0:
                 self._capabilities[channel].append("webhook")
 
-            if channel in self._ftp_settings and (
-                self.api_version("GetFtp") < 1
-                or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]
-            ):
+            if channel in self._ftp_settings and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]):
                 self._capabilities[channel].append("ftp")
 
-            if channel in self._push_settings and (
-                self.api_version("GetPush") < 1
-                or "scheduleEnable" in self._push_settings[channel]["Push"]
-            ):
+            if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
                 self._capabilities[channel].append("push")
 
-            if channel in self._recording_settings and (
-                self.api_version("GetRec") < 1
-                or "scheduleEnable" in self._recording_settings[channel]["Rec"]
-            ):
+            if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
                 self._capabilities[channel].append("recording")
 
-            if channel in self._email_settings and (
-                self.api_version("GetEmail") < 1
-                or "scheduleEnable" in self._email_settings[channel]["Email"]
-            ):
+            if channel in self._email_settings and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"]):
                 self._capabilities[channel].append("email")
 
-            if (
-                channel in self._buzzer_settings
-                and self.api_version("supportBuzzer") > 0
-                and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]
-            ):
+            if channel in self._buzzer_settings and self.api_version("supportBuzzer") > 0 and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]:
                 self._capabilities[channel].append("buzzer")
 
-            if (
-                self.api_version("ledControl", channel) > 0
-                and channel in self._ir_settings
-            ):
+            if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
                 self._capabilities[channel].append("ir_lights")
 
             if self.api_version("powerLed", channel) > 0:
                 # powerLed == statusLed = doorbell_led
                 self._capabilities[channel].append("status_led")  # internal use only
                 self._capabilities[channel].append("power_led")
-            if self.api_version(
-                "supportDoorbellLight", channel
-            ) > 0 or self.is_doorbell(channel):
+            if self.api_version("supportDoorbellLight", channel) > 0 or self.is_doorbell(channel):
                 # powerLed == statusLed = doorbell_led
                 self._capabilities[channel].append("status_led")  # internal use only
                 self._capabilities[channel].append("doorbell_led")
 
             if self.api_version("GetWhiteLed") > 0 and (
-                self.api_version("floodLight", channel) > 0
-                or self.api_version("supportFLswitch", channel) > 0
-                or self.api_version("supportFLBrightness", channel) > 0
+                self.api_version("floodLight", channel) > 0 or self.api_version("supportFLswitch", channel) > 0 or self.api_version("supportFLBrightness", channel) > 0
             ):
                 # floodlight == spotlight == WhiteLed
                 self._capabilities[channel].append("floodLight")
@@ -1255,24 +1093,14 @@ class Host:
                 if self.api_version("supportVisitorLoudspeaker", channel) > 0:
                     self._capabilities[channel].append("doorbell_button_sound")
 
-            if (
-                self.api_version("supportAudioFileList", channel) > 0
-                and self.api_version("supportAutoReply", channel) > 0
-            ) or (
-                not self.is_nvr
-                and self.api_version("supportAudioFileList") > 0
-                and self.api_version("supportAutoReply") > 0
+            if (self.api_version("supportAudioFileList", channel) > 0 and self.api_version("supportAutoReply", channel) > 0) or (
+                not self.is_nvr and self.api_version("supportAudioFileList") > 0 and self.api_version("supportAutoReply") > 0
             ):
                 self._capabilities[channel].append("quick_reply")
 
-            if (
-                self.api_version("alarmAudio", channel) > 0
-                and channel in self._audio_alarm_settings
-            ):
+            if self.api_version("alarmAudio", channel) > 0 and channel in self._audio_alarm_settings:
                 self._capabilities[channel].append("siren")
-                self._capabilities[channel].append(
-                    "siren_play"
-                )  # if self.api_version("supportAoAdjust", channel) > 0
+                self._capabilities[channel].append("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
 
             if self.audio_record(channel) is not None:
                 self._capabilities[channel].append("audio")
@@ -1282,18 +1110,8 @@ class Host:
                 self._capabilities[channel].append("ptz")
                 if ptz_ver in [1, 2, 5]:
                     self._capabilities[channel].append("zoom_basic")
-                    min_zoom = (
-                        self._zoom_focus_range.get(channel, {})
-                        .get("zoom", {})
-                        .get("pos", {})
-                        .get("min")
-                    )
-                    max_zoom = (
-                        self._zoom_focus_range.get(channel, {})
-                        .get("zoom", {})
-                        .get("pos", {})
-                        .get("max")
-                    )
+                    min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
+                    max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                     if min_zoom is None or max_zoom is None:
                         if warnings:
                             _LOGGER.warning(
@@ -1310,10 +1128,7 @@ class Host:
                 if ptz_ver in [2, 3, 5, 7]:
                     self._capabilities[channel].append("pan_tilt")
                     self._capabilities[channel].append("pan")
-                    if (
-                        self.api_version("supportPtzCalibration", channel) > 0
-                        or self.api_version("supportPtzCheck", channel) > 0
-                    ):
+                    if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
                         self._capabilities[channel].append("ptz_callibrate")
                     if self.api_version("GetPtzGuard", channel) > 0:
                         self._capabilities[channel].append("ptz_guard")
@@ -1321,29 +1136,13 @@ class Host:
                         self._capabilities[channel].append("ptz_position")
                 if ptz_ver in [2, 3]:
                     self._capabilities[channel].append("ptz_speed")
-                if (
-                    channel in self._ptz_presets
-                    and len(self._ptz_presets[channel]) != 0
-                ):
+                if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                     self._capabilities[channel].append("ptz_presets")
 
-            if (
-                self.api_version("supportDigitalZoom", channel) > 0
-                and "zoom" not in self._capabilities[channel]
-            ):
+            if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
                 self._capabilities[channel].append("zoom_basic")
-                min_zoom = (
-                    self._zoom_focus_range.get(channel, {})
-                    .get("zoom", {})
-                    .get("pos", {})
-                    .get("min")
-                )
-                max_zoom = (
-                    self._zoom_focus_range.get(channel, {})
-                    .get("zoom", {})
-                    .get("pos", {})
-                    .get("max")
-                )
+                min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
+                max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
                     self._capabilities[channel].append("zoom")
                 else:
@@ -1355,9 +1154,7 @@ class Host:
 
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].append("auto_track")
-                track_method = self._auto_track_range.get(channel, {}).get(
-                    "aiTrack", False
-                )
+                track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
                 if isinstance(track_method, list):
                     if len(track_method) > 1 and sorted(track_method) != [0, 1]:
                         self._capabilities[channel].append("auto_track_method")
@@ -1388,16 +1185,10 @@ class Host:
                 self._capabilities[channel].append("isp_contrast")
             if self.api_version("ispBright", channel) > 0:
                 self._capabilities[channel].append("isp_bright")
-            if (
-                self.api_version("supportIspHdr", channel) > 0
-                and self.HDR_on(channel) is not None
-            ):
+            if self.api_version("supportIspHdr", channel) > 0 and self.HDR_on(channel) is not None:
                 self._capabilities[channel].append("HDR")
 
-            if (
-                self.api_version("ispDayNight", channel, no_key_return=1) > 0
-                and self.daynight_state(channel) is not None
-            ):
+            if self.api_version("ispDayNight", channel, no_key_return=1) > 0 and self.daynight_state(channel) is not None:
                 self._capabilities[channel].append("dayNight")
                 if self.daynight_threshold(channel) is not None:
                     self._capabilities[channel].append("dayNightThreshold")
@@ -1415,9 +1206,7 @@ class Host:
 
         return capability in self._capabilities[channel]
 
-    def api_version(
-        self, capability: str, channel: int | None = None, no_key_return: int = 0
-    ) -> int:
+    def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
         if capability in self._api_version:
             return self._api_version[capability]
@@ -1428,11 +1217,7 @@ class Host:
         if channel >= len(self._abilities["abilityChn"]):
             return 0
 
-        return (
-            self._abilities["abilityChn"][channel]
-            .get(capability, {})
-            .get("ver", no_key_return)
-        )
+        return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", no_key_return)
 
     async def get_state(self, cmd: str) -> None:
         body = []
@@ -1440,22 +1225,16 @@ class Host:
         for channel in self._stream_channels:
             ch_body = []
             if cmd == "GetEnc":
-                ch_body = [
-                    {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetRtspUrl":
-                ch_body = [
-                    {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
         for channel in self._channels:
             ch_body = []
             if cmd == "GetIsp":
-                ch_body = [
-                    {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 body.extend(ch_body)
@@ -1463,37 +1242,21 @@ class Host:
                 continue
 
             if cmd == "GetIrLights":
-                ch_body = [
-                    {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPowerLed":
-                ch_body = [
-                    {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWhiteLed":
-                ch_body = [
-                    {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWebHook":
-                ch_body = [
-                    {"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset":
-                ch_body = [
-                    {"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAutoFocus":
-                ch_body = [
-                    {"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetZoomFocus":
-                ch_body = [
-                    {"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzGuard":
-                ch_body = [
-                    {"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzCurPos":
                 ch_body = [
                     {
@@ -1503,9 +1266,7 @@ class Host:
                     }
                 ]
             elif cmd == "GetAiCfg":
-                ch_body = [
-                    {"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzTraceSection":
                 ch_body = [
                     {
@@ -1515,9 +1276,7 @@ class Host:
                     }
                 ]
             elif cmd == "GetAudioCfg":
-                ch_body = [
-                    {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioFileList":
                 ch_body = [
                     {
@@ -1527,17 +1286,11 @@ class Host:
                     }
                 ]
             elif cmd == "GetAutoReply":
-                ch_body = [
-                    {"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
-                ch_body = [
-                    {"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetImage":
-                ch_body = [
-                    {"cmd": "GetImage", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetImage", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBuzzerAlarmV20":
                 ch_body = [
                     {
@@ -1583,9 +1336,7 @@ class Host:
                         }
                     ]
                 else:
-                    ch_body = [
-                        {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetPush", "GetPushV20"]:
                 if self.api_version("GetPush") >= 1:
                     ch_body = [
@@ -1596,27 +1347,17 @@ class Host:
                         }
                     ]
                 else:
-                    ch_body = [
-                        {"cmd": "GetPush", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetPush", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetFtp", "GetFtpV20"]:
                 if self.api_version("GetFtp") >= 1:
-                    ch_body = [
-                        {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}]
                 else:
-                    ch_body = [
-                        {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetRec", "GetRecV20"]:
                 if self.api_version("GetRec") >= 1:
-                    ch_body = [
-                        {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}]
                 else:
-                    ch_body = [
-                        {"cmd": "GetRec", "action": 0, "param": {"channel": channel}}
-                    ]
+                    ch_body = [{"cmd": "GetRec", "action": 0, "param": {"channel": channel}}]
             elif cmd in ["GetAudioAlarm", "GetAudioAlarmV20"]:
                 if self.api_version("GetAudioAlarm") >= 1:
                     ch_body = [
@@ -1669,13 +1410,9 @@ class Host:
             try:
                 json_data = await self.send(body, expected_response_type="json")
             except InvalidContentTypeError as err:
-                raise InvalidContentTypeError(
-                    f"get_state cmd '{body[0]['cmd']}': {str(err)}"
-                ) from err
+                raise InvalidContentTypeError(f"get_state cmd '{body[0]['cmd']}': {str(err)}") from err
             except NoDataError as err:
-                raise NoDataError(
-                    f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'"
-                ) from err
+                raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'") from err
 
             if channels:
                 self.map_channels_json_response(json_data, channels)
@@ -1693,27 +1430,19 @@ class Host:
         for channel in self._stream_channels:
             ch_body = []
             if "GetEnc" in cmd_list or not cmd_list:
-                ch_body.append(
-                    {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetEnc", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
         for channel in self._channels:
             ch_body = []
             if "GetIsp" in cmd_list or not cmd_list:
-                ch_body.append(
-                    {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetIsp", "action": 0, "param": {"channel": channel}})
 
             if self.api_version("GetEvents") >= 1:
-                ch_body.append(
-                    {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.append(
-                    {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
                 if self.ai_supported(channel):
                     ch_body.append(
                         {
@@ -1723,51 +1452,25 @@ class Host:
                         }
                     )
 
-            if self.supported(channel, "ir_lights") and (
-                "GetIrLights" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "ir_lights") and ("GetIrLights" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "floodLight") and (
-                "GetWhiteLed" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "floodLight") and ("GetWhiteLed" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "status_led") and (
-                "GetPowerLed" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "status_led") and ("GetPowerLed" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "zoom") and (
-                "GetZoomFocus" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "zoom") and ("GetZoomFocus" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "auto_focus") and (
-                "GetAutoFocus" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "auto_focus") and ("GetAutoFocus" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ptz_guard") and (
-                "GetPtzGuard" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "ptz_guard") and ("GetPtzGuard" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ptz_position") and (
-                "GetPtzCurPos" in cmd_list or not cmd_list
-            ):
+            if self.supported(channel, "ptz_position") and ("GetPtzCurPos" in cmd_list or not cmd_list):
                 ch_body.append(
                     {
                         "cmd": "GetPtzCurPos",
@@ -1776,16 +1479,10 @@ class Host:
                     }
                 )
 
-            if self.supported(channel, "auto_track") and (
-                "GetAiCfg" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "auto_track") and ("GetAiCfg" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "auto_track_limit") and (
-                "GetPtzTraceSection" in cmd_list or not cmd_list
-            ):
+            if self.supported(channel, "auto_track_limit") and ("GetPtzTraceSection" in cmd_list or not cmd_list):
                 ch_body.append(
                     {
                         "cmd": "GetPtzTraceSection",
@@ -1794,19 +1491,11 @@ class Host:
                     }
                 )
 
-            if self.supported(channel, "volume") and (
-                "GetAudioCfg" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "volume") and ("GetAudioCfg" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "quick_reply") and (
-                "GetAutoReply" in cmd_list or not cmd_list
-            ):
-                ch_body.append(
-                    {"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}
-                )
+            if self.supported(channel, "quick_reply") and ("GetAutoReply" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
 
             if (
                 self.supported(channel, "isp_hue")
@@ -1815,14 +1504,9 @@ class Host:
                 or self.supported(channel, "isp_contrast")
                 or self.supported(channel, "isp_bright")
             ) and ("GetImage" in cmd_list or not cmd_list):
-                ch_body.append(
-                    {"cmd": "GetImage", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetImage", "action": 0, "param": {"channel": channel}})
 
-            if (
-                self.supported(channel, "buzzer")
-                or (self.supported(None, "buzzer") and channel == 0)
-            ) and ("GetBuzzerAlarmV20" in cmd_list or not cmd_list):
+            if (self.supported(channel, "buzzer") or (self.supported(None, "buzzer") and channel == 0)) and ("GetBuzzerAlarmV20" in cmd_list or not cmd_list):
                 ch_body.append(
                     {
                         "cmd": "GetBuzzerAlarmV20",
@@ -1831,10 +1515,7 @@ class Host:
                     }
                 )
 
-            if (
-                self.supported(channel, "email")
-                or (self.supported(None, "email") and channel == 0)
-            ) and ("GetEmail" in cmd_list or not cmd_list):
+            if (self.supported(channel, "email") or (self.supported(None, "email") and channel == 0)) and ("GetEmail" in cmd_list or not cmd_list):
                 if self.api_version("GetEmail") >= 1:
                     ch_body.append(
                         {
@@ -1844,14 +1525,9 @@ class Host:
                         }
                     )
                 else:
-                    ch_body.append(
-                        {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}
-                    )
+                    ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
 
-            if (
-                self.supported(channel, "push")
-                or (self.supported(None, "push") and channel == 0)
-            ) and ("GetPush" in cmd_list or not cmd_list):
+            if (self.supported(channel, "push") or (self.supported(None, "push") and channel == 0)) and ("GetPush" in cmd_list or not cmd_list):
                 if self.api_version("GetPush") >= 1:
                     ch_body.append(
                         {
@@ -1861,39 +1537,21 @@ class Host:
                         }
                     )
                 else:
-                    ch_body.append(
-                        {"cmd": "GetPush", "action": 0, "param": {"channel": channel}}
-                    )
+                    ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
 
-            if (
-                self.supported(channel, "ftp")
-                or (self.supported(None, "ftp") and channel == 0)
-            ) and ("GetFtp" in cmd_list or not cmd_list):
+            if (self.supported(channel, "ftp") or (self.supported(None, "ftp") and channel == 0)) and ("GetFtp" in cmd_list or not cmd_list):
                 if self.api_version("GetFtp") >= 1:
-                    ch_body.append(
-                        {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}
-                    )
+                    ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
                 else:
-                    ch_body.append(
-                        {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}
-                    )
+                    ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
-            if (
-                self.supported(channel, "recording")
-                or (self.supported(None, "recording") and channel == 0)
-            ) and ("GetRec" in cmd_list or not cmd_list):
+            if (self.supported(channel, "recording") or (self.supported(None, "recording") and channel == 0)) and ("GetRec" in cmd_list or not cmd_list):
                 if self.api_version("GetRec") >= 1:
-                    ch_body.append(
-                        {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}
-                    )
+                    ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
                 else:
-                    ch_body.append(
-                        {"cmd": "GetRec", "action": 0, "param": {"channel": channel}}
-                    )
+                    ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "siren") and (
-                "GetAudioAlarm" in cmd_list or not cmd_list
-            ):
+            if self.supported(channel, "siren") and ("GetAudioAlarm" in cmd_list or not cmd_list):
                 if self.api_version("GetAudioAlarm") >= 1:
                     ch_body.append(
                         {
@@ -1911,9 +1569,7 @@ class Host:
                         }
                     )
 
-            if self.supported(channel, "md_sensitivity") and (
-                "GetMdAlarm" in cmd_list or not cmd_list
-            ):
+            if self.supported(channel, "md_sensitivity") and ("GetMdAlarm" in cmd_list or not cmd_list):
                 if self.api_version("GetMdAlarm") >= 1:
                     ch_body.append(
                         {
@@ -1931,9 +1587,7 @@ class Host:
                         }
                     )
 
-            if self.supported(channel, "ai_sensitivity") and (
-                "GetAiAlarm" in cmd_list or not cmd_list
-            ):
+            if self.supported(channel, "ai_sensitivity") and ("GetAiAlarm" in cmd_list or not cmd_list):
                 for ai_type in self.ai_supported_types(channel):
                     ch_body.append(
                         {
@@ -1948,11 +1602,7 @@ class Host:
 
         # host states
         host_body = []
-        if (
-            self.supported(None, "wifi")
-            and self.wifi_connection
-            and ("GetWifiSignal" in cmd_list or not cmd_list)
-        ):
+        if self.supported(None, "wifi") and self.wifi_connection and ("GetWifiSignal" in cmd_list or not cmd_list):
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
 
         body.extend(host_body)
@@ -1977,9 +1627,7 @@ class Host:
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"channel-state: {str(err)}") from err
         except NoDataError as err:
-            raise NoDataError(
-                f"Host: {self._host}:{self._port}: error obtaining channel-state response"
-            ) from err
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response") from err
 
         self.map_channels_json_response(json_data, channels)
 
@@ -2005,20 +1653,14 @@ class Host:
         try:
             json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(
-                f"Get host-settings error: {str(err)}"
-            ) from err
+            raise InvalidContentTypeError(f"Get host-settings error: {str(err)}") from err
         except NoDataError as err:
-            raise NoDataError(
-                f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings"
-            ) from err
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings") from err
 
         self.map_host_json_response(json_data)
         self.construct_capabilities(warnings=False)
 
-        if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (
-            not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0
-        ):
+        if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
             self._stream_channels = [0, 1]
             self._nvr_num_channels = 1
             self._channels = [0]
@@ -2061,9 +1703,7 @@ class Host:
                 ]
             )
             # one time values
-            ch_body.append(
-                {"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}
-            )
+            ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
                 ch_body.append(
                     {
@@ -2073,24 +1713,13 @@ class Host:
                     }
                 )
             if self.supported(channel, "webhook"):
-                ch_body.append(
-                    {"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
             # checking range
             if self.supported(channel, "zoom_basic"):
-                ch_body.append(
-                    {"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}}
-                )
-            if (
-                self.supported(channel, "pan_tilt")
-                and self.api_version("ptzPreset", channel) >= 1
-            ):
-                ch_body.append(
-                    {"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}
-                )
-                ch_body.append(
-                    {"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
+            if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
+                ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
                 ch_body.append(
                     {
                         "cmd": "GetPtzCurPos",
@@ -2099,9 +1728,7 @@ class Host:
                     }
                 )
             if self.supported(channel, "auto_track"):
-                ch_body.append(
-                    {"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}}
-                )
+                ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("supportBuzzer") > 0:
                 ch_body.append(
@@ -2182,21 +1809,15 @@ class Host:
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
         except NoDataError as err:
-            raise NoDataError(
-                f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings"
-            ) from err
+            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
 
         try:
             self.map_channels_json_response(json_data, channels)
         except UnexpectedDataError as err:
-            _LOGGER.debug(
-                "get_host_data: %s, retrying by sending each command separately", err
-            )
+            _LOGGER.debug("get_host_data: %s, retrying by sending each command separately", err)
             json_data = []
             for command in body:
-                json_data.extend(
-                    await self.send([command], expected_response_type="json")
-                )
+                json_data.extend(await self.send([command], expected_response_type="json"))
             self.map_channels_json_response(json_data, channels)
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
@@ -2216,9 +1837,7 @@ class Host:
             self._api_version["GetPush"] = check_command_exists("GetPushV20")
             self._api_version["GetFtp"] = check_command_exists("GetFtpV20")
             self._api_version["GetRec"] = check_command_exists("GetRecV20")
-            self._api_version["GetAudioAlarm"] = check_command_exists(
-                "GetAudioAlarmV20"
-            )
+            self._api_version["GetAudioAlarm"] = check_command_exists("GetAudioAlarmV20")
             self._api_version["GetMdAlarm"] = check_command_exists("GetMdAlarm")
         else:
             self._api_version["GetEmail"] = 0
@@ -2259,11 +1878,7 @@ class Host:
 
         self.map_channel_json_response(json_data, channel)
 
-        return (
-            None
-            if channel not in self._motion_detection_states
-            else self._motion_detection_states[channel]
-        )
+        return None if channel not in self._motion_detection_states else self._motion_detection_states[channel]
 
     async def get_ai_state(self, channel: int) -> Optional[dict[str, bool]]:
         if channel not in self._channels:
@@ -2296,9 +1911,7 @@ class Host:
 
         return (
             None
-            if self._ai_detection_states is None
-            or channel not in self._ai_detection_states
-            or self._ai_detection_states[channel] is None
+            if self._ai_detection_states is None or channel not in self._ai_detection_states or self._ai_detection_states[channel] is None
             else self._ai_detection_states[channel]
         )
 
@@ -2308,15 +1921,11 @@ class Host:
         channels = []
         for channel in self._channels:
             if self.api_version("GetEvents") >= 1:
-                ch_body = [
-                    {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
             else:
                 if not self.ai_supported(channel):
                     continue
-                ch_body = [
-                    {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetAiState", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
@@ -2364,9 +1973,7 @@ class Host:
         else:
             body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
             if self.ai_supported(channel):
-                body.append(
-                    {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}}
-                )
+                body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -2393,11 +2000,7 @@ class Host:
 
         self.map_channel_json_response(json_data, channel)
 
-        return (
-            None
-            if channel not in self._motion_detection_states
-            else self._motion_detection_states[channel]
-        )
+        return None if channel not in self._motion_detection_states else self._motion_detection_states[channel]
 
     async def get_motion_state_all_ch(self) -> bool:
         """Fetch All motions states of all channels at once (regular + AI + visitor)."""
@@ -2405,13 +2008,9 @@ class Host:
         channels = []
         for channel in self._channels:
             if self.api_version("GetEvents") >= 1:
-                ch_body = [
-                    {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
             else:
-                ch_body = [
-                    {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}
-                ]
+                ch_body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
                 if self.ai_supported(channel):
                     ch_body.append(
                         {
@@ -2470,17 +2069,13 @@ class Host:
             json_data = await self.send_reolink_com(request_URL)
 
             for device in json_data["data"]:
-                if device["title"] == self.hardware_version and device["dlProduct"][
-                    "title"
-                ].startswith(self.model):
+                if device["title"] == self.hardware_version and device["dlProduct"]["title"].startswith(self.model):
                     self._nvr_sw_hardware_id = device["id"]
                     self._nvr_sw_model_id = device["dlProduct"]["id"]
                     break
 
         if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
-            raise UnexpectedDataError(
-                f"Could not find model '{self.model}' hardware '{self.hardware_version}' in list from reolink.com"
-            )
+            raise UnexpectedDataError(f"Could not find model '{self.model}' hardware '{self.hardware_version}' in list from reolink.com")
 
         request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._nvr_sw_model_id}&hardwareVersion={self._nvr_sw_hardware_id}&lang=en"
         json_data = await self.send_reolink_com(request_URL)
@@ -2512,9 +2107,7 @@ class Host:
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
         except NoDataError as err:
-            raise NoDataError(
-                f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response"
-            ) from err
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
 
         self.map_host_json_response(json_data)
 
@@ -2522,9 +2115,7 @@ class Host:
             try:
                 new_firmware = json_data[1]["value"]["newFirmware"]
             except KeyError as err:
-                raise UnexpectedDataError(
-                    f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}"
-                ) from err
+                raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
 
         try:
             latest_software_version = await self._check_reolink_firmware()
@@ -2536,10 +2127,7 @@ class Host:
                 return "New firmware available"
             return str(new_firmware)
 
-        if (
-            self._nvr_sw_version_object is None
-            or self._nvr_sw_version_object >= latest_software_version
-        ):
+        if self._nvr_sw_version_object is None or self._nvr_sw_version_object >= latest_software_version:
             if new_firmware == 0:
                 return False
             if new_firmware == 1:
@@ -2557,9 +2145,7 @@ class Host:
             pass
 
         if not self.supported(None, "update"):
-            raise NotSupportedError(
-                f"update_firmware: not supported by {self.nvr_name}"
-            )
+            raise NotSupportedError(f"update_firmware: not supported by {self.nvr_name}")
 
         body = [{"cmd": "UpgradeOnline"}]
         await self.send_setting(body)
@@ -2567,9 +2153,7 @@ class Host:
     async def update_progress(self) -> bool | int:
         """check progress of firmware update, returns False if not in progress."""
         if not self.supported(None, "update"):
-            raise NotSupportedError(
-                f"update_progress: not supported by {self.nvr_name}"
-            )
+            raise NotSupportedError(f"update_progress: not supported by {self.nvr_name}")
 
         body = [{"cmd": "UpgradeStatus"}]
 
@@ -2578,9 +2162,7 @@ class Host:
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Update progress: {str(err)}") from err
         except NoDataError as err:
-            raise NoDataError(
-                f"Host: {self._host}:{self._port}: error obtaining update progress response"
-            ) from err
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response") from err
 
         if json_data[0]["code"] != 0:
             return False
@@ -2595,19 +2177,12 @@ class Host:
         body = [{"cmd": "Reboot"}]
         json_data = await self.send(body, expected_response_type="json")
 
-        if (
-            json_data[0]["code"] != 0
-            or json_data[0].get("value", {}).get("rspCode", -1) != 200
-        ):
+        if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
             rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
             detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
-            raise ApiError(
-                f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}"
-            )
+            raise ApiError(f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}")
 
-    async def get_snapshot(
-        self, channel: int, stream: Optional[str] = None
-    ) -> bytes | None:
+    async def get_snapshot(self, channel: int, stream: Optional[str] = None) -> bytes | None:
         """Get the still image."""
         if channel not in self._stream_channels:
             return None
@@ -2643,9 +2218,7 @@ class Host:
 
         return response
 
-    def get_flv_stream_source(
-        self, channel: int, stream: Optional[str] = None
-    ) -> Optional[str]:
+    def get_flv_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._stream_channels:
             return None
 
@@ -2660,9 +2233,7 @@ class Host:
         password = parse.quote(self._password)
         return f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=channel{channel}_{stream}.bcs&user={self._username}&password={password}"
 
-    def get_rtmp_stream_source(
-        self, channel: int, stream: Optional[str] = None
-    ) -> Optional[str]:
+    def get_rtmp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._stream_channels:
             return None
 
@@ -2687,12 +2258,7 @@ class Host:
             except ReolinkError:
                 pass
 
-        encoding = (
-            self._enc_settings.get(channel, {})
-            .get("Enc", {})
-            .get(f"{stream}Stream", {})
-            .get("vType")
-        )
+        encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is not None:
             return encoding
         if stream == "sub":
@@ -2701,26 +2267,16 @@ class Host:
             return "h265"
         return "h264"
 
-    async def get_rtsp_stream_source(
-        self, channel: int, stream: Optional[str] = None
-    ) -> Optional[str]:
+    async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._stream_channels:
             return None
 
         if stream is None:
             stream = self._stream
 
-        if (
-            self.api_version("rtsp") >= 3
-            and stream == "main"
-            and channel in self._rtsp_mainStream
-        ):
+        if self.api_version("rtsp") >= 3 and stream == "main" and channel in self._rtsp_mainStream:
             return self._rtsp_mainStream[channel]
-        if (
-            self.api_version("rtsp") >= 3
-            and stream == "sub"
-            and channel in self._rtsp_subStream
-        ):
+        if self.api_version("rtsp") >= 3 and stream == "sub" and channel in self._rtsp_subStream:
             return self._rtsp_subStream[channel]
 
         if not self._enc_settings:
@@ -2729,12 +2285,7 @@ class Host:
             except ReolinkError:
                 pass
 
-        encoding = (
-            self._enc_settings.get(channel, {})
-            .get("Enc", {})
-            .get(f"{stream}Stream", {})
-            .get("vType")
-        )
+        encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is None and stream == "main" and channel in self._rtsp_mainStream:
             return self._rtsp_mainStream[channel]
 
@@ -2762,9 +2313,7 @@ class Host:
 
         return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
 
-    async def get_stream_source(
-        self, channel: int, stream: Optional[str] = None
-    ) -> Optional[str]:
+    async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         """Return the stream source url."""
         try:
             await self.login()
@@ -2789,15 +2338,11 @@ class Host:
         channel: int,
         filename: str,
         stream: Optional[str] = None,
-        request_type: Optional[
-            typings.VOD_request_type
-        ] = typings.VOD_request_type.RTMP,
+        request_type: Optional[typings.VOD_request_type] = typings.VOD_request_type.RTMP,
     ) -> tuple[str, str]:
         """Return the VOD source url."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"get_vod_source: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"get_vod_source: no camera connected to channel '{channel}'")
 
         # Since no request is made, make sure we are logged in.
         await self.login()
@@ -2843,8 +2388,7 @@ class Host:
                 scheme = "http"
 
             url = (
-                f"{scheme}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=playback.bcs&channel={channel}"
-                f"&type={stream_type}&start={filename}&seek=0"
+                f"{scheme}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=playback.bcs&channel={channel}" f"&type={stream_type}&start={filename}&seek=0"
             )
         # elif request_type == typings.VOD_request_type.DOWNLOAD and self._is_nvr:
         #  self._generate_NvrDownload_vod(filename, , , channel, stream)
@@ -2882,16 +2426,12 @@ class Host:
         try:
             json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(
-                f"Request NvrDownload error: {str(err)}"
-            ) from err
+            raise InvalidContentTypeError(f"Request NvrDownload error: {str(err)}") from err
         except NoDataError as err:
             raise NoDataError(f"Request NvrDownload error: {str(err)}") from err
 
         if json_data[0].get("code") != 0:
-            raise ApiError(
-                f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}"
-            )
+            raise ApiError(f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
 
         max_filesize = 0
         for file in json_data[0]["value"]["fileList"]:
@@ -3011,9 +2551,7 @@ class Host:
                     continue
 
                 if data["cmd"] == "GetChannelstatus":
-                    if not self._GetChannelStatus_present and (
-                        self._nvr_num_channels == 0 or len(self._channels) == 0
-                    ):
+                    if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
                         self._is_doorbell.clear()
 
@@ -3035,20 +2573,11 @@ class Host:
                                     cur_channel = ch_info["channel"]
 
                                     if self._GetChannelStatus_has_name:
-                                        self._channel_names[cur_channel] = ch_info[
-                                            "name"
-                                        ]
+                                        self._channel_names[cur_channel] = ch_info["name"]
 
-                                    if (
-                                        "typeInfo" in ch_info
-                                    ):  # Not all Reolink devices respond with "typeInfo" attribute.
-                                        self._channel_models[cur_channel] = ch_info[
-                                            "typeInfo"
-                                        ]
-                                        self._is_doorbell[cur_channel] = (
-                                            "Doorbell"
-                                            in self._channel_models[cur_channel]
-                                        )
+                                    if "typeInfo" in ch_info:  # Not all Reolink devices respond with "typeInfo" attribute.
+                                        self._channel_models[cur_channel] = ch_info["typeInfo"]
+                                        self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
 
                                     self._channels.append(cur_channel)
                         else:
@@ -3057,9 +2586,7 @@ class Host:
                         cur_status = data["value"]["status"]
                         for ch_info in cur_status:
                             if ch_info["online"] == 1:
-                                self._channel_names[ch_info["channel"]] = ch_info[
-                                    "name"
-                                ]
+                                self._channel_names[ch_info["channel"]] = ch_info["name"]
 
                     if not self._GetChannelStatus_present:
                         self._GetChannelStatus_present = True
@@ -3090,15 +2617,10 @@ class Host:
                     self._nvr_hw_version = dev_info["hardVer"]
                     self._nvr_sw_version = dev_info["firmVer"]
                     if self._nvr_sw_version is not None:
-                        self._nvr_sw_version_object = SoftwareVersion(
-                            self._nvr_sw_version
-                        )
+                        self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
 
                     # In case the "GetChannelStatus" command not supported by the device.
-                    if (
-                        not self._GetChannelStatus_present
-                        and self._nvr_num_channels == 0
-                    ):
+                    if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
                         self._channels.clear()
 
                         self._nvr_num_channels = dev_info["channelNum"]
@@ -3115,14 +2637,9 @@ class Host:
                         if self._nvr_num_channels > 0:
                             for ch in range(self._nvr_num_channels):
                                 self._channels.append(ch)
-                                if (
-                                    ch not in self._channel_models
-                                    and self._nvr_model is not None
-                                ):
+                                if ch not in self._channel_models and self._nvr_model is not None:
                                     self._channel_models[ch] = self._nvr_model
-                                    self._is_doorbell[ch] = (
-                                        "Doorbell" in self._nvr_model
-                                    )
+                                    self._is_doorbell[ch] = "Doorbell" in self._nvr_model
 
                 elif data["cmd"] == "GetHddInfo":
                     self._hdd_info = data["value"]["HddInfo"]
@@ -3143,9 +2660,7 @@ class Host:
                     self._rtsp_enabled = net_port.get("rtspEnable", 1) == 1
                     self._rtmp_enabled = net_port.get("rtmpEnable", 1) == 1
                     self._onvif_enabled = net_port.get("onvifEnable", 1) == 1
-                    self._subscribe_url = (
-                        f"http://{self._host}:{self._onvif_port}/onvif/event_service"
-                    )
+                    self._subscribe_url = f"http://{self._host}:{self._onvif_port}/onvif/event_service"
 
                 elif data["cmd"] == "GetP2p":
                     self._nvr_uid = data["value"]["P2p"]["uid"]
@@ -3157,9 +2672,7 @@ class Host:
                     self._ntp_settings = data["value"]
 
                 elif data["cmd"] == "GetTime":
-                    time_diffrence = (
-                        datetime.now() - reolink_time_to_datetime(data["value"]["Time"])
-                    ).total_seconds()
+                    time_diffrence = (datetime.now() - reolink_time_to_datetime(data["value"]["Time"])).total_seconds()
                     if abs(time_diffrence) < 10:
                         time_diffrence = 0
                     self._host_time_difference = time_diffrence
@@ -3207,15 +2720,11 @@ class Host:
 
                 if data["cmd"] == "GetChnTypeInfo":
                     self._channel_models[channel] = data["value"]["typeInfo"]
-                    self._is_doorbell[channel] = (
-                        "Doorbell" in self._channel_models[channel]
-                    )
+                    self._is_doorbell[channel] = "Doorbell" in self._channel_models[channel]
                     if "firmVer" in data["value"]:
                         self._channel_sw_versions[channel] = data["value"]["firmVer"]
                         if self._channel_sw_versions[channel] is not None:
-                            self._channel_sw_version_objects[channel] = SoftwareVersion(
-                                self._channel_sw_versions[channel]
-                            )
+                            self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
 
                 if data["cmd"] == "GetEvents":
                     response_channel = data["value"]["channel"]
@@ -3233,20 +2742,14 @@ class Host:
                         self._ai_detection_support[channel] = {}
                         for key, value in data["value"]["ai"].items():
                             supported: bool = value.get("support", 0) == 1
-                            self._ai_detection_states[channel][key] = (
-                                supported and value.get("alarm_state", 0) == 1
-                            )
+                            self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
                     if "md" in data["value"]:
-                        self._motion_detection_states[channel] = (
-                            data["value"]["md"]["alarm_state"] == 1
-                        )
+                        self._motion_detection_states[channel] = data["value"]["md"]["alarm_state"] == 1
                     if "visitor" in data["value"]:
                         value = data["value"]["visitor"]
                         supported = value.get("support", 0) == 1
-                        self._visitor_states[channel] = (
-                            supported and value.get("alarm_state", 0) == 1
-                        )
+                        self._visitor_states[channel] = supported and value.get("alarm_state", 0) == 1
                         self._is_doorbell[channel] = supported
 
                 elif data["cmd"] == "GetMdState":
@@ -3282,9 +2785,7 @@ class Host:
                         if key == "channel":
                             continue
 
-                        if isinstance(
-                            value, int
-                        ):  # compatibility with firmware < 3.0.0-494
+                        if isinstance(value, int):  # compatibility with firmware < 3.0.0-494
                             self._ai_detection_states[channel][key] = value == 1
                             self._ai_detection_support[channel][key] = True
                         else:
@@ -3311,21 +2812,14 @@ class Host:
                             #     }
                             # ]
                             supported = value.get("support", 0) == 1
-                            self._ai_detection_states[channel][key] = (
-                                supported and value.get("alarm_state", 0) == 1
-                            )
+                            self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
 
                 elif data["cmd"] == "GetOsd":
                     response_channel = data["value"]["Osd"]["channel"]
                     self._osd_settings[channel] = data["value"]
-                    if (
-                        not self._GetChannelStatus_present
-                        or not self._GetChannelStatus_has_name
-                    ):
-                        self._channel_names[channel] = data["value"]["Osd"][
-                            "osdChannel"
-                        ]["name"]
+                    if not self._GetChannelStatus_present or not self._GetChannelStatus_has_name:
+                        self._channel_names[channel] = data["value"]["Osd"]["osdChannel"]["name"]
 
                 elif data["cmd"] == "GetFtp":
                     self._ftp_settings[channel] = data["value"]
@@ -3352,12 +2846,8 @@ class Host:
                     password = parse.quote(self._password)
                     mainStream = data["value"]["rtspUrl"]["mainStream"]
                     subStream = data["value"]["rtspUrl"]["subStream"]
-                    self._rtsp_mainStream[channel] = mainStream.replace(
-                        "rtsp://", f"rtsp://{self._username}:{password}@"
-                    )
-                    self._rtsp_subStream[channel] = subStream.replace(
-                        "rtsp://", f"rtsp://{self._username}:{password}@"
-                    )
+                    self._rtsp_mainStream[channel] = mainStream.replace("rtsp://", f"rtsp://{self._username}:{password}@")
+                    self._rtsp_subStream[channel] = subStream.replace("rtsp://", f"rtsp://{self._username}:{password}@")
 
                 elif data["cmd"] == "GetEmail":
                     self._email_settings[channel] = data["value"]
@@ -3470,13 +2960,9 @@ class Host:
             await self.get_state("GetNetPort")
 
         if self._netport_settings is None:
-            raise NotSupportedError(
-                f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}"
-            )
+            raise NotSupportedError(f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetNetPort", "param": self._netport_settings}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetNetPort", "param": self._netport_settings}]
 
         if enable_onvif is not None:
             body[0]["param"]["NetPort"]["onvifEnable"] = 1 if enable_onvif else 0
@@ -3486,9 +2972,7 @@ class Host:
             body[0]["param"]["NetPort"]["rtspEnable"] = 1 if enable_rtsp else 0
 
         await self.send_setting(body)
-        await (
-            self.expire_session()
-        )  # When changing network port settings, tokens are invalidated.
+        await self.expire_session()  # When changing network port settings, tokens are invalidated.
 
     async def set_time(self, dateFmt=None, hours24=None, tzOffset=None) -> None:
         """Set time on the host (NVR or camera).
@@ -3500,21 +2984,15 @@ class Host:
         Always get current time first"""
         await self.get_state("GetTime")
         if self._time_settings is None:
-            raise NotSupportedError(
-                f"set_time: failed to retrieve current time settings from {self._host}:{self._port}"
-            )
+            raise NotSupportedError(f"set_time: failed to retrieve current time settings from {self._host}:{self._port}")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetTime", "action": 0, "param": self._time_settings}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetTime", "action": 0, "param": self._time_settings}]
 
         if dateFmt is not None:
             if dateFmt in ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY/MM/DD"]:
                 body[0]["param"]["Time"]["timeFmt"] = dateFmt
             else:
-                raise InvalidParameterError(
-                    f"set_time: date format {dateFmt} not in ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY/MM/DD']"
-                )
+                raise InvalidParameterError(f"set_time: date format {dateFmt} not in ['DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY/MM/DD']")
 
         if hours24 is not None:
             if hours24:
@@ -3524,13 +3002,9 @@ class Host:
 
         if tzOffset is not None:
             if not isinstance(tzOffset, int):
-                raise InvalidParameterError(
-                    f"set_time: time zone offset {tzOffset} is not integer"
-                )
+                raise InvalidParameterError(f"set_time: time zone offset {tzOffset} is not integer")
             if tzOffset < -43200 or tzOffset > 50400:
-                raise InvalidParameterError(
-                    f"set_time: time zone offset {tzOffset} not in range -43200..50400"
-                )
+                raise InvalidParameterError(f"set_time: time zone offset {tzOffset} not in range -43200..50400")
             body[0]["param"]["Time"]["timeZone"] = tzOffset
 
         await self.send_setting(body)
@@ -3554,13 +3028,9 @@ class Host:
             await self.get_state("GetNtp")
 
         if self._ntp_settings is None:
-            raise NotSupportedError(
-                f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}"
-            )
+            raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
 
         if enable is not None:
             if enable:
@@ -3573,24 +3043,16 @@ class Host:
 
         if port is not None:
             if not isinstance(port, int):
-                raise InvalidParameterError(
-                    f"set_ntp: Invalid NTP port {port} specified, type is not integer"
-                )
+                raise InvalidParameterError(f"set_ntp: Invalid NTP port {port} specified, type is not integer")
             if port < 1 or port > 65535:
-                raise InvalidParameterError(
-                    f"set_ntp: Invalid NTP port {port} specified, out of valid range 1...65535"
-                )
+                raise InvalidParameterError(f"set_ntp: Invalid NTP port {port} specified, out of valid range 1...65535")
             body[0]["param"]["Ntp"]["port"] = port
 
         if interval is not None:
             if not isinstance(interval, int):
-                raise InvalidParameterError(
-                    f"set_ntp: Invalid NTP interval {interval} specified, type is not integer"
-                )
+                raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, type is not integer")
             if interval < 60 or interval > 65535:
-                raise InvalidParameterError(
-                    f"set_ntp: Invalid NTP interval {interval} specified, out of valid range 60...65535"
-                )
+                raise InvalidParameterError(f"set_ntp: Invalid NTP interval {interval} specified, out of valid range 60...65535")
             body[0]["param"]["Ntp"]["interval"] = interval
 
         await self.send_setting(body)
@@ -3601,13 +3063,9 @@ class Host:
             await self.get_state("GetNtp")
 
         if self._ntp_settings is None:
-            raise NotSupportedError(
-                f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}"
-            )
+            raise NotSupportedError(f"set_ntp: failed to retrieve current NTP settings from {self._host}:{self._port}")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
         body[0]["param"]["Ntp"]["interval"] = 0
 
         await self.send_setting(body)
@@ -3615,16 +3073,9 @@ class Host:
     def get_focus(self, channel: int) -> int:
         """Get absolute focus value."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"get_focus: no camera connected to channel '{channel}'"
-            )
-        if (
-            channel not in self._zoom_focus_settings
-            or not self._zoom_focus_settings[channel]
-        ):
-            raise NotSupportedError(
-                f"get_focus: ZoomFocus on camera {self.camera_name(channel)} is not available"
-            )
+            raise InvalidParameterError(f"get_focus: no camera connected to channel '{channel}'")
+        if channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
+            raise NotSupportedError(f"get_focus: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["focus"]["pos"]
 
@@ -3633,29 +3084,21 @@ class Host:
         Parameters:
         focus (int) 0..223"""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_focus: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_focus: no camera connected to channel '{channel}'")
         if not self.supported(channel, "focus"):
-            raise NotSupportedError(
-                f"set_focus: not supported by camera {self.camera_name(channel)}"
-            )
+            raise NotSupportedError(f"set_focus: not supported by camera {self.camera_name(channel)}")
         min_focus = self.zoom_range(channel)["focus"]["pos"]["min"]
         max_focus = self.zoom_range(channel)["focus"]["pos"]["max"]
         if not isinstance(focus, int):
             raise InvalidParameterError(f"set_focus: focus value {focus} not integer")
         if focus not in range(min_focus, max_focus + 1):
-            raise InvalidParameterError(
-                f"set_focus: focus value {focus} not in range {min_focus}..{max_focus}"
-            )
+            raise InvalidParameterError(f"set_focus: focus value {focus} not in range {min_focus}..{max_focus}")
 
         body = [
             {
                 "cmd": "StartZoomFocus",
                 "action": 0,
-                "param": {
-                    "ZoomFocus": {"channel": channel, "op": "FocusPos", "pos": focus}
-                },
+                "param": {"ZoomFocus": {"channel": channel, "op": "FocusPos", "pos": focus}},
             }
         ]
 
@@ -3673,21 +3116,15 @@ class Host:
     async def set_autofocus(self, channel: int, enable: bool) -> None:
         """Enable/Disable AutoFocus on a camera."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_autofocus: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_autofocus: no camera connected to channel '{channel}'")
         if channel not in self._auto_focus_settings:
-            raise NotSupportedError(
-                f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_autofocus: AutoFocus on camera {self.camera_name(channel)} is not available")
 
         body: typings.reolink_json = [
             {
                 "cmd": "SetAutoFocus",
                 "action": 0,
-                "param": {
-                    "AutoFocus": {"disable": 0 if enable else 1, "channel": channel}
-                },
+                "param": {"AutoFocus": {"disable": 0 if enable else 1, "channel": channel}},
             }
         ]
         await self.send_setting(body)
@@ -3695,16 +3132,9 @@ class Host:
     def get_zoom(self, channel: int) -> int:
         """Get absolute zoom value."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"get_zoom: no camera connected to channel '{channel}'"
-            )
-        if (
-            channel not in self._zoom_focus_settings
-            or not self._zoom_focus_settings[channel]
-        ):
-            raise NotSupportedError(
-                f"get_zoom: ZoomFocus on camera {self.camera_name(channel)} is not available"
-            )
+            raise InvalidParameterError(f"get_zoom: no camera connected to channel '{channel}'")
+        if channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
+            raise NotSupportedError(f"get_zoom: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
         return self._zoom_focus_settings[channel]["ZoomFocus"]["zoom"]["pos"]
 
@@ -3713,29 +3143,21 @@ class Host:
         Parameters:
         zoom (int) 0..33"""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_zoom: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_zoom: no camera connected to channel '{channel}'")
         if not self.supported(channel, "zoom"):
-            raise NotSupportedError(
-                f"set_zoom: not supported by camera {self.camera_name(channel)}"
-            )
+            raise NotSupportedError(f"set_zoom: not supported by camera {self.camera_name(channel)}")
         min_zoom = self.zoom_range(channel)["zoom"]["pos"]["min"]
         max_zoom = self.zoom_range(channel)["zoom"]["pos"]["max"]
         if not isinstance(zoom, int):
             raise InvalidParameterError(f"set_zoom: zoom value {zoom} not integer")
         if zoom not in range(min_zoom, max_zoom + 1):
-            raise InvalidParameterError(
-                f"set_zoom: zoom value {zoom} not in range {min_zoom}..{max_zoom}"
-            )
+            raise InvalidParameterError(f"set_zoom: zoom value {zoom} not in range {min_zoom}..{max_zoom}")
 
         body = [
             {
                 "cmd": "StartZoomFocus",
                 "action": 0,
-                "param": {
-                    "ZoomFocus": {"channel": channel, "op": "ZoomPos", "pos": zoom}
-                },
+                "param": {"ZoomFocus": {"channel": channel, "op": "ZoomPos", "pos": zoom}},
             }
         ]
 
@@ -3759,40 +3181,26 @@ class Host:
         """Send PTZ command to the camera, list of possible commands see PtzEnum."""
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_ptz_command: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
         if speed is not None and not isinstance(speed, int):
-            raise InvalidParameterError(
-                f"set_ptz_command: speed {speed} is not integer"
-            )
+            raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
         if speed is not None and not self.supported(channel, "ptz_speed"):
-            raise NotSupportedError(
-                f"set_ptz_command: ptz speed on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_ptz_command: ptz speed on camera {self.camera_name(channel)} is not available")
         command_list = [com.value for com in PtzEnum]
         if command is not None and command not in command_list:
-            raise InvalidParameterError(
-                f"set_ptz_command: command {command} not in {command_list}"
-            )
+            raise InvalidParameterError(f"set_ptz_command: command {command} not in {command_list}")
 
         if preset is not None:
             command = "ToPos"
             if isinstance(preset, str):
                 if preset not in self.ptz_presets(channel):
-                    raise InvalidParameterError(
-                        f"set_ptz_command: preset '{preset}' not in available presets {list(self.ptz_presets(channel).keys())}"
-                    )
+                    raise InvalidParameterError(f"set_ptz_command: preset '{preset}' not in available presets {list(self.ptz_presets(channel).keys())}")
                 preset = self.ptz_presets(channel)[preset]
             if not isinstance(preset, int):
-                raise InvalidParameterError(
-                    f"set_ptz_command: preset {preset} is not integer"
-                )
+                raise InvalidParameterError(f"set_ptz_command: preset {preset} is not integer")
 
         if command is None:
-            raise InvalidParameterError(
-                "set_ptz_command: No command or preset specified."
-            )
+            raise InvalidParameterError("set_ptz_command: No command or preset specified.")
 
         body: typings.reolink_json = [
             {
@@ -3840,18 +3248,12 @@ class Host:
         """Send PTZ guard."""
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_ptz_guard: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_ptz_guard: no camera connected to channel '{channel}'")
         if time is not None and not isinstance(time, int):
-            raise InvalidParameterError(
-                f"set_ptz_guard: guard time {time} is not integer"
-            )
+            raise InvalidParameterError(f"set_ptz_guard: guard time {time} is not integer")
         command_list = [com.value for com in GuardEnum]
         if command is not None and command not in command_list:
-            raise InvalidParameterError(
-                f"set_ptz_guard: command {command} not in {command_list}"
-            )
+            raise InvalidParameterError(f"set_ptz_guard: command {command} not in {command_list}")
 
         params: dict[str, Any] = {"channel": channel}
         if command is not None:
@@ -3865,21 +3267,15 @@ class Host:
         if time is not None:
             params["timeout"] = time
 
-        body: typings.reolink_json = [
-            {"cmd": "SetPtzGuard", "action": 0, "param": {"PtzGuard": params}}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetPtzGuard", "action": 0, "param": {"PtzGuard": params}}]
         await self.send_setting(body)
 
     async def ptz_callibrate(self, channel: int) -> None:
         """Callibrate PTZ of the camera."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"ptz_callibrate: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"ptz_callibrate: no camera connected to channel '{channel}'")
 
-        body: typings.reolink_json = [
-            {"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}
-        ]
+        body: typings.reolink_json = [{"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}]
         await self.send_setting(body)
 
     def auto_track_enabled(self, channel: int) -> bool:
@@ -3918,13 +3314,9 @@ class Host:
         method: int | str | None = None,
     ) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_auto_tracking: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_auto_tracking: no camera connected to channel '{channel}'")
         if not self.supported(channel, "auto_track"):
-            raise NotSupportedError(
-                f"set_auto_tracking: Auto tracking on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_auto_tracking: Auto tracking on camera {self.camera_name(channel)} is not available")
 
         params = {"channel": channel}
         if enable is not None:
@@ -3944,9 +3336,7 @@ class Host:
             params["aiTrack"] = method_int
             method_list = [val.value for val in TrackMethodEnum]
             if method_int not in method_list:
-                raise InvalidParameterError(
-                    f"set_auto_tracking: method {method_int} not in {method_list}"
-                )
+                raise InvalidParameterError(f"set_auto_tracking: method {method_int} not in {method_list}")
 
         body = [{"cmd": "SetAiCfg", "action": 0, "param": params}]
         await self.send_setting(body)
@@ -3965,30 +3355,18 @@ class Host:
 
         return self._auto_track_limits[channel]["PtzTraceSection"]["LimitRight"]
 
-    async def set_auto_track_limit(
-        self, channel: int, left: int | None = None, right: int | None = None
-    ) -> None:
+    async def set_auto_track_limit(self, channel: int, left: int | None = None, right: int | None = None) -> None:
         """-1 = disable limit"""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_auto_track_limit: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_auto_track_limit: no camera connected to channel '{channel}'")
         if not self.supported(channel, "auto_track_limit"):
-            raise NotSupportedError(
-                f"set_auto_track_limit: Auto track limits on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_auto_track_limit: Auto track limits on camera {self.camera_name(channel)} is not available")
         if left is None and right is None:
-            raise InvalidParameterError(
-                "set_auto_track_limit: either left or right limit needs to be specified"
-            )
+            raise InvalidParameterError("set_auto_track_limit: either left or right limit needs to be specified")
         if left is not None and (left < -1 or left > 2700):
-            raise InvalidParameterError(
-                f"set_auto_track_limit: left limit {left} not in range -1...2700"
-            )
+            raise InvalidParameterError(f"set_auto_track_limit: left limit {left} not in range -1...2700")
         if right is not None and (right < -1 or right > 2700):
-            raise InvalidParameterError(
-                f"set_auto_track_limit: right limit {right} not in range -1...2700"
-            )
+            raise InvalidParameterError(f"set_auto_track_limit: right limit {right} not in range -1...2700")
 
         params = {"channel": channel}
         if left is not None:
@@ -4017,38 +3395,28 @@ class Host:
             "Lower Right",
         ]
 
-    async def set_osd(
-        self, channel: int, namePos=None, datePos=None, enableWaterMark=None
-    ) -> None:
+    async def set_osd(self, channel: int, namePos=None, datePos=None, enableWaterMark=None) -> None:
         """Set OSD parameters.
         Parameters:
         namePos (string) specifies the position of the camera name - "Off" disables this OSD
         datePos (string) specifies the position of the date - "Off" disables this OSD
         enableWaterMark (boolean) enables/disables the Logo (WaterMark) if supported"""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_osd: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_osd: no camera connected to channel '{channel}'")
 
         await self.get_state("GetOsd")
 
         if channel not in self._osd_settings or not self._osd_settings[channel]:
-            raise NotSupportedError(
-                f"set_osd: OSD on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_osd: OSD on camera {self.camera_name(channel)} is not available")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetOsd", "action": 0, "param": self._osd_settings[channel]}]
 
         if namePos is not None:
             if namePos == "Off":
                 body[0]["param"]["Osd"]["osdChannel"]["enable"] = 0
             else:
                 if not self.validate_osd_pos(namePos):
-                    raise InvalidParameterError(
-                        f"set_osd: Invalid name OSD position specified '{namePos}'"
-                    )
+                    raise InvalidParameterError(f"set_osd: Invalid name OSD position specified '{namePos}'")
                 body[0]["param"]["Osd"]["osdChannel"]["enable"] = 1
                 body[0]["param"]["Osd"]["osdChannel"]["pos"] = namePos
 
@@ -4057,9 +3425,7 @@ class Host:
                 body[0]["param"]["Osd"]["osdTime"]["enable"] = 0
             else:
                 if not self.validate_osd_pos(datePos):
-                    raise InvalidParameterError(
-                        f"set_osd: Invalid date OSD position specified '{datePos}'"
-                    )
+                    raise InvalidParameterError(f"set_osd: Invalid date OSD position specified '{datePos}'")
                 body[0]["param"]["Osd"]["osdTime"]["enable"] = 1
                 body[0]["param"]["Osd"]["osdTime"]["pos"] = datePos
 
@@ -4080,9 +3446,7 @@ class Host:
     async def set_push(self, channel: int | None, enable: bool) -> None:
         """Set the Push-notifications parameter."""
         if not self.supported(channel, "push"):
-            raise NotSupportedError(
-                f"set_push: push-notifications on camera {self.camera_name(channel)} are not available"
-            )
+            raise NotSupportedError(f"set_push: push-notifications on camera {self.camera_name(channel)} are not available")
 
         body: typings.reolink_json
         on_off = 1 if enable else 0
@@ -4104,18 +3468,14 @@ class Host:
                         {
                             "cmd": "SetPush",
                             "action": 0,
-                            "param": {
-                                "Push": {"schedule": {"enable": on_off, "channel": ch}}
-                            },
+                            "param": {"Push": {"schedule": {"enable": on_off, "channel": ch}}},
                         }
                     ]
                     await self.send_setting(body)
             return
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_push: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_push: no camera connected to channel '{channel}'")
 
         if self.api_version("GetPush") >= 1:
             body = [
@@ -4135,9 +3495,7 @@ class Host:
                 {
                     "cmd": "SetPush",
                     "action": 0,
-                    "param": {
-                        "Push": {"schedule": {"enable": on_off, "channel": channel}}
-                    },
+                    "param": {"Push": {"schedule": {"enable": on_off, "channel": channel}}},
                 }
             ]
 
@@ -4146,9 +3504,7 @@ class Host:
     async def set_ftp(self, channel: int | None, enable: bool) -> None:
         """Set the FTP-notifications parameter."""
         if not self.supported(channel, "ftp"):
-            raise NotSupportedError(
-                f"set_ftp: FTP on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_ftp: FTP on camera {self.camera_name(channel)} is not available")
 
         body: typings.reolink_json
         on_off = 1 if enable else 0
@@ -4170,18 +3526,14 @@ class Host:
                         {
                             "cmd": "SetFtp",
                             "action": 0,
-                            "param": {
-                                "Ftp": {"schedule": {"enable": on_off, "channel": ch}}
-                            },
+                            "param": {"Ftp": {"schedule": {"enable": on_off, "channel": ch}}},
                         }
                     ]
                     await self.send_setting(body)
             return
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_ftp: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_ftp: no camera connected to channel '{channel}'")
 
         if self.api_version("GetFtp") >= 1:
             body = [
@@ -4201,9 +3553,7 @@ class Host:
                 {
                     "cmd": "SetFtp",
                     "action": 0,
-                    "param": {
-                        "Ftp": {"schedule": {"enable": on_off, "channel": channel}}
-                    },
+                    "param": {"Ftp": {"schedule": {"enable": on_off, "channel": channel}}},
                 }
             ]
 
@@ -4211,9 +3561,7 @@ class Host:
 
     async def set_email(self, channel: int | None, enable: bool) -> None:
         if not self.supported(channel, "email"):
-            raise NotSupportedError(
-                f"set_email: Email on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_email: Email on camera {self.camera_name(channel)} is not available")
 
         body: typings.reolink_json
         on_off = 1 if enable else 0
@@ -4235,18 +3583,14 @@ class Host:
                         {
                             "cmd": "SetEmail",
                             "action": 0,
-                            "param": {
-                                "Email": {"schedule": {"enable": on_off, "channel": ch}}
-                            },
+                            "param": {"Email": {"schedule": {"enable": on_off, "channel": ch}}},
                         }
                     ]
                     await self.send_setting(body)
             return
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_email: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_email: no camera connected to channel '{channel}'")
 
         if self.api_version("GetEmail") >= 1:
             body = [
@@ -4266,9 +3610,7 @@ class Host:
                 {
                     "cmd": "SetEmail",
                     "action": 0,
-                    "param": {
-                        "Email": {"schedule": {"enable": on_off, "channel": channel}}
-                    },
+                    "param": {"Email": {"schedule": {"enable": on_off, "channel": channel}}},
                 }
             ]
 
@@ -4277,9 +3619,7 @@ class Host:
     async def set_recording(self, channel: int | None, enable: bool) -> None:
         """Set the recording parameter."""
         if not self.supported(channel, "recording"):
-            raise NotSupportedError(
-                f"set_recording: recording on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
 
         body: typings.reolink_json
         on_off = 1 if enable else 0
@@ -4301,18 +3641,14 @@ class Host:
                         {
                             "cmd": "SetRec",
                             "action": 0,
-                            "param": {
-                                "Rec": {"schedule": {"enable": on_off, "channel": ch}}
-                            },
+                            "param": {"Rec": {"schedule": {"enable": on_off, "channel": ch}}},
                         }
                     ]
                     await self.send_setting(body)
             return
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_recording: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
         if self.api_version("GetRec") >= 1:
             body = [
@@ -4332,9 +3668,7 @@ class Host:
                 {
                     "cmd": "SetRec",
                     "action": 0,
-                    "param": {
-                        "Rec": {"schedule": {"enable": on_off, "channel": channel}}
-                    },
+                    "param": {"Rec": {"schedule": {"enable": on_off, "channel": channel}}},
                 }
             ]
 
@@ -4343,9 +3677,7 @@ class Host:
     async def set_buzzer(self, channel: int | None, enable: bool) -> None:
         """Set the NVR buzzer parameter."""
         if not self.supported(channel, "buzzer"):
-            raise NotSupportedError(
-                f"set_buzzer: NVR buzzer on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_buzzer: NVR buzzer on camera {self.camera_name(channel)} is not available")
 
         body: typings.reolink_json
         on_off = 1 if enable else 0
@@ -4361,9 +3693,7 @@ class Host:
             return
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_recording: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
         body = [
             {
@@ -4381,31 +3711,21 @@ class Host:
 
     async def set_audio(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_audio: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_audio: no camera connected to channel '{channel}'")
         await self.get_state(cmd="GetEnc")
         if channel not in self._enc_settings:
-            raise NotSupportedError(
-                f"set_audio: Audio on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
         body[0]["param"]["Enc"]["audio"] = 1 if enable else 0
 
         await self.send_setting(body)
 
     async def set_ir_lights(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_ir_lights: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_ir_lights: no camera connected to channel '{channel}'")
         if channel not in self._ir_settings:
-            raise NotSupportedError(
-                f"set_ir_lights: IR light on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_ir_lights: IR light on camera {self.camera_name(channel)} is not available")
 
         state = "Auto" if enable else "Off"
         body: typings.reolink_json = [
@@ -4420,13 +3740,9 @@ class Host:
 
     async def set_status_led(self, channel: int, state: bool | str) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_status_led: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_status_led: no camera connected to channel '{channel}'")
         if not self.supported(channel, "status_led"):
-            raise NotSupportedError(
-                f"set_status_led: Status led on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_status_led: Status led on camera {self.camera_name(channel)} is not available")
 
         if isinstance(state, bool):
             value = "On" if state else "Off"
@@ -4435,18 +3751,14 @@ class Host:
 
         val_list = [val.value for val in StatusLedEnum]
         if value not in val_list:
-            raise InvalidParameterError(
-                f"set_status_led: value {value} not in {val_list}"
-            )
+            raise InvalidParameterError(f"set_status_led: value {value} not in {val_list}")
 
         if self.is_doorbell(channel):
             param = {"channel": channel, "eDoorbellLightState": value}
         else:
             param = {"channel": channel, "state": value}
 
-        body: typings.reolink_json = [
-            {"cmd": "SetPowerLed", "action": 0, "param": {"PowerLed": param}}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetPowerLed", "action": 0, "param": {"PowerLed": param}}]
         await self.send_setting(body)
 
     async def set_whiteled(
@@ -4473,16 +3785,9 @@ class Host:
           LightingSchedule : { EndHour , EndMin, StartHour,StartMin  }
         """
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_whiteled: no camera connected to channel '{channel}'"
-            )
-        if (
-            channel not in self._whiteled_settings
-            or not self._whiteled_settings[channel]
-        ):
-            raise NotSupportedError(
-                f"set_whiteled: White Led on camera {self.camera_name(channel)} is not available"
-            )
+            raise InvalidParameterError(f"set_whiteled: no camera connected to channel '{channel}'")
+        if channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
+            raise NotSupportedError(f"set_whiteled: White Led on camera {self.camera_name(channel)} is not available")
 
         settings = {"channel": channel}
         if state is not None:
@@ -4490,9 +3795,7 @@ class Host:
         if brightness is not None:
             settings["bright"] = brightness
             if brightness < 0 or brightness > 100:
-                raise InvalidParameterError(
-                    f"set_whiteled: brightness {brightness} not in range 0..100"
-                )
+                raise InvalidParameterError(f"set_whiteled: brightness {brightness} not in range 0..100")
         if mode is not None:
             if isinstance(mode, str):
                 mode_int = SpotlightModeEnum[mode].value
@@ -4501,9 +3804,7 @@ class Host:
             settings["mode"] = mode_int
             mode_list = [mode.value for mode in SpotlightModeEnum]
             if mode_int not in mode_list:
-                raise InvalidParameterError(
-                    f"set_whiteled: mode {mode_int} not in {mode_list}"
-                )
+                raise InvalidParameterError(f"set_whiteled: mode {mode_int} not in {mode_list}")
 
         body = [
             {
@@ -4514,22 +3815,13 @@ class Host:
 
         await self.send_setting(body, wait_before_get=3)
 
-    async def set_spotlight_lighting_schedule(
-        self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0
-    ) -> None:
+    async def set_spotlight_lighting_schedule(self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0) -> None:
         """Stub to handle setting the time period where spotlight (WhiteLed) will be on when NightMode set and AUTO is off.
         Time in 24-hours format"""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_spotlight_lighting_schedule: no camera connected to channel '{channel}'"
-            )
-        if (
-            channel not in self._whiteled_settings
-            or not self._whiteled_settings[channel]
-        ):
-            raise NotSupportedError(
-                f"set_spotlight_lighting_schedule: White Led on camera {self.camera_name(channel)} is not available"
-            )
+            raise InvalidParameterError(f"set_spotlight_lighting_schedule: no camera connected to channel '{channel}'")
+        if channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
+            raise NotSupportedError(f"set_spotlight_lighting_schedule: White Led on camera {self.camera_name(channel)} is not available")
 
         if (
             endhour < 0
@@ -4584,29 +3876,19 @@ class Host:
         doorbell_button_sound: bool | None = None,
     ) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_volume: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_volume: no camera connected to channel '{channel}'")
         if volume is not None:
             if not self.supported(channel, "volume"):
-                raise NotSupportedError(
-                    f"set_volume: Volume control on camera {self.camera_name(channel)} is not available"
-                )
+                raise NotSupportedError(f"set_volume: Volume control on camera {self.camera_name(channel)} is not available")
             if not isinstance(volume, int):
                 raise InvalidParameterError(f"set_volume: volume {volume} not integer")
             if volume < 0 or volume > 100:
-                raise InvalidParameterError(
-                    f"set_volume: volume {volume} not in range 0...100"
-                )
+                raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
         if doorbell_button_sound is not None:
             if not self.supported(channel, "doorbell_button_sound"):
-                raise NotSupportedError(
-                    f"set_volume: Doorbell button sound control on camera {self.camera_name(channel)} is not available"
-                )
+                raise NotSupportedError(f"set_volume: Doorbell button sound control on camera {self.camera_name(channel)} is not available")
             if not isinstance(doorbell_button_sound, bool):
-                raise InvalidParameterError(
-                    f"set_volume: doorbell_button_sound {doorbell_button_sound} not boolean"
-                )
+                raise InvalidParameterError(f"set_volume: doorbell_button_sound {doorbell_button_sound} not boolean")
 
         params = {"channel": channel}
         if volume is not None:
@@ -4625,21 +3907,13 @@ class Host:
         time: int | None = None,
     ) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_quick_reply: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_quick_reply: no camera connected to channel '{channel}'")
         if not self.supported(channel, "quick_reply"):
-            raise NotSupportedError(
-                f"set_quick_reply: Quick reply on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_quick_reply: Quick reply on camera {self.camera_name(channel)} is not available")
         if file_id is not None and not isinstance(file_id, int):
-            raise InvalidParameterError(
-                f"set_quick_reply: file_id {file_id} not integer"
-            )
+            raise InvalidParameterError(f"set_quick_reply: file_id {file_id} not integer")
         if file_id is not None and file_id not in self.quick_reply_dict(channel):
-            raise InvalidParameterError(
-                f"set_quick_reply: file_id {file_id} not in {list(self.quick_reply_dict(channel))}"
-            )
+            raise InvalidParameterError(f"set_quick_reply: file_id {file_id} not in {list(self.quick_reply_dict(channel))}")
         if time is not None and not isinstance(time, int):
             raise InvalidParameterError(f"set_quick_reply: time {time} not integer")
         if time is not None and time < 0:
@@ -4672,13 +3946,9 @@ class Host:
         # called in its simple form by set_siren
 
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_audio_alarm: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_audio_alarm: no camera connected to channel '{channel}'")
         if not self.supported(channel, "siren"):
-            raise NotSupportedError(
-                f"set_audio_alarm: AudioAlarm on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_audio_alarm: AudioAlarm on camera {self.camera_name(channel)} is not available")
 
         if self.api_version("GetAudioAlarm") >= 1:
             body = [
@@ -4709,24 +3979,16 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_siren(
-        self, channel: int, enable: bool = True, duration: int | None = 2
-    ) -> None:
+    async def set_siren(self, channel: int, enable: bool = True, duration: int | None = 2) -> None:
         # Uses API AudioAlarmPlay with manual switch
         # uncertain if there may be a glitch - dont know if there is API I have yet to find
         # which sets AudioLevel
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_siren: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
         if duration is not None and not isinstance(duration, int):
-            raise InvalidParameterError(
-                f"set_siren: duration '{duration}' is not integer"
-            )
+            raise InvalidParameterError(f"set_siren: duration '{duration}' is not integer")
         if not self.supported(channel, "siren_play"):
-            raise NotSupportedError(
-                f"set_siren: AudioAlarmPlay on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_siren: AudioAlarmPlay on camera {self.camera_name(channel)} is not available")
 
         if enable:
             if duration is not None:
@@ -4760,91 +4022,59 @@ class Host:
 
     async def set_daynight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_daynight: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_daynight: no camera connected to channel '{channel}'")
         await self.get_state(cmd="GetIsp")
         if channel not in self._isp_settings or not self._isp_settings[channel]:
-            raise NotSupportedError(
-                f"set_daynight: ISP on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_daynight: ISP on camera {self.camera_name(channel)} is not available")
 
         val_list = [val.value for val in DayNightEnum]
         if value not in val_list:
-            raise InvalidParameterError(
-                f"set_daynight: value {value} not in {val_list}"
-            )
+            raise InvalidParameterError(f"set_daynight: value {value} not in {val_list}")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
 
         await self.send_setting(body)
 
     async def set_HDR(self, channel: int, value: bool) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_HDR: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_HDR: no camera connected to channel '{channel}'")
         if not self.supported(channel, "HDR"):
-            raise NotSupportedError(
-                f"set_HDR: ISP HDR on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_HDR: ISP HDR on camera {self.camera_name(channel)} is not available")
         await self.get_state(cmd="GetIsp")
         if channel not in self._isp_settings or not self._isp_settings[channel]:
-            raise NotSupportedError(
-                f"set_HDR: ISP on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_HDR: ISP on camera {self.camera_name(channel)} is not available")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["hdr"] = 2 if value else 0
 
         await self.send_setting(body)
 
     async def set_daynight_threshold(self, channel: int, value: int) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_daynight_threshold: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_daynight_threshold: no camera connected to channel '{channel}'")
         await self.get_state(cmd="GetIsp")
         if channel not in self._isp_settings or not self._isp_settings[channel]:
-            raise NotSupportedError(
-                f"set_daynight_threshold: ISP on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_daynight_threshold: ISP on camera {self.camera_name(channel)} is not available")
         if value < 0 or value > 100:
-            raise InvalidParameterError(
-                f"set_daynight_threshold: value {value} not in 0-100"
-            )
+            raise InvalidParameterError(f"set_daynight_threshold: value {value} not in 0-100")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNightThreshold"] = value
 
         await self.send_setting(body)
 
     async def set_backlight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_backlight: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_backlight: no camera connected to channel '{channel}'")
         await self.get_state(cmd="GetIsp")
         if channel not in self._isp_settings or not self._isp_settings[channel]:
-            raise NotSupportedError(
-                f"set_backlight: ISP on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_backlight: ISP on camera {self.camera_name(channel)} is not available")
 
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
-            raise InvalidParameterError(
-                f"set_backlight: value {value} not in ['BackLightControl', 'DynamicRangeControl', 'Off']"
-            )
+            raise InvalidParameterError(f"set_backlight: value {value} not in ['BackLightControl', 'DynamicRangeControl', 'Off']")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["backLight"] = value
 
         await self.send_setting(body)
@@ -4852,17 +4082,11 @@ class Host:
     async def set_motion_detection(self, channel: int, enable: bool) -> None:
         """Set the motion detection parameter."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_motion_detection: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_motion_detection: no camera connected to channel '{channel}'")
         if channel not in self._md_alarm_settings:
-            raise NotSupportedError(
-                f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
-        body: typings.reolink_json = [
-            {"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}
-        ]
+        body: typings.reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -4873,21 +4097,13 @@ class Host:
         So the calculation <51 - value> makes the "real" value.
         """
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_md_sensitivity: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_md_sensitivity: no camera connected to channel '{channel}'")
         if channel not in self._md_alarm_settings:
-            raise NotSupportedError(
-                f"set_md_sensitivity: md sensitivity on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_md_sensitivity: md sensitivity on camera {self.camera_name(channel)} is not available")
         if not isinstance(value, int):
-            raise InvalidParameterError(
-                f"set_md_sensitivity: sensitivity '{value}' is not integer"
-            )
+            raise InvalidParameterError(f"set_md_sensitivity: sensitivity '{value}' is not integer")
         if value < 1 or value > 50:
-            raise InvalidParameterError(
-                f"set_md_sensitivity: sensitivity {value} not in range 1...50"
-            )
+            raise InvalidParameterError(f"set_md_sensitivity: sensitivity {value} not in range 1...50")
 
         body: typings.reolink_json
         if self.api_version("GetMdAlarm") >= 1:
@@ -4926,25 +4142,15 @@ class Host:
     async def set_ai_sensitivity(self, channel: int, value: int, ai_type: str) -> None:
         """Set AI detection sensitivity."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_ai_sensitivity: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_ai_sensitivity: no camera connected to channel '{channel}'")
         if channel not in self._ai_alarm_settings:
-            raise NotSupportedError(
-                f"set_ai_sensitivity: ai sensitivity on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_ai_sensitivity: ai sensitivity on camera {self.camera_name(channel)} is not available")
         if not isinstance(value, int):
-            raise InvalidParameterError(
-                f"set_ai_sensitivity: sensitivity '{value}' is not integer"
-            )
+            raise InvalidParameterError(f"set_ai_sensitivity: sensitivity '{value}' is not integer")
         if value < 0 or value > 100:
-            raise InvalidParameterError(
-                f"set_ai_sensitivity: sensitivity {value} not in range 0...100"
-            )
+            raise InvalidParameterError(f"set_ai_sensitivity: sensitivity {value} not in range 0...100")
         if ai_type not in self.ai_supported_types(channel):
-            raise InvalidParameterError(
-                f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}"
-            )
+            raise InvalidParameterError(f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}")
 
         body: typings.reolink_json = [
             {
@@ -4964,23 +4170,15 @@ class Host:
     async def set_ai_delay(self, channel: int, value: int, ai_type: str) -> None:
         """Set AI detection delay time in seconds."""
         if channel not in self._channels:
-            raise InvalidParameterError(
-                f"set_ai_delay: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"set_ai_delay: no camera connected to channel '{channel}'")
         if channel not in self._ai_alarm_settings:
-            raise NotSupportedError(
-                f"set_ai_delay: ai delay on camera {self.camera_name(channel)} is not available"
-            )
+            raise NotSupportedError(f"set_ai_delay: ai delay on camera {self.camera_name(channel)} is not available")
         if not isinstance(value, int):
             raise InvalidParameterError(f"set_ai_delay: delay '{value}' is not integer")
         if value < 0 or value > 8:
-            raise InvalidParameterError(
-                f"set_ai_delay: delay {value} not in range 0...8"
-            )
+            raise InvalidParameterError(f"set_ai_delay: delay {value} not in range 0...8")
         if ai_type not in self.ai_supported_types(channel):
-            raise InvalidParameterError(
-                f"set_ai_delay: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}"
-            )
+            raise InvalidParameterError(f"set_ai_delay: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}")
 
         body: typings.reolink_json = [
             {
@@ -5011,75 +4209,47 @@ class Host:
 
         if bright is not None:
             if not self.supported(channel, "isp_bright"):
-                raise NotSupportedError(
-                    f"set_image: bright on camera {self.camera_name(channel)} is not available"
-                )
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(bright, int):
-                raise InvalidParameterError(
-                    f"set_image: bright '{bright}' is not integer"
-                )
+                raise InvalidParameterError(f"set_image: bright '{bright}' is not integer")
             if bright < 0 or bright > 255:
-                raise InvalidParameterError(
-                    f"set_image: bright {bright} not in range 0...255"
-                )
+                raise InvalidParameterError(f"set_image: bright {bright} not in range 0...255")
             _image["Image"]["bright"] = bright
 
         if contrast is not None:
             if not self.supported(channel, "isp_contrast"):
-                raise NotSupportedError(
-                    f"set_image: bright on camera {self.camera_name(channel)} is not available"
-                )
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(contrast, int):
-                raise InvalidParameterError(
-                    f"set_image: contrast '{contrast}' is not integer"
-                )
+                raise InvalidParameterError(f"set_image: contrast '{contrast}' is not integer")
             if contrast < 0 or contrast > 255:
-                raise InvalidParameterError(
-                    f"set_image: contrast {contrast} not in range 0...255"
-                )
+                raise InvalidParameterError(f"set_image: contrast {contrast} not in range 0...255")
             _image["Image"]["contrast"] = contrast
 
         if saturation is not None:
             if not self.supported(channel, "isp_satruation"):
-                raise NotSupportedError(
-                    f"set_image: bright on camera {self.camera_name(channel)} is not available"
-                )
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(saturation, int):
-                raise InvalidParameterError(
-                    f"set_image: saturation '{saturation}' is not integer"
-                )
+                raise InvalidParameterError(f"set_image: saturation '{saturation}' is not integer")
             if saturation < 0 or saturation > 255:
-                raise InvalidParameterError(
-                    f"set_image: saturation {saturation} not in range 0...255"
-                )
+                raise InvalidParameterError(f"set_image: saturation {saturation} not in range 0...255")
             _image["Image"]["saturation"] = saturation
 
         if hue is not None:
             if not self.supported(channel, "isp_hue"):
-                raise NotSupportedError(
-                    f"set_image: bright on camera {self.camera_name(channel)} is not available"
-                )
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(hue, int):
                 raise InvalidParameterError(f"set_image: hue '{hue}' is not integer")
             if hue < 0 or hue > 255:
-                raise InvalidParameterError(
-                    f"set_image: hue {hue} not in range 0...255"
-                )
+                raise InvalidParameterError(f"set_image: hue {hue} not in range 0...255")
             _image["Image"]["hue"] = hue
 
         if sharpen is not None:
             if not self.supported(channel, "isp_sharpen"):
-                raise NotSupportedError(
-                    f"set_image: bright on camera {self.camera_name(channel)} is not available"
-                )
+                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
             if not isinstance(sharpen, int):
-                raise InvalidParameterError(
-                    f"set_image: sharpen '{sharpen}' is not integer"
-                )
+                raise InvalidParameterError(f"set_image: sharpen '{sharpen}' is not integer")
             if sharpen < 0 or sharpen > 255:
-                raise InvalidParameterError(
-                    f"set_image: sharpen {sharpen} not in range 0...255"
-                )
+                raise InvalidParameterError(f"set_image: sharpen {sharpen} not in range 0...255")
             _image["Image"]["sharpen"] = sharpen
 
         body: typings.reolink_json = [{"cmd": "SetImage", "param": _image}]
@@ -5095,9 +4265,7 @@ class Host:
     ) -> tuple[list[typings.VOD_search_status], list[typings.VOD_file]]:
         """Send search VOD-files command."""
         if channel not in self._stream_channels:
-            raise InvalidParameterError(
-                f"Request VOD files: no camera connected to channel '{channel}'"
-            )
+            raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
 
         if stream is None:
             stream = self._stream
@@ -5107,14 +4275,10 @@ class Host:
             times = []
             for month in range(end.month, start.month - 1, -2):
                 if month > start.month:
-                    start_month = start.replace(
-                        month=month, day=1, hour=0, minute=0
-                    ) - timedelta(minutes=5)
+                    start_month = start.replace(month=month, day=1, hour=0, minute=0) - timedelta(minutes=5)
                 else:
                     start_month = start.replace(month=month, day=1, hour=0, minute=0)
-                times.append(
-                    (start_month, start.replace(month=month, day=1, hour=0, minute=5))
-                )
+                times.append((start_month, start.replace(month=month, day=1, hour=0, minute=5)))
 
         body = []
         for time in times:
@@ -5135,13 +4299,9 @@ class Host:
             )
 
         try:
-            json_data = await self.send(
-                body, {"cmd": "Search"}, expected_response_type="json"
-            )
+            json_data = await self.send(body, {"cmd": "Search"}, expected_response_type="json")
         except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(
-                f"Request VOD files error: {str(err)}"
-            ) from err
+            raise InvalidContentTypeError(f"Request VOD files error: {str(err)}") from err
         except NoDataError as err:
             raise NoDataError(f"Request VOD files error: {str(err)}") from err
 
@@ -5149,20 +4309,13 @@ class Host:
         vod_files = []
         for data in json_data:
             if data.get("code", -1) != 0:
-                raise ApiError(
-                    f"Host: {self._host}:{self._port}: Request VOD files: API returned error code {data.get('code', -1)}, response: {json_data}"
-                )
+                raise ApiError(f"Host: {self._host}:{self._port}: Request VOD files: API returned error code {data.get('code', -1)}, response: {json_data}")
 
             search_result = data.get("value", {}).get("SearchResult", {})
             if "Status" not in search_result:
                 continue
 
-            statuses.extend(
-                [
-                    typings.VOD_search_status(status)
-                    for status in search_result["Status"]
-                ]
-            )
+            statuses.extend([typings.VOD_search_status(status) for status in search_result["Status"]])
             if status_only:
                 continue
 
@@ -5170,23 +4323,14 @@ class Host:
                 # When there are now recordings available in the indicated time window, "File" will not be in the response.
                 continue
 
-            vod_files.extend(
-                [
-                    typings.VOD_file(file, self.timezone())
-                    for file in search_result["File"]
-                ]
-            )
+            vod_files.extend([typings.VOD_file(file, self.timezone()) for file in search_result["File"]])
 
         if not statuses:
-            raise UnexpectedDataError(
-                f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}"
-            )
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
 
         return statuses, vod_files
 
-    async def send_setting(
-        self, body: typings.reolink_json, wait_before_get: int = 0
-    ) -> None:
+    async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0) -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(
             'Sending command: "%s" to: %s:%s with body: %s',
@@ -5197,15 +4341,11 @@ class Host:
         )
 
         try:
-            json_data = await self.send(
-                body, {"cmd": command}, expected_response_type="json"
-            )
+            json_data = await self.send(body, {"cmd": command}, expected_response_type="json")
         except InvalidContentTypeError as err:
             raise InvalidContentTypeError(f"Command '{command}': {str(err)}") from err
         except NoDataError as err:
-            raise NoDataError(
-                f"Host: {self._host}:{self._port}: error receiving response for command '{command}'"
-            ) from err
+            raise NoDataError(f"Host: {self._host}:{self._port}: error receiving response for command '{command}'") from err
 
         _LOGGER.debug(
             "Response from cmd '%s' from %s:%s: %s",
@@ -5216,24 +4356,13 @@ class Host:
         )
 
         try:
-            if (
-                json_data[0]["code"] != 0
-                or json_data[0].get("value", {}).get("rspCode", -1) != 200
-            ):
-                _LOGGER.debug(
-                    "ApiError for command '%s', response: %s", command, json_data
-                )
+            if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
+                _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
                 rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
-                detail = (
-                    json_data[0].get("value", json_data[0]["error"]).get("detail", "")
-                )
-                raise ApiError(
-                    f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}"
-                )
+                detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
+                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}")
         except KeyError as err:
-            raise UnexpectedDataError(
-                f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}"
-            ) from err
+            raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
 
         if command[:3] == "Set":
             getcmd = command.replace("Set", "Get")
@@ -5325,9 +4454,7 @@ class Host:
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None = None,
-        expected_response_type: Literal[
-            "json", "image/jpeg", "text/html", "application/octet-stream"
-        ] = "json",
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"] = "json",
         retry: int = RETRY_ATTEMPTS,
     ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """
@@ -5347,11 +4474,7 @@ class Host:
                 chunk_end,
                 len_body,
             )
-            response.extend(
-                await self.send_chunk(
-                    body[chunk:chunk_end], param, expected_response_type, retry
-                )
-            )
+            response.extend(await self.send_chunk(body[chunk:chunk_end], param, expected_response_type, retry))
 
         return response
 
@@ -5399,9 +4522,7 @@ class Host:
         self,
         body: typings.reolink_json,
         param: dict[str, Any] | None,
-        expected_response_type: Literal[
-            "json", "image/jpeg", "text/html", "application/octet-stream"
-        ],
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"],
         retry: int,
     ) -> typings.reolink_json | bytes | str | aiohttp.ClientResponse:
         """Generic send method."""
@@ -5440,16 +4561,12 @@ class Host:
             data: bytes | str
             if expected_response_type == "image/jpeg":
                 async with self._send_mutex:
-                    response = await self._aiohttp_session.get(
-                        url=self._url, params=param, allow_redirects=False
-                    )
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
 
                 data = await response.read()  # returns bytes
             elif expected_response_type == "application/octet-stream":
                 async with self._send_mutex:
-                    dl_timeout = aiohttp.ClientTimeout(
-                        connect=self.timeout, sock_read=self.timeout
-                    )
+                    dl_timeout = aiohttp.ClientTimeout(connect=self.timeout, sock_read=self.timeout)
                     response = await self._aiohttp_session.get(
                         url=self._url,
                         params=param,
@@ -5459,9 +4576,7 @@ class Host:
 
                 data = ""  # Response will be a file and be large, pass the response instead of reading it here.
                 if response.content_type == "text/html":
-                    data = await response.text(
-                        encoding="utf-8"
-                    )  # Error occured, read the error message
+                    data = await response.text(encoding="utf-8")  # Error occured, read the error message
             else:
                 if _LOGGER.isEnabledFor(logging.DEBUG):
                     _LOGGER.debug(
@@ -5473,9 +4588,7 @@ class Host:
                     )
 
                 async with self._send_mutex:
-                    response = await self._aiohttp_session.post(
-                        url=self._url, json=body, params=param, allow_redirects=False
-                    )
+                    response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
 
                 data = await response.text(encoding="utf-8")  # returns str
 
@@ -5513,16 +4626,10 @@ class Host:
 
             if len(data) < 500 and response.content_type == "text/html":
                 if isinstance(data, bytes):
-                    login_err = (
-                        b'"detail" : "invalid user"' in data
-                        or b'"detail" : "login failed"' in data
-                        or b'detail" : "please login first' in data
-                    )
+                    login_err = b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'detail" : "please login first' in data
                 else:
                     login_err = (
-                        '"detail" : "invalid user"' in data
-                        or '"detail" : "login failed"' in data
-                        or 'detail" : "please login first' in data
+                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or 'detail" : "please login first' in data
                     ) and cur_command != "Logout"
                 if login_err:
                     response.release()
@@ -5551,9 +4658,7 @@ class Host:
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 response.release()
-                raise ApiError(
-                    f"API returned HTTP status ERROR code {response.status}/{response.reason}"
-                )
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
 
             expected_content_type: list[str] = [expected_response_type]
             if expected_response_type == "json":
@@ -5591,9 +4696,7 @@ class Host:
                     return await self.send(body, param, expected_response_type, retry)
                 if json_data is None:
                     await self.expire_session(unsubscribe=False)
-                    raise NoDataError(
-                        f"Host {self._host}:{self._port}: returned no data: {data}"
-                    )
+                    raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
                 return json_data
 
             if expected_response_type == "image/jpeg" and isinstance(data, bytes):
@@ -5607,22 +4710,16 @@ class Host:
                 return response
 
             response.release()
-            raise InvalidContentTypeError(
-                f"Expected {expected_response_type}, unexpected data received: {data!r}"
-            )
+            raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
         except (
             aiohttp.ClientConnectorError,
             aiohttp.ClientOSError,
             aiohttp.ServerConnectionError,
         ) as err:
             if retry <= 0:
-                _LOGGER.debug(
-                    "Host %s:%s: connection error: %s", self._host, self._port, str(err)
-                )
+                _LOGGER.debug("Host %s:%s: connection error: %s", self._host, self._port, str(err))
                 await self.expire_session()
-                raise ReolinkConnectionError(
-                    f"Host {self._host}:{self._port}: connection error: {str(err)}"
-                ) from err
+                raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}") from err
             _LOGGER.debug(
                 "Host %s:%s: connection error, trying again: %s",
                 self._host,
@@ -5638,9 +4735,7 @@ class Host:
                     self._port,
                 )
                 await self.expire_session()
-                raise ReolinkTimeoutError(
-                    f"Host {self._host}:{self._port}: Timeout error: {str(err)}"
-                ) from err
+                raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: Timeout error: {str(err)}") from err
             _LOGGER.debug(
                 "Host %s:%s: connection timeout, trying again.",
                 self._host,
@@ -5666,9 +4761,7 @@ class Host:
             await self.expire_session()
             raise err
         except ApiError as err:
-            _LOGGER.error(
-                "Host %s:%s: API error: %s.", self._host, self._port, str(err)
-            )
+            _LOGGER.error("Host %s:%s: API error: %s.", self._host, self._port, str(err))
             await self.expire_session(unsubscribe=False)
             raise err
         except CredentialsInvalidError as err:
@@ -5676,9 +4769,7 @@ class Host:
             await self.expire_session()
             raise err
         except InvalidContentTypeError as err:
-            _LOGGER.debug(
-                "Host %s:%s: content type error: %s.", self._host, self._port, str(err)
-            )
+            _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
             await self.expire_session(unsubscribe=False)
             raise err
         except Exception as err:
@@ -5710,23 +4801,17 @@ class Host:
             aiohttp.ClientOSError,
             aiohttp.ServerConnectionError,
         ) as err:
-            raise ReolinkConnectionError(
-                f"Connetion error to {URL}: {str(err)}"
-            ) from err
+            raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Timeout requesting {URL}: {str(err)}") from err
 
         if response.status != 200:
             response.release()
-            raise ApiError(
-                f"Request to {URL} returned HTTP status ERROR code {response.status}/{response.reason}"
-            )
+            raise ApiError(f"Request to {URL} returned HTTP status ERROR code {response.status}/{response.reason}")
 
         if response.content_type != expected_response_type:
             response.release()
-            raise InvalidContentTypeError(
-                f"Request to {URL}, expected type '{expected_response_type}' but received '{response.content_type}'"
-            )
+            raise InvalidContentTypeError(f"Request to {URL}, expected type '{expected_response_type}' but received '{response.content_type}'")
 
         try:
             data = await response.text()
@@ -5735,30 +4820,21 @@ class Host:
             aiohttp.ClientOSError,
             aiohttp.ServerConnectionError,
         ) as err:
-            raise ReolinkConnectionError(
-                f"Connetion error reading response from {URL}: {str(err)}"
-            ) from err
+            raise ReolinkConnectionError(f"Connetion error reading response from {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
-            raise ReolinkTimeoutError(
-                f"Timeout reading response from {URL}: {str(err)}"
-            ) from err
+            raise ReolinkTimeoutError(f"Timeout reading response from {URL}: {str(err)}") from err
 
         try:
             json_data = json_loads(data)
         except (TypeError, JSONDecodeError) as err:
-            raise InvalidContentTypeError(
-                f"Error translating JSON response: {str(err)}, from {URL}, "
-                f"content type '{response.content_type}', data:\n{data}\n"
-            ) from err
+            raise InvalidContentTypeError(f"Error translating JSON response: {str(err)}, from {URL}, " f"content type '{response.content_type}', data:\n{data}\n") from err
 
         if json_data is None:
             raise NoDataError(f"Request to {URL} returned no data: {data}")
 
         resp_code = json_data.get("result", {}).get("code")
         if resp_code != 0:
-            raise ApiError(
-                f"Request to {URL} returned error code {resp_code}, data:\n{json_data}"
-            )
+            raise ApiError(f"Request to {URL} returned error code {resp_code}, data:\n{json_data}")
 
         return json_data
 
@@ -5771,9 +4847,7 @@ class Host:
         Webhook will only be called if push is on, the corresponding type is on and the scheduale on that time is enabled.
         """
         if not self.supported(channel, "webhook"):
-            raise NotSupportedError(
-                f"Webhooks not supported on camera {self.camera_name(channel)}"
-            )
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
 
         await self.get_state("GetWebHook")
 
@@ -5813,9 +4887,7 @@ class Host:
     async def webhook_test(self, channel: int, webhook_url: str):
         """Send a test message to a webhook"""
         if not self.supported(channel, "webhook"):
-            raise NotSupportedError(
-                f"Webhooks not supported on camera {self.camera_name(channel)}"
-            )
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
 
         body: typings.reolink_json = [
             {
@@ -5836,16 +4908,12 @@ class Host:
         try:
             await self.send_setting(body)
         except ApiError as err:
-            raise ApiError(
-                f"Webhook test for url '{webhook_url}' failed: {err}"
-            ) from err
+            raise ApiError(f"Webhook test for url '{webhook_url}' failed: {err}") from err
 
     async def webhook_remove(self, channel: int, webhook_url: str):
         """Remove a webhook"""
         if not self.supported(channel, "webhook"):
-            raise NotSupportedError(
-                f"Webhooks not supported on camera {self.camera_name(channel)}"
-            )
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
 
         await self.get_state("GetWebHook")
 
@@ -5879,9 +4947,7 @@ class Host:
     async def webhook_disable(self, channel: int, webhook_url: str):
         """Disable a webhook"""
         if not self.supported(channel, "webhook"):
-            raise NotSupportedError(
-                f"Webhooks not supported on camera {self.camera_name(channel)}"
-            )
+            raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
 
         await self.get_state("GetWebHook")
 
@@ -5925,21 +4991,14 @@ class Host:
                 return t_long_poll
             return min(t_push, t_long_poll)
 
-        if (
-            sub_type not in self._subscription_time_difference
-            or sub_type not in self._subscription_termination_time
-        ):
+        if sub_type not in self._subscription_time_difference or sub_type not in self._subscription_termination_time:
             return -1
 
         diff = self._subscription_termination_time[sub_type] - datetime.utcnow()
         return int(diff.total_seconds())
 
-    def subscribed(
-        self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push
-    ) -> bool:
-        return (
-            sub_type in self._subscription_manager_url and self.renewtimer(sub_type) > 0
-        )
+    def subscribed(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push) -> bool:
+        return sub_type in self._subscription_manager_url and self.renewtimer(sub_type) > 0
 
     def convert_time(self, time) -> Optional[datetime]:
         """Convert time object to printable."""
@@ -5960,9 +5019,7 @@ class Host:
         nonce = base64.b64encode(raw_nonce)
 
         sha1 = hashlib.sha1()
-        sha1.update(
-            raw_nonce + time_created.encode("utf8") + self._password.encode("utf8")
-        )
+        sha1.update(raw_nonce + time_created.encode("utf8") + self._password.encode("utf8"))
         raw_digest = sha1.digest()
         digest_pwd = base64.b64encode(raw_digest)
 
@@ -5986,9 +5043,7 @@ class Host:
             await self.get_state("GetNetPort")
 
         if self._subscribe_url is None:
-            raise NotSupportedError(
-                f"subscription_send: failed to retrieve subscribe_url from {self._host}:{self._port}"
-            )
+            raise NotSupportedError(f"subscription_send: failed to retrieve subscribe_url from {self._host}:{self._port}")
 
         _LOGGER.debug(
             "Host %s:%s: subscription request data:\n%s\n",
@@ -6025,18 +5080,12 @@ class Host:
             )
 
             if response.status != 200:
-                if (
-                    response.status == 400
-                    and "SOAP-ENV:Fault" in response_text
-                    and self.api_version("onvif") <= 1
-                ):
+                if response.status == 400 and "SOAP-ENV:Fault" in response_text and self.api_version("onvif") <= 1:
                     raise NotSupportedError(
                         f"Host {self._host}:{self._port}: subscription request got HTTP status response "
                         f"{response.status}: {response.reason} with 'SOAP-ENV:Fault' as response text"
                     )
-                raise ApiError(
-                    f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}"
-                )
+                raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}")
 
             return response_text
 
@@ -6045,13 +5094,9 @@ class Host:
             aiohttp.ClientOSError,
             aiohttp.ServerConnectionError,
         ) as err:
-            raise ReolinkConnectionError(
-                f"Host {self._host}:{self._port}: connection error: {str(err)}."
-            ) from err
+            raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}.") from err
         except asyncio.TimeoutError as err:
-            raise ReolinkTimeoutError(
-                f"Host {self._host}:{self._port}: connection timeout exception."
-            ) from err
+            raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.") from err
 
     async def subscribe(
         self,
@@ -6088,9 +5133,7 @@ class Host:
                 _LOGGER.debug("Reolink %s subscribe error: %s", sub_type, str(err))
                 await self.unsubscribe_all(sub_type)
                 return await self.subscribe(webhook_url, sub_type, retry=True)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to subscribe {sub_type}: {str(err)}"
-            ) from err
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}: {str(err)}") from err
         root = XML.fromstring(response)
 
         address_element = root.find(".//{http://www.w3.org/2005/08/addressing}Address")
@@ -6098,64 +5141,44 @@ class Host:
             if not retry:
                 await self.unsubscribe_all(sub_type)
                 return await self.subscribe(webhook_url, sub_type, retry=True)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find subscription manager url"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find subscription manager url")
         sub_manager_url = address_element.text
 
         if sub_manager_url is None:
             if not retry:
                 await self.unsubscribe_all(sub_type)
                 return await self.subscribe(webhook_url, sub_type, retry=True)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, subscription manager url not available"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, subscription manager url not available")
         self._subscription_manager_url[sub_type] = sub_manager_url
 
-        current_time_element = root.find(
-            ".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime"
-        )
+        current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             if not retry:
                 await self.unsubscribe_all(sub_type)
                 return await self.subscribe(webhook_url, sub_type, retry=True)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find CurrentTime"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find CurrentTime")
         remote_time = self.convert_time(current_time_element.text)
 
         if remote_time is None:
             if not retry:
                 await self.unsubscribe_all(sub_type)
                 return await self.subscribe(webhook_url, sub_type, retry=True)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, CurrentTime not available"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, CurrentTime not available")
 
-        self._subscription_time_difference[sub_type] = await self.calc_time_difference(
-            local_time, remote_time
-        )
+        self._subscription_time_difference[sub_type] = await self.calc_time_difference(local_time, remote_time)
 
-        termination_time_element = root.find(
-            ".//{http://docs.oasis-open.org/wsn/b-2}TerminationTime"
-        )
+        termination_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}TerminationTime")
         if termination_time_element is None:
             if not retry:
                 await self.unsubscribe_all(sub_type)
                 return await self.subscribe(webhook_url, sub_type, retry=True)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find TerminationTime"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, could not find TerminationTime")
 
         termination_time = self.convert_time(termination_time_element.text)
         if termination_time is None:
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, TerminationTime not available"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to subscribe {sub_type}, TerminationTime not available")
 
-        self._subscription_termination_time[sub_type] = termination_time - timedelta(
-            seconds=self._subscription_time_difference[sub_type]
-        )
+        self._subscription_termination_time[sub_type] = termination_time - timedelta(seconds=self._subscription_time_difference[sub_type])
 
         _LOGGER.debug(
             "%s, local time: %s, camera time: %s (difference: %s), termination time: %s",
@@ -6168,14 +5191,10 @@ class Host:
 
         return
 
-    async def renew(
-        self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push
-    ):
+    async def renew(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push):
         """Renew the ONVIF event subscription."""
         if not self.subscribed(sub_type):
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, not previously subscribed"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, not previously subscribed")
 
         headers = templates.HEADERS
         headers.update(templates.RENEW_ACTION)
@@ -6195,30 +5214,20 @@ class Host:
             response = await self.subscription_send(headers, xml)
         except ReolinkError as err:
             await self.unsubscribe_all(sub_type)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription: {str(err)}"
-            ) from err
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription: {str(err)}") from err
         root = XML.fromstring(response)
 
-        current_time_element = root.find(
-            ".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime"
-        )
+        current_time_element = root.find(".//{http://docs.oasis-open.org/wsn/b-2}CurrentTime")
         if current_time_element is None:
             await self.unsubscribe_all(sub_type)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, could not find CurrentTime"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, could not find CurrentTime")
         remote_time = self.convert_time(current_time_element.text)
 
         if remote_time is None:
             await self.unsubscribe_all(sub_type)
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, CurrentTime not available"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, CurrentTime not available")
 
-        self._subscription_time_difference[sub_type] = await self.calc_time_difference(
-            local_time, remote_time
-        )
+        self._subscription_time_difference[sub_type] = await self.calc_time_difference(local_time, remote_time)
 
         # The Reolink renew functionality has a bug: it always returns the INITIAL TerminationTime.
         # By adding the duration to the CurrentTime parameter, the new termination time can be calculated.
@@ -6232,9 +5241,7 @@ class Host:
         #     await self.unsubscribe_all(sub_type)
         #     raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, unexpected response")
         # self._subscription_termination_time[sub_type] = remote_termination_time - timedelta(seconds = self._subscription_time_difference[sub_type])
-        self._subscription_termination_time[sub_type] = local_time + timedelta(
-            minutes=SUBSCRIPTION_TERMINATION_TIME
-        )
+        self._subscription_termination_time[sub_type] = local_time + timedelta(minutes=SUBSCRIPTION_TERMINATION_TIME)
 
         _LOGGER.debug(
             "Renewed subscription successfully, local time: %s, camera time: %s (difference: %s), termination time: %s",
@@ -6249,9 +5256,7 @@ class Host:
     async def pull_point_request(self):
         """Request message from ONVIF pull point."""
         if not self.subscribed(SubType.long_poll):
-            raise SubscriptionError(
-                f"Host {self._host}:{self._port}: failed to request pull point message, not yet subscribed"
-            )
+            raise SubscriptionError(f"Host {self._host}:{self._port}: failed to request pull point message, not yet subscribed")
 
         headers = templates.HEADERS
         headers.update(templates.PULLMESSAGE_ACTION)
@@ -6266,24 +5271,15 @@ class Host:
         xml = template.format(**parameters)
         _LOGGER.debug("Reolink %s requesting ONVIF pull point message", self.nvr_name)
 
-        timeout = aiohttp.ClientTimeout(
-            total=LONG_POLL_TIMEOUT * 60 + 30, connect=self.timeout
-        )
+        timeout = aiohttp.ClientTimeout(total=LONG_POLL_TIMEOUT * 60 + 30, connect=self.timeout)
 
         try:
-            response = await self.subscription_send(
-                headers, xml, timeout, mutex=self._long_poll_mutex
-            )
+            response = await self.subscription_send(headers, xml, timeout, mutex=self._long_poll_mutex)
         except ReolinkError as err:
-            raise SubscriptionError(
-                f"Failed to request pull point message: {str(err)}"
-            ) from err
+            raise SubscriptionError(f"Failed to request pull point message: {str(err)}") from err
 
         root = XML.fromstring(response)
-        if (
-            root.find(".//{http://docs.oasis-open.org/wsn/b-2}NotificationMessage")
-            is None
-        ):
+        if root.find(".//{http://docs.oasis-open.org/wsn/b-2}NotificationMessage") is None:
             _LOGGER.debug(
                 "Reolink %s received ONVIF pull point message without event",
                 self.nvr_name,
@@ -6327,9 +5323,7 @@ class Host:
         await self.unsubscribe(sub_type)
 
         if self._is_nvr and sub_type in [SubType.push, SubType.all]:
-            _LOGGER.debug(
-                "Attempting to unsubscribe previous (dead) sessions notifications..."
-            )
+            _LOGGER.debug("Attempting to unsubscribe previous (dead) sessions notifications...")
 
             headers = templates.HEADERS
             headers.update(templates.UNSUBSCRIBE_ACTION)
@@ -6337,9 +5331,7 @@ class Host:
 
             # These work for RLN8-410 NVR, so up to 3 maximum subscriptions on it
             for idx in range(0, 3):
-                parameters = {
-                    "To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_{idx}"
-                }
+                parameters = {"To": f"http://{self._host}:{self._onvif_port}/onvif/Notification?Idx=00_{idx}"}
                 parameters.update(await self.get_digest())
                 xml = template.format(**parameters)
                 try:
@@ -6349,13 +5341,9 @@ class Host:
 
         return True
 
-    async def ONVIF_event_callback(
-        self, data: str, root: XML.Element | None = None
-    ) -> list[int] | None:
+    async def ONVIF_event_callback(self, data: str, root: XML.Element | None = None) -> list[int] | None:
         """Handle incoming ONVIF event from the webhook called by the Reolink device."""
-        _LOGGER_DATA.debug(
-            "ONVIF event callback from '%s' received payload:\n%s", self.nvr_name, data
-        )
+        _LOGGER_DATA.debug("ONVIF event callback from '%s' received payload:\n%s", self.nvr_name, data)
 
         event_channels: list[int] = []
         contains_channels = False
@@ -6366,15 +5354,11 @@ class Host:
             root = XML.fromstring(data)
         else:
             sub_type = SubType.long_poll
-        for message in root.iter(
-            "{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"
-        ):
+        for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
             channel = None
 
             # find NotificationMessage Rule (type of event)
-            topic_element = message.find(
-                "{http://docs.oasis-open.org/wsn/b-2}Topic[@Dialect='http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet']"
-            )
+            topic_element = message.find("{http://docs.oasis-open.org/wsn/b-2}Topic[@Dialect='http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet']")
             if topic_element is None or topic_element.text is None:
                 continue
             rule = basename(topic_element.text)
@@ -6385,13 +5369,9 @@ class Host:
             if self.num_cameras == 1:
                 channel = self.channels[0]
             else:
-                source_element = message.find(
-                    ".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='Source']"
-                )
+                source_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='Source']")
                 if source_element is None:
-                    source_element = message.find(
-                        ".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='VideoSourceConfigurationToken']"
-                    )
+                    source_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='VideoSourceConfigurationToken']")
                 if source_element is not None and "Value" in source_element.attrib:
                     try:
                         channel = int(source_element.attrib["Value"])
@@ -6408,13 +5388,9 @@ class Host:
                 # Unknown which channel caused the event, poll all channels
                 if f"ONVIF_{rule}_no_channel" not in self._log_once:
                     self._log_once.append(f"ONVIF_{rule}_no_channel")
-                    _LOGGER.warning(
-                        "Reolink ONVIF event '%s' does not contain channel", rule
-                    )
+                    _LOGGER.warning("Reolink ONVIF event '%s' does not contain channel", rule)
                 if not await self.get_motion_state_all_ch():
-                    _LOGGER.error(
-                        "Could not poll motion state after receiving ONVIF event with unknown channel"
-                    )
+                    _LOGGER.error("Could not poll motion state after receiving ONVIF event with unknown channel")
                 return None
 
             if channel not in self.channels:
@@ -6425,15 +5401,11 @@ class Host:
             key = "State"
             if rule == "Motion":
                 key = "IsMotion"
-            data_element = message.find(
-                f".//\u007bhttp://www.onvif.org/ver10/schema\u007dSimpleItem[@Name='{key}']"
-            )
+            data_element = message.find(f".//\u007bhttp://www.onvif.org/ver10/schema\u007dSimpleItem[@Name='{key}']")
             if data_element is None or "Value" not in data_element.attrib:
                 if f"ONVIF_{rule}_no_data" not in self._log_once:
                     self._log_once.append(f"ONVIF_{rule}_no_data")
-                    _LOGGER.warning(
-                        "ONVIF event '%s' did not contain data:\n%s", rule, data
-                    )
+                    _LOGGER.warning("ONVIF event '%s' did not contain data:\n%s", rule, data)
                 continue
 
             if rule not in [
@@ -6494,14 +5466,10 @@ class Host:
                     data,
                 )
             if not await self.get_motion_state_all_ch():
-                _LOGGER.error(
-                    "Could not poll motion state after receiving ONVIF event without any known events"
-                )
+                _LOGGER.error("Could not poll motion state after receiving ONVIF event without any known events")
             return None
 
-        if self._onvif_only_motion[sub_type] and any(
-            self.ai_supported(ch) for ch in event_channels
-        ):
+        if self._onvif_only_motion[sub_type] and any(self.ai_supported(ch) for ch in event_channels):
             # Poll all other states since not all cameras have rich notifications including the specific events
             if f"ONVIF_only_motion_{sub_type}" not in self._log_once:
                 self._log_once.append(f"ONVIF_only_motion_{sub_type}")
@@ -6511,9 +5479,7 @@ class Host:
                     sub_type,
                 )
             if not await self.get_ai_state_all_ch():
-                _LOGGER.error(
-                    "Could not poll AI event state after receiving ONVIF event with only motion event"
-                )
+                _LOGGER.error("Could not poll AI event state after receiving ONVIF event with only motion event")
             return None
 
         return event_channels
