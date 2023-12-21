@@ -4628,102 +4628,75 @@ class Host:
         """Handle incoming ONVIF event from the webhook called by the Reolink device."""
         _LOGGER_DATA.debug("ONVIF event callback from '%s' received payload:\n%s", self.nvr_name, data)
 
-        event_channels: list[int] = []
-        contains_channels = False
+        channel = self.channels[0] if self.num_cameras == 1 else None
+        events = parse_reolink_onvif_event(data, root, channel)
 
         sub_type: Literal[SubType.push, SubType.long_poll]
         if root is None:
             sub_type = SubType.push
-            root = XML.fromstring(data)
         else:
             sub_type = SubType.long_poll
-        for message in root.iter("{http://docs.oasis-open.org/wsn/b-2}NotificationMessage"):
-            channel = None
 
-            # find NotificationMessage Rule (type of event)
-            topic_element = message.find("{http://docs.oasis-open.org/wsn/b-2}Topic[@Dialect='http://www.onvif.org/ver10/tev/topicExpression/ConcreteSet']")
-            if topic_element is None or topic_element.text is None:
-                continue
-            rule = basename(topic_element.text)
-            if not rule:
-                continue
+        contains_channels = False
+        event_channels: list[int] = []
 
-            # find camera channel
-            if self.num_cameras == 1:
-                channel = self.channels[0]
-            else:
-                source_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='Source']")
-                if source_element is None:
-                    source_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='VideoSourceConfigurationToken']")
-                if source_element is not None and "Value" in source_element.attrib:
-                    try:
-                        channel = int(source_element.attrib["Value"])
-                    except ValueError:
-                        if f"ONVIF_{rule}_invalid_channel" not in self._log_once:
-                            self._log_once.append(f"ONVIF_{rule}_invalid_channel")
-                            _LOGGER.warning("Reolink ONVIF event '%s' data contained invalid channel '%s', issuing poll instead", rule, source_element.attrib["Value"])
-
-            if channel is None:
-                # Unknown which channel caused the event, poll all channels
-                if f"ONVIF_{rule}_no_channel" not in self._log_once:
+        for event_channel in events.keys():
+            for rule in events[event_channel].keys():
+                if event_channel is None and f"ONVIF_{rule}_no_channel" not in self._log_once:
                     self._log_once.append(f"ONVIF_{rule}_no_channel")
-                    _LOGGER.warning("Reolink ONVIF event '%s' does not contain channel", rule)
-                if not await self.get_motion_state_all_ch():
-                    _LOGGER.error("Could not poll motion state after receiving ONVIF event with unknown channel")
-                return None
+                if type(event_channel) == str and f"ONVIF_{rule}_invalid_channel" not in self._log_once:
+                    self._log_once.append(f"ONVIF_{rule}_invalid_channel")
 
-            if channel not in self.channels:
-                # Channel has no camera connected, ignoring this notification
+                if type(event_channel) != int:
+                    if not await self.get_motion_state_all_ch():
+                        _LOGGER.error("Could not poll motion state after receiving ONVIF event with unknown channel")
+                    return None
+
                 contains_channels = True
-                continue
+                if event_channel not in self.channels:
+                    # Channel has no camera connected, ignoring this notification
+                    continue
 
-            key = "State"
-            if rule == "Motion":
-                key = "IsMotion"
-            data_element = message.find(f".//\u007bhttp://www.onvif.org/ver10/schema\u007dSimpleItem[@Name='{key}']")
-            if data_element is None or "Value" not in data_element.attrib:
-                if f"ONVIF_{rule}_no_data" not in self._log_once:
-                    self._log_once.append(f"ONVIF_{rule}_no_data")
-                    _LOGGER.warning("ONVIF event '%s' did not contain data:\n%s", rule, data)
-                continue
+                if event_channel not in event_channels:
+                    event_channels.append(event_channel)
 
-            if rule not in ["Motion", "MotionAlarm", "FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
-                if f"ONVIF_unknown_{rule}" not in self._log_once:
-                    self._log_once.append(f"ONVIF_unknown_{rule}")
-                    _LOGGER.warning("ONVIF event with unknown rule: '%s'", rule)
-                continue
+                if events[event_channel][rule] is None:
+                    if f"ONVIF_{rule}_no_data" not in self._log_once:
+                        self._log_once.append(f"ONVIF_{rule}_no_data")
+                    continue
 
-            if channel not in event_channels:
-                event_channels.append(channel)
-            if rule in ["FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
-                self._onvif_only_motion[sub_type] = False
+                if rule not in ["Motion", "MotionAlarm", "FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
+                    if f"ONVIF_unknown_{rule}" not in self._log_once:
+                        self._log_once.append(f"ONVIF_unknown_{rule}")
+                        _LOGGER.warning("ONVIF event with unknown rule: '%s'", rule)
+                    continue
 
-            state = data_element.attrib["Value"] == "true"
-            _LOGGER.info("Reolink %s ONVIF event channel %s, %s: %s", self.nvr_name, channel, rule, state)
+                if rule in ["FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
+                    self._onvif_only_motion[sub_type] = False
 
-            if rule == "Motion":
-                self._motion_detection_states[channel] = state
-            elif rule == "MotionAlarm":
-                self._motion_detection_states[channel] = state
-            elif rule == "FaceDetect":
-                self._ai_detection_states[channel]["face"] = state
-            elif rule == "PeopleDetect":
-                self._ai_detection_states[channel]["people"] = state
-            elif rule == "VehicleDetect":
-                self._ai_detection_states[channel]["vehicle"] = state
-            elif rule == "DogCatDetect":
-                self._ai_detection_states[channel]["dog_cat"] = state
-            elif rule == "Visitor":
-                self._visitor_states[channel] = state
+                if rule == "Motion":
+                    self._motion_detection_states[channel] = state
+                elif rule == "MotionAlarm":
+                    self._motion_detection_states[channel] = state
+                elif rule == "FaceDetect":
+                    self._ai_detection_states[channel]["face"] = state
+                elif rule == "PeopleDetect":
+                    self._ai_detection_states[channel]["people"] = state
+                elif rule == "VehicleDetect":
+                    self._ai_detection_states[channel]["vehicle"] = state
+                elif rule == "DogCatDetect":
+                    self._ai_detection_states[channel]["dog_cat"] = state
+                elif rule == "Visitor":
+                    self._visitor_states[channel] = state
 
-        if not event_channels and not contains_channels:
+        if not contains_channels:
             # ONVIF notification withouth known events
             if "ONVIF_no_known" not in self._log_once:
                 self._log_once.append("ONVIF_no_known")
                 _LOGGER.warning("Reolink ONVIF notification received withouth any known events:\n%s", data)
+
             if not await self.get_motion_state_all_ch():
-                _LOGGER.error("Could not poll motion state after receiving ONVIF event without any known events")
-            return None
+                _LOGGER.error("Could not poll motion state")
 
         if self._onvif_only_motion[sub_type] and any(self.ai_supported(ch) for ch in event_channels):
             # Poll all other states since not all cameras have rich notifications including the specific events
