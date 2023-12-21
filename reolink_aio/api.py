@@ -74,6 +74,10 @@ DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
 }
 DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
 
+def _hide_password(content: str, password: str) -> str:
+    if len(password) == 0:
+        return content
+    return str(content).replace(password, "<password>")
 
 ##########################################################################################################################################################
 # API class
@@ -3961,7 +3965,7 @@ class Host:
             param["token"] = self._token
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
+            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, _hide_password(param, self._password))
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -3983,7 +3987,7 @@ class Host:
                     data = await response.text(encoding="utf-8")  # Error occured, read the error message
             else:
                 if _LOGGER.isEnabledFor(logging.DEBUG):
-                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
+                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, _hide_password(body, self._password))
 
                 async with self._send_mutex:
                     response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
