@@ -2061,7 +2061,7 @@ class Host:
 
         try:
             async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=password, logger=_LOGGER_RTSP) as rtsp_conn:
-                response = await rtsp_conn.send_request("OPTIONS", url_clean)
+                response = await rtsp_conn.send_request("DESCRIBE", url_clean)
         except RTSPError as err:
             _LOGGER.debug("Error while checking RTSP url '%s': %s", url_clean, err)
             return False
