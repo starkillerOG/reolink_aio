@@ -16,6 +16,8 @@ from xml.etree import ElementTree as XML
 from statistics import mean
 
 from orjson import JSONDecodeError, loads as json_loads  # pylint: disable=no-name-in-module
+from aiortsp.rtsp.connection import RTSPConnection  # type: ignore
+from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
@@ -56,6 +58,8 @@ VISITOR_DETECTION_TYPE = "visitor"
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
+_LOGGER_RTSP = logging.getLogger(__name__ + ".aiortsp")
+_LOGGER_RTSP.setLevel(logging.WARNING)
 
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.set_ciphers("DEFAULT")
@@ -167,6 +171,7 @@ class Host:
         self._rtmp_auth_method: str = rtmp_auth_method
         self._rtsp_mainStream: dict[int, str] = {}
         self._rtsp_subStream: dict[int, str] = {}
+        self._rtsp_verified: dict[int, dict[str, str]] = {}
 
         ##############################################################################
         # Presets
@@ -1630,6 +1635,12 @@ class Host:
 
         self.construct_capabilities()
 
+        if self.protocol == "rtsp":
+            # Cache the RTSP urls
+            for channel in self._stream_channels:
+                await self.get_rtsp_stream_source(channel, "sub")
+                await self.get_rtsp_stream_source(channel, "main")
+
     async def get_motion_state(self, channel: int) -> Optional[bool]:
         if channel not in self._channels:
             return None
@@ -2038,6 +2049,30 @@ class Host:
             return "h265"
         return "h264"
 
+    async def _check_rtsp_url(self, url: str, channel: int, stream: str) -> bool:
+        if channel not in self._rtsp_verified:
+            self._rtsp_verified[channel] = {}
+        if stream not in self._rtsp_verified[channel]:
+            # save the first tried URL (based on camera capabilities) in case all attempts fail
+            self._rtsp_verified[channel][stream] = url
+
+        password = parse.quote(self._password)
+        url_clean = url.replace(f"{self._username}:{password}@", "")
+
+        try:
+            async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=password, logger=_LOGGER_RTSP) as rtsp_conn:
+                response = await rtsp_conn.send_request("DESCRIBE", url_clean)
+        except RTSPError as err:
+            _LOGGER.debug("Error while checking RTSP url '%s': %s", url_clean, err)
+            return False
+
+        if response.status != 200 or response.status_msg != "OK":
+            _LOGGER.debug("Error while checking RTSP url '%s': status %s, message %s", url_clean, response.status, response.status_msg)
+            return False
+
+        self._rtsp_verified[channel][stream] = url
+        return True
+
     async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._stream_channels:
             return None
@@ -2045,10 +2080,15 @@ class Host:
         if stream is None:
             stream = self._stream
 
+        if channel in self._rtsp_verified and stream in self._rtsp_verified[channel]:
+            return self._rtsp_verified[channel][stream]
+
         if self.api_version("rtsp") >= 3 and stream == "main" and channel in self._rtsp_mainStream:
-            return self._rtsp_mainStream[channel]
+            if await self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
+                return self._rtsp_mainStream[channel]
         if self.api_version("rtsp") >= 3 and stream == "sub" and channel in self._rtsp_subStream:
-            return self._rtsp_subStream[channel]
+            if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
+                return self._rtsp_subStream[channel]
 
         if not self._enc_settings:
             try:
@@ -2058,10 +2098,12 @@ class Host:
 
         encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is None and stream == "main" and channel in self._rtsp_mainStream:
-            return self._rtsp_mainStream[channel]
+            if await self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
+                return self._rtsp_mainStream[channel]
 
         if encoding is None and stream == "sub" and channel in self._rtsp_subStream:
-            return self._rtsp_subStream[channel]
+            if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
+                return self._rtsp_subStream[channel]
 
         if encoding is None and stream == "main":
             if self.api_version("mainEncType", channel) > 0:
@@ -2082,7 +2124,22 @@ class Host:
         password = parse.quote(self._password)
         channel_str = f"{channel + 1:02d}"
 
-        return f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
+        url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
+        if await self._check_rtsp_url(url, channel, stream):
+            return url
+
+        encoding = "h265" if encoding == "h264" else "h264"
+        url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
+        if await self._check_rtsp_url(url, channel, stream):
+            return url
+
+        url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/Preview_{channel_str}_{stream}"
+        if await self._check_rtsp_url(url, channel, stream):
+            return url
+
+        # return the first tried URL (based on camera capabilities as above)
+        _LOGGER.error("Host %s:%s, could not verify a working RTSP url", self._host, self._port)
+        return self._rtsp_verified[channel][stream]
 
     async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         """Return the stream source url."""

@@ -1,3 +1,4 @@
 aiohttp
+aiortsp
 orjson
 typing_extensions
