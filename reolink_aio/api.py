@@ -2133,6 +2133,10 @@ class Host:
         if await self._check_rtsp_url(url, channel, stream):
             return url
 
+        url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/Preview_{channel_str}_{stream}"
+        if await self._check_rtsp_url(url, channel, stream):
+            return url
+
         # return the first tried URL (based on camera capabilities as above)
         _LOGGER.error("Host %s:%s, could not verify a working RTSP url", self._host, self._port)
         return self._rtsp_verified[channel][stream]
