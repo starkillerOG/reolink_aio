@@ -58,6 +58,8 @@ VISITOR_DETECTION_TYPE = "visitor"
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
+_LOGGER_RTSP = logging.getLogger(__name__ + ".aiortsp")
+_LOGGER_RTSP.setLevel(logging.WARNING)
 
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.set_ciphers("DEFAULT")
@@ -2058,7 +2060,7 @@ class Host:
         url_clean = url.replace(f"{self._username}:{password}@", "")
 
         try:
-            async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=password) as rtsp_conn:
+            async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=password, logger=_LOGGER_RTSP) as rtsp_conn:
                 response = await rtsp_conn.send_request("DESCRIBE", url_clean)
         except RTSPError as err:
             _LOGGER.debug("Error while checking RTSP url '%s': %s", url_clean, err)
@@ -2082,10 +2084,10 @@ class Host:
             return self._rtsp_verified[channel][stream]
 
         if self.api_version("rtsp") >= 3 and stream == "main" and channel in self._rtsp_mainStream:
-            if self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
+            if await self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
                 return self._rtsp_mainStream[channel]
         if self.api_version("rtsp") >= 3 and stream == "sub" and channel in self._rtsp_subStream:
-            if self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
+            if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
                 return self._rtsp_subStream[channel]
 
         if not self._enc_settings:
@@ -2096,11 +2098,11 @@ class Host:
 
         encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is None and stream == "main" and channel in self._rtsp_mainStream:
-            if self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
+            if await self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
                 return self._rtsp_mainStream[channel]
 
         if encoding is None and stream == "sub" and channel in self._rtsp_subStream:
-            if self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
+            if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
                 return self._rtsp_subStream[channel]
 
         if encoding is None and stream == "main":
@@ -2123,12 +2125,12 @@ class Host:
         channel_str = f"{channel + 1:02d}"
 
         url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
-        if self._check_rtsp_url(url, channel, stream):
+        if await self._check_rtsp_url(url, channel, stream):
             return url
 
         encoding = "h265" if encoding == "h264" else "h264"
         url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
-        if self._check_rtsp_url(url, channel, stream):
+        if await self._check_rtsp_url(url, channel, stream):
             return url
 
         # return the first tried URL (based on camera capabilities as above)
