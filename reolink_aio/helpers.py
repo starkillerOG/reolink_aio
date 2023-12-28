@@ -81,7 +81,7 @@ def parse_reolink_onvif_event(
         else:
             state = data_element.attrib["Value"] == "true"
 
-        _LOGGER.info("Reolink %s ONVIF event channel %s, %s: %s", channel, rule, state)
+        _LOGGER.info("Reolink ONVIF event channel %s, %s: %s", channel, rule, state)
         if channel not in parsed_events:
             parsed_events[channel] = {}
         parsed_events[channel][rule] = state
