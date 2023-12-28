@@ -923,17 +923,24 @@ class Host:
             self._login_mutex.release()
 
     async def _login_try_ports(self) -> None:
+        first_err = None
         self._port = 443
         self.enable_https(True)
         try:
             await self.login()
             return
-        except LoginError:
-            pass
+        except LoginError as exc:
+            first_err = exc
 
-        self._port = 80
-        self.enable_https(False)
-        await self.login()
+        try:
+            self._port = 80
+            self.enable_https(False)
+            await self.login()
+        except:
+            if first_err is not None:
+                raise first_err
+            else:
+                raise
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
@@ -4089,6 +4096,10 @@ class Host:
                 response.release()
                 await self.expire_session()
                 return await self.send(body, param, expected_response_type, retry)
+
+            if response.status == 300:
+                response.release()
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason} (Are you using HTTPS?)")
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 response.release()
