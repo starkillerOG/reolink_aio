@@ -21,7 +21,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType
+from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -2166,6 +2166,7 @@ class Host:
         channel: int,
         filename: str,
         stream: Optional[str] = None,
+        request_type: VodRequestType = VodRequestType.FLV,
     ) -> tuple[str, str]:
         """Return the VOD source url."""
         if channel not in self._channels:
@@ -2174,49 +2175,95 @@ class Host:
         # Since no request is made, make sure we are logged in.
         await self.login()
 
-        # RTMP port needs to be enabled for playback to work
-        if self._rtmp_enabled is None:
-            await self.get_state("GetNetPort")
-        if self._rtmp_enabled is False:
-            await self.set_net_port(enable_rtmp=True)
-
-        if self._use_https:
-            http_s = "https"
-        else:
-            http_s = "http"
-
-        # Looks like it only works with login/password method, not with token
-        credentials = f"user={self._username}&password={self._password}"
-
         if stream is None:
             stream = self._stream
 
-        stream_type: int
+        if self._is_nvr and request_type in [VodRequestType.RTMP, VodRequestType.PLAYBACK]:
+            _LOGGER.warning("get_vod_source: NVRs do not yet support '%s' vod requests, using FLV instead", request_type.value)
+            request_type = VodRequestType.FLV
+
         if stream == "sub":
             stream_type = 1
         else:
             stream_type = 0
 
-        if self._is_nvr:
-            # seek = start x seconds into the file
-            return (
-                "application/x-mpegURL",
-                f"{http_s}://{self._host}:{self._port}/flv?port=1935&app=bcs&stream=playback.bcs&channel={channel}"
-                f"&type={stream_type}&start={filename}&seek=0&{credentials}",
-            )
-        # Alternative
-        # return (
-        #     "application/x-mpegURL",
-        #     f"{self._url}?&cmd=Playback&channel={channel}&source={filename}&user={self._username}&password={self._password}",
-        # )
+        if request_type in [VodRequestType.FLV, VodRequestType.RTMP]:
+            mime = "application/x-mpegURL"
+            # Looks like it only works with login/password method, not with token
+            credentials = f"&user={self._username}&password={self._password}"
+        else:
+            mime = "video/mp4"
+            credentials = f"&token={self._token}"
 
-        # If the camera provides a / in the filename it needs to be encoded with %20
-        # Camera VoDs are only available over rtmp, rtsp is not an option
-        file = filename.replace("/", "%20")
-        return (
-            "application/x-mpegURL",
-            f"rtmp://{self._host}:{self._rtmp_port}/vod/{file}?channel={channel}&stream={stream_type}&{credentials}",
-        )
+        if request_type == VodRequestType.RTMP:
+            # RTMP port needs to be enabled for playback to work
+            if self._rtmp_enabled is None:
+                await self.get_state("GetNetPort")
+            if self._rtmp_enabled is False:
+                await self.set_net_port(enable_rtmp=True)
+
+            url = f"rtmp://{self._host}:{self._rtmp_port}/vod/{filename.replace('/', '%20')}?channel={channel}&stream={stream_type}"
+        elif request_type == VodRequestType.FLV:
+            if self._use_https:
+                http_s = "https"
+            else:
+                http_s = "http"
+
+            # seek = start x seconds into the file
+            url = f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=playback.bcs&channel={channel}&type={stream_type}&start={filename}&seek=0"
+        elif request_type == VodRequestType.PLAYBACK:
+            url = f"{self._url}?cmd=Playback&source={filename}&output={filename.replace('/', '_')}"
+        else:
+            raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
+
+        return (mime, f"{url}{credentials}")
+
+    async def _generate_NVR_download_vod(
+        self,
+        filename: str,
+        start_time: str,
+        end_time: str,
+        channel: str,
+        stream: str,
+    ) -> str:
+        start = datetime_to_reolink_time(start_time)
+        end = datetime_to_reolink_time(end_time)
+        body = [
+            {
+                "cmd": "NvrDownload",
+                "action": 1,
+                "param": {
+                    "NvrDownload": {
+                        "channel": channel,
+                        "iLogicChannel": 0,
+                        "streamType": stream,
+                        "StartTime": start,
+                        "EndTime": end,
+                    }
+                },
+            }
+        ]
+
+        try:
+            json_data = await self.send(body, expected_response_type="json")
+        except InvalidContentTypeError as err:
+            raise InvalidContentTypeError(f"Request NvrDownload error: {str(err)}") from err
+        except NoDataError as err:
+            raise NoDataError(f"Request NvrDownload error: {str(err)}") from err
+
+        if json_data[0].get("code") != 0:
+            raise ApiError(f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
+
+        max_filesize = 0
+        for file in json_data[0]["value"]["fileList"]:
+            filesize = int(file["fileSize"])
+            if filesize > max_filesize:
+                max_filesize = filesize
+                filename = file["fileName"]
+
+        _LOGGER.debug("NVR prepared file %s", filename)
+
+        return filename
 
     async def download_vod(
         self,
@@ -2236,42 +2283,7 @@ class Host:
             if start_time is None or end_time is None or channel is None or stream is None:
                 raise InvalidParameterError("download_vod: for a NVR 'start_time', 'end_time', 'channel' and 'stream' parameters are required")
 
-            start = datetime_to_reolink_time(start_time)
-            end = datetime_to_reolink_time(end_time)
-            body = [
-                {
-                    "cmd": "NvrDownload",
-                    "action": 1,
-                    "param": {
-                        "NvrDownload": {
-                            "channel": channel,
-                            "iLogicChannel": 0,
-                            "streamType": stream,
-                            "StartTime": start,
-                            "EndTime": end,
-                        }
-                    },
-                }
-            ]
-
-            try:
-                json_data = await self.send(body, expected_response_type="json")
-            except InvalidContentTypeError as err:
-                raise InvalidContentTypeError(f"Request NvrDownload error: {str(err)}") from err
-            except NoDataError as err:
-                raise NoDataError(f"Request NvrDownload error: {str(err)}") from err
-
-            if json_data[0].get("code") != 0:
-                raise ApiError(f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
-
-            max_filesize = 0
-            for file in json_data[0]["value"]["fileList"]:
-                filesize = int(file["fileSize"])
-                if filesize > max_filesize:
-                    max_filesize = filesize
-                    filename = file["fileName"]
-
-            _LOGGER.debug("NVR prepared file %s", filename)
+            filename = await self._generate_NVR_download_vod(filename, start_time, end_time, channel, stream)
 
         param: dict[str, Any] = {"cmd": "Download", "source": filename, "output": wanted_filename}
         body = [{}]

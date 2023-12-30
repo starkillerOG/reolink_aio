@@ -17,6 +17,14 @@ class SubType(str, Enum):
         return self.value
 
 
+class VodRequestType(Enum):
+    """VOD url request types"""
+
+    RTMP = "RTMP"
+    PLAYBACK = "playback"
+    FLV = "FLV"
+
+
 class SpotlightModeEnum(Enum):
     """Options for the spotlight mode"""
 
