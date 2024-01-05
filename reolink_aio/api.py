@@ -2060,7 +2060,7 @@ class Host:
         url_clean = url.replace(f"{self._username}:{password}@", "")
 
         try:
-            async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=password, logger=_LOGGER_RTSP) as rtsp_conn:
+            async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=self._password, logger=_LOGGER_RTSP) as rtsp_conn:
                 response = await rtsp_conn.send_request("DESCRIBE", url_clean)
         except RTSPError as err:
             _LOGGER.debug("Error while checking RTSP url '%s': %s", url_clean, err)
