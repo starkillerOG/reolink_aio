@@ -3761,6 +3761,8 @@ class Host:
         """Send search VOD-files command."""
         if channel not in self._stream_channels:
             raise InvalidParameterError(f"Request VOD files: no camera connected to channel '{channel}'")
+        if start > end:
+            raise InvalidParameterError(f"Request VOD files: start date '{start}' needs to be before end date '{end}'")
 
         if stream is None:
             stream = self._stream
@@ -3795,6 +3797,9 @@ class Host:
                     },
                 }
             )
+
+        if not body:
+            raise InvalidParameterError(f"Request VOD files: no search body, start date '{start}' end date '{end}'")
 
         try:
             json_data = await self.send(body, {"cmd": "Search"}, expected_response_type="json")
