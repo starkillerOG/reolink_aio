@@ -3768,12 +3768,15 @@ class Host:
         times = [(start, end)]
         if status_only:
             times = []
-            for month in range(end.month, start.month - 1, -2):
-                if month > start.month:
-                    start_month = start.replace(month=month, day=1, hour=0, minute=0) - timedelta(minutes=5)
+            end_month = end.month + (end.year - start.year) * 12
+            for month_year in range(end_month, start.month - 1, -2):
+                month = int((month_year - 0.5) % 12 + 0.5)
+                year = start.year + int((month_year - 0.5) / 12)
+                if month_year > start.month:
+                    start_month = start.replace(year=year, month=month, day=1, hour=0, minute=0) - timedelta(minutes=5)
                 else:
-                    start_month = start.replace(month=month, day=1, hour=0, minute=0)
-                times.append((start_month, start.replace(month=month, day=1, hour=0, minute=5)))
+                    start_month = start.replace(year=year, month=month, day=1, hour=0, minute=0)
+                times.append((start_month, start.replace(year=year, month=month, day=1, hour=0, minute=5)))
 
         body = []
         for time in times:
