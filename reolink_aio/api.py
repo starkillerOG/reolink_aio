@@ -2012,7 +2012,7 @@ class Host:
         else:
             http_s = "http"
 
-        password = parse.quote(self._password)
+        password = parse.quote(self._password, safe="")
         return f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=channel{channel}_{stream}.bcs&user={self._username}&password={password}"
 
     def get_rtmp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
@@ -2028,7 +2028,7 @@ class Host:
         else:
             stream_type = 0
         if self._rtmp_auth_method == DEFAULT_RTMP_AUTH_METHOD:
-            password = parse.quote(self._password)
+            password = parse.quote(self._password, safe="")
             return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&user={self._username}&password={password}"
 
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
@@ -2056,7 +2056,7 @@ class Host:
             # save the first tried URL (based on camera capabilities) in case all attempts fail
             self._rtsp_verified[channel][stream] = url
 
-        password = parse.quote(self._password)
+        password = parse.quote(self._password, safe="")
         url_clean = url.replace(f"{self._username}:{password}@", "")
 
         try:
@@ -2121,7 +2121,7 @@ class Host:
             )
             encoding = "h264"
 
-        password = parse.quote(self._password)
+        password = parse.quote(self._password, safe="")
         channel_str = f"{channel + 1:02d}"
 
         url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
@@ -2190,7 +2190,8 @@ class Host:
         if request_type in [VodRequestType.FLV, VodRequestType.RTMP]:
             mime = "application/x-mpegURL"
             # Looks like it only works with login/password method, not with token
-            credentials = f"&user={self._username}&password={self._password}"
+            password = parse.quote(self._password, safe="")
+            credentials = f"&user={self._username}&password={password}"
         else:
             mime = "video/mp4"
             credentials = f"&token={self._token}"
@@ -2582,7 +2583,7 @@ class Host:
 
                 elif data["cmd"] == "GetRtspUrl":
                     response_channel = data["value"]["rtspUrl"]["channel"]
-                    password = parse.quote(self._password)
+                    password = parse.quote(self._password, safe="")
                     mainStream = data["value"]["rtspUrl"]["mainStream"]
                     subStream = data["value"]["rtspUrl"]["subStream"]
                     self._rtsp_mainStream[channel] = mainStream.replace("rtsp://", f"rtsp://{self._username}:{password}@")
