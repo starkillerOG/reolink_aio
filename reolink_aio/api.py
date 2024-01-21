@@ -919,17 +919,22 @@ class Host:
             self._login_mutex.release()
 
     async def _login_try_ports(self) -> None:
+        first_exc = None
         self._port = 443
         self.enable_https(True)
         try:
             await self.login()
             return
-        except LoginError:
-            pass
+        except LoginError as exc:
+            first_exc = exc
 
-        self._port = 80
-        self.enable_https(False)
-        await self.login()
+        try:
+            self._port = 80
+            self.enable_https(False)
+            await self.login()
+        except Exception:  # pylint: disable=bare-except
+            # Raise original exception instead of the retry fallback exception
+            raise first_exc
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
@@ -4100,6 +4105,11 @@ class Host:
                     )
                     await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
+
+            if response.status == 300:
+                response.release()
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}. " +
+                                "This may happen if you use HTTP and the camera expects HTTPS")
 
             if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
