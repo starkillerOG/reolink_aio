@@ -1131,14 +1131,14 @@ class Host:
                     self._capabilities[channel].append("ptz_presets")
 
             if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
-                self._capabilities[channel].append("zoom_basic")
                 min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
                 max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
+                    self._capabilities[channel].append("zoom_basic")
                     self._capabilities[channel].append("zoom")
                 else:
                     if warnings:
-                        _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
+                        _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
 
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].append("auto_track")
