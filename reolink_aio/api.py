@@ -1,4 +1,5 @@
 """ Reolink NVR/camera network API """
+
 from __future__ import annotations
 
 import asyncio
@@ -3875,8 +3876,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> typings.reolink_json:
-        ...
+    ) -> typings.reolink_json: ...
 
     @overload
     async def send(
@@ -3885,8 +3885,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["image/jpeg"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> bytes:
-        ...
+    ) -> bytes: ...
 
     @overload
     async def send(
@@ -3895,8 +3894,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["text/html"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     async def send(
@@ -3905,8 +3903,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["application/octet-stream"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> aiohttp.ClientResponse:
-        ...
+    ) -> aiohttp.ClientResponse: ...
 
     @overload
     async def send(
@@ -3915,8 +3912,7 @@ class Host:
         *,
         expected_response_type: Literal["json"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> typings.reolink_json:
-        ...
+    ) -> typings.reolink_json: ...
 
     @overload
     async def send(
@@ -3925,8 +3921,7 @@ class Host:
         *,
         expected_response_type: Literal["image/jpeg"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> bytes:
-        ...
+    ) -> bytes: ...
 
     @overload
     async def send(
@@ -3935,8 +3930,7 @@ class Host:
         *,
         expected_response_type: Literal["text/html"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     async def send(
@@ -3945,8 +3939,7 @@ class Host:
         *,
         expected_response_type: Literal["application/octet-stream"],
         retry: int = RETRY_ATTEMPTS,
-    ) -> aiohttp.ClientResponse:
-        ...
+    ) -> aiohttp.ClientResponse: ...
 
     async def send(
         self,
@@ -3978,8 +3971,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["json"],
         retry: int,
-    ) -> typings.reolink_json:
-        ...
+    ) -> typings.reolink_json: ...
 
     @overload
     async def send_chunk(
@@ -3988,8 +3980,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["image/jpeg"],
         retry: int,
-    ) -> bytes:
-        ...
+    ) -> bytes: ...
 
     @overload
     async def send_chunk(
@@ -3998,8 +3989,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["text/html"],
         retry: int,
-    ) -> str:
-        ...
+    ) -> str: ...
 
     @overload
     async def send_chunk(
@@ -4008,8 +3998,7 @@ class Host:
         param: dict[str, Any] | None,
         expected_response_type: Literal["application/octet-stream"],
         retry: int,
-    ) -> aiohttp.ClientResponse:
-        ...
+    ) -> aiohttp.ClientResponse: ...
 
     async def send_chunk(
         self,

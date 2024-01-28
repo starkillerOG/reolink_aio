@@ -1,4 +1,5 @@
 """ Utility functions for Reolink """
+
 from __future__ import annotations
 
 from datetime import datetime, tzinfo as _TzInfo
