@@ -4130,6 +4130,20 @@ class Host:
                 if json_data is None:
                     await self.expire_session(unsubscribe=False)
                     raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
+                if len(json_data) != len(body):
+                    if retry <= 0:
+                        raise UnexpectedDataError(
+                            f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
+                        )
+                    _LOGGER.debug(
+                        "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, trying again",
+                        self._host,
+                        self._port,
+                        len(json_data),
+                        len(body),
+                    )
+                    await self.expire_session(unsubscribe=False)
+                    return await self.send(body, param, expected_response_type, retry)
                 return json_data
 
             if expected_response_type == "image/jpeg" and isinstance(data, bytes):
