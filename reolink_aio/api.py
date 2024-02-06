@@ -1202,7 +1202,7 @@ class Host:
         if channel is None:
             return self._abilities.get(capability, {}).get("ver", 0)
 
-        if channel >= len(self._abilities["abilityChn"]):
+        if channel >= len(self._abilities.get("abilityChn", [])):
             return 0
 
         return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", no_key_return)
