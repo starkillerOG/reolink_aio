@@ -4138,7 +4138,7 @@ class Host:
                 if json_data is None:
                     await self.expire_session(unsubscribe=False)
                     raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
-                if len(json_data) != len(body):
+                if len(json_data) != len(body) and len(body) != 1:
                     if retry <= 0:
                         raise UnexpectedDataError(
                             f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
@@ -4154,11 +4154,13 @@ class Host:
                         json_data_sep = []
                         for command in body:
                             try:
-                                json_data_sep.extend(await self.send([command], param, expected_response_type, retry))
+                                # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
+                                json_data_sep.extend(await self.send([command], param, expected_response_type, retry + 1))
                             except ReolinkError as err:
                                 raise UnexpectedDataError(
-                                    f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
-                                )
+                                    f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
+                                    f"while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
+                                ) from err
                         return json_data_sep
 
                     _LOGGER.debug(
