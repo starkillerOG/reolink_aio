@@ -1613,14 +1613,7 @@ class Host:
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
 
-        try:
-            self.map_channels_json_response(json_data, channels)
-        except UnexpectedDataError as err:
-            _LOGGER.debug("get_host_data: %s, retrying by sending each command separately", err)
-            json_data = []
-            for command in body:
-                json_data.extend(await self.send([command], expected_response_type="json"))
-            self.map_channels_json_response(json_data, channels)
+        self.map_channels_json_response(json_data, channels)
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
@@ -4150,6 +4143,24 @@ class Host:
                         raise UnexpectedDataError(
                             f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
                         )
+                    if retry == 1:
+                        _LOGGER.debug(
+                            "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
+                            self._host,
+                            self._port,
+                            len(json_data),
+                            len(body),
+                        )
+                        json_data_sep = []
+                        for command in body:
+                            try:
+                                json_data_sep.extend(await self.send([command], param, expected_response_type, retry))
+                            except ReolinkError as err:
+                                raise UnexpectedDataError(
+                                    f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
+                                )
+                        return json_data_sep
+
                     _LOGGER.debug(
                         "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, trying again",
                         self._host,
@@ -4319,7 +4330,7 @@ class Host:
         try:
             await self.send_setting(body)
         except ApiError as err:
-            raise ApiError(f"Webhook test for url '{webhook_url}' failed: {err}") from err
+            raise ApiError(f"Webhook test for url '{webhook_url}' failed: {str(err)}") from err
 
     async def webhook_remove(self, channel: int, webhook_url: str):
         """Remove a webhook"""
