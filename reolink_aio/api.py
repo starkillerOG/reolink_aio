@@ -451,10 +451,10 @@ class Host:
         if index >= len(self._hdd_info):
             return "unknown"
 
-        type = self._hdd_info[index].get("storageType", 2)
-        if type == 1:
+        hdd_type = self._hdd_info[index].get("storageType", 2)
+        if hdd_type == 1:
             return "HDD"
-        if type == 2:
+        if hdd_type == 2:
             return "SD"
 
         return "unknown"
