@@ -928,9 +928,9 @@ class Host:
         except LoginError as exc:
             first_exc = exc
 
+        self._port = 80
+        self.enable_https(False)
         try:
-            self._port = 80
-            self.enable_https(False)
             await self.login()
         except Exception:  # pylint: disable=bare-except
             # Raise original exception instead of the retry fallback exception
