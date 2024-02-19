@@ -4243,9 +4243,12 @@ class Host:
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
 
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug("%s requesting reolink.com '%s'", self.nvr_name, URL)
+
         com_timeout = aiohttp.ClientTimeout(total=2 * self.timeout)
         try:
-            response = await self._aiohttp_session.get(url=URL, timeout=com_timeout)
+            response = await self._aiohttp_session.get(url=URL, headers={"user-agent": "reolink_aio"}, timeout=com_timeout)
         except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
@@ -4265,6 +4268,9 @@ class Host:
             raise ReolinkConnectionError(f"Connetion error reading response from {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Timeout reading response from {URL}: {str(err)}") from err
+
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER_DATA.debug("%s reolink.com response: %s\n", self.nvr_name, data)
 
         try:
             json_data = json_loads(data)
