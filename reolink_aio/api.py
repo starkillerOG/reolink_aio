@@ -396,6 +396,14 @@ class Host:
         return self._hdd_info
 
     @property
+    def hdds_available(self) -> list[int]:
+        available_hdds = []
+        for idx, hdd in enumerate(self._hdd_info):
+            if hdd.get("format") == 1 and hdd.get("mount") == 1:
+                available_hdds.append(idx)
+        return available_hdds
+
+    @property
     def stream(self) -> str:
         return self._stream
 
@@ -434,6 +442,13 @@ class Host:
         Only admin users can change camera settings, not everything will work if account is not admin
         """
         return self.user_level == "admin"
+
+    def hdd_storage(self, index) -> float:
+        """Return the amount of storage used in %."""
+        if index >= len(self._hdd_info):
+            return 0
+
+        return round(100*(1-self._hdd_info[index].get("size", 1)/self._hdd_info[index].get("capacity", 1)), 2)
 
     def timezone(self) -> Optional[tzinfo]:
         """Get the timezone of the device
@@ -1027,6 +1042,9 @@ class Host:
         if self.api_version("wifi") > 0:
             self._capabilities["Host"].append("wifi")
 
+        if self.hdd_info:
+            self._capabilities["Host"].append("hdd")
+
         if self.api_version("reboot") > 0:
             self._capabilities["Host"].append("reboot")
 
@@ -1454,6 +1472,8 @@ class Host:
         host_body = []
         if self.supported(None, "wifi") and self.wifi_connection and ("GetWifiSignal" in cmd_list or not cmd_list):
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
+        if self.supported(None, "hdd") and ("GetHddInfo" in cmd_list or not cmd_list):
+            host_body.append({"cmd": "GetHddInfo", "action": 0, "param": {}})
 
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
