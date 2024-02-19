@@ -932,9 +932,9 @@ class Host:
         self.enable_https(False)
         try:
             await self.login()
-        except LoginError:
+        except LoginError as exc:
             # Raise original exception instead of the retry fallback exception
-            raise first_exc
+            raise first_exc from exc
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
