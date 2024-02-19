@@ -4108,8 +4108,7 @@ class Host:
 
             if is_login_logout and response.status == 300:
                 response.release()
-                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}. " +
-                                "This may happen if you use HTTP and the camera expects HTTPS")
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}, this may happen if you use HTTP and the camera expects HTTPS")
 
             if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
