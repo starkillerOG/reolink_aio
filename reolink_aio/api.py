@@ -396,12 +396,8 @@ class Host:
         return self._hdd_info
 
     @property
-    def hdds_available(self) -> list[int]:
-        available_hdds = []
-        for idx, hdd in enumerate(self._hdd_info):
-            if hdd.get("format") == 1 and hdd.get("mount") == 1:
-                available_hdds.append(idx)
-        return available_hdds
+    def hdd_list(self) -> list[int]:
+        return list(range(0, len(self._hdd_info)))
 
     @property
     def stream(self) -> str:
@@ -449,6 +445,25 @@ class Host:
             return 0
 
         return round(100*(1-self._hdd_info[index].get("size", 1)/self._hdd_info[index].get("capacity", 1)), 2)
+
+    def hdd_type(self, index) -> str:
+        """Return the storage type, 'SD', 'HDD' or 'unknown'."""
+        if index >= len(self._hdd_info):
+            return "unknown"
+
+        type = self._hdd_info[index].get("storageType", 2)
+        if type == 1:
+            return "HDD"
+        if type == 2:
+            return "SD"
+
+        return "unknown"
+
+    def hdd_available(self, index) -> bool:
+        if index >= len(self._hdd_info):
+            return False
+
+        return self._hdd_info[index].get("format") == 1 and self._hdd_info[index].get("mount") == 1
 
     def timezone(self) -> Optional[tzinfo]:
         """Get the timezone of the device
