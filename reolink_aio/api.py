@@ -444,7 +444,7 @@ class Host:
         if index >= len(self._hdd_info):
             return 0
 
-        return round(100*(1-self._hdd_info[index].get("size", 1)/self._hdd_info[index].get("capacity", 1)), 2)
+        return round(100 * (1 - self._hdd_info[index].get("size", 1) / self._hdd_info[index].get("capacity", 1)), 2)
 
     def hdd_type(self, index) -> str:
         """Return the storage type, 'SD', 'HDD' or 'unknown'."""
@@ -498,6 +498,14 @@ class Host:
         if self._time_settings is None:
             raise NotSupportedError(f"get_time: failed to retrieve current time settings from {self._host}:{self._port}")
         return reolink_time_to_datetime(self._time_settings["Time"]).replace(tzinfo=self.timezone())
+
+    def _hide_password(self, content: str | bytes | dict | list) -> str:
+        redacted = str(content)
+        if self._password:
+            redacted = redacted.replace(self._password, "<password>")
+        if self._token:
+            redacted = redacted.replace(self._token, "<token>")
+        return redacted
 
     ##############################################################################
     # Channel-level getters/setters
@@ -950,17 +958,22 @@ class Host:
             self._login_mutex.release()
 
     async def _login_try_ports(self) -> None:
+        first_exc = None
         self._port = 443
         self.enable_https(True)
         try:
             await self.login()
             return
-        except LoginError:
-            pass
+        except LoginError as exc:
+            first_exc = exc
 
         self._port = 80
         self.enable_https(False)
-        await self.login()
+        try:
+            await self.login()
+        except LoginError as exc:
+            # Raise original exception instead of the retry fallback exception
+            raise first_exc from exc
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
@@ -4071,7 +4084,7 @@ class Host:
             param["token"] = self._token
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
+            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(param))
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -4093,7 +4106,7 @@ class Host:
                     data = await response.text(encoding="utf-8")  # Error occured, read the error message
             else:
                 if _LOGGER.isEnabledFor(logging.DEBUG):
-                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
+                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(body))
 
                 async with self._send_mutex:
                     response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
@@ -4109,7 +4122,7 @@ class Host:
                 elif cur_command in ["Snap", "Download"]:
                     _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (snapshot/download) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
                 else:
-                    _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, data)
+                    _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(data))
 
             if len(data) < 500 and response.content_type == "text/html":
                 if isinstance(data, bytes):
@@ -4132,6 +4145,10 @@ class Host:
                     )
                     await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
+
+            if is_login_logout and response.status == 300:
+                response.release()
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}, this may happen if you use HTTP and the camera expects HTTPS")
 
             if response.status == 502 and retry > 0:
                 _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
@@ -4167,7 +4184,7 @@ class Host:
                             f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
                             f"content type '{response.content_type}', data:\n{data}\n"
                         ) from err
-                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), data)
+                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), self._hide_password(data))
                     await self.expire_session(unsubscribe=False)
                     return await self.send(body, param, expected_response_type, retry)
                 if json_data is None:
