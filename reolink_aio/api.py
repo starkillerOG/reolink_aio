@@ -932,7 +932,7 @@ class Host:
         self.enable_https(False)
         try:
             await self.login()
-        except Exception:  # pylint: disable=bare-except
+        except LoginError:
             # Raise original exception instead of the retry fallback exception
             raise first_exc
 
