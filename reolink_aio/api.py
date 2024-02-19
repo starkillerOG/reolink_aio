@@ -4186,7 +4186,7 @@ class Host:
 
             response.release()
             raise InvalidContentTypeError(f"Expected {expected_response_type}, unexpected data received: {data!r}")
-        except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerConnectionError) as err:
+        except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerConnectionError, aiohttp.ClientPayloadError) as err:
             if retry <= 0:
                 _LOGGER.debug("Host %s:%s: connection error: %s", self._host, self._port, str(err))
                 await self.expire_session()
