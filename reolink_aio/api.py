@@ -499,6 +499,14 @@ class Host:
             raise NotSupportedError(f"get_time: failed to retrieve current time settings from {self._host}:{self._port}")
         return reolink_time_to_datetime(self._time_settings["Time"]).replace(tzinfo=self.timezone())
 
+    def _hide_password(self, content: str | bytes | dict | list) -> str:
+        redacted = str(content)
+        if self._password:
+            redacted = redacted.replace(self._password, "<password>")
+        if self._token:
+            redacted = redacted.replace(self._token, "<token>")
+        return redacted
+
     ##############################################################################
     # Channel-level getters/setters
 
@@ -4071,7 +4079,7 @@ class Host:
             param["token"] = self._token
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, str(param).replace(self._password, "<password>"))
+            _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(param))
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -4093,7 +4101,7 @@ class Host:
                     data = await response.text(encoding="utf-8")  # Error occured, read the error message
             else:
                 if _LOGGER.isEnabledFor(logging.DEBUG):
-                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, str(body).replace(self._password, "<password>"))
+                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(body))
 
                 async with self._send_mutex:
                     response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
@@ -4109,7 +4117,7 @@ class Host:
                 elif cur_command in ["Snap", "Download"]:
                     _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response (snapshot/download) data scrapped because it's too large.", self.nvr_name, self._host, self._port)
                 else:
-                    _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, data)
+                    _LOGGER_DATA.debug("%s/%s:%s::send() HTTP Response data:\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(data))
 
             if len(data) < 500 and response.content_type == "text/html":
                 if isinstance(data, bytes):
@@ -4167,7 +4175,7 @@ class Host:
                             f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
                             f"content type '{response.content_type}', data:\n{data}\n"
                         ) from err
-                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), data)
+                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), self._hide_password(data))
                     await self.expire_session(unsubscribe=False)
                     return await self.send(body, param, expected_response_type, retry)
                 if json_data is None:
