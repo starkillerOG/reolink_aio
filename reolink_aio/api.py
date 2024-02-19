@@ -4106,7 +4106,7 @@ class Host:
                     await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
 
-            if response.status == 300:
+            if is_login_logout and response.status == 300:
                 response.release()
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}. " +
                                 "This may happen if you use HTTP and the camera expects HTTPS")
