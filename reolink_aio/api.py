@@ -56,6 +56,7 @@ PERSON_DETECTION_TYPE = "person"
 VEHICLE_DETECTION_TYPE = "vehicle"
 PET_DETECTION_TYPE = "pet"
 VISITOR_DETECTION_TYPE = "visitor"
+PACKAGE_DETECTION_TYPE = "package"
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
@@ -4850,7 +4851,7 @@ class Host:
                     _LOGGER.warning("ONVIF event '%s' did not contain data:\n%s", rule, data)
                 continue
 
-            if rule not in ["Motion", "MotionAlarm", "FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
+            if rule not in ["Motion", "MotionAlarm", "FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Package", "Visitor"]:
                 if f"ONVIF_unknown_{rule}" not in self._log_once:
                     self._log_once.append(f"ONVIF_unknown_{rule}")
                     _LOGGER.warning("ONVIF event with unknown rule: '%s'", rule)
@@ -4858,7 +4859,7 @@ class Host:
 
             if channel not in event_channels:
                 event_channels.append(channel)
-            if rule in ["FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Visitor"]:
+            if rule in ["FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Package", "Visitor"]:
                 self._onvif_only_motion[sub_type] = False
 
             state = data_element.attrib["Value"] == "true"
@@ -4876,6 +4877,8 @@ class Host:
                 self._ai_detection_states[channel]["vehicle"] = state
             elif rule == "DogCatDetect":
                 self._ai_detection_states[channel]["dog_cat"] = state
+            elif rule == "Package":
+                self._ai_detection_states[channel]["package"] = state
             elif rule == "Visitor":
                 self._visitor_states[channel] = state
 
