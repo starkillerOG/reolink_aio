@@ -42,6 +42,7 @@ class StatusLedEnum(Enum):
     stayoff = "KeepOff"
     auto = "Off"
     alwaysonatnight = "On"
+    alwayson = "Always"
 
 
 class DayNightEnum(Enum):
