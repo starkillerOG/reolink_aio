@@ -178,6 +178,7 @@ class Host:
         ##############################################################################
         # Presets
         self._ptz_presets: dict[int, dict] = {}
+        self._ptz_patrols: dict[int, dict] = {}
 
         ##############################################################################
         # Saved info response-blocks
@@ -205,6 +206,7 @@ class Host:
         self._webhook_settings: dict[int, dict] = {}
         self._enc_settings: dict[int, dict] = {}
         self._ptz_presets_settings: dict[int, dict] = {}
+        self._ptz_patrol_settings: dict[int, dict] = {}
         self._ptz_guard_settings: dict[int, dict] = {}
         self._ptz_position: dict[int, dict] = {}
         self._email_settings: dict[int, dict] = {}
@@ -1176,6 +1178,8 @@ class Host:
                     self._capabilities[channel].append("ptz_speed")
                 if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
                     self._capabilities[channel].append("ptz_presets")
+                if channel in self._ptz_patrols and len(self._ptz_patrols[channel]) != 0:
+                    self._capabilities[channel].append("ptz_patrol")
 
             if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
                 min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
@@ -1286,6 +1290,8 @@ class Host:
                 ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset":
                 ch_body = [{"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetPtzPatrol":
+                ch_body = [{"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAutoFocus":
                 ch_body = [{"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetZoomFocus":
@@ -1614,6 +1620,7 @@ class Host:
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}})
             if self.supported(channel, "auto_track"):
@@ -2690,6 +2697,15 @@ class Host:
                             preset_id = int(preset["id"])
                             self._ptz_presets[channel][preset_name] = preset_id
 
+                elif data["cmd"] == "GetPtzPatrol":
+                    self._ptz_patrol_settings[channel] = data["value"]
+                    self._ptz_patrols[channel] = {}
+                    for patrol in data["value"]["PtzPatrol"]:
+                        if int(patrol["enable"]) == 1:
+                            patrol_name = patrol["name"]
+                            patrol_id = int(patrol["id"])
+                            self._ptz_patrols[channel][patrol_name] = patrol_id
+
                 elif data["cmd"] == "GetPtzGuard":
                     self._ptz_guard_settings[channel] = data["value"]
 
@@ -2950,7 +2966,26 @@ class Host:
 
         return self._ptz_presets[channel]
 
-    async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | str | None = None, speed: int | None = None) -> None:
+    def ptz_patrols(self, channel: int) -> dict:
+        if channel not in self._ptz_patrols:
+            return {}
+
+        return self._ptz_patrols[channel]
+
+    async def ctrl_ptz_patrol(self, channel: int, value: bool) -> None:
+        """Start/Stop PTZ patrol."""
+        if not self.supported(channel, "ptz_patrol"):
+            raise NotSupportedError(f"ctrl_ptz_patrol: ptz patrol on camera {self.camera_name(channel)} is not available")
+
+        patrol = list(self.ptz_patrols(channel).values())[0]
+        if value:
+            cmd = "StartPatrol"
+        else:
+            cmd = "StopPatrol"
+
+        await self.set_ptz_command(channel, command=cmd, patrol=patrol)
+
+    async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | str | None = None, speed: int | None = None, patrol: int | None = None) -> None:
         """Send PTZ command to the camera, list of possible commands see PtzEnum."""
 
         if channel not in self._channels:
@@ -2960,7 +2995,7 @@ class Host:
         if speed is not None and not self.supported(channel, "ptz_speed"):
             raise NotSupportedError(f"set_ptz_command: ptz speed on camera {self.camera_name(channel)} is not available")
         command_list = [com.value for com in PtzEnum]
-        if command is not None and command not in command_list:
+        if command is not None and command not in command_list and patrol is None:
             raise InvalidParameterError(f"set_ptz_command: command {command} not in {command_list}")
 
         if preset is not None:
@@ -2987,6 +3022,8 @@ class Host:
             body[0]["param"]["speed"] = speed
         if preset:
             body[0]["param"]["id"] = preset
+        if patrol:
+            body[0]["param"]["id"] = patrol
 
         await self.send_setting(body)
 
