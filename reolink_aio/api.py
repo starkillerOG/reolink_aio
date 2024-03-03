@@ -1136,10 +1136,11 @@ class Host:
                 if self.api_version("supportVisitorLoudspeaker", channel) > 0:
                     self._capabilities[channel].append("doorbell_button_sound")
 
-            if (self.api_version("supportAudioFileList", channel) > 0 and self.api_version("supportAutoReply", channel) > 0) or (
-                not self.is_nvr and self.api_version("supportAudioFileList") > 0 and self.api_version("supportAutoReply") > 0
-            ):
-                self._capabilities[channel].append("quick_reply")
+            if (self.api_version("supportAudioFileList", channel) > 0) or (not self.is_nvr and self.api_version("supportAudioFileList") > 0):
+                if self.api_version("supportAutoReply", channel) > 0 or (not self.is_nvr and self.api_version("supportAutoReply") > 0):
+                    self._capabilities[channel].append("quick_reply")
+                if self.api_version("supportAudioPlay", channel) > 0:
+                    self._capabilities[channel].append("play_quick_reply")
 
             if self.api_version("alarmAudio", channel) > 0 and channel in self._audio_alarm_settings:
                 self._capabilities[channel].append("siren")
@@ -3546,6 +3547,19 @@ class Host:
             params["visitorLoudspeaker"] = 1 if doorbell_button_sound else 0
 
         body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
+        await self.send_setting(body)
+
+    async def play_quick_reply(self, channel: int, file_id: int) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"play_quick_reply: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "play_quick_reply"):
+            raise NotSupportedError(f"play_quick_reply: Play quick reply on camera {self.camera_name(channel)} is not available")
+        if file_id is not None and not isinstance(file_id, int):
+            raise InvalidParameterError(f"play_quick_reply: file_id {file_id} not integer")
+        if file_id is not None and file_id not in self.quick_reply_dict(channel):
+            raise InvalidParameterError(f"play_quick_reply: file_id {file_id} not in {list(self.quick_reply_dict(channel))}")
+
+        body = [{"cmd": "QuickReplyPlay", "action": 0, "param": {"id": file_id}}]
         await self.send_setting(body)
 
     async def set_quick_reply(self, channel: int, enable: bool | None = None, file_id: int | None = None, time: int | None = None) -> None:
