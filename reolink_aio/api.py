@@ -508,6 +508,8 @@ class Host:
             redacted = redacted.replace(self._password, "<password>")
         if self._token:
             redacted = redacted.replace(self._token, "<token>")
+        if self._nvr_uid:
+            redacted = redacted.replace(self._nvr_uid, "<uid>")
         return redacted
 
     ##############################################################################
