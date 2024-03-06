@@ -1,5 +1,6 @@
 """Reolink NVR/camera API."""
 
+from __future__ import annotations
 from asyncio import TimeoutError as AsyncioTimeoutError
 
 
@@ -9,6 +10,10 @@ class ReolinkError(Exception):
 
 class ApiError(ReolinkError):
     """Raised when API returns an error code"""
+
+    def __init__(self, message: str, rspCode: int | None = None):
+        super().__init__(message)
+        self.rspCode = rspCode
 
 
 class InvalidContentTypeError(ReolinkError):

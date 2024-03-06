@@ -1998,7 +1998,16 @@ class Host:
             raise NotSupportedError(f"update_firmware: not supported by {self.nvr_name}")
 
         body = [{"cmd": "UpgradeOnline"}]
-        await self.send_setting(body)
+        try:
+            await self.send_setting(body)
+        except ApiError as err:
+            if err.rspCode == -30:  # same version
+                raise ApiError(
+                    "Reolink device could not find new firmware, "
+                    "try downloading from the Reolink download center (https://reolink.com/download-center) and update manually",
+                    rspCode=err.rspCode,
+                ) from err
+            raise err
 
     async def update_progress(self) -> bool | int:
         """check progress of firmware update, returns False if not in progress."""
@@ -2030,7 +2039,7 @@ class Host:
         if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
             rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
             detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
-            raise ApiError(f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}")
+            raise ApiError(f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}", rspCode=rspCode)
 
     async def get_snapshot(self, channel: int, stream: Optional[str] = None) -> bytes | None:
         """Get the still image."""
@@ -3969,7 +3978,7 @@ class Host:
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
                 rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
                 detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
-                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}")
+                raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}", rspCode=rspCode)
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
 
@@ -4388,7 +4397,7 @@ class Host:
 
         resp_code = json_data.get("result", {}).get("code")
         if resp_code != 0:
-            raise ApiError(f"Request to {URL} returned error code {resp_code}, data:\n{json_data}")
+            raise ApiError(f"Request to {URL} returned error code {resp_code}, data:\n{json_data}", rspCode=resp_code)
 
         return json_data
 
