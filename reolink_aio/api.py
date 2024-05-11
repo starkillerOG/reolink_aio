@@ -213,6 +213,7 @@ class Host:
         self._ir_settings: dict[int, dict] = {}
         self._status_led_settings: dict[int, dict] = {}
         self._whiteled_settings: dict[int, dict] = {}
+        self._battery: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
         self._md_alarm_settings: dict[int, dict] = {}
         self._ai_alarm_settings: dict[int, dict] = {}
@@ -734,6 +735,24 @@ class Host:
 
         return None
 
+    def battery_percentage(self, channel: int) -> Optional[int]:
+        if channel not in self._battery:
+            return None
+
+        return self._battery[channel]["batteryPercent"]
+
+    def battery_temperature(self, channel: int) -> Optional[int]:
+        if channel not in self._battery:
+            return None
+
+        return self._battery[channel]["temperature"]
+
+    def battery_status(self, channel: int) -> Optional[int]:
+        if channel not in self._battery:
+            return None
+
+        return self._battery[channel]["chargeStatus"]
+
     def daynight_state(self, channel: int) -> Optional[str]:
         if channel not in self._isp_settings:
             return None
@@ -1217,6 +1236,9 @@ class Host:
             if self.api_version("supportAiStayTime", channel) > 0:
                 self._capabilities[channel].append("ai_delay")
 
+            if self.api_version("battery", channel) > 0:
+                self._capabilities[channel].append("battery")
+
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].append("isp_hue")
             if self.api_version("ispSatruation", channel) > 0:
@@ -1289,6 +1311,8 @@ class Host:
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWhiteLed":
                 ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetBatteryInfo":
+                ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWebHook":
                 ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset":
@@ -1423,6 +1447,9 @@ class Host:
 
             if self.supported(channel, "floodLight") and ("GetWhiteLed" in cmd_list or not cmd_list):
                 ch_body.append({"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "battery") and ("GetBatteryInfo" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "status_led") and ("GetPowerLed" in cmd_list or not cmd_list):
                 ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
@@ -2693,6 +2720,9 @@ class Host:
                 elif data["cmd"] == "GetWhiteLed":
                     response_channel = data["value"]["WhiteLed"]["channel"]
                     self._whiteled_settings[channel] = data["value"]
+
+                elif data["cmd"] == "GetBatteryInfo":
+                    self._battery[channel] = data["value"]["Battery"]
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]

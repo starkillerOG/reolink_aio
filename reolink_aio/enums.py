@@ -80,3 +80,11 @@ class TrackMethodEnum(Enum):
     digital = 2
     digitalfirst = 3
     pantiltfirst = 4
+
+
+class BatteryEnum(Enum):
+    """Battery status"""
+
+    discharging = 0
+    charging = 1
+    chargecomplete = 2
