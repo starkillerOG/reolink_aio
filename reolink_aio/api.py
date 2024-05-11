@@ -812,7 +812,7 @@ class Host:
 
     def quick_reply_dict(self, channel: int) -> dict[int, str]:
         if channel not in self._audio_file_list:
-            return {}
+            return {-1: "off"}
 
         audio_dict = {-1: "off"}
         for audio_file in self._audio_file_list[channel]["AudioFileList"]:
