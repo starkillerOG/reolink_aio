@@ -22,7 +22,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .enums import DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType
+from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -747,9 +747,9 @@ class Host:
 
         return self._battery[channel]["temperature"]
 
-    def battery_status(self, channel: int) -> Optional[int]:
+    def battery_status(self, channel: int) -> int:
         if channel not in self._battery:
-            return None
+            return BatteryEnum.discharging.value
 
         return self._battery[channel]["chargeStatus"]
 
