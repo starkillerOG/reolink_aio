@@ -2443,8 +2443,8 @@ class Host:
 
                 if data["cmd"] == "GetDevInfo":
                     dev_info = data["value"]["DevInfo"]
-                    self._is_nvr = dev_info.get("exactType", "IPC") in ["NVR", "WIFI_NVR"]
-                    self._is_nvr = self._is_nvr or dev_info.get("type", "IPC") == "NVR"
+                    self._is_nvr = dev_info.get("exactType", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
+                    self._is_nvr = self._is_nvr or dev_info.get("type", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
                     self._nvr_serial = dev_info["serial"]
                     self._nvr_name = dev_info["name"]
                     self._nvr_model = dev_info["model"]
