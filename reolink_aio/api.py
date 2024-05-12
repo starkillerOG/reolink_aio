@@ -214,6 +214,7 @@ class Host:
         self._status_led_settings: dict[int, dict] = {}
         self._whiteled_settings: dict[int, dict] = {}
         self._battery: dict[int, dict] = {}
+        self._pir: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
         self._md_alarm_settings: dict[int, dict] = {}
         self._ai_alarm_settings: dict[int, dict] = {}
@@ -863,6 +864,24 @@ class Host:
 
         return {}
 
+    def pir_enabled(self, channel: int) -> bool | None:
+        if channel not in self._pir:
+            return None
+
+        return self._pir[channel]["enable"] > 0
+
+    def pir_reduse_alarm(self, channel: int) -> bool | None:
+        if channel not in self._pir:
+            return None
+
+        return self._pir[channel]["reduseAlarm"] > 0
+
+    def pir_sensitivity(self, channel: int) -> int:
+        if channel not in self._pir:
+            return 0
+
+        return self._pir[channel]["sensitive"]
+
     def md_sensitivity(self, channel: int) -> int:
         if channel not in self._md_alarm_settings:
             return 0
@@ -1238,6 +1257,7 @@ class Host:
 
             if self.api_version("battery", channel) > 0:
                 self._capabilities[channel].append("battery")
+                self._capabilities[channel].append("PIR")
 
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].append("isp_hue")
@@ -1313,6 +1333,8 @@ class Host:
                 ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBatteryInfo":
                 ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetPirInfo":
+                ch_body = [{"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWebHook":
                 ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset":
@@ -1450,6 +1472,9 @@ class Host:
 
             if self.supported(channel, "battery") and ("GetBatteryInfo" in cmd_list or not cmd_list):
                 ch_body.append({"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "PIR") and ("GetPirInfo" in cmd_list or not cmd_list):
+                ch_body.append({"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "status_led") and ("GetPowerLed" in cmd_list or not cmd_list):
                 ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
@@ -2724,6 +2749,9 @@ class Host:
                 elif data["cmd"] == "GetBatteryInfo":
                     self._battery[channel] = data["value"]["Battery"]
 
+                elif data["cmd"] == "GetPirInfo":
+                    self._pir[channel] = data["value"]["pirInfo"]
+
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
 
@@ -3777,6 +3805,28 @@ class Host:
         body: typings.reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
+        await self.send_setting(body)
+
+    async def set_pir(self, channel: int, enable: bool | None = None, reduse_alarm: bool | None = None, sensitivity: int | None = None) -> None:
+        """Set PIR settings."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_pir: no camera connected to channel '{channel}'")
+        if channel not in self._pir:
+            raise NotSupportedError(f"set_pir: PIR settings on camera {self.camera_name(channel)} are not available")
+        if sensitivity is not None and not isinstance(sensitivity, int):
+            raise InvalidParameterError(f"set_pir: sensitivity '{sensitivity}' is not integer")
+        if sensitivity is not None and (sensitivity < 1 or sensitivity > 100):
+            raise InvalidParameterError(f"set_pir: sensitivity {sensitivity} not in range 1...100")
+
+        pir = {"channel": channel}
+        if enable is not None:
+            pir["enable"] = 1 if enable else 0
+        if reduse_alarm is not None:
+            pir["reduseAlarm"] = 1 if reduse_alarm else 0
+        if sensitivity is not None:
+            pir["sensitive"] = sensitivity
+
+        body: typings.reolink_json = [{"cmd": "SetPirInfo", "action": 0, "param": {"pirInfo": pir}}]
         await self.send_setting(body)
 
     async def set_md_sensitivity(self, channel: int, value: int) -> None:
