@@ -870,7 +870,7 @@ class Host:
 
         return self._pir[channel]["enable"] > 0
 
-    def pir_reduse_alarm(self, channel: int) -> bool | None:
+    def pir_reduce_alarm(self, channel: int) -> bool | None:
         if channel not in self._pir:
             return None
 
@@ -3807,7 +3807,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_pir(self, channel: int, enable: bool | None = None, reduse_alarm: bool | None = None, sensitivity: int | None = None) -> None:
+    async def set_pir(self, channel: int, enable: bool | None = None, reduce_alarm: bool | None = None, sensitivity: int | None = None) -> None:
         """Set PIR settings."""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_pir: no camera connected to channel '{channel}'")
@@ -3821,8 +3821,8 @@ class Host:
         pir = {"channel": channel}
         if enable is not None:
             pir["enable"] = 1 if enable else 0
-        if reduse_alarm is not None:
-            pir["reduseAlarm"] = 1 if reduse_alarm else 0
+        if reduce_alarm is not None:
+            pir["reduseAlarm"] = 1 if reduce_alarm else 0
         if sensitivity is not None:
             pir["sensitive"] = sensitivity
 
