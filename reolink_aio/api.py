@@ -1246,7 +1246,11 @@ class Host:
             if self.api_version("supportAITrackLimit", channel) > 0:
                 self._capabilities[channel].append("auto_track_limit")
 
-            if channel in self._md_alarm_settings:
+            if self.api_version("battery", channel) > 0:
+                self._capabilities[channel].append("battery")
+                self._capabilities[channel].append("PIR")
+
+            if channel in self._md_alarm_settings and not self.supported(channel, "PIR"):
                 self._capabilities[channel].append("md_sensitivity")
 
             if self.api_version("supportAiSensitivity", channel) > 0:
@@ -1254,10 +1258,6 @@ class Host:
 
             if self.api_version("supportAiStayTime", channel) > 0:
                 self._capabilities[channel].append("ai_delay")
-
-            if self.api_version("battery", channel) > 0:
-                self._capabilities[channel].append("battery")
-                self._capabilities[channel].append("PIR")
 
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].append("isp_hue")
