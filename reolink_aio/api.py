@@ -880,7 +880,7 @@ class Host:
         if channel not in self._pir:
             return 0
 
-        return self._pir[channel]["sensitive"]
+        return 101 - self._pir[channel]["sensitive"]
 
     def md_sensitivity(self, channel: int) -> int:
         if channel not in self._md_alarm_settings:
@@ -3824,7 +3824,7 @@ class Host:
         if reduce_alarm is not None:
             pir["reduseAlarm"] = 1 if reduce_alarm else 0
         if sensitivity is not None:
-            pir["sensitive"] = sensitivity
+            pir["sensitive"] = int(101 - sensitivity)
 
         body: typings.reolink_json = [{"cmd": "SetPirInfo", "action": 0, "param": {"pirInfo": pir}}]
         await self.send_setting(body)
