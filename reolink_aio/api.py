@@ -4269,10 +4269,10 @@ class Host:
 
             if len(data) < 500 and response.content_type == "text/html":
                 if isinstance(data, bytes):
-                    login_err = b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'detail" : "please login first' in data
+                    login_err = b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'detail" : "please login first' in data or b'"detail" : "password wrong"' in data
                 else:
                     login_err = (
-                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or 'detail" : "please login first' in data
+                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or '"detail" : "please login first"' in data or '"detail" : "password wrong"' in data
                     ) and cur_command != "Logout"
                 if login_err:
                     response.release()
