@@ -4269,24 +4269,29 @@ class Host:
 
             if len(data) < 500 and response.content_type == "text/html":
                 if isinstance(data, bytes):
-                    login_err = b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'detail" : "please login first' in data or b'"detail" : "password wrong"' in data
-                else:
-                    login_err = (
-                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or '"detail" : "please login first"' in data or '"detail" : "password wrong"' in data
+                    login_err = b'detail" : "please login first' in data and cur_command != "Logout"
+                    cred_err = (
+                        b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'"detail" : "password wrong"' in data
                     ) and cur_command != "Logout"
-                if login_err:
+                else:
+                    login_err = ('"detail" : "please login first"' in data) and cur_command != "Logout"
+                    cred_err = (
+                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or '"detail" : "password wrong"' in data
+                    ) and cur_command != "Logout"
+                if login_err or cred_err:
                     response.release()
-                    if is_login_logout:
-                        raise CredentialsInvalidError()
-
+                    await self.expire_session()
+                    if cred_err and cur_command == "Login":
+                        raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials during login")
                     if retry <= 0:
-                        raise CredentialsInvalidError()
+                        if cred_err:
+                            raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials after retries")
+                        raise LoginError(f"Host {self._host}:{self._port}: Received 'please login first'")
                     _LOGGER.debug(
                         'Host %s:%s: "invalid login" response, trying to login again and retry the command.',
                         self._host,
                         self._port,
                     )
-                    await self.expire_session()
                     return await self.send(body, param, expected_response_type, retry)
 
             if is_login_logout and response.status == 300:
@@ -4416,8 +4421,7 @@ class Host:
             await self.expire_session(unsubscribe=False)
             raise err
         except CredentialsInvalidError as err:
-            _LOGGER.error("Host %s:%s: login attempt failed.", self._host, self._port)
-            await self.expire_session()
+            _LOGGER.error(str(err))
             raise err
         except InvalidContentTypeError as err:
             _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
