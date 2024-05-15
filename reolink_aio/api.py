@@ -4708,6 +4708,8 @@ class Host:
         elif sub_type == SubType.long_poll:
             headers.update(templates.PULLPOINT_ACTION)
             template = templates.PULLPOINT_XML
+        else:
+            raise SubscriptionError(f"Host {self._host}:{self._port}: subscription type '{sub_type}' not supported")
 
         parameters = {
             "InitialTerminationTime": f"PT{SUBSCRIPTION_TERMINATION_TIME}M",
