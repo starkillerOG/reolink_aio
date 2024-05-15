@@ -1182,9 +1182,8 @@ class Host:
                 if self.api_version("supportAudioPlay", channel) > 0:
                     self._capabilities[channel].append("play_quick_reply")
 
-            if self.api_version("alarmAudio", channel) > 0 and channel in self._audio_alarm_settings:
-                self._capabilities[channel].append("siren")
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
+                self._capabilities[channel].append("siren")
                 self._capabilities[channel].append("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
 
             if self.audio_record(channel) is not None:
