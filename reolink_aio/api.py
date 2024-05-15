@@ -874,7 +874,7 @@ class Host:
         if channel not in self._pir:
             return None
 
-        return self._pir[channel]["reduseAlarm"] > 0
+        return self._pir[channel]["reduceAlarm"] > 0
 
     def pir_sensitivity(self, channel: int) -> int:
         if channel not in self._pir:
@@ -3817,7 +3817,7 @@ class Host:
         if enable is not None:
             pir["enable"] = 1 if enable else 0
         if reduce_alarm is not None:
-            pir["reduseAlarm"] = 1 if reduce_alarm else 0
+            pir["reduceAlarm"] = 1 if reduce_alarm else 0
         if sensitivity is not None:
             pir["sensitive"] = int(101 - sensitivity)
 
