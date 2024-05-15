@@ -3668,9 +3668,6 @@ class Host:
         await self.send_setting(body)
 
     async def set_audio_alarm(self, channel: int, enable: bool) -> None:
-        # fairly basic only either turns it off or on
-        # called in its simple form by set_siren
-
         if channel not in self._channels:
             raise InvalidParameterError(f"set_audio_alarm: no camera connected to channel '{channel}'")
         if not self.supported(channel, "siren"):
@@ -3696,9 +3693,6 @@ class Host:
         await self.send_setting(body)
 
     async def set_siren(self, channel: int, enable: bool = True, duration: int | None = 2) -> None:
-        # Uses API AudioAlarmPlay with manual switch
-        # uncertain if there may be a glitch - dont know if there is API I have yet to find
-        # which sets AudioLevel
         if channel not in self._channels:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
         if duration is not None and not isinstance(duration, int):
