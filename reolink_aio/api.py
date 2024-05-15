@@ -1248,6 +1248,7 @@ class Host:
 
             if self.api_version("battery", channel) > 0:
                 self._capabilities[channel].append("battery")
+            if self.api_version("mdWithPir", channel) > 0:
                 self._capabilities[channel].append("PIR")
 
             if channel in self._md_alarm_settings and not self.supported(channel, "PIR"):
