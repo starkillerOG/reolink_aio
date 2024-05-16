@@ -1766,7 +1766,11 @@ class Host:
         if channel not in self._channels:
             return None
 
-        body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
+        if self.api_version("GetEvents") >= 1:
+            # Needed because battery cams use PIR detection with the "other" item
+            body = [{"cmd": "GetEvents", "action": 0, "param": {"channel": channel}}]
+        else:
+            body = [{"cmd": "GetMdState", "action": 0, "param": {"channel": channel}}]
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -2620,8 +2624,12 @@ class Host:
                             supported: bool = value.get("support", 0) == 1
                             self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
+                        if "other" in data["value"]["ai"]:  # Battery cams use PIR detection with the "other" item
+                            if data["value"]["ai"]["other"].get("support", 0) == 1:
+                                self._motion_detection_states[channel] = data["value"]["ai"]["other"]["alarm_state"] == 1
                     if "md" in data["value"]:
-                        self._motion_detection_states[channel] = data["value"]["md"]["alarm_state"] == 1
+                        if data["value"]["md"].get("support", 1) == 1:  # Battery cams use PIR detection with the "other" item
+                            self._motion_detection_states[channel] = data["value"]["md"]["alarm_state"] == 1
                     if "visitor" in data["value"]:
                         value = data["value"]["visitor"]
                         supported = value.get("support", 0) == 1
