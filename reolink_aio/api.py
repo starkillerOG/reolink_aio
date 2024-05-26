@@ -4375,6 +4375,24 @@ class Host:
                     )
                     await self.expire_session(unsubscribe=False)
                     return await self.send(body, param, expected_response_type, retry)
+                # retry commands that have not been received by the camera (battery cam waking from sleep)
+                retry_cmd = []
+                retry_idxs = []
+                for idx, cmd_data in enumerate(json_data):
+                    if cmd_data["code"] != 0 and cmd_data.get("error", {}).get("rspCode", 0) in [-12, -13, -17]:
+                        retry_cmd.append(body[idx])
+                        retry_idxs.append(idx)
+                if retry_cmd and retry > 0:
+                    _LOGGER.error(
+                        "cmd %s: returned response code %s/%s, retrying in 1.0 s",
+                        [cmd.get("cmd") for cmd in retry_cmd],
+                        [json_data[idx].get("error", {}).get("rspCode") for idx in retry_idxs],
+                        [json_data[idx].get("error", {}).get("detail") for idx in retry_idxs],
+                    )
+                    await asyncio.sleep(1.0)  # give the battery cam time to wake
+                    retry_data = await self.send(retry_cmd, param, expected_response_type, retry)
+                    for idx, retry_resp in enumerate(retry_data):
+                        json_data[retry_idxs[idx]] = retry_resp
                 return json_data
 
             if expected_response_type == "image/jpeg" and isinstance(data, bytes):
