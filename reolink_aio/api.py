@@ -4383,7 +4383,7 @@ class Host:
                         retry_cmd.append(body[idx])
                         retry_idxs.append(idx)
                 if retry_cmd and retry > 0:
-                    _LOGGER.error(
+                    _LOGGER.debug(
                         "cmd %s: returned response code %s/%s, retrying in 1.0 s",
                         [cmd.get("cmd") for cmd in retry_cmd],
                         [json_data[idx].get("error", {}).get("rspCode") for idx in retry_idxs],
