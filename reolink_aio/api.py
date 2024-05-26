@@ -1672,7 +1672,7 @@ class Host:
             if self.supported(channel, "webhook"):
                 ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
             # checking range
-            if self.supported(channel, "zoom_basic"):
+            if self.supported(channel, "zoom_basic") or self.api_version("supportDigitalZoom", channel) > 0:
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
