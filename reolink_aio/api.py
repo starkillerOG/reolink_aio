@@ -539,6 +539,15 @@ class Host:
             return "Unknown"
         return self._channel_uids[channel]
 
+    def channel_for_uid(self, uid: str) -> int:
+        """Returns the channel belonging to a UID"""
+        channel = -1
+        for ch, ch_uid in self._channel_uids.items():
+            if ch_uid.startswith(uid):
+                channel = ch
+                break
+        return channel
+
     def camera_model(self, channel: int) -> str:
         if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
             return self.camera_model(0)  # Dual lens cameras
