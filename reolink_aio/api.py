@@ -155,6 +155,7 @@ class Host:
         self._channels: list[int] = []
         self._stream_channels: list[int] = []
         self._channel_names: dict[int, str] = {}
+        self._channel_uids: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
         self._channel_sw_versions: dict[int, str] = {}
         self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
@@ -517,7 +518,7 @@ class Host:
     ##############################################################################
     # Channel-level getters/setters
 
-    def camera_name(self, channel: int | None) -> Optional[str]:
+    def camera_name(self, channel: int | None) -> str:
         if channel is None:
             return self.nvr_name
 
@@ -529,7 +530,16 @@ class Host:
             return "Unknown"
         return self._channel_names[channel]
 
-    def camera_model(self, channel: int) -> Optional[str]:
+    def camera_uid(self, channel: int | None) -> str:
+        if channel is None:
+            return self.uid
+        if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
+            return self.camera_uid(0)  # Dual lens cameras
+        if channel not in self._channel_uids:
+            return "Unknown"
+        return self._channel_uids[channel]
+
+    def camera_model(self, channel: int) -> str:
         if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
             return self.camera_model(0)  # Dual lens cameras
         if channel not in self._channel_models:
@@ -1122,6 +1132,9 @@ class Host:
         # Channel capabilities
         for channel in self._channels:
             self._capabilities[channel] = []
+
+            if self.camera_uid(channel) != "Unknown":
+                self._capabilities[channel].append("UID")
 
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._capabilities[channel].append("autotrack_stream")
@@ -2468,6 +2481,9 @@ class Host:
                                     if "typeInfo" in ch_info:  # Not all Reolink devices respond with "typeInfo" attribute.
                                         self._channel_models[cur_channel] = ch_info["typeInfo"]
                                         self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
+
+                                    if "uid" in ch_info:
+                                        self._channel_uids[cur_channel] = ch_info["uid"]
 
                                     self._channels.append(cur_channel)
                         else:
