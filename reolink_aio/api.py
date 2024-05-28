@@ -2446,6 +2446,16 @@ class Host:
 
         return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.release, response.headers.get("ETag"))
 
+    def ensure_channel_uid_unique(self):
+        """Make sure the channel UIDs are all unique."""
+        rev_channel_uids = {}
+        for key, value in self._channel_uids.items():
+            rev_channel_uids.setdefault(value, set()).add(key)
+        duplicate_uids = [values for key, values in rev_channel_uids.items() if len(values) > 1]
+        for duplicate in duplicate_uids:
+            for ch in duplicate:
+                self._channel_uids[ch] = f"{self._channel_uids[ch]}_{ch}"
+
     def map_host_json_response(self, json_data: typings.reolink_json):
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
@@ -2486,6 +2496,8 @@ class Host:
                                         self._channel_uids[cur_channel] = ch_info["uid"]
 
                                     self._channels.append(cur_channel)
+
+                            self.ensure_channel_uid_unique()
                         else:
                             self._channel_names.clear()
                     elif self._GetChannelStatus_has_name:
