@@ -533,8 +533,8 @@ class Host:
     def camera_uid(self, channel: int | None) -> str:
         if channel is None:
             return self.uid
-        if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
-            return self.camera_uid(0)  # Dual lens cameras
+        if channel not in self._channel_uids and channel in self._stream_channels and channel != 0:
+            return f"{self.camera_uid(0)}_{channel}"  # Dual lens cameras
         if channel not in self._channel_uids:
             return "Unknown"
         return self._channel_uids[channel]
