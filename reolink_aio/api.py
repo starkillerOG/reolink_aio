@@ -214,6 +214,7 @@ class Host:
         self._ir_settings: dict[int, dict] = {}
         self._status_led_settings: dict[int, dict] = {}
         self._whiteled_settings: dict[int, dict] = {}
+        self._sleep: dict[int, bool] = {}
         self._battery: dict[int, dict] = {}
         self._pir: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
@@ -773,6 +774,12 @@ class Host:
 
         return self._battery[channel]["chargeStatus"]
 
+    def sleeping(self, channel: int) -> bool:
+        if channel not in self._sleep:
+            return False
+
+        return self._sleep[channel]
+
     def daynight_state(self, channel: int) -> Optional[str]:
         if channel not in self._isp_settings:
             return None
@@ -1270,6 +1277,10 @@ class Host:
 
             if self.api_version("battery", channel) > 0:
                 self._capabilities[channel].append("battery")
+                if channel in self._sleep:
+                    self._capabilities[channel].append("sleep")
+                    if "sleep" not in self._capabilities["Host"]:
+                        self._capabilities["Host"].append("sleep")
             if self.api_version("mdWithPir", channel) > 0:
                 self._capabilities[channel].append("PIR")
 
@@ -1587,6 +1598,8 @@ class Host:
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
         if self.supported(None, "hdd") and ("GetHddInfo" in cmd_list or not cmd_list):
             host_body.append({"cmd": "GetHddInfo", "action": 0, "param": {}})
+        if self.supported(None, "sleep") and ("GetChannelstatus" in cmd_list or not cmd_list):
+            host_body.append({"cmd": "GetChannelstatus", "action": 0, "param": {}})
 
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
@@ -2473,16 +2486,14 @@ class Host:
                     continue
 
                 if data["cmd"] == "GetChannelstatus":
+                    cur_status = data["value"]["status"]
+
                     if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
                         self._is_doorbell.clear()
 
-                        cur_value = data["value"]
-                        self._nvr_num_channels = cur_value["count"]
-
+                        self._nvr_num_channels = data["value"]["count"]
                         if self._nvr_num_channels > 0:
-                            cur_status = cur_value["status"]
-
                             # Not all Reolink devices respond with "name" attribute.
                             if "name" in cur_status[0]:
                                 self._GetChannelStatus_has_name = True
@@ -2493,9 +2504,6 @@ class Host:
                             for ch_info in cur_status:
                                 if ch_info["online"] == 1:
                                     cur_channel = ch_info["channel"]
-
-                                    if self._GetChannelStatus_has_name:
-                                        self._channel_names[cur_channel] = ch_info["name"]
 
                                     if "typeInfo" in ch_info:  # Not all Reolink devices respond with "typeInfo" attribute.
                                         self._channel_models[cur_channel] = ch_info["typeInfo"]
@@ -2509,11 +2517,14 @@ class Host:
                             self.ensure_channel_uid_unique()
                         else:
                             self._channel_names.clear()
-                    elif self._GetChannelStatus_has_name:
-                        cur_status = data["value"]["status"]
-                        for ch_info in cur_status:
-                            if ch_info["online"] == 1:
-                                self._channel_names[ch_info["channel"]] = ch_info["name"]
+
+                    for ch_info in cur_status:
+                        if ch_info["online"] == 1:
+                            cur_channel = ch_info["channel"]
+                            if "name" in ch_info:
+                                self._channel_names[cur_channel] = ch_info["name"]
+                            if "sleep" in ch_info:
+                                self._sleep[cur_channel] = ch_info["sleep"] == 1
 
                     if not self._GetChannelStatus_present:
                         self._GetChannelStatus_present = True
