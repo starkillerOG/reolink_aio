@@ -649,6 +649,16 @@ class Host:
 
         return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off")
 
+    def doorbell_led_list(self, channel: int) -> list[str]:
+        mode_values = []
+        if self.api_version("supportDoorbellLightKeepOff", channel) > 0:
+            mode_values.append(StatusLedEnum.stayoff)
+        mode_values.extend([StatusLedEnum.auto, StatusLedEnum.alwaysonatnight])
+        if self.api_version("supportDoorbellLightKeepOn", channel) > 0:
+            mode_values.append(StatusLedEnum.alwayson)
+
+        return [val.name for val in mode_values]
+
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetFtp") >= 1:
