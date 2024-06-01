@@ -80,6 +80,8 @@ DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
 }
 DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
 
+WAKING_COMMANDS = ["GetWhiteLed", "GetZoomFocus", "GetAudioCfg", "GetPtzGuard", "GetAutoReply", "GetPtzTraceSection", "GetAiCfg", "GetPtzCurPos", "GetAudioAlarm"]
+
 
 ##########################################################################################################################################################
 # API class
@@ -1489,22 +1491,30 @@ class Host:
 
         return
 
-    async def get_states(self, cmd_list: list[str] | None = None) -> None:
+    async def get_states(self, cmd_list: dict[str, list[int]] | None = None, wake: bool = True) -> None:
         body = []
         channels = []
         if cmd_list is None:
-            cmd_list = []
+            cmd_list = {}
+
+        any_battery = any(self.supported(ch, "battery") for ch in self._channels)
+
+        def inc_host_cmd(cmd):
+            return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
+
+        def inc_cmd(cmd, channel):
+            return (channel in cmd_list.get(cmd, []) or not cmd_list) and (wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery"))
 
         for channel in self._stream_channels:
             ch_body = []
-            if "GetEnc" in cmd_list or not cmd_list:
+            if inc_cmd("GetEnc", channel):
                 ch_body.append({"cmd": "GetEnc", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
         for channel in self._channels:
             ch_body = []
-            if "GetIsp" in cmd_list or not cmd_list:
+            if inc_cmd("GetIsp", channel):
                 ch_body.append({"cmd": "GetIsp", "action": 0, "param": {"channel": channel}})
 
             if self.api_version("GetEvents") >= 1:
@@ -1514,43 +1524,43 @@ class Host:
                 if self.ai_supported(channel):
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ir_lights") and ("GetIrLights" in cmd_list or not cmd_list):
+            if self.supported(channel, "ir_lights") and inc_cmd("GetIrLights", channel):
                 ch_body.append({"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "floodLight") and ("GetWhiteLed" in cmd_list or not cmd_list):
+            if self.supported(channel, "floodLight") and inc_cmd("GetWhiteLed", channel):
                 ch_body.append({"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "battery") and ("GetBatteryInfo" in cmd_list or not cmd_list):
+            if self.supported(channel, "battery") and inc_cmd("GetBatteryInfo", channel):
                 ch_body.append({"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "PIR") and ("GetPirInfo" in cmd_list or not cmd_list):
+            if self.supported(channel, "PIR") and inc_cmd("GetPirInfo", channel):
                 ch_body.append({"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "status_led") and ("GetPowerLed" in cmd_list or not cmd_list):
+            if self.supported(channel, "status_led") and inc_cmd("GetPowerLed", channel):
                 ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "zoom") and ("GetZoomFocus" in cmd_list or not cmd_list):
+            if self.supported(channel, "zoom") and inc_cmd("GetZoomFocus", channel):
                 ch_body.append({"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "auto_focus") and ("GetAutoFocus" in cmd_list or not cmd_list):
+            if self.supported(channel, "auto_focus") and inc_cmd("GetAutoFocus", channel):
                 ch_body.append({"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ptz_guard") and ("GetPtzGuard" in cmd_list or not cmd_list):
+            if self.supported(channel, "ptz_guard") and inc_cmd("GetPtzGuard", channel):
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ptz_position") and ("GetPtzCurPos" in cmd_list or not cmd_list):
+            if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
                 ch_body.append({"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}})
 
-            if self.supported(channel, "auto_track") and ("GetAiCfg" in cmd_list or not cmd_list):
+            if self.supported(channel, "auto_track") and inc_cmd("GetAiCfg", channel):
                 ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "auto_track_limit") and ("GetPtzTraceSection" in cmd_list or not cmd_list):
+            if self.supported(channel, "auto_track_limit") and inc_cmd("GetPtzTraceSection", channel):
                 ch_body.append({"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": {"channel": channel}}})
 
-            if self.supported(channel, "volume") and ("GetAudioCfg" in cmd_list or not cmd_list):
+            if self.supported(channel, "volume") and inc_cmd("GetAudioCfg", channel):
                 ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "quick_reply") and ("GetAutoReply" in cmd_list or not cmd_list):
+            if self.supported(channel, "quick_reply") and inc_cmd("GetAutoReply", channel):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
 
             if (
@@ -1559,49 +1569,49 @@ class Host:
                 or self.supported(channel, "isp_sharpen")
                 or self.supported(channel, "isp_contrast")
                 or self.supported(channel, "isp_bright")
-            ) and ("GetImage" in cmd_list or not cmd_list):
+            ) and inc_cmd("GetImage", channel):
                 ch_body.append({"cmd": "GetImage", "action": 0, "param": {"channel": channel}})
 
-            if (self.supported(channel, "buzzer") or (self.supported(None, "buzzer") and channel == 0)) and ("GetBuzzerAlarmV20" in cmd_list or not cmd_list):
+            if (self.supported(channel, "buzzer") or (self.supported(None, "buzzer") and channel == 0)) and inc_cmd("GetBuzzerAlarmV20", channel):
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
 
-            if (self.supported(channel, "email") or (self.supported(None, "email") and channel == 0)) and ("GetEmail" in cmd_list or not cmd_list):
+            if (self.supported(channel, "email") or (self.supported(None, "email") and channel == 0)) and inc_cmd("GetEmail", channel):
                 if self.api_version("GetEmail") >= 1:
                     ch_body.append({"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetEmail", "action": 0, "param": {"channel": channel}})
 
-            if (self.supported(channel, "push") or (self.supported(None, "push") and channel == 0)) and ("GetPush" in cmd_list or not cmd_list):
+            if (self.supported(channel, "push") or (self.supported(None, "push") and channel == 0)) and inc_cmd("GetPush", channel):
                 if self.api_version("GetPush") >= 1:
                     ch_body.append({"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetPush", "action": 0, "param": {"channel": channel}})
 
-            if (self.supported(channel, "ftp") or (self.supported(None, "ftp") and channel == 0)) and ("GetFtp" in cmd_list or not cmd_list):
+            if (self.supported(channel, "ftp") or (self.supported(None, "ftp") and channel == 0)) and inc_cmd("GetFtp", channel):
                 if self.api_version("GetFtp") >= 1:
                     ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
-            if (self.supported(channel, "recording") or (self.supported(None, "recording") and channel == 0)) and ("GetRec" in cmd_list or not cmd_list):
+            if (self.supported(channel, "recording") or (self.supported(None, "recording") and channel == 0)) and inc_cmd("GetRec", channel):
                 if self.api_version("GetRec") >= 1:
                     ch_body.append({"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetRec", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "siren") and ("GetAudioAlarm" in cmd_list or not cmd_list):
+            if self.supported(channel, "siren") and inc_cmd("GetAudioAlarm", channel):
                 if self.api_version("GetAudioAlarm") >= 1:
                     ch_body.append({"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "md_sensitivity") and ("GetMdAlarm" in cmd_list or not cmd_list):
+            if self.supported(channel, "md_sensitivity") and inc_cmd("GetMdAlarm", channel):
                 if self.api_version("GetMdAlarm") >= 1:
                     ch_body.append({"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}})
                 else:
                     ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
 
-            if self.supported(channel, "ai_sensitivity") and ("GetAiAlarm" in cmd_list or not cmd_list):
+            if self.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
                 for ai_type in self.ai_supported_types(channel):
                     ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
 
@@ -1610,13 +1620,13 @@ class Host:
 
         # host states
         host_body = []
-        if self.supported(None, "wifi") and self.wifi_connection and ("GetWifiSignal" in cmd_list or not cmd_list):
+        if self.supported(None, "wifi") and self.wifi_connection and inc_host_cmd("GetWifiSignal"):
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
-        if self.supported(None, "hdd") and ("GetHddInfo" in cmd_list or not cmd_list):
+        if self.supported(None, "hdd") and inc_host_cmd("GetHddInfo"):
             host_body.append({"cmd": "GetHddInfo", "action": 0, "param": {}})
-        if self.supported(None, "sleep") and ("GetChannelstatus" in cmd_list or not cmd_list):
+        if self.supported(None, "sleep") and inc_host_cmd("GetChannelstatus"):
             host_body.append({"cmd": "GetChannelstatus", "action": 0, "param": {}})
-        if self.supported(None, "push_config") and ("GetPush" in cmd_list or "GetPushCfg" in cmd_list or not cmd_list):
+        if self.supported(None, "push_config") and (inc_host_cmd("GetPush") or inc_host_cmd("GetPushCfg")):
             host_body.append({"cmd": "GetPushCfg", "action": 0, "param": {}})
 
         body.extend(host_body)
