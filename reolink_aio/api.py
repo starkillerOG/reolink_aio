@@ -80,7 +80,7 @@ DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
 }
 DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
 
-WAKING_COMMANDS = ["GetWhiteLed", "GetZoomFocus", "GetAudioCfg", "GetPtzGuard", "GetAutoReply", "GetPtzTraceSection", "GetAiCfg", "GetPtzCurPos", "GetAudioAlarm"]
+WAKING_COMMANDS = ["GetWhiteLed", "GetZoomFocus", "GetAudioCfg", "GetPtzGuard", "GetAutoReply", "GetPtzTraceSection", "GetAiCfg", "GetAiAlarm", "GetPtzCurPos", "GetAudioAlarm"]
 
 
 ##########################################################################################################################################################
