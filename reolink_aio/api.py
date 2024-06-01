@@ -195,6 +195,7 @@ class Host:
         self._host_time_difference: float = 0
         self._ntp_settings: Optional[dict] = None
         self._netport_settings: Optional[dict] = None
+        self._push_config: dict = {}
         # Camera-level
         self._zoom_focus_settings: dict[int, dict] = {}
         self._zoom_focus_range: dict[int, dict] = {}
@@ -691,6 +692,9 @@ class Host:
 
     def push_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
+            if self.supported(None, "push_config"):
+                return self._push_config["PushCfg"]["enable"] == 1
+
             if self.api_version("GetPush") >= 1:
                 return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
@@ -1134,6 +1138,9 @@ class Host:
         if self._push_settings:
             self._capabilities["Host"].append("push")
 
+        if self._push_config.get("PushCfg", {}).get("enable") is not None:
+            self._capabilities["Host"].append("push_config")
+
         if self._recording_settings:
             self._capabilities["Host"].append("recording")
 
@@ -1447,8 +1454,8 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         if not channels:
-            if cmd == "Getchannelstatus":
-                body = [{"cmd": "Getchannelstatus"}]
+            if cmd == "GetChannelstatus":
+                body = [{"cmd": "GetChannelstatus"}]
             elif cmd == "GetDevInfo":
                 body = [{"cmd": "GetDevInfo", "action": 0, "param": {}}]
             elif cmd == "GetLocalLink":
@@ -1465,6 +1472,8 @@ class Host:
                 body = [{"cmd": "GetNtp", "action": 0, "param": {}}]
             elif cmd == "GetTime":
                 body = [{"cmd": "GetTime", "action": 0, "param": {}}]
+            elif cmd == "GetPushCfg":
+                body = [{"cmd": "GetPushCfg", "action": 0, "param": {}}]
             elif cmd == "GetAbility":
                 body = [{"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}}]
 
@@ -1610,6 +1619,8 @@ class Host:
             host_body.append({"cmd": "GetHddInfo", "action": 0, "param": {}})
         if self.supported(None, "sleep") and ("GetChannelstatus" in cmd_list or not cmd_list):
             host_body.append({"cmd": "GetChannelstatus", "action": 0, "param": {}})
+        if self.supported(None, "push_config") and ("GetPush" in cmd_list or "GetPushCfg" in cmd_list or not cmd_list):
+            host_body.append({"cmd": "GetPushCfg", "action": 0, "param": {}})
 
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
@@ -1635,7 +1646,7 @@ class Host:
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
         body: typings.reolink_json = [
-            {"cmd": "Getchannelstatus"},
+            {"cmd": "GetChannelstatus"},
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
             {"cmd": "GetLocalLink", "action": 0, "param": {}},
             {"cmd": "GetNetPort", "action": 0, "param": {}},
@@ -1644,6 +1655,7 @@ class Host:
             {"cmd": "GetUser", "action": 0, "param": {}},
             {"cmd": "GetNtp", "action": 0, "param": {}},
             {"cmd": "GetTime", "action": 0, "param": {}},
+            {"cmd": "GetPushCfg", "action": 0, "param": {}},
             {"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}},
         ]
 
@@ -2629,6 +2641,9 @@ class Host:
                     self._host_time_difference = time_diffrence
                     self._time_settings = data["value"]
 
+                elif data["cmd"] == "GetPushCfg":
+                    self._push_config = data["value"]
+
                 elif data["cmd"] == "GetAbility":
                     self._abilities = data["value"]["Ability"]
 
@@ -3386,12 +3401,16 @@ class Host:
             if self.api_version("GetPush") >= 1:
                 body = [{"cmd": "SetPushV20", "action": 0, "param": {"Push": {"enable": on_off}}}]
                 await self.send_setting(body)
+                if self.supported(None, "push_config"):
+                    await self.get_state(cmd="GetPushCfg")
                 return
 
             for ch in self._channels:
                 if self.supported(ch, "push"):
                     body = [{"cmd": "SetPush", "action": 0, "param": {"Push": {"schedule": {"enable": on_off, "channel": ch}}}}]
                     await self.send_setting(body)
+            if self.supported(None, "push_config"):
+                await self.get_state(cmd="GetPushCfg")
             return
 
         if channel not in self._channels:
