@@ -639,9 +639,6 @@ class Host:
         if channel not in self._status_led_settings:
             return False
 
-        if self.is_doorbell(channel):
-            return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off") == "On"
-
         return self._status_led_settings[channel]["PowerLed"].get("state", "Off") == "On"
 
     def doorbell_led(self, channel: int) -> str:
@@ -1202,7 +1199,7 @@ class Host:
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
                 self._capabilities[channel].append("ir_lights")
 
-            if self.api_version("powerLed", channel) > 0:
+            if self.api_version("powerLed", channel) > 0 or self.api_version("indicatorLight", channel) > 0:
                 # powerLed == statusLed = doorbell_led
                 self._capabilities[channel].append("status_led")  # internal use only
                 self._capabilities[channel].append("power_led")
@@ -3556,7 +3553,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_status_led(self, channel: int, state: bool | str) -> None:
+    async def set_status_led(self, channel: int, state: bool | str, doorbell: bool = False) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_status_led: no camera connected to channel '{channel}'")
         if not self.supported(channel, "status_led"):
@@ -3571,7 +3568,7 @@ class Host:
         if value not in val_list:
             raise InvalidParameterError(f"set_status_led: value {value} not in {val_list}")
 
-        if self.is_doorbell(channel):
+        if doorbell:
             param = {"channel": channel, "eDoorbellLightState": value}
         else:
             param = {"channel": channel, "state": value}
