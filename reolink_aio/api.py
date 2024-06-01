@@ -1498,6 +1498,8 @@ class Host:
             cmd_list = {}
 
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
+        if any_battery and wake:
+            _LOGGER.debug("Host %s:%s: Waking the battery cameras for the get_states update", self._host, self._port)
 
         def inc_host_cmd(cmd):
             return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
