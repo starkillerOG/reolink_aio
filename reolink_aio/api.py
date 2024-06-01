@@ -620,7 +620,7 @@ class Host:
 
         ai_types = []
         for key, value in self._ai_detection_support[channel].items():
-            if value:
+            if value and key != "other":
                 ai_types.append(key)
 
         return ai_types
