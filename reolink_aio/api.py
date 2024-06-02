@@ -2203,6 +2203,13 @@ class Host:
 
         param["snapType"] = stream
 
+        if stream == "sub":
+            height = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("height")
+            width = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("width")
+            if height is not None and width is not None:
+                param["width"] = width
+                param["height"] = height
+
         body: typings.reolink_json = [{}]
         response = await self.send(body, param, expected_response_type="image/jpeg")
         if response is None or response == b"":
