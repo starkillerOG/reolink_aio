@@ -1386,76 +1386,82 @@ class Host:
                 channels.extend([channel] * len(ch_body))
                 continue
 
-            if cmd == "GetIrLights":
+            if cmd == "GetIrLights" and self.supported(channel, "ir_lights"):
                 ch_body = [{"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetPowerLed":
+            elif cmd == "GetPowerLed" and self.supported(channel, "status_led"):
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetWhiteLed":
+            elif cmd == "GetWhiteLed" and self.supported(channel, "floodLight"):
                 ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetBatteryInfo":
+            elif cmd == "GetBatteryInfo" and self.supported(channel, "battery"):
                 ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetPirInfo":
+            elif cmd == "GetPirInfo" and self.supported(channel, "PIR"):
                 ch_body = [{"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetWebHook":
+            elif cmd == "GetWebHook" and self.supported(channel, "webhook"):
                 ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetPtzPreset":
+            elif cmd == "GetPtzPreset" and self.supported(channel, "ptz_presets"):
                 ch_body = [{"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetPtzPatrol":
+            elif cmd == "GetPtzPatrol" and self.supported(channel, "ptz_patrol"):
                 ch_body = [{"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetAutoFocus":
+            elif cmd == "GetAutoFocus" and self.supported(channel, "auto_focus"):
                 ch_body = [{"cmd": "GetAutoFocus", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetZoomFocus":
+            elif cmd == "GetZoomFocus" and self.supported(channel, "zoom"):
                 ch_body = [{"cmd": "GetZoomFocus", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetPtzGuard":
+            elif cmd == "GetPtzGuard" and self.supported(channel, "ptz_guard"):
                 ch_body = [{"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetPtzCurPos":
+            elif cmd == "GetPtzCurPos" and self.supported(channel, "ptz_position"):
                 ch_body = [{"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}}]
-            elif cmd == "GetAiCfg":
+            elif cmd == "GetAiCfg" and self.supported(channel, "auto_track"):
                 ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetPtzTraceSection":
+            elif cmd == "GetPtzTraceSection" and self.supported(channel, "auto_track_limit"):
                 ch_body = [{"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": {"channel": channel}}}]
-            elif cmd == "GetAudioCfg":
+            elif cmd == "GetAudioCfg" and self.supported(channel, "volume"):
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetAudioFileList":
+            elif cmd == "GetAudioFileList" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetAutoReply":
+            elif cmd == "GetAutoReply" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetOsd":
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetImage":
+            elif cmd == "GetImage" and (
+                self.supported(channel, "isp_hue")
+                or self.supported(channel, "isp_satruation")
+                or self.supported(channel, "isp_sharpen")
+                or self.supported(channel, "isp_contrast")
+                or self.supported(channel, "isp_bright")
+            ):
                 ch_body = [{"cmd": "GetImage", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetBuzzerAlarmV20":
+            elif cmd == "GetBuzzerAlarmV20" and (self.supported(channel, "buzzer") or (self.supported(None, "buzzer") and channel == 0)):
                 ch_body = [{"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetAlarm", "GetMdAlarm"]:
+            elif cmd in ["GetAlarm", "GetMdAlarm"] and self.supported(channel, "md_sensitivity"):
                 if self.api_version("GetMdAlarm") >= 1:
                     ch_body = [{"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}}]
                 else:
                     ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
-            elif cmd == "GetAiAlarm":
+            elif cmd == "GetAiAlarm" and self.supported(channel, "ai_sensitivity"):
                 ch_body = []
                 for ai_type in self.ai_supported_types(channel):
                     ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
-            elif cmd in ["GetEmail", "GetEmailV20"]:
+            elif cmd in ["GetEmail", "GetEmailV20"] and (self.supported(channel, "email") or (self.supported(None, "email") and channel == 0)):
                 if self.api_version("GetEmail") >= 1:
                     ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
                 else:
                     ch_body = [{"cmd": "GetEmail", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetPush", "GetPushV20"]:
+            elif cmd in ["GetPush", "GetPushV20"] and (self.supported(channel, "push") or (self.supported(None, "push") and channel == 0)):
                 if self.api_version("GetPush") >= 1:
                     ch_body = [{"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}}]
                 else:
                     ch_body = [{"cmd": "GetPush", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetFtp", "GetFtpV20"]:
+            elif cmd in ["GetFtp", "GetFtpV20"] and (self.supported(channel, "ftp") or (self.supported(None, "ftp") and channel == 0)):
                 if self.api_version("GetFtp") >= 1:
                     ch_body = [{"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}}]
                 else:
                     ch_body = [{"cmd": "GetFtp", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetRec", "GetRecV20"]:
+            elif cmd in ["GetRec", "GetRecV20"] and (self.supported(channel, "recording") or (self.supported(None, "recording") and channel == 0)):
                 if self.api_version("GetRec") >= 1:
                     ch_body = [{"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}}]
                 else:
                     ch_body = [{"cmd": "GetRec", "action": 0, "param": {"channel": channel}}]
-            elif cmd in ["GetAudioAlarm", "GetAudioAlarmV20"]:
+            elif cmd in ["GetAudioAlarm", "GetAudioAlarmV20"] and self.supported(channel, "siren"):
                 if self.api_version("GetAudioAlarm") >= 1:
                     ch_body = [{"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}}]
                 else:
