@@ -232,6 +232,7 @@ class Host:
         self._battery: dict[int, dict] = {}
         self._pir: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
+        self._manual_record_settings: dict[int, dict] = {}
         self._md_alarm_settings: dict[int, dict] = {}
         self._ai_alarm_settings: dict[int, dict] = {}
         self._audio_settings: dict[int, dict] = {}
@@ -733,6 +734,12 @@ class Host:
 
         return self._recording_settings[channel]["Rec"]["schedule"]["enable"] == 1
 
+    def manual_record_enabled(self, channel: int) -> bool:
+        if channel not in self._manual_record_settings:
+            return False
+
+        return self._manual_record_settings[channel]["Rec"]["enable"] == 1
+
     def buzzer_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             return all(self._buzzer_settings[ch]["Buzzer"]["enable"] == 1 for ch in self._channels if ch in self._buzzer_settings)
@@ -1203,6 +1210,9 @@ class Host:
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
                 self._capabilities[channel].append("recording")
 
+            if channel in self._manual_record_settings and "enable" in self._recording_settings[channel]["Rec"]:
+                self._capabilities[channel].append("manual_record")
+
             if channel in self._email_settings and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"]):
                 self._capabilities[channel].append("email")
 
@@ -1420,6 +1430,8 @@ class Host:
                 ch_body = [{"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAutoReply" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetManualRec" and self.supported(channel, "manual_record"):
+                ch_body.append({"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}})
             elif cmd == "GetOsd":
                 ch_body = [{"cmd": "GetOsd", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetImage" and (
@@ -1581,6 +1593,9 @@ class Host:
 
             if self.supported(channel, "quick_reply") and inc_cmd("GetAutoReply", channel):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "manual_record") and inc_cmd("GetManualRec", channel):
+                ch_body.append({"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}})
 
             if (
                 self.supported(channel, "isp_hue")
@@ -1746,6 +1761,7 @@ class Host:
                     {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
                     {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
                     {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
+                    {"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}},
                 ]
             )
             # one time values
@@ -2875,6 +2891,9 @@ class Host:
                 elif data["cmd"] == "GetRecV20":
                     self._recording_settings[channel] = data["value"]
 
+                elif data["cmd"] == "GetManualRec":
+                    self._manual_record_settings[channel] = data["value"]
+
                 elif data["cmd"] == "GetPtzPreset":
                     self._ptz_presets_settings[channel] = data["value"]
                     self._ptz_presets[channel] = {}
@@ -3540,6 +3559,17 @@ class Host:
         else:
             body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": {"schedule": {"enable": on_off, "channel": channel}}}}]
 
+        await self.send_setting(body)
+
+    async def set_manual_record(self, channel: int, enable: bool) -> None:
+        """Start/Stop manual recording."""
+        if not self.supported(channel, "manual_record"):
+            raise NotSupportedError(f"set_manual_record: manual recording on camera {self.camera_name(channel)} is not available")
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_manual_record: no camera connected to channel '{channel}'")
+
+        on_off = 1 if enable else 0
+        body = [{"cmd": "SetManualRec", "action": 0, "param": {"Rec": {"channel": channel, "enable": on_off}}}]
         await self.send_setting(body)
 
     async def set_buzzer(self, channel: int | None, enable: bool) -> None:
