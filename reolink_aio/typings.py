@@ -9,6 +9,7 @@ from typing import (
     Callable,
     ClassVar,
     Collection,
+    DefaultDict,
     Iterator,
     Mapping,
     NamedTuple,
@@ -24,6 +25,8 @@ from .utils import reolink_time_to_datetime
 _LOGGER = logging.getLogger(__name__)
 
 reolink_json = list[dict[str, Any]]
+
+cmd_list_type = DefaultDict[str, DefaultDict[int | None, int]] | dict[str, list[int]] | None
 
 SearchStatus = TypedDict("SearchStatus", {"mon": int, "table": str, "year": int})
 

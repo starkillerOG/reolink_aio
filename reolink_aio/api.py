@@ -1520,10 +1520,12 @@ class Host:
 
         return
 
-    async def get_states(self, cmd_list: dict[str, list[int]] | None = None, wake: bool = True) -> None:
+    async def get_states(self, cmd_list: typings.cmd_list_type = None, wake: bool = True) -> None:
         body = []
         channels = []
         if cmd_list is None:
+            # cmd_list example: {"GetZoomFocus": {None: 6, 1: 3, 3: 3}, "GetHddInfo": {None: 1}}
+            #                       command       host  #  ch #  ch #
             cmd_list = {}
 
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
