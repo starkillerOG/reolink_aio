@@ -24,7 +24,7 @@ If you appreciate the reolink integration and want to support its development, p
 
 ### Prerequisites
 
-- Python 3.9
+- Python 3.10
 
 ### Installation
 
