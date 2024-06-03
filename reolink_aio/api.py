@@ -1678,9 +1678,10 @@ class Host:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             cmd_list_log = dict(cmd_list)
             for key in cmd_list_log:
-                cmd_list_log[key] = list(cmd_list_log[key])
-                if None in cmd_list_log[key]:
-                    cmd_list_log[key].remove(None)
+                cmd_list_item = list(cmd_list_log[key])
+                if None in cmd_list_item:
+                    cmd_list_item.remove(None)
+                cmd_list_log[key] = cmd_list_item
             _LOGGER.debug("Host %s:%s: get_states update cmd list: %s", self._host, self._port, cmd_list_log)
 
         try:
