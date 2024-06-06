@@ -2273,7 +2273,7 @@ class Host:
             stream = self._stream
 
         stream_type = None
-        if stream in ["sub", "autotrack_sub"]:
+        if stream in ["sub", "autotrack_sub", "telephoto_sub"]:
             stream_type = 1
         else:
             stream_type = 0
@@ -2403,11 +2403,11 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        if stream not in ["main", "sub", "ext", "autotrack_sub"]:
+        if stream not in ["main", "sub", "ext", "autotrack_sub", "telephoto_sub"]:
             return None
         if self.protocol == "rtmp":
             return self.get_rtmp_stream_source(channel, stream)
-        if self.protocol == "flv" or stream == "autotrack_sub":
+        if self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub"]:
             return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtsp":
             return await self.get_rtsp_stream_source(channel, stream)
