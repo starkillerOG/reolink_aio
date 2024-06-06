@@ -1294,7 +1294,6 @@ class Host:
                 min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
                 max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
-                    self._capabilities[channel].append("zoom_basic")
                     self._capabilities[channel].append("zoom")
                 else:
                     if warnings:
