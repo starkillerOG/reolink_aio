@@ -134,6 +134,7 @@ class SoftwareVersion:
 
         if version_string is None:
             self.is_unknown = True
+            self.version_string = "unknown"
             return
 
         self.version_string = version_string.lower()
