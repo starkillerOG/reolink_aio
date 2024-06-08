@@ -170,6 +170,7 @@ class Host:
         self._channel_names: dict[int, str] = {}
         self._channel_uids: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
+        self._channel_hw_version: dict[int, str] = {}
         self._channel_sw_versions: dict[int, str] = {}
         self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
         self._is_doorbell: dict[int, bool] = {}
@@ -571,6 +572,13 @@ class Host:
             return "Unknown"
         return self._channel_models[channel]
 
+    def camera_hardware_version(self, channel: int) -> str:
+        if channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
+            return self.camera_hardware_version(0)  # Dual lens cameras
+        if channel not in self._channel_hw_version:
+            return "Unknown"
+        return self._channel_hw_version[channel]
+
     def camera_sw_version(self, channel: int) -> str:
         if not self.is_nvr:
             return self.sw_version
@@ -584,6 +592,20 @@ class Host:
         if channel not in self._channel_sw_version_objects:
             return SoftwareVersion(None)
         return self._channel_sw_version_objects[channel]
+
+    def camera_sw_version_required(self, channel: int) -> SoftwareVersion:
+        """Return the minimum required firmware version for a connected IPC camera for proper operation of this library"""
+        if self.camera_model(channel) == "Unknown" or self.camera_hardware_version(channel) == "Unknown":
+            return SoftwareVersion(None)
+
+        return SoftwareVersion(MINIMUM_FIRMWARE.get(self.camera_model(channel), {}).get(self.camera_hardware_version(channel)))
+
+    def camera_sw_version_update_required(self, channel: int) -> bool:
+        """Check if a firmware version update is required for a connected IPC camera for proper operation of this library"""
+        if self.camera_sw_version_object(channel) == SoftwareVersion(None):
+            return False
+
+        return not self.camera_sw_version_object(channel) >= self.camera_sw_version_required(channel)  # pylint: disable=unneeded-not
 
     def is_doorbell(self, channel: int) -> bool:
         """Wether or not the camera is a doorbell"""
@@ -2745,6 +2767,8 @@ class Host:
                         self._channel_sw_versions[channel] = data["value"]["firmVer"]
                         if self._channel_sw_versions[channel] is not None:
                             self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
+                    if "boardInfo" in data["value"]:
+                        self._channel_hw_version[channel] = data["value"]["boardInfo"]
 
                 if data["cmd"] == "GetEvents":
                     response_channel = data["value"]["channel"]
