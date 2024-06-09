@@ -10,6 +10,7 @@ import ssl
 import traceback
 import uuid
 from datetime import datetime, timedelta, tzinfo
+from time import time as time_now
 from os.path import basename
 from typing import Any, Literal, Optional, overload
 from urllib import parse
@@ -158,8 +159,14 @@ class Host:
         self._nvr_hw_version: Optional[str] = None
         self._nvr_sw_version: Optional[str] = None
         self._nvr_sw_version_object: Optional[SoftwareVersion] = None
-        self._nvr_sw_hardware_id: Optional[int] = None
-        self._nvr_sw_model_id: Optional[int] = None
+
+        ##############################################################################
+        # Combined attributes
+        self._sw_hardware_id: dict[int | None, int] = {}
+        self._sw_model_id: dict[int | None, int] = {}
+        self._last_sw_id_check: float = 0
+        self._latest_sw_model_version: dict[str, NewSoftwareVersion] = {}
+        self._latest_sw_version: dict[int | None, NewSoftwareVersion | str | Literal[False]] = {}
 
         ##############################################################################
         # Channels of cameras, used in this NVR ([0] for a directly connected camera)
@@ -565,14 +572,18 @@ class Host:
                 break
         return channel
 
-    def camera_model(self, channel: int) -> str:
+    def camera_model(self, channel: int | None) -> str:
+        if channel is None:
+            return self.model
         if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
             return self.camera_model(0)  # Dual lens cameras
         if channel not in self._channel_models:
             return "Unknown"
         return self._channel_models[channel]
 
-    def camera_hardware_version(self, channel: int) -> str:
+    def camera_hardware_version(self, channel: int | None) -> str:
+        if channel is None:
+            return self.hardware_version
         if channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
             return self.camera_hardware_version(0)  # Dual lens cameras
         if channel not in self._channel_hw_version:
@@ -586,8 +597,8 @@ class Host:
             return "Unknown"
         return self._channel_sw_versions[channel]
 
-    def camera_sw_version_object(self, channel: int) -> SoftwareVersion:
-        if not self.is_nvr:
+    def camera_sw_version_object(self, channel: int | None) -> SoftwareVersion:
+        if not self.is_nvr or channel is None:
             return self.sw_version_object
         if channel not in self._channel_sw_version_objects:
             return SoftwareVersion(None)
@@ -1191,6 +1202,7 @@ class Host:
         if self.api_version("supportBuzzer") > 0:
             self._capabilities["Host"].append("buzzer")
 
+        self._capabilities["Host"].append("firmware")
         if self.api_version("upgrade") >= 2:
             self._capabilities["Host"].append("update")
 
@@ -1221,6 +1233,9 @@ class Host:
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 continue
+
+            if self.is_nvr and self.camera_hardware_version(channel) != "Unknown" and self.camera_model(channel) != "Unknown":
+                self._capabilities[channel].append("firmware")
 
             if self.api_version("supportWebhook", channel) > 0:
                 self._capabilities[channel].append("webhook")
@@ -2104,41 +2119,68 @@ class Host:
 
         return True
 
-    async def _check_reolink_firmware(self) -> NewSoftwareVersion:
+    async def _check_reolink_firmware(self, channel: int | None = None) -> NewSoftwareVersion:
         """Check for new firmware from reolink.com"""
-        if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
+        if not self.supported(channel, "firmware"):
+            raise NotSupportedError(f"check firmware online: not supported by {self.camera_name(channel)}")
+
+        ch_hw = self.camera_hardware_version(channel)
+        ch_mod = self.camera_model(channel)
+        now = time_now()
+        if now - self._last_sw_id_check > 300 and (channel not in self._sw_hardware_id or channel not in self._sw_model_id):
+            self._last_sw_id_check = now
+
             request_URL = "https://reolink.com/wp-json/reo-v2/download/hardware-version/selection-list"
             json_data = await self.send_reolink_com(request_URL)
 
-            for device in json_data["data"]:
-                if device["title"] == self.hardware_version and device["dlProduct"]["title"].startswith(self.model):
-                    self._nvr_sw_hardware_id = device["id"]
-                    self._nvr_sw_model_id = device["dlProduct"]["id"]
-                    break
+            chs: list[int | None] = [None]
+            chs.extend(self.channels)
+            for ch in chs:  # update the cache of all devices in one go
+                for device in json_data["data"]:
+                    if device["title"] == self.camera_hardware_version(ch) and device["dlProduct"]["title"].startswith(self.camera_model(ch)):
+                        self._sw_hardware_id[ch] = device["id"]
+                        self._sw_model_id[ch] = device["dlProduct"]["id"]
+                        break
 
-        if self._nvr_sw_hardware_id is None or self._nvr_sw_model_id is None:
-            raise UnexpectedDataError(f"Could not find model '{self.model}' hardware '{self.hardware_version}' in list from reolink.com")
+        if channel not in self._sw_hardware_id or channel not in self._sw_model_id:
+            raise UnexpectedDataError(f"Could not find model '{ch_mod}' hardware '{ch_hw}' in list from reolink.com")
 
-        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._nvr_sw_model_id}&hardwareVersion={self._nvr_sw_hardware_id}&lang=en"
+        if f"{ch_mod}-{ch_hw}" in self._latest_sw_model_version and now - self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"].last_check < 300:
+            # this hardware-model was checked less than 5 min ago, return previous result
+            return self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"]
+
+        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._sw_model_id[channel]}&hardwareVersion={self._sw_hardware_id[channel]}&lang=en"
         json_data = await self.send_reolink_com(request_URL)
 
         firmware_info = json_data["data"][0]["firmwares"][0]
         hw_ver = firmware_info["hardwareVersion"][0]["title"]
         mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"]
-        if hw_ver != self.hardware_version or not mod_ver.startswith(self.model):
-            raise UnexpectedDataError(
-                f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{self.hardware_version}' or '{mod_ver}' != '{self.model}'"
-            )
+        if hw_ver != ch_hw or not mod_ver.startswith(ch_mod):
+            raise UnexpectedDataError(f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{ch_hw}' or '{mod_ver}' != '{ch_mod}'")
 
-        return NewSoftwareVersion(firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"])
+        self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"] = NewSoftwareVersion(
+            firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"], last_check=now
+        )
+        return self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"]
 
-    async def check_new_firmware(self) -> Literal[False] | NewSoftwareVersion | str:
+    async def check_new_firmware(self, ch_list: list[None | int] | None = None) -> Literal[False] | NewSoftwareVersion | str:
         """check for new firmware using camera API, returns False if no new firmware available."""
         new_firmware = 0
+        ch: int | None
+        if ch_list is None:
+            ch_list = [None]
+            ch_list.extend(self.channels)
 
+        # check current firmware version and check for host update using API
         body: typings.reolink_json = [{"cmd": "GetDevInfo", "action": 0, "param": {}}]
+        channels = [-1]
         if self.supported(None, "update"):
             body.append({"cmd": "CheckFirmware"})
+            channels.append(-1)
+        for ch in self.channels:
+            if ch in ch_list and self.supported(ch, "firmware"):
+                body.append({"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": ch}})
+                channels.append(ch)
 
         try:
             json_data = await self.send(body, expected_response_type="json")
@@ -2147,7 +2189,7 @@ class Host:
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
 
-        self.map_host_json_response(json_data)
+        self.map_channels_json_response(json_data, channels)
 
         if self.supported(None, "update"):
             try:
@@ -2155,25 +2197,48 @@ class Host:
             except KeyError as err:
                 raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
 
-        try:
-            latest_software_version = await self._check_reolink_firmware()
-        except ReolinkError as err:
-            _LOGGER.debug(err)
-            if new_firmware == 0:
-                return False
-            if new_firmware == 1:
-                return "New firmware available"
-            return str(new_firmware)
+        # check latest available firmware version online
+        for ch in ch_list:
+            self._latest_sw_version[ch] = False
+        for ch in ch_list:
+            if not self.supported(ch, "firmware"):
+                continue
+            try:
+                self._latest_sw_version[ch] = await self._check_reolink_firmware(ch)
+            except (NotSupportedError, UnexpectedDataError) as err:
+                _LOGGER.debug(err)
+            except ReolinkError as err:
+                _LOGGER.debug(err)
+                break
 
-        if self._nvr_sw_version_object is None or self._nvr_sw_version_object >= latest_software_version:
-            if new_firmware == 0:
-                return False
-            if new_firmware == 1:
-                return "New firmware available"
-            return str(new_firmware)
+        # compare software versions
+        for ch in ch_list:
+            if self.camera_sw_version_object(ch) == SoftwareVersion(None):
+                self._latest_sw_version[ch] = False
+                continue
+            if not isinstance(self._latest_sw_version[ch], NewSoftwareVersion):
+                continue
+            if self.camera_sw_version_object(ch) >= self._latest_sw_version[ch]:
+                self._latest_sw_version[ch] = False
 
-        latest_software_version.online_update_available = new_firmware == 1
-        return latest_software_version
+        # check host online update result
+        latest_sw_version_host = self._latest_sw_version[None]
+        if new_firmware != 0 and latest_sw_version_host is False:
+            if new_firmware == 1:
+                latest_sw_version_host = "New firmware available"
+            else:
+                latest_sw_version_host = str(new_firmware)
+        if isinstance(latest_sw_version_host, NewSoftwareVersion):
+            latest_sw_version_host.online_update_available = new_firmware == 1
+
+        self._latest_sw_version[None] = latest_sw_version_host
+        return latest_sw_version_host
+
+    def firmware_update_available(self, channel: int | None = None) -> Literal[False] | NewSoftwareVersion | str:
+        if channel not in self._latest_sw_version:
+            return False
+
+        return self._latest_sw_version[channel]
 
     async def update_firmware(self) -> None:
         """check for new firmware."""

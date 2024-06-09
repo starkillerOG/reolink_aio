@@ -282,8 +282,9 @@ class SoftwareVersion:
 class NewSoftwareVersion(SoftwareVersion):
     """SoftwareVersion class for available software updates"""
 
-    def __init__(self, version_string: str | None, download_url: str | None = None, release_notes: str = "", online_update_available: bool = False):
+    def __init__(self, version_string: str | None, download_url: str | None = None, release_notes: str = "", last_check: float = 0, online_update_available: bool = False):
         self.download_url = download_url
         self.release_notes = release_notes
         self.online_update_available = online_update_available
+        self.last_check = last_check
         super().__init__(version_string)
