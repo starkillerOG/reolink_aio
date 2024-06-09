@@ -590,8 +590,8 @@ class Host:
             return "Unknown"
         return self._channel_hw_version[channel]
 
-    def camera_sw_version(self, channel: int) -> str:
-        if not self.is_nvr:
+    def camera_sw_version(self, channel: int | None) -> str:
+        if not self.is_nvr or channel is None:
             return self.sw_version
         if channel not in self._channel_sw_versions:
             return "Unknown"
@@ -604,14 +604,14 @@ class Host:
             return SoftwareVersion(None)
         return self._channel_sw_version_objects[channel]
 
-    def camera_sw_version_required(self, channel: int) -> SoftwareVersion:
+    def camera_sw_version_required(self, channel: int | None) -> SoftwareVersion:
         """Return the minimum required firmware version for a connected IPC camera for proper operation of this library"""
         if self.camera_model(channel) == "Unknown" or self.camera_hardware_version(channel) == "Unknown":
             return SoftwareVersion(None)
 
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.camera_model(channel), {}).get(self.camera_hardware_version(channel)))
 
-    def camera_sw_version_update_required(self, channel: int) -> bool:
+    def camera_sw_version_update_required(self, channel: int | None) -> bool:
         """Check if a firmware version update is required for a connected IPC camera for proper operation of this library"""
         if self.camera_sw_version_object(channel) == SoftwareVersion(None):
             return False
@@ -2167,7 +2167,7 @@ class Host:
         """check for new firmware using camera API, returns False if no new firmware available."""
         new_firmware = 0
         ch: int | None
-        if ch_list is None:
+        if not ch_list:
             ch_list = [None]
             ch_list.extend(self.channels)
 
@@ -2240,15 +2240,15 @@ class Host:
 
         return self._latest_sw_version[channel]
 
-    async def update_firmware(self) -> None:
+    async def update_firmware(self, channel: int | None = None) -> None:
         """check for new firmware."""
         try:
             await self.get_state(cmd="GetDevInfo")
         except ReolinkError:
             pass
 
-        if not self.supported(None, "update"):
-            raise NotSupportedError(f"update_firmware: not supported by {self.nvr_name}")
+        if not self.supported(channel, "update"):
+            raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
 
         body = [{"cmd": "UpgradeOnline"}]
         try:
