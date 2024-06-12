@@ -2517,7 +2517,7 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        if self._is_nvr and request_type in [VodRequestType.RTMP, VodRequestType.PLAYBACK]:
+        if self._is_nvr and request_type in [VodRequestType.RTMP]:
             _LOGGER.warning("get_vod_source: NVRs do not yet support '%s' vod requests, using FLV instead", request_type.value)
             request_type = VodRequestType.FLV
 
