@@ -2140,7 +2140,8 @@ class Host:
                     if device["title"] == self.camera_hardware_version(ch) and device["dlProduct"]["title"].startswith(self.camera_model(ch)):
                         self._sw_hardware_id[ch] = device["id"]
                         self._sw_model_id[ch] = device["dlProduct"]["id"]
-                        break
+                        if device["dlProduct"]["title"] == self.camera_model(ch):
+                            break
 
         if channel not in self._sw_hardware_id or channel not in self._sw_model_id:
             raise UnexpectedDataError(f"Could not find model '{ch_mod}' hardware '{ch_hw}' in list from reolink.com")
