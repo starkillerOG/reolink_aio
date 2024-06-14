@@ -3879,7 +3879,7 @@ class Host:
         if file_id is not None and file_id not in self.quick_reply_dict(channel):
             raise InvalidParameterError(f"play_quick_reply: file_id {file_id} not in {list(self.quick_reply_dict(channel))}")
 
-        body = [{"cmd": "QuickReplyPlay", "action": 0, "param": {"id": file_id}}]
+        body = [{"cmd": "QuickReplyPlay", "action": 0, "param": {"id": file_id, "channel": channel}}]
         await self.send_setting(body)
 
     async def set_quick_reply(self, channel: int, enable: bool | None = None, file_id: int | None = None, time: int | None = None) -> None:
