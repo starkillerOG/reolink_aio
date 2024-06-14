@@ -1284,7 +1284,7 @@ class Host:
             if (self.api_version("supportAudioFileList", channel) > 0) or (not self.is_nvr and self.api_version("supportAudioFileList") > 0):
                 if self.api_version("supportAutoReply", channel) > 0 or (not self.is_nvr and self.api_version("supportAutoReply") > 0):
                     self._capabilities[channel].append("quick_reply")
-                if self.api_version("supportAudioPlay", channel) > 0:
+                if self.api_version("supportAudioPlay", channel) > 0 or self.api_version("supportQuickReplyPlay", channel) > 0:
                     self._capabilities[channel].append("play_quick_reply")
 
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
