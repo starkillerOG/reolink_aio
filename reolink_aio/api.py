@@ -4210,8 +4210,12 @@ class Host:
         if start > end:
             raise InvalidParameterError(f"Request VOD files: start date '{start}' needs to be before end date '{end}'")
 
+        iLogicChannel = 0
         if stream is None:
             stream = self._stream
+        if stream.startswith("autotrack_"):
+            iLogicChannel = 1
+            stream = stream.removeprefix("autotrack_")
 
         times = [(start, end)]
         if status_only:
@@ -4228,21 +4232,22 @@ class Host:
 
         body = []
         for time in times:
-            body.append(
-                {
-                    "cmd": "Search",
-                    "action": 0,
-                    "param": {
-                        "Search": {
-                            "channel": channel,
-                            "onlyStatus": 1 if status_only else 0,
-                            "streamType": stream,
-                            "StartTime": datetime_to_reolink_time(time[0]),
-                            "EndTime": datetime_to_reolink_time(time[1]),
-                        }
-                    },
-                }
-            )
+            search_body: dict = {
+                "cmd": "Search",
+                "action": 0,
+                "param": {
+                    "Search": {
+                        "channel": channel,
+                        "onlyStatus": 1 if status_only else 0,
+                        "streamType": stream,
+                        "StartTime": datetime_to_reolink_time(time[0]),
+                        "EndTime": datetime_to_reolink_time(time[1]),
+                    }
+                },
+            }
+            if iLogicChannel:
+                search_body["param"]["Search"]["iLogicChannel"] = 1
+            body.append(search_body)
 
         if not body:
             raise InvalidParameterError(f"Request VOD files: no search body, start date '{start}' end date '{end}'")
