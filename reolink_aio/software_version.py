@@ -24,6 +24,10 @@ MINIMUM_FIRMWARE = {
     "RLN36": {
         "N5MB01": "v3.3.0.226_23031612",
     },
+    "Reolink Home Hub": {
+        "BASE_WENNT6NA5": "v3.3.0.330_24061823",
+        "BASE_WUNNT6NA5": "v3.3.0.330_24061822",
+    },
     "E1 Zoom": {
         "IPC_566SD65MP": "v3.1.0.1349_22092302",
         "IPC_515BSD6": "v3.0.0.1107_22070508",
