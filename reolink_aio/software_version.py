@@ -115,6 +115,15 @@ MINIMUM_FIRMWARE = {
     "Reolink Duo 2 WiFi": {
         "IPC_529B17B8MP": "v3.0.0.1337_22091901",
     },
+    "Argus Eco Ultra": {
+        "BIPC_560MIX16M35B238MP": "v3.0.0.3492_24050809",
+    },
+    "Argus Track": {
+        "BIPC_560MIX32M35SD118MP": "v3.0.0.3524_24052308",
+    },
+    "Reolink Doorbell Battery": {
+        "DB_560MIXDB32M35DBB14MP": "v3.0.0.3585_24053108",
+    },
 }
 
 DEFAULT_VERSION_DATA = datetime(2000, 1, 1, 0, 0)  # 2000-01-01 00:00
