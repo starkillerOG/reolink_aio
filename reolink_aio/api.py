@@ -4232,7 +4232,7 @@ class Host:
 
         body = []
         for time in times:
-            search_body = {
+            search_body: dict = {
                 "cmd": "Search",
                 "action": 0,
                 "param": {
