@@ -3008,7 +3008,7 @@ class Host:
                     self._ptz_patrols[channel] = {}
                     for patrol in data["value"]["PtzPatrol"]:
                         if int(patrol["enable"]) == 1:
-                            patrol_name = patrol["name"]
+                            patrol_name = patrol.get("name", f"patrol {patrol["id"]}")
                             patrol_id = int(patrol["id"])
                             self._ptz_patrols[channel][patrol_name] = patrol_id
 
