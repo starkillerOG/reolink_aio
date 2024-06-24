@@ -4533,14 +4533,19 @@ class Host:
                         '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or '"detail" : "password wrong"' in data or "Login has been locked" in data
                     )
                 if login_err or cred_err:
+                    try:
+                        json_data = json_loads(data)
+                        detail = json_data[0]["error"]["detail"]
+                    except Exception:
+                        detail = ""
                     response.release()
                     await self.expire_session()
                     if cred_err and cur_command == "Login":
-                        raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials during login")
+                        raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials during login, '{detail}'")
                     if retry <= 0:
                         if cred_err and cur_command != "Logout":
-                            raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials after retries")
-                        raise LoginError(f"Host {self._host}:{self._port}: Received 'please login first'")
+                            raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials after retries, '{detail}'")
+                        raise LoginError(f"Host {self._host}:{self._port}: LoginError: received '{detail}'")
                     _LOGGER.debug(
                         'Host %s:%s: "invalid login" response, trying to login again and retry the command.',
                         self._host,
