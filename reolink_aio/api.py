@@ -3009,7 +3009,7 @@ class Host:
                     self._ptz_patrols[channel] = {}
                     for patrol in data["value"]["PtzPatrol"]:
                         if int(patrol["enable"]) == 1:
-                            patrol_name = patrol.get("name", f"patrol {patrol["id"]}")
+                            patrol_name = patrol.get("name", f"patrol {patrol['id']}")
                             patrol_id = int(patrol["id"])
                             self._ptz_patrols[channel][patrol_name] = patrol_id
 
@@ -4522,20 +4522,23 @@ class Host:
                 if isinstance(data, bytes):
                     login_err = b'detail" : "please login first' in data and cur_command != "Logout"
                     cred_err = (
-                        b'"detail" : "invalid user"' in data or b'"detail" : "login failed"' in data or b'"detail" : "password wrong"' in data
-                    ) and cur_command != "Logout"
+                        b'"detail" : "invalid user"' in data
+                        or b'"detail" : "login failed"' in data
+                        or b'"detail" : "password wrong"' in data
+                        or b"Login has been locked" in data
+                    )
                 else:
                     login_err = ('"detail" : "please login first"' in data) and cur_command != "Logout"
                     cred_err = (
-                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or '"detail" : "password wrong"' in data
-                    ) and cur_command != "Logout"
+                        '"detail" : "invalid user"' in data or '"detail" : "login failed"' in data or '"detail" : "password wrong"' in data or "Login has been locked" in data
+                    )
                 if login_err or cred_err:
                     response.release()
                     await self.expire_session()
                     if cred_err and cur_command == "Login":
                         raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials during login")
                     if retry <= 0:
-                        if cred_err:
+                        if cred_err and cur_command != "Logout":
                             raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials after retries")
                         raise LoginError(f"Host {self._host}:{self._port}: Received 'please login first'")
                     _LOGGER.debug(
