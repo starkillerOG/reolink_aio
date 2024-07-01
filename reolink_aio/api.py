@@ -177,6 +177,7 @@ class Host:
         self._channel_names: dict[int, str] = {}
         self._channel_uids: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
+        self._channel_online: dict[int, bool] = {}
         self._channel_hw_version: dict[int, str] = {}
         self._channel_sw_versions: dict[int, str] = {}
         self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
@@ -571,6 +572,13 @@ class Host:
                 channel = ch
                 break
         return channel
+
+    def camera_online(self, channel: int) -> bool:
+        if not self.is_nvr:
+            return True
+        if channel not in self._channel_online:
+            return False
+        return self._channel_online[channel]
 
     def camera_model(self, channel: int | None) -> str:
         if channel is None:
@@ -2691,8 +2699,10 @@ class Host:
                             self._channel_names.clear()
 
                     for ch_info in cur_status:
-                        if ch_info["online"] == 1:
-                            cur_channel = ch_info["channel"]
+                        cur_channel = ch_info["channel"]
+                        online = ch_info["online"] == 1
+                        self._channel_online[cur_channel] = online
+                        if online:
                             if "name" in ch_info:
                                 self._channel_names[cur_channel] = ch_info["name"]
                             if "sleep" in ch_info:
