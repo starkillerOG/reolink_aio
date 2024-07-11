@@ -595,6 +595,8 @@ class Host:
         if channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
             return self.camera_hardware_version(0)  # Dual lens cameras
         if channel not in self._channel_hw_version:
+            if not self.is_nvr:
+                return self.hardware_version
             return "Unknown"
         return self._channel_hw_version[channel]
 
