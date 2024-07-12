@@ -94,6 +94,11 @@ WAKING_COMMANDS = [
     "GetAudioAlarm",
 ]
 
+# not all chars in a password can be used in the URLS of for instance the FLV stream
+ALLOWED_SPECIAL_CHARS = "@$*~_-+=/!?.,:;'()[]"
+ALLOWED_CHARS = set("abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "0123456789" + ALLOWED_SPECIAL_CHARS)
+FORBIDEN_CHARS = set("""#&% ^`"\|{}<>""")
+
 
 ##########################################################################################################################################################
 # API class
@@ -4293,7 +4298,8 @@ class Host:
             vod_files.extend([typings.VOD_file(file, self.timezone()) for file in search_result["File"]])
 
         if not statuses:
-            raise UnexpectedDataError(f"Host {self._host}:{self._port}: Request VOD files: no 'Status' in the response: {json_data}")
+            # When there are now recordings at all, their will be no "Status"
+            _LOGGER.debug(f"Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
 
         return statuses, vod_files
 
