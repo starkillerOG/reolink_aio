@@ -631,7 +631,7 @@ class Host:
         if self.camera_sw_version_object(channel) == SoftwareVersion(None):
             return False
 
-        return not self.camera_sw_version_object(channel) >= self.camera_sw_version_required(channel)  # pylint: disable=unneeded-not
+        return self.camera_sw_version_object(channel) < self.camera_sw_version_required(channel)
 
     def is_doorbell(self, channel: int) -> bool:
         """Wether or not the camera is a doorbell"""

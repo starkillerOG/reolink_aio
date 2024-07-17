@@ -185,80 +185,48 @@ class SoftwareVersion:
         return f"<SoftwareVersion: {self.version_string}>"
 
     def is_greater_than(self, target_version: "SoftwareVersion"):
-        if self.major > target_version.major:
-            return True
-        if target_version.major == self.major:
-            if self.middle > target_version.middle:
-                return True
-            if target_version.middle == self.middle:
-                if self.minor > target_version.minor:
-                    return True
-                if target_version.minor == self.minor:
-                    if self.build > target_version.build:
-                        return True
-
-        # for beta firmware releases
+        # first look at date, then major, middle, minor and build
         if self.date > target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
+        if self.date == target_version.date or self.date == DEFAULT_VERSION_DATA or target_version.date == DEFAULT_VERSION_DATA:
+            if self.major > target_version.major:
+                return True
+            if target_version.major == self.major:
+                if self.middle > target_version.middle:
+                    return True
+                if target_version.middle == self.middle:
+                    if self.minor > target_version.minor:
+                        return True
+                    if target_version.minor == self.minor:
+                        if self.build > target_version.build:
+                            return True
 
         return False
 
     def is_greater_or_equal_than(self, target_version: "SoftwareVersion"):
-        if self.major > target_version.major:
+        # first look at date, then major, middle, minor and build
+        if self.date > target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
-        if target_version.major == self.major:
-            if self.middle > target_version.middle:
+        if self.date == target_version.date or self.date == DEFAULT_VERSION_DATA or target_version.date == DEFAULT_VERSION_DATA:
+            if self.major > target_version.major:
                 return True
-            if target_version.middle == self.middle:
-                if self.minor > target_version.minor:
+            if target_version.major == self.major:
+                if self.middle > target_version.middle:
                     return True
-                if target_version.minor == self.minor:
-                    if self.build >= target_version.build:
+                if target_version.middle == self.middle:
+                    if self.minor > target_version.minor:
                         return True
-
-        # for beta firmware releases
-        if self.date >= target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
-            return True
+                    if target_version.minor == self.minor:
+                        if self.build >= target_version.build:
+                            return True
 
         return False
 
     def is_lower_than(self, target_version: "SoftwareVersion"):
-        if self.major < target_version.major:
-            return True
-        if target_version.major == self.major:
-            if self.middle < target_version.middle:
-                return True
-            if target_version.middle == self.middle:
-                if self.minor < target_version.minor:
-                    return True
-                if target_version.minor == self.minor:
-                    if self.build < target_version.build:
-                        return True
-
-        # for beta firmware releases
-        if self.date < target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
-            return True
-
-        return False
+        return not self.is_greater_or_equal_than(target_version)
 
     def is_lower_or_equal_than(self, target_version: "SoftwareVersion"):
-        if self.major < target_version.major:
-            return True
-        if target_version.major == self.major:
-            if self.middle < target_version.middle:
-                return True
-            if target_version.middle == self.middle:
-                if self.minor < target_version.minor:
-                    return True
-                if target_version.minor == self.minor:
-                    if self.build <= target_version.build:
-                        return True
-
-        # for beta firmware releases
-        if self.date <= target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
-            return True
-
-        return False
+        return not self.is_greater_than(target_version)
 
     def equals(self, target_version: "SoftwareVersion"):
         if (
@@ -266,9 +234,9 @@ class SoftwareVersion:
             and target_version.middle == self.middle
             and target_version.minor == self.minor
             and target_version.build == self.build
-            and target_version.date == self.date
         ):
-            return True
+            if target_version.date == self.date or self.date == DEFAULT_VERSION_DATA or target_version.date == DEFAULT_VERSION_DATA:
+                return True
         return False
 
     def __lt__(self, other):
@@ -283,10 +251,8 @@ class SoftwareVersion:
     def __ge__(self, other):
         return self.is_greater_or_equal_than(other)
 
-    def __eq__(self, target_version):
-        if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build:
-            return True
-        return False
+    def __eq__(self, other):
+        return self.equals(other)
 
     def generate_str_from_numbers(self):
         return f"{self.major}.{self.middle}.{self.minor}-{self.build}"
