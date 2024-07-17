@@ -229,12 +229,7 @@ class SoftwareVersion:
         return not self.is_greater_than(target_version)
 
     def equals(self, target_version: "SoftwareVersion"):
-        if (
-            target_version.major == self.major
-            and target_version.middle == self.middle
-            and target_version.minor == self.minor
-            and target_version.build == self.build
-        ):
+        if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build:
             if target_version.date == self.date or self.date == DEFAULT_VERSION_DATA or target_version.date == DEFAULT_VERSION_DATA:
                 return True
         return False

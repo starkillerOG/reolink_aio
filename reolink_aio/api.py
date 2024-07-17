@@ -95,9 +95,9 @@ WAKING_COMMANDS = [
 ]
 
 # not all chars in a password can be used in the URLS of for instance the FLV stream
-ALLOWED_SPECIAL_CHARS = "@$*~_-+=/!?.,:;'()[]"
-ALLOWED_CHARS = set("abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "0123456789" + ALLOWED_SPECIAL_CHARS)
-FORBIDEN_CHARS = set("""#&% ^`"\|{}<>""")
+ALLOWED_SPECIAL_CHARS = r"@$*~_-+=/!?.,:;'()[]"
+ALLOWED_CHARS = set(r"abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "0123456789" + ALLOWED_SPECIAL_CHARS)
+FORBIDEN_CHARS = set(r"""#&% ^`"\|{}<>""")
 
 
 ##########################################################################################################################################################
@@ -4299,7 +4299,7 @@ class Host:
 
         if not statuses:
             # When there are now recordings at all, their will be no "Status"
-            _LOGGER.debug(f"Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
+            _LOGGER.debug("Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
 
         return statuses, vod_files
 
