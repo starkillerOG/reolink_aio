@@ -160,6 +160,7 @@ class Host:
         self._nvr_serial: Optional[str] = None
         self._nvr_uid: Optional[str] = None
         self._nvr_model: Optional[str] = None
+        self._nvr_item_number: Optional[str] = None
         self._nvr_num_channels: int = 0
         self._nvr_hw_version: Optional[str] = None
         self._nvr_sw_version: Optional[str] = None
@@ -396,6 +397,12 @@ class Host:
         if self._nvr_model is None:
             return "Unknown"
         return self._nvr_model
+
+    @property
+    def item_number(self) -> str:
+        if self._nvr_item_number is None:
+            return "Unknown"
+        return self._nvr_item_number
 
     @property
     def hardware_version(self) -> str:
@@ -2744,6 +2751,7 @@ class Host:
                     self._nvr_serial = dev_info["serial"]
                     self._nvr_name = dev_info["name"]
                     self._nvr_model = dev_info["model"]
+                    self._nvr_item_number = dev_info.get("itemNo")
                     self._nvr_hw_version = dev_info["hardVer"]
                     self._nvr_sw_version = dev_info["firmVer"]
                     if self._nvr_sw_version is not None:
