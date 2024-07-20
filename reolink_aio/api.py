@@ -399,9 +399,7 @@ class Host:
         return self._nvr_model
 
     @property
-    def item_number(self) -> str:
-        if self._nvr_item_number is None:
-            return "Unknown"
+    def item_number(self) -> str | None:
         return self._nvr_item_number
 
     @property
