@@ -1590,7 +1590,9 @@ class Host:
             return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
 
         def inc_cmd(cmd, channel):
-            return (channel in cmd_list.get(cmd, []) or not cmd_list) and (wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery"))
+            return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
+                wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
+            )
 
         for channel in self._stream_channels:
             ch_body = []
