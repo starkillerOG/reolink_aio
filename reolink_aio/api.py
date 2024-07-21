@@ -2399,7 +2399,10 @@ class Host:
             stream_type = 0
         if self._rtmp_auth_method == DEFAULT_RTMP_AUTH_METHOD:
             # RTMP needs unencoded password
-            return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}"
+            return (
+                f"rtmp://{self._host}:{self._rtmp_port}/bcs/"
+                f"channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}"
+            )
 
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
