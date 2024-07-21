@@ -23,7 +23,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType
+from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType, HDREnum
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -883,6 +883,12 @@ class Host:
 
         return hdr > 0
 
+    def HDR_state(self, channel: int) -> int:
+        if channel not in self._isp_settings:
+            return -1
+
+        return self._isp_settings[channel]["Isp"].get("hdr", -1)
+
     def daynight_threshold(self, channel: int) -> int | None:
         if channel not in self._isp_settings:
             return None
@@ -1399,7 +1405,7 @@ class Host:
                 self._capabilities[channel].append("isp_contrast")
             if self.api_version("ispBright", channel) > 0:
                 self._capabilities[channel].append("isp_bright")
-            if self.api_version("supportIspHdr", channel) > 0 and self.HDR_on(channel) is not None:
+            if self.api_version("supportIspHdr", channel, no_key_return=1) > 0 and self.HDR_state(channel) >= 0:
                 self._capabilities[channel].append("HDR")
 
             if self.api_version("ispDayNight", channel, no_key_return=1) > 0 and self.daynight_state(channel) is not None:
@@ -4023,7 +4029,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_HDR(self, channel: int, value: bool) -> None:
+    async def set_HDR(self, channel: int, value: bool | int) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_HDR: no camera connected to channel '{channel}'")
         if not self.supported(channel, "HDR"):
@@ -4032,8 +4038,16 @@ class Host:
         if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_HDR: ISP on camera {self.camera_name(channel)} is not available")
 
+        val_list = [val.value for val in HDREnum]
+        val_list.extend([True, False])
+        if value not in val_list:
+            raise InvalidParameterError(f"set_HDR: value {value} not in {val_list}")
+
         body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
-        body[0]["param"]["Isp"]["hdr"] = 2 if value else 0
+        if isinstance(value, bool):
+            body[0]["param"]["Isp"]["hdr"] = 2 if value else 0
+        else:
+            body[0]["param"]["Isp"]["hdr"] = value
 
         await self.send_setting(body)
 

@@ -53,6 +53,14 @@ class DayNightEnum(Enum):
     blackwhite = "Black&White"
 
 
+class HDREnum(Enum):
+    """Options for the HDR setting"""
+
+    off = 0
+    on = 2
+    auto = 1
+
+
 class PtzEnum(Enum):
     """Options for PTZ control"""
 
