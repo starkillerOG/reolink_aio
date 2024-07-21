@@ -95,9 +95,9 @@ WAKING_COMMANDS = [
 ]
 
 # not all chars in a password can be used in the URLS of for instance the FLV stream
-ALLOWED_SPECIAL_CHARS = r"@$*~_-+=/!?.,:;'()[]"
+ALLOWED_SPECIAL_CHARS = r"@$*~_-+=!?.,:;'()[]"
 ALLOWED_CHARS = set(r"abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVWXYZ" "0123456789" + ALLOWED_SPECIAL_CHARS)
-FORBIDEN_CHARS = set(r"""#&% ^`"\|{}<>""")
+FORBIDEN_CHARS = set(r"""#&% ^`"\/|{}<>""")
 
 
 ##########################################################################################################################################################
@@ -143,6 +143,7 @@ class Host:
         # Login session
         self._username: str = username
         self._password: str = password[:31]
+        self._enc_password = parse.quote(self._password, safe="")
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
         # Connection session
@@ -544,6 +545,8 @@ class Host:
         redacted = str(content)
         if self._password:
             redacted = redacted.replace(self._password, "<password>")
+        if self._enc_password:
+            redacted = redacted.replace(self._enc_password, "<password>")
         if self._token:
             redacted = redacted.replace(self._token, "<token>")
         if self._nvr_uid:
@@ -2379,8 +2382,8 @@ class Host:
         else:
             http_s = "http"
 
-        password = parse.quote(self._password, safe="")
-        return f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=channel{channel}_{stream}.bcs&user={self._username}&password={password}"
+        # FLV needs unencoded password
+        return f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=channel{channel}_{stream}.bcs&user={self._username}&password={self._password}"
 
     def get_rtmp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
         if channel not in self._stream_channels:
@@ -2395,8 +2398,8 @@ class Host:
         else:
             stream_type = 0
         if self._rtmp_auth_method == DEFAULT_RTMP_AUTH_METHOD:
-            password = parse.quote(self._password, safe="")
-            return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&user={self._username}&password={password}"
+            # RTMP needs unencoded password
+            return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}"
 
         return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
 
@@ -2423,8 +2426,7 @@ class Host:
             # save the first tried URL (based on camera capabilities) in case all attempts fail
             self._rtsp_verified[channel][stream] = url
 
-        password = parse.quote(self._password, safe="")
-        url_clean = url.replace(f"{self._username}:{password}@", "")
+        url_clean = url.replace(f"{self._username}:{self._enc_password}@", "")
 
         try:
             async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=self._password, logger=_LOGGER_RTSP) as rtsp_conn:
@@ -2490,19 +2492,19 @@ class Host:
             )
             encoding = "h264"
 
-        password = parse.quote(self._password, safe="")
         channel_str = f"{channel + 1:02d}"
 
-        url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
+        # RTSP needs encoded password
+        url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
         if await self._check_rtsp_url(url, channel, stream):
             return url
 
         encoding = "h265" if encoding == "h264" else "h264"
-        url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
+        url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
         if await self._check_rtsp_url(url, channel, stream):
             return url
 
-        url = f"rtsp://{self._username}:{password}@{self._host}:{self._rtsp_port}/Preview_{channel_str}_{stream}"
+        url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/Preview_{channel_str}_{stream}"
         if await self._check_rtsp_url(url, channel, stream):
             return url
 
@@ -2559,8 +2561,8 @@ class Host:
         if request_type in [VodRequestType.FLV, VodRequestType.RTMP]:
             mime = "application/x-mpegURL"
             # Looks like it only works with login/password method, not with token
-            password = parse.quote(self._password, safe="")
-            credentials = f"&user={self._username}&password={password}"
+            # RTMP and FLV need unencoded password
+            credentials = f"&user={self._username}&password={self._password}"
         else:
             mime = "video/mp4"
             credentials = f"&token={self._token}"
@@ -2977,11 +2979,10 @@ class Host:
 
                 elif data["cmd"] == "GetRtspUrl":
                     response_channel = data["value"]["rtspUrl"]["channel"]
-                    password = parse.quote(self._password, safe="")
                     mainStream = data["value"]["rtspUrl"]["mainStream"]
                     subStream = data["value"]["rtspUrl"]["subStream"]
-                    self._rtsp_mainStream[channel] = mainStream.replace("rtsp://", f"rtsp://{self._username}:{password}@")
-                    self._rtsp_subStream[channel] = subStream.replace("rtsp://", f"rtsp://{self._username}:{password}@")
+                    self._rtsp_mainStream[channel] = mainStream.replace("rtsp://", f"rtsp://{self._username}:{self._enc_password}@")
+                    self._rtsp_subStream[channel] = subStream.replace("rtsp://", f"rtsp://{self._username}:{self._enc_password}@")
 
                 elif data["cmd"] == "GetEmail":
                     self._email_settings[channel] = data["value"]
