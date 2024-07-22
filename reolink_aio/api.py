@@ -481,6 +481,26 @@ class Host:
         """
         return self.user_level == "admin"
 
+    def valid_password(self) -> bool:
+        """check if the password contains incompatible characters"""
+        password_set = set(self._password)
+        if len(password_set - ALLOWED_CHARS.union(FORBIDEN_CHARS)) != 0:
+            # password contains chars not in ALLOWED_CHARS or FORBIDEN_CHARS
+            unknown_chars = password_set - ALLOWED_CHARS.union(FORBIDEN_CHARS)
+            _LOGGER.warning(
+                "Reolink password contains untested special character: %s, this could cause problems, please make an issue at https://github.com/starkillerOG/reolink_aio",
+                ", ".join(unknown_chars),
+            )
+            return False
+
+        if len(password_set - ALLOWED_CHARS) != 0:
+            _LOGGER.warning(
+                "Reolink password contains incompatible special character, please change the password to only contain characters: a-z, A-Z, 0-9 or %s", ALLOWED_SPECIAL_CHARS
+            )
+            return False
+
+        return True
+
     def hdd_storage(self, index) -> float:
         """Return the amount of storage used in %."""
         if index >= len(self._hdd_info):
@@ -1933,6 +1953,9 @@ class Host:
             self._api_version["GetMdAlarm"] = 0
 
         self.construct_capabilities()
+
+        # Check for special chars in password
+        self.valid_password()
 
         if self.protocol == "rtsp":
             # Cache the RTSP urls
