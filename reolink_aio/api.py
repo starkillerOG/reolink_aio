@@ -23,7 +23,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType, HDREnum
+from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType, HDREnum, Chime
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -225,6 +225,8 @@ class Host:
         self._ntp_settings: Optional[dict] = None
         self._netport_settings: Optional[dict] = None
         self._push_config: dict = {}
+        # Chime-level
+        self._chime_list: dict[int, Chime] = {}
         # Camera-level
         self._zoom_focus_settings: dict[int, dict] = {}
         self._zoom_focus_range: dict[int, dict] = {}
@@ -440,6 +442,10 @@ class Host:
     @property
     def hdd_list(self) -> list[int]:
         return list(range(0, len(self._hdd_info)))
+
+    @property
+    def chime_list(self) -> dict[int, Chime]:
+        return self._chime_list
 
     @property
     def stream(self) -> str:
@@ -1337,6 +1343,9 @@ class Host:
                 if self.api_version("supportAudioPlay", channel) > 0 or self.api_version("supportQuickReplyPlay", channel) > 0:
                     self._capabilities[channel].append("play_quick_reply")
 
+            if self.api_version("supportDingDongCtrl", channel) > 0:
+                self._capabilities[channel].append("chime")
+
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
                 self._capabilities[channel].append("siren")
                 self._capabilities[channel].append("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
@@ -1465,6 +1474,7 @@ class Host:
     async def get_state(self, cmd: str) -> None:
         body = []
         channels = []
+        chime_ids = []
         for channel in self._stream_channels:
             ch_body = []
             if cmd == "GetEnc":
@@ -1473,6 +1483,7 @@ class Host:
                 ch_body = [{"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+            chime_ids.extend([-1] * len(ch_body))
 
         for channel in self._channels:
             ch_body = []
@@ -1482,6 +1493,7 @@ class Host:
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 body.extend(ch_body)
                 channels.extend([channel] * len(ch_body))
+                chime_ids.extend([-1] * len(ch_body))
                 continue
 
             if cmd == "GetIrLights" and self.supported(channel, "ir_lights"):
@@ -1516,6 +1528,10 @@ class Host:
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioFileList" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetDingDongList" and self.supported(channel, "chime"):
+                ch_body = [{"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetDingDongCfg" and self.supported(channel, "chime"):
+                ch_body = [{"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAutoReply" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetManualRec" and self.supported(channel, "manual_record"):
@@ -1568,6 +1584,15 @@ class Host:
                     ch_body = [{"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+            chime_ids.extend([-1] * len(ch_body))
+
+        # chime states
+        if not channels and cmd == "DingDongOpt":
+            for chime_id, chime in self._chime_list.items():
+                chime_ch = chime.channel
+                body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
+                channels.append(chime_ch)
+                chime_ids.append(chime_id)
 
         if not channels:
             if cmd == "GetChannelstatus":
@@ -1602,7 +1627,7 @@ class Host:
                 raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'") from err
 
             if channels:
-                self.map_channels_json_response(json_data, channels)
+                self.map_channels_json_response(json_data, channels, chime_ids)
             else:
                 self.map_host_json_response(json_data)
 
@@ -1611,6 +1636,7 @@ class Host:
     async def get_states(self, cmd_list: typings.cmd_list_type = None, wake: bool = True) -> None:
         body = []
         channels = []
+        chime_ids = []
         if cmd_list is None:
             # cmd_list example: {"GetZoomFocus": {None: 6, 1: 3, 3: 3}, "GetHddInfo": {None: 1}}
             #                       command       host  #  ch #  ch #
@@ -1634,6 +1660,7 @@ class Host:
                 ch_body.append({"cmd": "GetEnc", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+            chime_ids.extend([-1] * len(ch_body))
 
         for channel in self._channels:
             ch_body = []
@@ -1685,6 +1712,9 @@ class Host:
 
             if self.supported(channel, "quick_reply") and inc_cmd("GetAutoReply", channel):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
+                ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "manual_record") and inc_cmd("GetManualRec", channel):
                 ch_body.append({"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}})
@@ -1743,6 +1773,15 @@ class Host:
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+            chime_ids.extend([-1] * len(ch_body))
+
+        # chime states
+        for chime_id, chime in self._chime_list.items():
+            chime_ch = chime.channel
+            if inc_cmd("DingDongOpt", channel):
+                body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
+                channels.append(chime_ch)
+                chime_ids.append(chime_id)
 
         # host states
         host_body = []
@@ -1757,6 +1796,7 @@ class Host:
 
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
+        chime_ids.extend([-1] * len(host_body))
 
         if not body:
             _LOGGER.debug(
@@ -1781,7 +1821,7 @@ class Host:
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response") from err
 
-        self.map_channels_json_response(json_data, channels)
+        self.map_channels_json_response(json_data, channels, chime_ids)
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
@@ -1867,6 +1907,8 @@ class Host:
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
                 ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "chime"):
+                ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "webhook"):
                 ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
             # checking range
@@ -2864,20 +2906,27 @@ class Host:
                 )
                 continue
 
-    def map_channels_json_response(self, json_data, channels: list[int]):
+    def map_channels_json_response(self, json_data, channels: list[int], chime_ids: list[int] | None = None):
         if len(json_data) != len(channels):
             raise UnexpectedDataError(
                 f"Host {self._host}:{self._port} error mapping response to channels, received {len(json_data)} responses while requesting {len(channels)} responses",
             )
 
-        for data, channel in zip(json_data, channels):
+        if not chime_ids:
+            chime_ids = [-1] * len(channels)
+        elif len(channels) != len(chime_ids):
+            raise UnexpectedDataError(
+                f"Host {self._host}:{self._port} error mapping response to channels, channel length {len(channels)} != chime id length {len(chime_ids)}",
+            )
+
+        for data, channel, chime_id in zip(json_data, channels, chime_ids):
             if channel == -1:
                 self.map_host_json_response([data])
                 continue
 
-            self.map_channel_json_response([data], channel)
+            self.map_channel_json_response([data], channel, chime_id)
 
-    def map_channel_json_response(self, json_data, channel: int):
+    def map_channel_json_response(self, json_data, channel: int, chime_id: int = -1):
         """Map the JSON objects to internal cache-objects."""
         response_channel = channel
         for data in json_data:
@@ -3096,6 +3145,41 @@ class Host:
 
                 elif data["cmd"] == "GetAudioFileList":
                     self._audio_file_list[channel] = data["value"]
+
+                elif data["cmd"] == "GetDingDongList":
+                    chime_list = data["value"]["DingDongList"]["pairedlist"]
+                    for dev in chime_list:
+                        self._chime_list[dev["deviceId"]] = Chime(
+                            dev_id=dev["deviceId"],
+                            channel=channel,
+                            name=dev["deviceName"],
+                        )
+
+                elif data["cmd"] == "GetDingDongCfg":
+                    for dev in data["value"]["DingDongCfg"]["pairedlist"]:
+                        chime_id = dev["ringId"]
+                        if chime_id < 0:
+                            continue
+                        if chime_id in self._chime_list:
+                            chime = self._chime_list[chime_id]
+                            chime.name = dev["ringName"]
+                            chime.detect_info = dev["type"]
+                            continue
+                        self._chime_list[dev["ringId"]] = Chime(
+                            dev_id=chime_id,
+                            channel=channel,
+                            name=dev["ringName"],
+                            detect_info=dev["type"],
+                        )
+
+                elif data["cmd"] == "DingDongOpt":
+                    if chime_id not in self._chime_list:
+                        continue
+                    chime = self._chime_list[chime_id]
+                    value = data["value"]["DingDong"]
+                    chime.name = value["name"]
+                    chime.led_state = value["ledState"] == 1
+                    chime.volume = value["volLevel"]
 
                 elif data["cmd"] == "GetAutoReply":
                     self._auto_reply_settings[channel] = data["value"]

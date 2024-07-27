@@ -1,6 +1,19 @@
 """ Enums for reolink features """
 
 from enum import Enum
+from dataclasses import dataclass
+
+
+@dataclass
+class Chime:
+    """Data for a Reolink chime"""
+
+    dev_id: int
+    channel: int
+    name: str
+    volume: int | None = None
+    led_state: bool | None = None
+    detect_info: dict[str, dict[str, int]] | None = None
 
 
 class SubType(str, Enum):
