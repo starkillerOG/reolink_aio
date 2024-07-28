@@ -23,7 +23,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType, HDREnum, Chime
+from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType, HDREnum, ChimeToneEnum
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -444,8 +444,8 @@ class Host:
         return list(range(0, len(self._hdd_info)))
 
     @property
-    def chime_list(self) -> dict[int, Chime]:
-        return self._chime_list
+    def chime_list(self) -> list[Chime]:
+        return list(self._chime_list.values())
 
     @property
     def stream(self) -> str:
@@ -3150,6 +3150,7 @@ class Host:
                     chime_list = data["value"]["DingDongList"]["pairedlist"]
                     for dev in chime_list:
                         self._chime_list[dev["deviceId"]] = Chime(
+                            host=self,
                             dev_id=dev["deviceId"],
                             channel=channel,
                             name=dev["deviceName"],
@@ -3163,13 +3164,14 @@ class Host:
                         if chime_id in self._chime_list:
                             chime = self._chime_list[chime_id]
                             chime.name = dev["ringName"]
-                            chime.detect_info = dev["type"]
+                            chime.event_info = dev["type"]
                             continue
                         self._chime_list[dev["ringId"]] = Chime(
+                            host=self,
                             dev_id=chime_id,
                             channel=channel,
                             name=dev["ringName"],
-                            detect_info=dev["type"],
+                            event_info=dev["type"],
                         )
 
                 elif data["cmd"] == "DingDongOpt":
@@ -4436,7 +4438,7 @@ class Host:
 
         return statuses, vod_files
 
-    async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0) -> None:
+    async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(
             'Sending command: "%s" to: %s:%s with body: %s',
@@ -4464,8 +4466,9 @@ class Host:
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
 
-        if command[:3] == "Set":
+        if not getcmd and command[:3] == "Set":
             getcmd = command.replace("Set", "Get")
+        if getcmd:
             if wait_before_get > 0:
                 await asyncio.sleep(wait_before_get)
             await self.get_state(cmd=getcmd)
@@ -5477,3 +5480,72 @@ class Host:
             return None
 
         return event_channels
+
+
+class Chime:
+    """Reolink chime class."""
+
+    def __init__(self, host: Host, dev_id: int, channel: int, name: str, event_info: dict[str, dict[str, int]] | None = None):
+        self.host = host
+        self.dev_id = dev_id
+        self.channel = channel
+        self.name = name
+        self.volume: int | None = None
+        self.led_state: bool | None = None
+        self.event_info: event_info
+
+    def __repr__(self):
+        return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}>"
+
+    @property
+    def chime_event_types(self) -> list[str]:
+        if self.event_info is None:
+            return []
+        return list(self.event_info.keys())
+
+    def tone(self, event_type: str) -> str | None:
+        state = self.event_info.get(event_type, {}).get("switch")
+        if state is None:
+            return None
+        if state != 1:
+            return -1
+        return self.event_info.get(event_type, {}).get("musicId")
+
+    async def play(self, tone_id: int) -> None:
+        tone_id_list = [val.value for val in ChimeToneEnum]
+        tone_id_list.remove(-1)
+        if tone_id not in tone_id_list:
+            raise InvalidParameterError(f"play_chime: tone_id {tone_id} not in {tone_id_list}")
+
+        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong":{"channel":self.channel, "id": self.dev_id, "option": 4, "musicId": tone_id}}}]
+        await self.host.send_setting(body)
+
+    async def set_option(self, volume: int | None = None, led: bool | None = None) -> None:
+        if self.volume is None or self.led_state is None:
+            await self.host.get_state("DingDongOpt")
+
+        if volume is None:
+            volume = self.volume
+        elif volume < 0 or volume > 4:
+            raise InvalidParameterError(f"set_chime_volume: value {volume} not in 0-4")
+        if led is None:
+            led = self.led_state
+        led_state = 1 if led else 0
+
+        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong":{"channel":self.channel, "id": self.dev_id, "option": 3, "name": self.name, "volLevel": volume, "ledState": led_state}}}]
+        await self.host.send_setting(body, getcmd="DingDongOpt")
+
+    async def set_tone(self, event_type: str, tone_id: int) -> None:
+        tone_id_list = [val.value for val in ChimeToneEnum]
+        if tone_id not in tone_id_list:
+            raise InvalidParameterError(f"set_chime_tone: tone_id {tone_id} not in {tone_id_list}")
+        if event_type not in self.chime_event_types:
+            raise InvalidParameterError(f"set_chime_tone: event type '{event_type}' not supported, supported types are {self.chime_event_types}")
+
+        state = 1
+        if tone_id == -1:
+            tone_id = self.event_info[event_type]["musicId"]
+            state = 0
+
+        body = [{"cmd": "SetDingDongCfg", "action": 0, "param": {"DingDongCfg":{"channel":self.channel, "ringId": self.dev_id,"type":{event_type:{"switch":state, "musicId":tone_id}}}}}]
+        await self.host.send_setting(body)
