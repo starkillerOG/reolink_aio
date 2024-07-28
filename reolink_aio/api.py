@@ -5492,7 +5492,7 @@ class Chime:
         self.name = name
         self.volume: int | None = None
         self.led_state: bool | None = None
-        self.event_info: event_info
+        self.event_info = event_info
 
     def __repr__(self):
         return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}>"
@@ -5503,7 +5503,9 @@ class Chime:
             return []
         return list(self.event_info.keys())
 
-    def tone(self, event_type: str) -> str | None:
+    def tone(self, event_type: str) -> int | None:
+        if self.event_info is None:
+            return None
         state = self.event_info.get(event_type, {}).get("switch")
         if state is None:
             return None
@@ -5517,7 +5519,7 @@ class Chime:
         if tone_id not in tone_id_list:
             raise InvalidParameterError(f"play_chime: tone_id {tone_id} not in {tone_id_list}")
 
-        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong":{"channel":self.channel, "id": self.dev_id, "option": 4, "musicId": tone_id}}}]
+        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": self.channel, "id": self.dev_id, "option": 4, "musicId": tone_id}}}]
         await self.host.send_setting(body)
 
     async def set_option(self, volume: int | None = None, led: bool | None = None) -> None:
@@ -5532,7 +5534,13 @@ class Chime:
             led = self.led_state
         led_state = 1 if led else 0
 
-        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong":{"channel":self.channel, "id": self.dev_id, "option": 3, "name": self.name, "volLevel": volume, "ledState": led_state}}}]
+        body = [
+            {
+                "cmd": "DingDongOpt",
+                "action": 0,
+                "param": {"DingDong": {"channel": self.channel, "id": self.dev_id, "option": 3, "name": self.name, "volLevel": volume, "ledState": led_state}},
+            }
+        ]
         await self.host.send_setting(body, getcmd="DingDongOpt")
 
     async def set_tone(self, event_type: str, tone_id: int) -> None:
@@ -5544,8 +5552,18 @@ class Chime:
 
         state = 1
         if tone_id == -1:
-            tone_id = self.event_info[event_type]["musicId"]
+            current_tone_id = self.tone(event_type)
+            if current_tone_id == -1 or current_tone_id is None:
+                tone_id = 1
+            else:
+                tone_id = current_tone_id
             state = 0
 
-        body = [{"cmd": "SetDingDongCfg", "action": 0, "param": {"DingDongCfg":{"channel":self.channel, "ringId": self.dev_id,"type":{event_type:{"switch":state, "musicId":tone_id}}}}}]
+        body = [
+            {
+                "cmd": "SetDingDongCfg",
+                "action": 0,
+                "param": {"DingDongCfg": {"channel": self.channel, "ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}},
+            }
+        ]
         await self.host.send_setting(body)

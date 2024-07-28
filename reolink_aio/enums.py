@@ -100,7 +100,7 @@ class BatteryEnum(Enum):
 
 class ChimeToneEnum(Enum):
     """Chime ringtone"""
-    
+
     off = -1
     citybird = 0
     originaltune = 1
