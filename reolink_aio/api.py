@@ -4824,6 +4824,15 @@ class Host:
                 raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}") from err
             _LOGGER.debug("Host %s:%s: connection error, trying again: %s", self._host, self._port, str(err))
             return await self.send(body, param, expected_response_type, retry)
+        except UnicodeDecodeError as err:
+            if retry <= 0:
+                raise InvalidContentTypeError(
+                    f"Error decoding response to text: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
+                    f"content type '{response.content_type}', charset '{response.charset}'"
+                ) from err
+            _LOGGER.debug("Error decoding response to text: %s, trying again", str(err))
+            await self.expire_session(unsubscribe=False)
+            return await self.send(body, param, expected_response_type, retry)
         except asyncio.TimeoutError as err:
             if retry <= 0:
                 _LOGGER.debug(
