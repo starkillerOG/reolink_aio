@@ -4723,8 +4723,8 @@ class Host:
                 response.release()
                 raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}, this may happen if you use HTTP and the camera expects HTTPS")
 
-            if response.status == 502 and retry > 0:
-                _LOGGER.debug("Host %s:%s: 502/Bad Gateway response, trying to login again and retry the command.", self._host, self._port)
+            if response.status in [404, 502] and retry > 0:
+                _LOGGER.debug("Host %s:%s: %s/%s response, trying to login again and retry the command.", self._host, self._port, response.status, response.reason)
                 response.release()
                 await self.expire_session()
                 return await self.send(body, param, expected_response_type, retry)
