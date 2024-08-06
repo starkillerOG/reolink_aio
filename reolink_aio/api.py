@@ -1713,6 +1713,8 @@ class Host:
             if self.supported(channel, "quick_reply") and inc_cmd("GetAutoReply", channel):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
 
+            if self.supported(channel, "chime") and (inc_cmd("GetDingDongCfg", channel) or inc_cmd("DingDongOpt", channel) or inc_cmd("GetDingDongList", channel)):
+                ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
                 ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
 
@@ -3147,32 +3149,33 @@ class Host:
                     self._audio_file_list[channel] = data["value"]
 
                 elif data["cmd"] == "GetDingDongList":
-                    chime_list = data["value"]["DingDongList"]["pairedlist"]
-                    for dev in chime_list:
-                        self._chime_list[dev["deviceId"]] = Chime(
-                            host=self,
-                            dev_id=dev["deviceId"],
-                            channel=channel,
-                            name=dev["deviceName"],
-                        )
+                    for dev in data["value"]["DingDongList"]["pairedlist"]:
+                        chime_id = dev["deviceId"]
+                        if chime_id not in self._chime_list:
+                            self._chime_list[chime_id] = Chime(
+                                host=self,
+                                dev_id=chime_id,
+                                channel=channel,
+                            )
+                        chime = self._chime_list[chime_id]
+                        if dev["deviceName"]:
+                            chime.name = dev["deviceName"]
+                        chime.connect_state = dev["netState"]
 
                 elif data["cmd"] == "GetDingDongCfg":
                     for dev in data["value"]["DingDongCfg"]["pairedlist"]:
                         chime_id = dev["ringId"]
                         if chime_id < 0:
                             continue
-                        if chime_id in self._chime_list:
-                            chime = self._chime_list[chime_id]
-                            chime.name = dev["ringName"]
-                            chime.event_info = dev["type"]
-                            continue
-                        self._chime_list[dev["ringId"]] = Chime(
-                            host=self,
-                            dev_id=chime_id,
-                            channel=channel,
-                            name=dev["ringName"],
-                            event_info=dev["type"],
-                        )
+                        if chime_id not in self._chime_list:
+                            self._chime_list[chime_id] = Chime(
+                                host=self,
+                                dev_id=chime_id,
+                                channel=channel,
+                            )
+                        chime = self._chime_list[chime_id]
+                        chime.name = dev["ringName"]
+                        chime.event_info = dev["type"]
 
                 elif data["cmd"] == "DingDongOpt":
                     if chime_id not in self._chime_list:
@@ -5494,23 +5497,30 @@ class Host:
 class Chime:
     """Reolink chime class."""
 
-    def __init__(self, host: Host, dev_id: int, channel: int, name: str, event_info: dict[str, dict[str, int]] | None = None):
+    def __init__(self, host: Host, dev_id: int, channel: int):
         self.host = host
         self.dev_id = dev_id
         self.channel = channel
-        self.name = name
+        self.name: str = "Chime"
         self.volume: int | None = None
         self.led_state: bool | None = None
-        self.event_info = event_info
+        self.connect_state: int | None = None
+        self.event_info: dict[str, dict[str, int]] | None = None
 
     def __repr__(self):
-        return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}>"
+        return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}, online: {self.online}>"
 
     @property
     def chime_event_types(self) -> list[str]:
         if self.event_info is None:
             return []
         return list(self.event_info.keys())
+
+    @property
+    def online(self) -> bool:
+        if self.connect_state == 2:
+            return True
+        return False
 
     def tone(self, event_type: str) -> int | None:
         if self.event_info is None:
