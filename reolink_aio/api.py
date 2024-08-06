@@ -507,6 +507,9 @@ class Host:
 
         return True
 
+    def chime(self, dev_id) -> Chime | None:
+        return self._chime_list.get(dev_id)
+
     def hdd_storage(self, index) -> float:
         """Return the amount of storage used in %."""
         if index >= len(self._hdd_info):
@@ -3149,8 +3152,10 @@ class Host:
                     self._audio_file_list[channel] = data["value"]
 
                 elif data["cmd"] == "GetDingDongList":
-                    for dev in data["value"]["DingDongList"]["pairedlist"]:
+                    id_list = []
+                    for dev in data["value"]["DingDongList"].get("pairedlist", {}):
                         chime_id = dev["deviceId"]
+                        id_list.append(chime_id)
                         if chime_id not in self._chime_list:
                             self._chime_list[chime_id] = Chime(
                                 host=self,
@@ -3161,6 +3166,10 @@ class Host:
                         if dev["deviceName"]:
                             chime.name = dev["deviceName"]
                         chime.connect_state = dev["netState"]
+
+                    for dev_id, chime in self._chime_list.items():
+                        if dev_id not in id_list:
+                            chime.connect_state = -1
 
                 elif data["cmd"] == "GetDingDongCfg":
                     for dev in data["value"]["DingDongCfg"]["pairedlist"]:
@@ -5585,4 +5594,8 @@ class Chime:
                 "param": {"DingDongCfg": {"channel": self.channel, "ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}},
             }
         ]
+        await self.host.send_setting(body)
+
+    async def remove(self) -> None:
+        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": self.channel, "id": self.dev_id, "option": 1}}}]
         await self.host.send_setting(body)
