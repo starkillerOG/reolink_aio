@@ -297,8 +297,10 @@ class VOD_trigger(IntFlag):
     TIMER = auto()
     MOTION = auto()
     VEHICLE = auto()
-    PET = auto()
+    ANIMAL = auto()
     PERSON = auto()
+    DOORBELL = auto()
+    PACKAGE = auto()
 
 
 Parsed_VOD_file_name = NamedTuple(
@@ -306,7 +308,6 @@ Parsed_VOD_file_name = NamedTuple(
     [
         ("path", str),
         ("ext", str),
-        ("dst", bool),
         ("date", dtc.date),
         ("start", dtc.time),
         ("end", dtc.time),
@@ -395,75 +396,149 @@ class VOD_file:
         if "name" not in self.data:
             return None
         if self.__parsed_name is None:
-            self.__parsed_name = self.parse_file_name(self.data["name"], self.tzinfo)
+            self.__parsed_name = parse_file_name(self.data["name"], self.tzinfo)
         return self.__parsed_name
 
-    @staticmethod
-    def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Parsed_VOD_file_name | None:
-        # Rec_20230517_043229_541_M.mp4
-        # Rec_20231104_041801_281_S.mp4
-        # |--|YYYYMMDD|HHmmss|???|?|ext
-        # Mp4Record_2023-05-15_RecM02_20230515_071811_071835_6D28900_13CE8C7.mp4
-        # Mp4Record/2023-04-26/RecS02_DST20230426_145918_150032_2B14808_32F1DF.mp4
-        # Mp4Record_2020-12-21_RecM01_20201221_121551_121553_6D28808_2240A8.mp4
-        # Mp4Record/2020-12-22/RecM01_20201222_075939_080140_6D28808_1A468F9.mp4
-        # |----------name------------|YYYYMMDD|HHmmss|HHmmss|????Ttr|???????|ext
-        # Y - year digit
-        # M - month digit
-        # D - day digit
-        # H - hour digit
-        # m - minute digit
-        # s - second digit
-        # T - trigger nibble1 -  1111 ?|Person|?|Vehicle
-        # t - trigger nibble2 -  1111 ?|?|Pet|Timer
-        # r - trigger nibble3 -  1111 Motion|?|?|?
 
-        (name, ext) = file_name.rsplit(".", 2)
-        if len(_split := name.rsplit("_", 6)) == 6:
-            (name, start_date, start_time, end_time, _unk1, *_) = _split
-            nibs = tuple(int(nib, 16) for nib in _unk1[-3:])
-            _unk1 = _unk1[:-3]
-        elif _split[-1] == "M" or _split[-1] == "S":
-            tzInfo = dtc.timezone.utc
-            (name, start_date, start_time, *_) = _split
-            end_time = "000000"
-            nibs = (0, 0, 8)
-        else:
-            _LOGGER.debug("%s does not match known formats", file_name)
-            return None
+def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Parsed_VOD_file_name | None:
+    # Mp4Record/2023-04-26/RecS02_DST20230426_145918_150032_2B14808_32F1DF.mp4
+    # Mp4Record/2020-12-22/RecM01_20201222_075939_080140_6D28808_1A468F9.mp4
+    # "/mnt/sda/<UID>-<NAME>/Mp4Record/2024-08-27/RecM02_DST20240827_090302_090334_0_800_800_033C820000_61B6F0.mp4"
+    # https://github.com/sven337/ReolinkLinux/wiki/Figuring-out-the-file-names
 
-        triggers = VOD_trigger.NONE
-        # if nibs[0] & 8 == 8:
-        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 8, 0)
-        if nibs[0] & 4 == 4:
-            triggers |= VOD_trigger.PERSON
-        # if nibs[0] & 2 == 2:
-        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 2, 0)
-        if nibs[0] & 1 == 1:
-            triggers |= VOD_trigger.VEHICLE
+    (path_name, ext) = file_name.rsplit(".", 2)
+    name = path_name.rsplit("/", 1)[-1]
+    split = name.split("_")
 
-        if nibs[1] & 8 == 8:
-            triggers |= VOD_trigger.PET
-        # if nibs[1] & 4 == 4:
-        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 4, 1)
-        # if nibs[1] & 2 == 2:
-        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 2, 1)
-        if nibs[1] & 1 == 1:
-            triggers |= VOD_trigger.TIMER
-        if nibs[2] & 8 == 8:
-            triggers |= VOD_trigger.MOTION
-        # if nibs[2] & 4 == 4:
-        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 4, 2)
-        # if nibs[2] & 2 == 2:
-        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 2, 2)
-        # if nibs[2] & 1 == 1:
-        #     _LOGGER.debug("%s has unknown bit %s set in nibble %s", file_name, 1, 2)
+    if not split[0].startswith("Rec") or len(split[0]) != 6:
+        _LOGGER.debug("%s does not match known formats, could not find version", file_name)
+        return None
+    version = int(split[0][5])
+    
+    if len(split) == 6:
+        # RecM01_20201222_075939_080140_6D28808_1A468F9
+        (_, start_date, start_time, end_time, hex_value, filesize) = split
+    elif len(split) == 9:
+        # RecM02_DST20240827_090302_090334_0_800_800_033C820000_61B6F0
+        (_, start_date, start_time, end_time, animal_type, width, height, hex_value, filesize) = split
+    else:
+        _LOGGER.debug("%s does not match known formats, unknown length", file_name)
+        return None
 
-        if start_date[0:3].lower() == "dst":
-            dst = True
-            start_date = start_date[3:]
-        else:
-            dst = False
-        start = dtc.datetime.strptime(start_date + start_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo)
-        end = dtc.datetime.strptime(start_date + end_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo) if end_time != "000000" else start
-        return Parsed_VOD_file_name(name, ext, dst, start.date(), start.time(), end.time(), triggers)
+    if version == 2 and len(hex_value) != 10:
+        version = 3
+
+    flag_values = decode_hex_to_flags(hex_value, 3)
+
+    triggers = VOD_trigger.NONE
+    if flag_values["ai_pd"]:
+        triggers |= VOD_trigger.PERSON
+    if flag_values["ai_vd"]:
+        triggers |= VOD_trigger.VEHICLE
+    if flag_values["ai_ad"]:
+        triggers |= VOD_trigger.ANIMAL
+    if flag_values["is_schedule_record"]:
+        triggers |= VOD_trigger.TIMER
+    if flag_values["is_motion_record"]:
+        triggers |= VOD_trigger.MOTION
+    if flag_values["is_doorbell_record"]:
+        triggers |= VOD_trigger.DOORBELL
+    if flag_values.get("package_event"):
+        triggers |= VOD_trigger.PACKAGE
+
+    start_date = start_date.lower().replace("dst", "")
+    start = dtc.datetime.strptime(start_date + start_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo)
+    end = dtc.datetime.strptime(start_date + end_time, "%Y%m%d%H%M%S").replace(tzinfo=tzInfo) if end_time != "000000" else start
+
+    return Parsed_VOD_file_name(name, ext, start.date(), start.time(), end.time(), triggers)
+
+
+def decode_hex_to_flags(hex_value: str, version: int) -> dict[str, int]:  
+    hex_value = int(hex_value, 16)
+    flag_values = {}  
+  
+    for flag, (bit_position, bit_size) in FLAGS_MAPPING[version].items():  
+        mask = ((1 << bit_size) - 1) << bit_position  
+        flag_values[flag] = (hex_value & mask) >> bit_position  
+  
+    return flag_values
+
+
+FLAGS_MAPPING = {
+    0 : {   # Version 0
+        'resolution_index':     (30, 7),  
+        'tv_system':            (29, 1),  
+        'framerate':            (22, 7),    
+        'audio_index':          (20, 2),  
+        'ai_pd':                (19, 1),  # person detection  
+        'ai_fd':                (18, 1),  # face detection     
+        'ai_vd':                (17, 1),  # vehicle detection  
+        'ai_ad':                (16, 1),  # animal detection  
+        'encoder_type_index':   (14, 2),  
+        'is_schedule_record':   (13, 1),  
+        'is_motion_record':     (12, 1),  
+        'is_rf_record':         (11, 1),  
+        'is_doorbell_record':   (10, 1),  
+        'is_ai_other_record':   (9, 1),    
+        'picture_layout_index': (2, 7),  
+        'package_delivered':    (1, 1),  
+        'package_takenaway':    (0, 1),  
+    },
+    1: {   # Version 1
+        'resolution_index':     (31, 7),          
+        'tv_system':            (30, 1),          
+        'framerate':            (23, 7),          
+        'audio_index':          (21, 2),          
+        'ai_pd':                (20, 1),  # person detection          
+        'ai_fd':                (19, 1),  # face detection          
+        'ai_vd':                (18, 1),  # vehicle detection          
+        'ai_ad':                (17, 1),  # animal detection          
+        'encoder_type_index':   (15, 2),          
+        'is_schedule_record':   (14, 1),          
+        'is_motion_record':     (13, 1),          
+        'is_rf_record':         (12, 1),          
+        'is_doorbell_record':   (11, 1),          
+        'is_ai_other_record':   (10, 1),          
+        'picture_layout_index': (3, 7),          
+        'package_delivered':    (2, 1),          
+        'package_takenaway':    (1, 1),          
+        'package_event':        (0, 1)          
+    },
+    2 : {   # Version 2
+        'resolution_index':     (32, 7),
+        'tv_system':            (31, 1),
+        'framerate':            (24, 7),
+        'audio_index':          (22, 2),
+        'ai_pd':                (21, 1),  # person detection
+        'ai_fd':                (20, 1),  # face detection
+        'ai_vd':                (19, 1),  # vehicle detection
+        'ai_ad' :               (18, 1),  # animal detection
+        'ai_other' :            (16, 2), 
+        'encoder_type_index':   (15, 1),
+        'is_schedule_record' :  (14, 1),
+        'is_motion_record':     (13, 1),
+        'is_rf_record':         (12, 1),
+        'is_doorbell_record':   (11, 1),
+        'picture_layout_index': (4, 7),
+        'package_delivered' :   (3, 1),
+        'package_takenaway':    (2, 1),
+        'package_event' :       (1, 1),
+        'upload_flag' :         (0, 1),
+    },
+    3 : {   # Version 3
+        'resolution_index':     (21, 7),
+        'tv_system':            (20, 1),
+        'framerate':            (13, 7),
+        'audio_index':          (11, 2),
+        'ai_pd':                (10, 1), # person detection
+        'ai_fd':                (9, 1),  # face detection
+        'ai_vd':                (8, 1),  # vehicle detection
+        'ai_ad':                (7, 1),  # animal detection
+        'encoder_type_index':   (5, 2),
+        'is_schedule_record':   (4, 1),
+        'is_motion_record':     (3, 1),
+        'is_rf_record':         (2, 1),
+        'is_doorbell_record':   (1, 1),
+        'ai_other':             (0, 1)
+    },
+}
