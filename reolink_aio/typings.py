@@ -428,7 +428,7 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     if version == 2 and len(hex_value) != 10:
         version = 3
 
-    flag_values = decode_hex_to_flags(hex_value, 3)
+    flag_values = decode_hex_to_flags(hex_value, version)
 
     triggers = VOD_trigger.NONE
     if flag_values["ai_pd"]:
