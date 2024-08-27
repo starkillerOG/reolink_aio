@@ -1274,9 +1274,16 @@ class Host:
         if self.api_version("reboot") > 0:
             self._capabilities["Host"].append("reboot")
 
+        # Stream capabilities
+        for channel in self._stream_channels:
+            self._capabilities[channel] = []
+
+            if self.api_version("recReplay", channel) > 0:
+                self._capabilities[channel].append("replay")
+
         # Channel capabilities
         for channel in self._channels:
-            self._capabilities[channel] = []
+            self._capabilities.setdefault(channel, [])
 
             if self.camera_uid(channel) != "Unknown":
                 self._capabilities[channel].append("UID")
@@ -1470,7 +1477,10 @@ class Host:
             return self._abilities.get(capability, {}).get("ver", 0)
 
         if channel >= len(self._abilities.get("abilityChn", [])):
-            return 0
+            if channel not in self._channels and channel in self._stream_channels and len(self._abilities.get("abilityChn", [])) >= 1:
+                channel = 0  # Dual lens camera
+            else:
+                return 0
 
         return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", no_key_return)
 
@@ -2611,7 +2621,7 @@ class Host:
         request_type: VodRequestType = VodRequestType.FLV,
     ) -> tuple[str, str]:
         """Return the VOD source url."""
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"get_vod_source: no camera connected to channel '{channel}'")
 
         # Since no request is made, make sure we are logged in.
@@ -2796,7 +2806,7 @@ class Host:
                         online = ch_info["online"] == 1
                         self._channel_online[cur_channel] = online
                         if online:
-                            if "name" in ch_info:
+                            if "name" in ch_info and ch_info["name"] not in ["0", "1"]:
                                 self._channel_names[cur_channel] = ch_info["name"]
                             if "sleep" in ch_info:
                                 self._sleep[cur_channel] = ch_info["sleep"] == 1
