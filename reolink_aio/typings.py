@@ -427,6 +427,8 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
 
     if version == 2 and len(hex_value) != 10:
         version = 3
+    if version == 3 and len(hex_value) != 7:
+        _LOGGER.debug("%s does not match known formats, unknown version", file_name)
 
     flag_values = decode_hex_to_flags(hex_value, version)
 
