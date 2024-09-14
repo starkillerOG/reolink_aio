@@ -148,8 +148,10 @@ class Host:
         self._lease_time: Optional[datetime] = None
         # Connection session
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout)
+        self._aiohttp_session_internall: bool = True
         if aiohttp_get_session_callback is not None:
             self._get_aiohttp_session = aiohttp_get_session_callback
+            self._aiohttp_session_internall = False
         else:
             self._get_aiohttp_session = lambda: aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
         self._aiohttp_session: aiohttp.ClientSession = self._get_aiohttp_session()
@@ -1195,7 +1197,7 @@ class Host:
             #     await self.send(body, param, expected_response_type = "text/html")
 
             self.clear_token()
-            if not login_mutex_owned:
+            if not login_mutex_owned and self._aiohttp_session_internall:
                 await self._aiohttp_session.close()
         finally:
             if not login_mutex_owned:
@@ -1206,7 +1208,8 @@ class Host:
             self._lease_time = datetime.now() - timedelta(seconds=5)
         if unsubscribe:
             await self.unsubscribe()
-        await self._aiohttp_session.close()
+        if self._aiohttp_session_internall:
+            await self._aiohttp_session.close()
 
     def clear_token(self):
         self._token = None
