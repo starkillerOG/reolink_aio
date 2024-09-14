@@ -415,22 +415,27 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
         return None
     version = int(split[0][5])
 
+    dev_type = "cam"
     if len(split) == 6:
         # RecM01_20201222_075939_080140_6D28808_1A468F9
         (_, start_date, start_time, end_time, hex_value, _filesize) = split
     elif len(split) == 9:
         # RecM02_DST20240827_090302_090334_0_800_800_033C820000_61B6F0
+        dev_type = "hub"
         (_, start_date, start_time, end_time, _animal_type, _width, _height, hex_value, _filesize) = split
     else:
         _LOGGER.debug("%s does not match known formats, unknown length", file_name)
         return None
 
-    if version == 2 and len(hex_value) != 10:
-        version = 3
-    if version == 3 and len(hex_value) != 7:
-        _LOGGER.debug("%s does not match known formats, unknown version", file_name)
+    if version not in FLAGS_MAPPING[dev_type]:
+        new_version = max(FLAGS_MAPPING[dev_type].keys())
+        _LOGGER.debug("%s has version %s, with hex lenght %s which is not yet known, using version %s instead", file_name, version, len(hex_value), new_version)
+        version = new_version
 
-    flag_values = decode_hex_to_flags(hex_value, version)
+    if len(hex_value) != FLAGS_LENGTH[dev_type].get(version, 0):
+        _LOGGER.debug("%s with version %s has unexpected hex lenght %s, expected %s", file_name, version, len(hex_value), FLAGS_LENGTH[dev_type].get(version, 0))
+
+    flag_values = decode_hex_to_flags(hex_value, version, dev_type)
 
     triggers = VOD_trigger.NONE
     if flag_values["ai_pd"]:
@@ -455,92 +460,106 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     return Parsed_VOD_file_name(name, ext, start.date(), start.time(), end.time(), triggers)
 
 
-def decode_hex_to_flags(hex_value: str, version: int) -> dict[str, int]:
+def decode_hex_to_flags(hex_value: str, version: int, dev_type: str) -> dict[str, int]:
     hex_int = int(hex_value, 16)
+    hex_int_rev = int(bin(hex_int)[2:].zfill(len(hex_value) * 4)[::-1], 2)  # reverse the binary
     flag_values = {}
 
-    for flag, (bit_position, bit_size) in FLAGS_MAPPING[version].items():
+    for flag, (bit_position, bit_size) in FLAGS_MAPPING[dev_type][version].items():
         mask = ((1 << bit_size) - 1) << bit_position
-        flag_values[flag] = (hex_int & mask) >> bit_position
+        flag_val_rev = (hex_int_rev & mask) >> bit_position
+        flag_values[flag] = int(bin(flag_val_rev)[2:].zfill(bit_size)[::-1], 2)  # reverse the segment back
 
     return flag_values
 
 
+FLAGS_CAM_V2 = {
+    "resolution_index": (0, 7),
+    "tv_system": (7, 1),
+    "framerate": (8, 7),
+    "audio_index": (15, 2),
+    "ai_pd": (17, 1),  # person detection
+    "ai_fd": (18, 1),  # face detection
+    "ai_vd": (19, 1),  # vehicle detection
+    "ai_ad": (20, 1),  # animal detection
+    "encoder_type_index": (21, 2),
+    "is_schedule_record": (23, 1),
+    "is_motion_record": (24, 1),
+    "is_rf_record": (25, 1),
+    "is_doorbell_record": (26, 1),
+    "ai_other": (27, 1),
+}
+
+FLAGS_HUB_V0 = {
+    "resolution_index": (0, 7),
+    "tv_system": (7, 1),
+    "framerate": (8, 7),
+    "audio_index": (15, 2),
+    "ai_pd": (17, 1),  # person detection
+    "ai_fd": (18, 1),  # face detection
+    "ai_vd": (19, 1),  # vehicle detection
+    "ai_ad": (20, 1),  # animal detection
+    "encoder_type_index": (21, 2),
+    "is_schedule_record": (23, 1),
+    "is_motion_record": (24, 1),
+    "is_rf_record": (25, 1),
+    "is_doorbell_record": (26, 1),
+    "is_ai_other_record": (27, 1),
+    "picture_layout_index": (28, 7),
+    "package_delivered": (35, 1),
+    "package_takenaway": (36, 1),
+}
+
+FLAGS_HUB_V1 = FLAGS_HUB_V0
+FLAGS_HUB_V1.update(
+    {
+        "package_event": (37, 1),
+    }
+)
+
+
+FLAGS_LENGTH = {
+    "cam": {
+        2: 7,  # Version 2
+        3: 7,  # Version 3
+        4: 9,  # Version 4
+        9: 14,  # Version 9
+    },
+    "hub": {
+        2: 10,  # Version 2
+    },
+}
+
 FLAGS_MAPPING = {
-    0: {  # Version 0
-        "resolution_index": (30, 7),
-        "tv_system": (29, 1),
-        "framerate": (22, 7),
-        "audio_index": (20, 2),
-        "ai_pd": (19, 1),  # person detection
-        "ai_fd": (18, 1),  # face detection
-        "ai_vd": (17, 1),  # vehicle detection
-        "ai_ad": (16, 1),  # animal detection
-        "encoder_type_index": (14, 2),
-        "is_schedule_record": (13, 1),
-        "is_motion_record": (12, 1),
-        "is_rf_record": (11, 1),
-        "is_doorbell_record": (10, 1),
-        "is_ai_other_record": (9, 1),
-        "picture_layout_index": (2, 7),
-        "package_delivered": (1, 1),
-        "package_takenaway": (0, 1),
+    "cam": {
+        2: FLAGS_CAM_V2,
+        3: FLAGS_CAM_V2,
+        4: FLAGS_CAM_V2,
+        9: FLAGS_CAM_V2,
     },
-    1: {  # Version 1
-        "resolution_index": (31, 7),
-        "tv_system": (30, 1),
-        "framerate": (23, 7),
-        "audio_index": (21, 2),
-        "ai_pd": (20, 1),  # person detection
-        "ai_fd": (19, 1),  # face detection
-        "ai_vd": (18, 1),  # vehicle detection
-        "ai_ad": (17, 1),  # animal detection
-        "encoder_type_index": (15, 2),
-        "is_schedule_record": (14, 1),
-        "is_motion_record": (13, 1),
-        "is_rf_record": (12, 1),
-        "is_doorbell_record": (11, 1),
-        "is_ai_other_record": (10, 1),
-        "picture_layout_index": (3, 7),
-        "package_delivered": (2, 1),
-        "package_takenaway": (1, 1),
-        "package_event": (0, 1),
-    },
-    2: {  # Version 2
-        "resolution_index": (32, 7),
-        "tv_system": (31, 1),
-        "framerate": (24, 7),
-        "audio_index": (22, 2),
-        "ai_pd": (21, 1),  # person detection
-        "ai_fd": (20, 1),  # face detection
-        "ai_vd": (19, 1),  # vehicle detection
-        "ai_ad": (18, 1),  # animal detection
-        "ai_other": (16, 2),
-        "encoder_type_index": (15, 1),
-        "is_schedule_record": (14, 1),
-        "is_motion_record": (13, 1),
-        "is_rf_record": (12, 1),
-        "is_doorbell_record": (11, 1),
-        "picture_layout_index": (4, 7),
-        "package_delivered": (3, 1),
-        "package_takenaway": (2, 1),
-        "package_event": (1, 1),
-        "upload_flag": (0, 1),
-    },
-    3: {  # Version 3
-        "resolution_index": (21, 7),
-        "tv_system": (20, 1),
-        "framerate": (13, 7),
-        "audio_index": (11, 2),
-        "ai_pd": (10, 1),  # person detection
-        "ai_fd": (9, 1),  # face detection
-        "ai_vd": (8, 1),  # vehicle detection
-        "ai_ad": (7, 1),  # animal detection
-        "encoder_type_index": (5, 2),
-        "is_schedule_record": (4, 1),
-        "is_motion_record": (3, 1),
-        "is_rf_record": (2, 1),
-        "is_doorbell_record": (1, 1),
-        "ai_other": (0, 1),
+    "hub": {
+        0: FLAGS_HUB_V0,
+        1: FLAGS_HUB_V1,
+        2: {  # Version 2
+            "resolution_index": (0, 7),
+            "tv_system": (7, 1),
+            "framerate": (8, 7),
+            "audio_index": (15, 2),
+            "ai_pd": (17, 1),  # person detection
+            "ai_fd": (18, 1),  # face detection
+            "ai_vd": (19, 1),  # vehicle detection
+            "ai_ad": (20, 1),  # animal detection
+            "ai_other": (21, 2),
+            "encoder_type_index": (23, 1),
+            "is_schedule_record": (24, 1),
+            "is_motion_record": (25, 1),
+            "is_rf_record": (26, 1),
+            "is_doorbell_record": (27, 1),
+            "picture_layout_index": (28, 7),
+            "package_delivered": (35, 1),
+            "package_takenaway": (36, 1),
+            "package_event": (37, 1),
+            "upload_flag": (38, 1),
+        },
     },
 }
