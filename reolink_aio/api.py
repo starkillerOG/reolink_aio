@@ -9,6 +9,7 @@ import logging
 import ssl
 import traceback
 import uuid
+import re
 from datetime import datetime, timedelta, tzinfo
 from time import time as time_now
 from os.path import basename
@@ -2668,7 +2669,12 @@ class Host:
             # seek = start x seconds into the file
             url = f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=playback.bcs&channel={channel}&type={stream_type}&start={filename}&seek=0"
         elif request_type == VodRequestType.PLAYBACK:
-            url = f"{self._url}?cmd=Playback&source={filename}&output={filename.replace('/', '_')}"
+            start_time = ""
+            match = re.match(r".*Rec(\w{3})(?:_|_DST)(\d{8})_(\d{6})_.*", filename)
+            if match is not None:
+                start_time = f"&start={match.group(2)}{match.group(3)}"
+
+            url = f"{self._url}?cmd=Playback&source={filename}&output={filename.replace('/', '_')}{start_time}"
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
