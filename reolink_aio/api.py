@@ -177,6 +177,8 @@ class Host:
         self._last_sw_id_check: float = 0
         self._latest_sw_model_version: dict[str, NewSoftwareVersion] = {}
         self._latest_sw_version: dict[int | None, NewSoftwareVersion | str | Literal[False]] = {}
+        self._startup: bool = True
+        self._new_devices: bool = False
 
         ##############################################################################
         # Channels of cameras, used in this NVR ([0] for a directly connected camera)
@@ -437,6 +439,11 @@ class Host:
     def stream_channels(self) -> list[int]:
         """Return the list of indices of stream channels available."""
         return self._stream_channels
+
+    @property
+    def new_devices(self) -> bool:
+        """Return if new devices were discovered after initial initialization."""
+        return self._new_devices
 
     @property
     def hdd_info(self) -> list[dict]:
@@ -2024,6 +2031,8 @@ class Host:
                 await self.get_rtsp_stream_source(channel, "sub")
                 await self.get_rtsp_stream_source(channel, "main")
 
+        self._startup = False
+
     async def get_motion_state(self, channel: int) -> Optional[bool]:
         if channel not in self._channels:
             return None
@@ -2823,6 +2832,46 @@ class Host:
                     if not self._GetChannelStatus_present:
                         self._GetChannelStatus_present = True
 
+                    if not self._startup:
+                        # check for new devices
+                        if data["value"]["count"] != self._nvr_num_channels:
+                            _LOGGER.info(
+                                "New Reolink device discovered connected to %s, number of channels now %s and was %s",
+                                self.nvr_name,
+                                data["value"]["count"],
+                                self._nvr_num_channels,
+                            )
+                            self._new_devices = True
+                        for ch_info in cur_status:
+                            if ch_info["online"] == 1:
+                                cur_channel = ch_info["channel"]
+                                if cur_channel not in self._channels:
+                                    _LOGGER.info(
+                                        "New Reolink device discovered connected to %s, new channel %s",
+                                        self.nvr_name,
+                                        cur_channel,
+                                    )
+                                    self._new_devices = True
+                                    break
+                                if "uid" in ch_info:
+                                    if not self.camera_uid(cur_channel).startswith(ch_info["uid"]):
+                                        _LOGGER.info(
+                                            "New Reolink device discovered connected to %s, new UID %s",
+                                            self.nvr_name,
+                                            ch_info["uid"],
+                                        )
+                                        self._new_devices = True
+                                        break
+                                if "typeInfo" in ch_info:  # Not all Reolink devices respond with "typeInfo" attribute.
+                                    if self.camera_model(cur_channel) != ch_info["typeInfo"]:
+                                        _LOGGER.info(
+                                            "New Reolink device discovered connected to %s, new model %s",
+                                            self.nvr_name,
+                                            ch_info["typeInfo"],
+                                        )
+                                        self._new_devices = True
+                                        break
+
                     break
 
             except Exception as err:  # pylint: disable=bare-except
@@ -3179,6 +3228,13 @@ class Host:
                                 dev_id=chime_id,
                                 channel=channel,
                             )
+                            if not self._startup:
+                                _LOGGER.info(
+                                    "New Reolink chime discovered connected to %s, new chime ID %s",
+                                    self.nvr_name,
+                                    chime_id,
+                                )
+                                self._new_devices = True
                         chime = self._chime_list[chime_id]
                         if dev["deviceName"]:
                             chime.name = dev["deviceName"]
@@ -3199,6 +3255,13 @@ class Host:
                                 dev_id=chime_id,
                                 channel=channel,
                             )
+                            if not self._startup:
+                                _LOGGER.info(
+                                    "New Reolink chime discovered connected to %s, new chime ID %s",
+                                    self.nvr_name,
+                                    chime_id,
+                                )
+                                self._new_devices = True
                         chime = self._chime_list[chime_id]
                         chime.name = dev["ringName"]
                         chime.event_info = dev["type"]
