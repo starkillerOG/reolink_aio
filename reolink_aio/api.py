@@ -200,7 +200,7 @@ class Host:
         # API-versions and capabilities
         self._api_version: dict[str, int] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
-        self._capabilities: dict[int | str, list[str]] = {"Host": []}  # processed by construct_capabilities
+        self._capabilities: dict[int | str, set[str]] = {"Host": set()}  # processed by construct_capabilities
 
         ##############################################################################
         # Video-stream formats
@@ -1225,7 +1225,7 @@ class Host:
         self._lease_time = None
 
     @property
-    def capabilities(self) -> dict[int | str, list[str]]:
+    def capabilities(self) -> dict[int | str, set[str]]:
         return self._capabilities
 
     @property
@@ -1239,236 +1239,236 @@ class Host:
     def construct_capabilities(self, warnings=True) -> None:
         """Construct the capabilities list of the NVR/camera."""
         # Host capabilities
-        self._capabilities["Host"] = []
+        self._capabilities["Host"] = set()
 
         if self.api_version("onvif") > 0 and self._onvif_port is not None:
-            self._capabilities["Host"].append("ONVIF")
+            self._capabilities["Host"].add("ONVIF")
         if self.api_version("rtsp") > 0 and self._rtsp_port is not None:
-            self._capabilities["Host"].append("RTSP")
+            self._capabilities["Host"].add("RTSP")
         if self.api_version("rtmp") > 0 and self._rtmp_port is not None:
-            self._capabilities["Host"].append("RTMP")
+            self._capabilities["Host"].add("RTMP")
 
         if self._nvr_uid is not None:
-            self._capabilities["Host"].append("UID")
+            self._capabilities["Host"].add("UID")
 
         if self.sw_version_object.date > datetime(year=2021, month=6, day=1):
             # Check if this camera publishes its inital state upon ONVIF subscription
-            self._capabilities["Host"].append("initial_ONVIF_state")
+            self._capabilities["Host"].add("initial_ONVIF_state")
 
         if self._ftp_settings:
-            self._capabilities["Host"].append("ftp")
+            self._capabilities["Host"].add("ftp")
 
         if self._push_settings:
-            self._capabilities["Host"].append("push")
+            self._capabilities["Host"].add("push")
 
         if self._push_config.get("PushCfg", {}).get("enable") is not None:
-            self._capabilities["Host"].append("push_config")
+            self._capabilities["Host"].add("push_config")
 
         if self._recording_settings:
-            self._capabilities["Host"].append("recording")
+            self._capabilities["Host"].add("recording")
 
         if self._email_settings:
-            self._capabilities["Host"].append("email")
+            self._capabilities["Host"].add("email")
 
         if self.api_version("supportBuzzer") > 0:
-            self._capabilities["Host"].append("buzzer")
+            self._capabilities["Host"].add("buzzer")
 
-        self._capabilities["Host"].append("firmware")
+        self._capabilities["Host"].add("firmware")
         if self.api_version("upgrade") >= 2:
-            self._capabilities["Host"].append("update")
+            self._capabilities["Host"].add("update")
 
         if self.api_version("wifi") > 0:
-            self._capabilities["Host"].append("wifi")
+            self._capabilities["Host"].add("wifi")
 
         if self.hdd_info:
-            self._capabilities["Host"].append("hdd")
+            self._capabilities["Host"].add("hdd")
 
         if self.api_version("reboot") > 0:
-            self._capabilities["Host"].append("reboot")
+            self._capabilities["Host"].add("reboot")
 
         # Stream capabilities
         for channel in self._stream_channels:
-            self._capabilities[channel] = []
+            self._capabilities[channel] = set()
 
             if self.api_version("recReplay", channel) > 0:
-                self._capabilities[channel].append("replay")
+                self._capabilities[channel].add("replay")
 
         # Channel capabilities
         for channel in self._channels:
-            self._capabilities.setdefault(channel, [])
+            self._capabilities.setdefault(channel, set())
 
             if self.camera_uid(channel) != "Unknown":
-                self._capabilities[channel].append("UID")
+                self._capabilities[channel].add("UID")
 
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
-                self._capabilities[channel].append("autotrack_stream")
+                self._capabilities[channel].add("autotrack_stream")
 
             if channel in self._motion_detection_states:
-                self._capabilities[channel].append("motion_detection")
+                self._capabilities[channel].add("motion_detection")
 
             if self.api_version("supportAiAnimal", channel) and self.ai_supported(channel, PET_DETECTION_TYPE):
-                self._capabilities[channel].append("ai_animal")
+                self._capabilities[channel].add("ai_animal")
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 continue
 
             if self.is_nvr and self.camera_hardware_version(channel) != "Unknown" and self.camera_model(channel) != "Unknown":
-                self._capabilities[channel].append("firmware")
+                self._capabilities[channel].add("firmware")
 
             if self.api_version("supportWebhook", channel) > 0:
-                self._capabilities[channel].append("webhook")
+                self._capabilities[channel].add("webhook")
 
             if channel in self._ftp_settings and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]):
-                self._capabilities[channel].append("ftp")
+                self._capabilities[channel].add("ftp")
 
             if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
-                self._capabilities[channel].append("push")
+                self._capabilities[channel].add("push")
 
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
-                self._capabilities[channel].append("recording")
+                self._capabilities[channel].add("recording")
 
             if channel in self._manual_record_settings and "enable" in self._recording_settings[channel]["Rec"]:
-                self._capabilities[channel].append("manual_record")
+                self._capabilities[channel].add("manual_record")
 
             if channel in self._email_settings and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"]):
-                self._capabilities[channel].append("email")
+                self._capabilities[channel].add("email")
 
             if channel in self._buzzer_settings and self.api_version("supportBuzzer") > 0 and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]:
-                self._capabilities[channel].append("buzzer")
+                self._capabilities[channel].add("buzzer")
 
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
-                self._capabilities[channel].append("ir_lights")
+                self._capabilities[channel].add("ir_lights")
 
             if self.api_version("powerLed", channel) > 0 or self.api_version("indicatorLight", channel) > 0:
                 # powerLed == statusLed = doorbell_led
-                self._capabilities[channel].append("status_led")  # internal use only
-                self._capabilities[channel].append("power_led")
+                self._capabilities[channel].add("status_led")  # internal use only
+                self._capabilities[channel].add("power_led")
             if self.api_version("supportDoorbellLight", channel) > 0 or self.is_doorbell(channel):
                 # powerLed == statusLed = doorbell_led
-                self._capabilities[channel].append("status_led")  # internal use only
-                self._capabilities[channel].append("doorbell_led")
+                self._capabilities[channel].add("status_led")  # internal use only
+                self._capabilities[channel].add("doorbell_led")
 
             if self.api_version("GetWhiteLed") > 0 and (
                 self.api_version("floodLight", channel) > 0 or self.api_version("supportFLswitch", channel) > 0 or self.api_version("supportFLBrightness", channel) > 0
             ):
                 # floodlight == spotlight == WhiteLed
-                self._capabilities[channel].append("floodLight")
+                self._capabilities[channel].add("floodLight")
 
             if self.api_version("GetAudioCfg") > 0:
-                self._capabilities[channel].append("volume")
+                self._capabilities[channel].add("volume")
                 if self.api_version("supportVisitorLoudspeaker", channel) > 0:
-                    self._capabilities[channel].append("doorbell_button_sound")
+                    self._capabilities[channel].add("doorbell_button_sound")
 
             if (self.api_version("supportAudioFileList", channel) > 0) or (not self.is_nvr and self.api_version("supportAudioFileList") > 0):
                 if self.api_version("supportAutoReply", channel) > 0 or (not self.is_nvr and self.api_version("supportAutoReply") > 0):
-                    self._capabilities[channel].append("quick_reply")
+                    self._capabilities[channel].add("quick_reply")
                 if self.api_version("supportAudioPlay", channel) > 0 or self.api_version("supportQuickReplyPlay", channel) > 0:
-                    self._capabilities[channel].append("play_quick_reply")
+                    self._capabilities[channel].add("play_quick_reply")
 
             if self.api_version("supportDingDongCtrl", channel) > 0:
-                self._capabilities[channel].append("chime")
+                self._capabilities[channel].add("chime")
 
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
-                self._capabilities[channel].append("siren")
-                self._capabilities[channel].append("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
+                self._capabilities[channel].add("siren")
+                self._capabilities[channel].add("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
 
             if self.audio_record(channel) is not None:
-                self._capabilities[channel].append("audio")
+                self._capabilities[channel].add("audio")
 
             ptz_ver = self.api_version("ptzType", channel)
             if ptz_ver != 0:
-                self._capabilities[channel].append("ptz")
+                self._capabilities[channel].add("ptz")
                 if ptz_ver in [1, 2, 5]:
-                    self._capabilities[channel].append("zoom_basic")
+                    self._capabilities[channel].add("zoom_basic")
                     min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
                     max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                     if min_zoom is None or max_zoom is None:
                         if warnings:
                             _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
                     else:
-                        self._capabilities[channel].append("zoom")
-                        self._capabilities[channel].append("focus")
+                        self._capabilities[channel].add("zoom")
+                        self._capabilities[channel].add("focus")
                         if self.api_version("disableAutoFocus", channel) > 0:
-                            self._capabilities[channel].append("auto_focus")
+                            self._capabilities[channel].add("auto_focus")
                 if ptz_ver in [2, 3, 5]:
-                    self._capabilities[channel].append("tilt")
+                    self._capabilities[channel].add("tilt")
                 if ptz_ver in [2, 3, 5, 7]:
-                    self._capabilities[channel].append("pan_tilt")
-                    self._capabilities[channel].append("pan")
+                    self._capabilities[channel].add("pan_tilt")
+                    self._capabilities[channel].add("pan")
                     if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
-                        self._capabilities[channel].append("ptz_callibrate")
+                        self._capabilities[channel].add("ptz_callibrate")
                     if self.api_version("GetPtzGuard", channel) > 0:
-                        self._capabilities[channel].append("ptz_guard")
+                        self._capabilities[channel].add("ptz_guard")
                     if self.api_version("GetPtzCurPos", channel) > 0:
-                        self._capabilities[channel].append("ptz_position")
+                        self._capabilities[channel].add("ptz_position")
                 if ptz_ver in [2, 3]:
-                    self._capabilities[channel].append("ptz_speed")
+                    self._capabilities[channel].add("ptz_speed")
                 if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
-                    self._capabilities[channel].append("ptz_presets")
+                    self._capabilities[channel].add("ptz_presets")
                 if channel in self._ptz_patrols and len(self._ptz_patrols[channel]) != 0:
-                    self._capabilities[channel].append("ptz_patrol")
+                    self._capabilities[channel].add("ptz_patrol")
 
             if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
                 min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
                 max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
-                    self._capabilities[channel].append("zoom")
+                    self._capabilities[channel].add("zoom")
                 else:
                     if warnings:
                         _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
 
             if self.api_version("aiTrack", channel) > 0:
-                self._capabilities[channel].append("auto_track")
+                self._capabilities[channel].add("auto_track")
                 track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
                 if isinstance(track_method, list):
                     if len(track_method) > 1 and sorted(track_method) != [0, 1]:
-                        self._capabilities[channel].append("auto_track_method")
+                        self._capabilities[channel].add("auto_track_method")
                 if self.auto_track_disappear_time(channel) > 0:
-                    self._capabilities[channel].append("auto_track_disappear_time")
+                    self._capabilities[channel].add("auto_track_disappear_time")
                 if self.auto_track_stop_time(channel) > 0:
-                    self._capabilities[channel].append("auto_track_stop_time")
+                    self._capabilities[channel].add("auto_track_stop_time")
 
             if self.api_version("supportAITrackLimit", channel) > 0:
-                self._capabilities[channel].append("auto_track_limit")
+                self._capabilities[channel].add("auto_track_limit")
 
             if self.api_version("battery", channel) > 0:
-                self._capabilities[channel].append("battery")
+                self._capabilities[channel].add("battery")
                 if channel in self._sleep:
-                    self._capabilities[channel].append("sleep")
+                    self._capabilities[channel].add("sleep")
                     if "sleep" not in self._capabilities["Host"]:
-                        self._capabilities["Host"].append("sleep")
+                        self._capabilities["Host"].add("sleep")
             if self.api_version("mdWithPir", channel) > 0:
-                self._capabilities[channel].append("PIR")
+                self._capabilities[channel].add("PIR")
 
             if channel in self._md_alarm_settings and not self.supported(channel, "PIR"):
-                self._capabilities[channel].append("md_sensitivity")
+                self._capabilities[channel].add("md_sensitivity")
 
             if self.api_version("supportAiSensitivity", channel) > 0:
-                self._capabilities[channel].append("ai_sensitivity")
+                self._capabilities[channel].add("ai_sensitivity")
 
             if self.api_version("supportAiStayTime", channel) > 0:
-                self._capabilities[channel].append("ai_delay")
+                self._capabilities[channel].add("ai_delay")
 
             if self.api_version("ispHue", channel) > 0:
-                self._capabilities[channel].append("isp_hue")
+                self._capabilities[channel].add("isp_hue")
             if self.api_version("ispSatruation", channel) > 0:
-                self._capabilities[channel].append("isp_satruation")
+                self._capabilities[channel].add("isp_satruation")
             if self.api_version("ispSharpen", channel) > 0:
-                self._capabilities[channel].append("isp_sharpen")
+                self._capabilities[channel].add("isp_sharpen")
             if self.api_version("ispContrast", channel) > 0:
-                self._capabilities[channel].append("isp_contrast")
+                self._capabilities[channel].add("isp_contrast")
             if self.api_version("ispBright", channel) > 0:
-                self._capabilities[channel].append("isp_bright")
+                self._capabilities[channel].add("isp_bright")
             if self.api_version("supportIspHdr", channel, no_key_return=1) > 0 and self.HDR_state(channel) >= 0:
-                self._capabilities[channel].append("HDR")
+                self._capabilities[channel].add("HDR")
 
             if self.api_version("ispDayNight", channel, no_key_return=1) > 0 and self.daynight_state(channel) is not None:
-                self._capabilities[channel].append("dayNight")
+                self._capabilities[channel].add("dayNight")
                 if self.daynight_threshold(channel) is not None:
-                    self._capabilities[channel].append("dayNightThreshold")
+                    self._capabilities[channel].add("dayNightThreshold")
 
             if self.backlight_state(channel) is not None:
-                self._capabilities[channel].append("backLight")
+                self._capabilities[channel].add("backLight")
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
