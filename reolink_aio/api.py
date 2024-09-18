@@ -194,6 +194,7 @@ class Host:
         self._channel_sw_versions: dict[int, str] = {}
         self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
         self._is_doorbell: dict[int, bool] = {}
+        self._GetDingDongCfg_present: dict[int, bool] = {}
 
         ##############################################################################
         # API-versions and capabilities
@@ -1678,6 +1679,12 @@ class Host:
                 wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
             )
 
+        def inc_wake(cmd, channel):
+            return wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
+
+        def inc_host_wake(cmd):
+            return wake or not any_battery or cmd not in WAKING_COMMANDS
+
         for channel in self._stream_channels:
             ch_body = []
             if inc_cmd("GetEnc", channel):
@@ -1739,7 +1746,7 @@ class Host:
 
             if self.supported(channel, "chime") and (inc_cmd("GetDingDongCfg", channel) or inc_cmd("DingDongOpt", channel) or inc_cmd("GetDingDongList", channel)):
                 ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
-            if self.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
+            if self.supported(channel, "chime") and inc_wake("GetDingDongCfg", channel) and self._GetDingDongCfg_present.get(channel):  # always include to discover new chimes
                 ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "manual_record") and inc_cmd("GetManualRec", channel):
@@ -1815,8 +1822,8 @@ class Host:
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
         if self.supported(None, "hdd") and inc_host_cmd("GetHddInfo"):
             host_body.append({"cmd": "GetHddInfo", "action": 0, "param": {}})
-        if self.supported(None, "sleep") and inc_host_cmd("GetChannelstatus"):
-            host_body.append({"cmd": "GetChannelstatus", "action": 0, "param": {}})
+        if (self.supported(None, "sleep") and inc_host_cmd("GetChannelstatus")) or (self.is_nvr and self._GetChannelStatus_present and inc_host_wake("GetChannelstatus")):
+            host_body.append({"cmd": "GetChannelstatus", "action": 0, "param": {}})  # always include to discover new cameras
         if self.supported(None, "push_config") and (inc_host_cmd("GetPush") or inc_host_cmd("GetPushCfg")):
             host_body.append({"cmd": "GetPushCfg", "action": 0, "param": {}})
 
@@ -3245,6 +3252,7 @@ class Host:
                             chime.connect_state = -1
 
                 elif data["cmd"] == "GetDingDongCfg":
+                    self._GetDingDongCfg_present[channel] = True
                     for dev in data["value"]["DingDongCfg"]["pairedlist"]:
                         chime_id = dev["ringId"]
                         if chime_id < 0:
