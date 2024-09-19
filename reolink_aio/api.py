@@ -221,6 +221,7 @@ class Host:
         self._hdd_info: list[dict] = []
         self._local_link: Optional[dict] = None
         self._wifi_signal: Optional[int] = None
+        self._performance: dict = {}
         self._users: Optional[dict] = None
 
         ##############################################################################
@@ -358,6 +359,11 @@ class Host:
     def wifi_signal(self) -> Optional[int]:
         """wifi_signal 0-4"""
         return self._wifi_signal
+
+    @property
+    def cpu_usage(self) -> Optional[int]:
+        """CPU usage in %"""
+        return self._performance.get("cpuUsed")
 
     @property
     def is_nvr(self) -> bool:
@@ -1280,6 +1286,9 @@ class Host:
         if self.api_version("wifi") > 0:
             self._capabilities["Host"].add("wifi")
 
+        if self.api_version("performance") > 0 and self.cpu_usage is not None:
+            self._capabilities["Host"].add("performance")
+
         if self.hdd_info:
             self._capabilities["Host"].add("hdd")
 
@@ -1628,6 +1637,8 @@ class Host:
                 body = [{"cmd": "GetLocalLink", "action": 0, "param": {}}]
             elif cmd == "GetWifiSignal":
                 body = [{"cmd": "GetWifiSignal", "action": 0, "param": {}}]
+            elif cmd == "GetPerformance" and self.supported(None, "performance"):
+                body = [{"cmd": "GetPerformance", "action": 0, "param": {}}]
             elif cmd == "GetNetPort":
                 body = [{"cmd": "GetNetPort", "action": 0, "param": {}}]
             elif cmd == "GetHddInfo":
@@ -1820,6 +1831,8 @@ class Host:
         host_body = []
         if self.supported(None, "wifi") and self.wifi_connection and inc_host_cmd("GetWifiSignal"):
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
+        if self.supported(None, "performance") and inc_host_cmd("GetPerformance"):
+            host_body.append({"cmd": "GetPerformance", "action": 0, "param": {}})
         if self.supported(None, "hdd") and inc_host_cmd("GetHddInfo"):
             host_body.append({"cmd": "GetHddInfo", "action": 0, "param": {}})
         if (self.supported(None, "sleep") and inc_host_cmd("GetChannelstatus")) or (self.is_nvr and self._GetChannelStatus_present and inc_host_wake("GetChannelstatus")):
@@ -1982,6 +1995,14 @@ class Host:
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
+
+        # checking host command support
+        host_body = []
+        if self.api_version("performance") > 0:
+            host_body.append({"cmd": "GetPerformance", "action": 0, "param": {}})
+
+        body.extend(host_body)
+        channels.extend([-1] * len(host_body))
 
         if not body:
             _LOGGER.debug(
@@ -2940,6 +2961,9 @@ class Host:
 
                 elif data["cmd"] == "GetWifiSignal":
                     self._wifi_signal = data["value"]["wifiSignal"]
+
+                elif data["cmd"] == "GetPerformance":
+                    self._performance = data["value"]["Performance"]
 
                 elif data["cmd"] == "GetNetPort":
                     self._netport_settings = data["value"]
