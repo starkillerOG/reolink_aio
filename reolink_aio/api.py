@@ -194,7 +194,7 @@ class Host:
         self._channel_sw_versions: dict[int, str] = {}
         self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
         self._is_doorbell: dict[int, bool] = {}
-        self._GetDingDongCfg_present: dict[int, bool] = {}
+        self._GetDingDong_present: dict[int, bool] = {}
 
         ##############################################################################
         # API-versions and capabilities
@@ -1374,7 +1374,7 @@ class Host:
                 if self.api_version("supportAudioPlay", channel) > 0 or self.api_version("supportQuickReplyPlay", channel) > 0:
                     self._capabilities[channel].add("play_quick_reply")
 
-            if self.api_version("supportDingDongCtrl", channel) > 0:
+            if self.api_version("supportDingDongCtrl", channel) > 0 and self._GetDingDong_present.get(channel):
                 self._capabilities[channel].add("chime")
 
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
@@ -1757,7 +1757,7 @@ class Host:
 
             if self.supported(channel, "chime") and (inc_cmd("GetDingDongCfg", channel) or inc_cmd("DingDongOpt", channel) or inc_cmd("GetDingDongList", channel)):
                 ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
-            if self.supported(channel, "chime") and inc_wake("GetDingDongCfg", channel) and self._GetDingDongCfg_present.get(channel):  # always include to discover new chimes
+            if self.supported(channel, "chime") and inc_wake("GetDingDongCfg", channel):  # always include to discover new chimes
                 ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "manual_record") and inc_cmd("GetManualRec", channel):
@@ -1953,7 +1953,7 @@ class Host:
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
                 ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
-            if self.supported(channel, "chime"):
+            if self.api_version("supportDingDongCtrl", channel) > 0:
                 ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "webhook"):
                 ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
@@ -3249,6 +3249,7 @@ class Host:
                     self._audio_file_list[channel] = data["value"]
 
                 elif data["cmd"] == "GetDingDongList":
+                    self._GetDingDong_present[channel] = True
                     id_list = []
                     for dev in data["value"]["DingDongList"].get("pairedlist", {}):
                         chime_id = dev["deviceId"]
@@ -3276,7 +3277,7 @@ class Host:
                             chime.connect_state = -1
 
                 elif data["cmd"] == "GetDingDongCfg":
-                    self._GetDingDongCfg_present[channel] = True
+                    self._GetDingDong_present[channel] = True
                     for dev in data["value"]["DingDongCfg"]["pairedlist"]:
                         chime_id = dev["ringId"]
                         if chime_id < 0:
