@@ -222,6 +222,7 @@ class Host:
         self._local_link: Optional[dict] = None
         self._wifi_signal: Optional[int] = None
         self._performance: dict = {}
+        self._state_light: dict = {}
         self._users: Optional[dict] = None
 
         ##############################################################################
@@ -364,6 +365,11 @@ class Host:
     def cpu_usage(self) -> Optional[int]:
         """CPU usage in %"""
         return self._performance.get("cpuUsed")
+
+    @property
+    def state_light(self) -> bool:
+        """State light enabled"""
+        return self._state_light.get("enable", False)
 
     @property
     def is_nvr(self) -> bool:
@@ -1289,6 +1295,9 @@ class Host:
         if self.api_version("performance") > 0 and self.cpu_usage is not None:
             self._capabilities["Host"].add("performance")
 
+        if "enable" in self._state_light:
+            self._capabilities["Host"].add("state_light")
+
         if self.hdd_info:
             self._capabilities["Host"].add("hdd")
 
@@ -1639,6 +1648,8 @@ class Host:
                 body = [{"cmd": "GetWifiSignal", "action": 0, "param": {}}]
             elif cmd == "GetPerformance" and self.supported(None, "performance"):
                 body = [{"cmd": "GetPerformance", "action": 0, "param": {}}]
+            elif cmd == "GetStateLight" and self.supported(None, "state_light"):
+                body = [{"cmd": "GetStateLight", "action": 0, "param": {}}]
             elif cmd == "GetNetPort":
                 body = [{"cmd": "GetNetPort", "action": 0, "param": {}}]
             elif cmd == "GetHddInfo":
@@ -1833,6 +1844,8 @@ class Host:
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
         if self.supported(None, "performance") and inc_host_cmd("GetPerformance"):
             host_body.append({"cmd": "GetPerformance", "action": 0, "param": {}})
+        if self.supported(None, "state_light") and inc_host_cmd("GetStateLight"):
+            host_body.append({"cmd": "GetStateLight", "action": 0, "param": {}})
         if self.supported(None, "hdd") and inc_host_cmd("GetHddInfo"):
             host_body.append({"cmd": "GetHddInfo", "action": 0, "param": {}})
         if (self.supported(None, "sleep") and inc_host_cmd("GetChannelstatus")) or (self.is_nvr and self._GetChannelStatus_present and inc_host_wake("GetChannelstatus")):
@@ -2000,6 +2013,8 @@ class Host:
         host_body = []
         if self.api_version("performance") > 0:
             host_body.append({"cmd": "GetPerformance", "action": 0, "param": {}})
+        if self.is_nvr:
+            host_body.append({"cmd": "GetStateLight", "action": 0, "param": {}})
 
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
@@ -2965,6 +2980,9 @@ class Host:
                 elif data["cmd"] == "GetPerformance":
                     self._performance = data["value"]["Performance"]
 
+                elif data["cmd"] == "GetStateLight":
+                    self._state_light = data["value"]["stateLight"]
+
                 elif data["cmd"] == "GetNetPort":
                     self._netport_settings = data["value"]
                     net_port = data["value"]["NetPort"]
@@ -3445,6 +3463,14 @@ class Host:
         body: typings.reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
         body[0]["param"]["Ntp"]["interval"] = 0
 
+        await self.send_setting(body)
+
+    async def set_state_light(self, enable: bool) -> None:
+        """Set the state light of the NVR/Hub."""
+        if not self.supported(None, "state_light"):
+            raise NotSupportedError(f"set_state_light: not supported by {self.nvr_name}")
+
+        body: typings.reolink_json = [{"cmd": "SetStateLight", "param": {"stateLight": {"enable": 1 if enable else 0}}}]
         await self.send_setting(body)
 
     def get_focus(self, channel: int) -> int:
