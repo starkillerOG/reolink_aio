@@ -24,7 +24,20 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .enums import BatteryEnum, DayNightEnum, StatusLedEnum, SpotlightModeEnum, PtzEnum, GuardEnum, TrackMethodEnum, SubType, VodRequestType, HDREnum, ChimeToneEnum
+from .enums import (
+    BatteryEnum,
+    DayNightEnum,
+    StatusLedEnum,
+    SpotlightModeEnum,
+    PtzEnum,
+    GuardEnum,
+    TrackMethodEnum,
+    SubType,
+    VodRequestType,
+    HDREnum,
+    ChimeToneEnum,
+    HubToneEnum,
+)
 from .exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -262,6 +275,7 @@ class Host:
         self._md_alarm_settings: dict[int, dict] = {}
         self._ai_alarm_settings: dict[int, dict] = {}
         self._audio_settings: dict[int, dict] = {}
+        self._hub_audio_settings: dict[int, dict] = {}
         self._audio_alarm_settings: dict[int, dict] = {}
         self._buzzer_settings: dict[int, dict] = {}
         self._auto_track_settings: dict[int, dict] = {}
@@ -370,6 +384,20 @@ class Host:
     def state_light(self) -> bool:
         """State light enabled"""
         return self._state_light.get("enable", False)
+
+    @property
+    def alarm_volume(self) -> int:
+        """Hub/NVR volume for alarm sounds 0-100"""
+        for data in self._hub_audio_settings.values():
+            return data["AudioCfg"]["alarmVolume"]
+        return 100
+
+    @property
+    def message_volume(self) -> int:
+        """Hub/NVR volume for alarm sounds 0-100"""
+        for data in self._hub_audio_settings.values():
+            return data["AudioCfg"]["cuesVolume"]
+        return 100
 
     @property
     def is_nvr(self) -> bool:
@@ -1004,6 +1032,18 @@ class Host:
 
         return self._audio_settings[channel]["AudioCfg"].get("visitorLoudspeaker") == 1
 
+    def hub_alarm_tone_id(self, channel: int) -> int:
+        """Ringtone id played by the hub for a alarm event"""
+        if channel not in self._hub_audio_settings:
+            return 0
+        return self._hub_audio_settings[channel]["AudioCfg"]["alarmRingToneId"]
+
+    def hub_visitor_tone_id(self, channel: int) -> int:
+        """Ringtone id played by the hub for a visitor event"""
+        if channel not in self._hub_audio_settings:
+            return 0
+        return self._hub_audio_settings[channel]["AudioCfg"]["ringToneId"]
+
     def quick_reply_dict(self, channel: int) -> dict[int, str]:
         if channel not in self._audio_file_list:
             return {-1: "off"}
@@ -1298,6 +1338,9 @@ class Host:
         if "enable" in self._state_light:
             self._capabilities["Host"].add("state_light")
 
+        if self.api_version("GetDeviceAudioCfg") > 0:
+            self._capabilities["Host"].add("hub_audio")
+
         if self.hdd_info:
             self._capabilities["Host"].add("hdd")
 
@@ -1376,6 +1419,9 @@ class Host:
                 self._capabilities[channel].add("volume")
                 if self.api_version("supportVisitorLoudspeaker", channel) > 0:
                     self._capabilities[channel].add("doorbell_button_sound")
+
+            if self.api_version("GetDeviceAudioCfg") > 0:
+                self._capabilities[channel].add("hub_audio")
 
             if (self.api_version("supportAudioFileList", channel) > 0) or (not self.is_nvr and self.api_version("supportAudioFileList") > 0):
                 if self.api_version("supportAutoReply", channel) > 0 or (not self.is_nvr and self.api_version("supportAutoReply") > 0):
@@ -1569,6 +1615,8 @@ class Host:
                 ch_body = [{"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": {"channel": channel}}}]
             elif cmd == "GetAudioCfg" and self.supported(channel, "volume"):
                 ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetDeviceAudioCfg" and self.supported(channel, "hub_audio"):
+                ch_body = [{"cmd": "GetDeviceAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioFileList" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetDingDongList" and self.supported(channel, "chime"):
@@ -1762,6 +1810,9 @@ class Host:
 
             if self.supported(channel, "volume") and inc_cmd("GetAudioCfg", channel):
                 ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "hub_audio") and inc_cmd("GetDeviceAudioCfg", channel):
+                ch_body.append({"cmd": "GetDeviceAudioCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "quick_reply") and inc_cmd("GetAutoReply", channel):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
@@ -1962,6 +2013,8 @@ class Host:
                     {"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}},
                 ]
             )
+            if self.is_nvr:
+                ch_body.append({"cmd": "GetDeviceAudioCfg", "action": 0, "param": {"channel": channel}})
             # one time values
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
@@ -2046,6 +2099,7 @@ class Host:
         self._api_version["GetEvents"] = check_command_exists("GetEvents")
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
         self._api_version["GetAudioCfg"] = check_command_exists("GetAudioCfg")
+        self._api_version["GetDeviceAudioCfg"] = check_command_exists("GetDeviceAudioCfg")
         self._api_version["GetPtzGuard"] = check_command_exists("GetPtzGuard")
         self._api_version["GetPtzCurPos"] = check_command_exists("GetPtzCurPos")
         if self.api_version("scheduleVersion") >= 1:
@@ -3257,6 +3311,9 @@ class Host:
                 elif data["cmd"] == "GetAudioCfg":
                     self._audio_settings[channel] = data["value"]
 
+                elif data["cmd"] == "GetDeviceAudioCfg":
+                    self._hub_audio_settings[channel] = data["value"]
+
                 elif data["cmd"] == "GetAudioAlarm":
                     self._audio_alarm_settings[channel] = data["value"]
 
@@ -4163,6 +4220,52 @@ class Host:
             params["visitorLoudspeaker"] = 1 if doorbell_button_sound else 0
 
         body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
+        await self.send_setting(body)
+
+    async def set_hub_audio(
+        self,
+        channel: int | None = None,
+        alarm_volume: int | None = None,
+        message_volume: int | None = None,
+        alarm_tone_id: int | None = None,
+        visitor_tone_id: int | None = None,
+    ) -> None:
+        if channel is None:
+            channel = self._channels[0]
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_hub_audio: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "hub_audio"):
+            raise NotSupportedError(f"set_hub_audio: Hub audio control is not available on {self.nvr_name}")
+        if alarm_volume is not None:
+            if not isinstance(alarm_volume, int):
+                raise InvalidParameterError(f"set_hub_audio: alarm_volume {alarm_volume} not integer")
+            if alarm_volume < 0 or alarm_volume > 100:
+                raise InvalidParameterError(f"set_hub_audio: alarm_volume {alarm_volume} not in range 0...100")
+        if message_volume is not None:
+            if not isinstance(message_volume, int):
+                raise InvalidParameterError(f"set_hub_audio: message_volume {message_volume} not integer")
+            if message_volume < 0 or message_volume > 100:
+                raise InvalidParameterError(f"set_hub_audio: message_volume {message_volume} not in range 0...100")
+        tone_id_list = [val.value for val in HubToneEnum]
+        if alarm_tone_id is not None and alarm_tone_id not in tone_id_list:
+            raise InvalidParameterError(f"set_hub_audio: alarm_tone_id {alarm_tone_id} not in {tone_id_list}")
+        if visitor_tone_id is not None:
+            if visitor_tone_id not in tone_id_list:
+                raise InvalidParameterError(f"set_hub_audio: visitor_tone_id {visitor_tone_id} not in {tone_id_list}")
+            if not self.is_doorbell(channel):
+                raise InvalidParameterError("set_hub_audio: visitor_tone_id only supported for doorbells")
+
+        params = {"channel": channel}
+        if alarm_volume is not None:
+            params["alarmVolume"] = alarm_volume
+        if message_volume is not None:
+            params["cuesVolume"] = message_volume
+        if alarm_tone_id is not None:
+            params["alarmRingToneId"] = alarm_tone_id
+        if visitor_tone_id is not None:
+            params["ringToneId"] = visitor_tone_id
+
+        body = [{"cmd": "SetDeviceAudioCfg", "action": 0, "param": {"DeviceAudioCfg": params}}]
         await self.send_setting(body)
 
     async def play_quick_reply(self, channel: int, file_id: int) -> None:

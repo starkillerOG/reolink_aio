@@ -112,3 +112,19 @@ class ChimeToneEnum(Enum):
     operetta = 7
     moonlight = 8
     waybackhome = 9
+
+
+class HubToneEnum(Enum):
+    """Hub ringtone"""
+
+    alarm = -1
+    citybird = 0
+    originaltune = 1
+    pianokey = 2
+    loop = 3
+    attraction = 4
+    hophop = 5
+    goodday = 6
+    operetta = 7
+    moonlight = 8
+    waybackhome = 9
