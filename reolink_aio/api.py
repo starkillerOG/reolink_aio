@@ -173,6 +173,7 @@ class Host:
         ##############################################################################
         # NVR (host-level) attributes
         self._is_nvr: bool = False
+        self._is_hub: bool = False
         self._nvr_name: str = ""
         self._nvr_serial: Optional[str] = None
         self._nvr_uid: Optional[str] = None
@@ -1316,7 +1317,7 @@ class Host:
         if self._push_config.get("PushCfg", {}).get("enable") is not None:
             self._capabilities["Host"].add("push_config")
 
-        if self._recording_settings:
+        if self._recording_settings and not self._is_hub:
             self._capabilities["Host"].add("recording")
 
         if self._email_settings:
@@ -2990,6 +2991,7 @@ class Host:
                     dev_info = data["value"]["DevInfo"]
                     self._is_nvr = dev_info.get("exactType", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
                     self._is_nvr = self._is_nvr or dev_info.get("type", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
+                    self._is_hub = dev_info.get("exactType", "IPC") == "HOMEHUB" or dev_info.get("type", "IPC") == "HOMEHUB"
                     self._nvr_serial = dev_info["serial"]
                     self._nvr_name = dev_info["name"]
                     self._nvr_model = dev_info["model"]
