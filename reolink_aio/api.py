@@ -1308,10 +1308,10 @@ class Host:
             # Check if this camera publishes its inital state upon ONVIF subscription
             self._capabilities["Host"].add("initial_ONVIF_state")
 
-        if self._ftp_settings:
+        if self._ftp_settings and not self._is_hub:
             self._capabilities["Host"].add("ftp")
 
-        if self._push_settings:
+        if self._push_settings and not self._is_hub:
             self._capabilities["Host"].add("push")
 
         if self._push_config.get("PushCfg", {}).get("enable") is not None:
@@ -1320,10 +1320,10 @@ class Host:
         if self._recording_settings and not self._is_hub:
             self._capabilities["Host"].add("recording")
 
-        if self._email_settings:
+        if self._email_settings and not self._is_hub:
             self._capabilities["Host"].add("email")
 
-        if self.api_version("supportBuzzer") > 0:
+        if self.api_version("supportBuzzer") > 0 and not self._is_hub:
             self._capabilities["Host"].add("buzzer")
 
         self._capabilities["Host"].add("firmware")
