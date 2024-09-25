@@ -405,6 +405,10 @@ class Host:
         return self._is_nvr
 
     @property
+    def is_hub(self) -> bool:
+        return self._is_hub
+
+    @property
     def nvr_name(self) -> str:
         if not self._is_nvr and self._nvr_name == "":
             if len(self._channels) > 0 and self._channels[0] in self._channel_names:
