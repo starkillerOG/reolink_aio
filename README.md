@@ -46,7 +46,7 @@ from reolink_aio.api import Host
 import asyncio
 
 # Create a host-object (representing either a camera, or NVR with several channels)
-host = Host('192.168.1.10', 80, 'user', 'mypassword')
+host = Host('192.168.1.10', 'user', 'mypassword')
 
 # Obtain/cache NVR or camera settings and capabilities, like model name, ports, HDD size, etc:
 await host.get_host_data()
