@@ -2577,7 +2577,8 @@ class Host:
                     # retrieve current firmware version
                     cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
                     try:
-                        await self.get_state(cmd)
+                        async with asyncio.timeout(10):
+                            await self.get_state(cmd)
                     except Exception:
                         pass
 
