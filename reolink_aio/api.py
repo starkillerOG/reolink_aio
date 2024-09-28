@@ -8,15 +8,18 @@ import hashlib
 import logging
 import ssl
 import traceback
-import uuid
 import re
+from uuid import uuid4
 from datetime import datetime, timedelta, tzinfo
 from time import time as time_now
 from os.path import basename
 from typing import Any, Literal, Optional, overload
 from urllib import parse
 from xml.etree import ElementTree as XML
+from io import BytesIO
+from zipfile import ZipFile
 from statistics import mean
+from math import ceil
 
 from orjson import JSONDecodeError, loads as json_loads  # pylint: disable=no-name-in-module
 from aiortsp.rtsp.connection import RTSPConnection  # type: ignore
@@ -191,6 +194,7 @@ class Host:
         self._last_sw_id_check: float = 0
         self._latest_sw_model_version: dict[str, NewSoftwareVersion] = {}
         self._latest_sw_version: dict[int | None, NewSoftwareVersion | str | Literal[False]] = {}
+        self._sw_upload_progress: int = 100
         self._startup: bool = True
         self._new_devices: bool = False
 
@@ -445,6 +449,10 @@ class Host:
             return False
 
         return not self._nvr_sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
+
+    @property
+    def sw_upload_progress(self) -> int:
+        return self._sw_upload_progress
 
     @property
     def model(self) -> str:
@@ -2467,26 +2475,95 @@ class Host:
         return self._latest_sw_version[channel]
 
     async def update_firmware(self, channel: int | None = None) -> None:
-        """check for new firmware."""
+        """Start update of firmware using API or direct upload."""
+        self._sw_upload_progress = 0
         try:
             await self.get_state(cmd="GetDevInfo")
         except ReolinkError:
             pass
 
         if not self.supported(channel, "update"):
+            self._sw_upload_progress = 100
             raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
 
-        body = [{"cmd": "UpgradeOnline"}]
-        try:
-            await self.send_setting(body)
-        except ApiError as err:
-            if err.rspCode == -30:  # same version
-                raise ApiError(
-                    "Reolink device could not find new firmware, "
-                    "try downloading from the Reolink download center (https://reolink.com/download-center) and update manually",
-                    rspCode=err.rspCode,
-                ) from err
-            raise err
+        self._sw_upload_progress = 1
+
+        if channel is None:
+            # Online Updgrade of channels not yet available
+            body = [{"cmd": "UpgradeOnline"}]
+            try:
+                await self.send_setting(body)
+                self._sw_upload_progress = 100
+                return
+            except ApiError as err:
+                if err.rspCode == -30:  # same version
+                    _LOGGER.debug(
+                        "Reolink device API could not find new firmware, "
+                        "tring to download from the Reolink download center (https://reolink.com/download-center) and upload directly",
+                    )
+                _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
+
+        self._sw_upload_progress = 3
+        await self.upload_firmware(channel)
+
+    async def upload_firmware(self, channel: int | None = None, new_version: NewSoftwareVersion | None = None) -> None:
+        """Start update of firmware using uploading."""
+        available_update = self.firmware_update_available(channel)
+        if new_version is None and isinstance(available_update, NewSoftwareVersion):
+            new_version = available_update
+
+        if new_version is None or new_version.download_url is None:
+            raise InvalidParameterError(f"upload_firmware: no new firmware available for {self.camera_name(channel)}, please first check using check_new_firmware function")
+
+        # Download firmware file from Reolink Download Center
+        response = await self.send_reolink_com(new_version.download_url, "application/octet-stream")
+        zip_file = ZipFile(BytesIO(await response.read()), "r")
+        for info in zip_file.infolist():
+            if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
+                firmware_pak = zip_file.read(info)
+                firmware_name = info.filename
+                break
+        response.release()
+
+        _LOGGER.debug("Downloaded firmware for %s: %s", self.camera_name(channel), firmware_name)
+        self._sw_upload_progress = 15
+
+        # Check if firmware is correct
+        body = [{"cmd": "UpgradePrepare", "action": 0, "param": {"restoreCfg": 0, "fileName": firmware_name}}]
+        await self.send_setting(body)
+        self._sw_upload_progress = 20
+
+        # Start uploading firmware
+        param = {"cmd": "Upgrade", "token": self._token, "clearConfig": 0, "file": "upgrade-package"}
+        chunk_size = 40960
+        uuid = uuid4()
+        len_pak = len(firmware_pak)
+        N_chunks = ceil(len_pak / chunk_size)
+        # Obtain mutex to not allow other communication during update
+        async with self._send_mutex:
+            for chunk in range(0, N_chunks, 1):
+                chunk_start = chunk * chunk_size
+                chunk_end = min((chunk + 1) * chunk_size, len_pak)
+                firm_chunk = firmware_pak[chunk_start:chunk_end]
+                filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
+                _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
+                self._sw_upload_progress = 20 + round(((chunk + 1) / N_chunks) * 60)
+                with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
+                    payload = mpwriter.append(firm_chunk)
+                    payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
+                    payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
+                    payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
+
+                    response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
+                    data = await response.text(encoding="utf-8")
+
+                json_data = json_loads(data)
+                if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
+                    self._sw_upload_progress = 100
+                    raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
+
+        _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
+        self._sw_upload_progress = 100
 
     async def update_progress(self) -> bool | int:
         """check progress of firmware update, returns False if not in progress."""
@@ -5132,11 +5209,31 @@ class Host:
             await self.expire_session()
             raise err
 
+    @overload
     async def send_reolink_com(
         self,
         URL: str,
-        expected_response_type: Literal["application/json"] = "application/json",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any]: ...
+
+    @overload
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/json"],
+    ) -> dict[str, Any]: ...
+
+    @overload
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/octet-stream"],
+    ) -> aiohttp.ClientResponse: ...
+
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/json"] | Literal["application/octet-stream"] = "application/json",
+    ) -> dict[str, Any] | aiohttp.ClientResponse:
         """Generic send method for reolink.com site."""
 
         if self._aiohttp_session.closed:
@@ -5160,6 +5257,9 @@ class Host:
         if response.content_type != expected_response_type:
             response.release()
             raise InvalidContentTypeError(f"Request to {URL}, expected type '{expected_response_type}' but received '{response.content_type}'")
+
+        if expected_response_type == "application/octet-stream":
+            return response
 
         try:
             data = await response.text()
@@ -5326,7 +5426,7 @@ class Host:
         """Get the authorisation digest."""
         time_created = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
-        raw_nonce = uuid.uuid4().bytes
+        raw_nonce = uuid4().bytes
         nonce = base64.b64encode(raw_nonce)
 
         sha1 = hashlib.sha1()
@@ -5335,7 +5435,7 @@ class Host:
         digest_pwd = base64.b64encode(raw_digest)
 
         return {
-            "UsernameToken": str(uuid.uuid4()),
+            "UsernameToken": str(uuid4()),
             "Username": self._username,
             "PasswordDigest": digest_pwd.decode("utf8"),
             "Nonce": nonce.decode("utf8"),
