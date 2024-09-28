@@ -1600,7 +1600,7 @@ class Host:
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWhiteLed" and self.supported(channel, "floodLight"):
                 ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetChnTypeInfo":    
+            elif cmd == "GetChnTypeInfo":
                 ch_body = [{"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBatteryInfo" and self.supported(channel, "battery"):
                 ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
@@ -2513,7 +2513,9 @@ class Host:
                 new_version = available_update
 
             if new_version is None or new_version.download_url is None:
-                raise InvalidParameterError(f"upload_firmware: no new firmware available for {self.camera_name(channel)}, please first check using check_new_firmware function")
+                raise InvalidParameterError(
+                    f"upload_firmware: no new firmware available for {self.camera_name(channel)}, please first check using check_new_firmware function"
+                )
 
             # Download firmware file from Reolink Download Center
             response = await self.send_reolink_com(new_version.download_url, "application/octet-stream")
@@ -2569,22 +2571,22 @@ class Host:
     async def wait_untill_firmware_update_complete(self, channel: int | None = None):
         try:
             async with asyncio.timeout(300):
-                while(True):
+                while True:
                     # retrieve current firmware version
                     cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
                     try:
-                        await get_state(cmd)
+                        await self.get_state(cmd)
                     except Exception:
                         pass
-                    
+
                     # compare firmware versions
                     if not isinstance(self._latest_sw_version[channel], NewSoftwareVersion):
                         return
                     if self.camera_sw_version_object(channel) >= self._latest_sw_version[channel]:
                         return
                     await asyncio.sleep(10)
-        except asyncio.TimeoutError:
-            raise ReolinkTimeoutError("Timeout waiting on firmware update completion")
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError("Timeout waiting on firmware update completion") from err
 
     def sw_upload_progress(self, channel: int | None = None) -> int:
         return self._sw_upload_progress.get(channel, 100)
