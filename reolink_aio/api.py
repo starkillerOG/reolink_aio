@@ -2517,12 +2517,12 @@ class Host:
 
         # Download firmware file from Reolink Download Center
         response = await self.send_reolink_com(new_version.download_url, "application/octet-stream")
-        zip_file = ZipFile(BytesIO(await response.read()), "r")
-        for info in zip_file.infolist():
-            if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
-                firmware_pak = zip_file.read(info)
-                firmware_name = info.filename
-                break
+        with ZipFile(BytesIO(await response.read()), "r") as zip_file:
+            for info in zip_file.infolist():
+                if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
+                    firmware_pak = zip_file.read(info)
+                    firmware_name = info.filename
+                    break
         response.release()
 
         _LOGGER.debug("Downloaded firmware for %s: %s", self.camera_name(channel), firmware_name)
