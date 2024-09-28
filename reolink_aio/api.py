@@ -2537,16 +2537,25 @@ class Host:
             _LOGGER.debug("Downloaded firmware for %s: %s", self.camera_name(channel), firmware_name)
             self._sw_upload_progress[channel] = 4
 
+            len_pak = len(firmware_pak)
+
             # Check if firmware is correct
-            body = [{"cmd": "UpgradePrepare", "action": 0, "param": {"restoreCfg": 0, "fileName": firmware_name}}]
-            await self.send_setting(body)
+            param = {"restoreCfg": 0, "fileName": firmware_name}
+            if self.is_nvr:
+                if channel is None:
+                    ipcChnBit = 1
+                else:
+                    ipcChnBit = channel + 2
+                param["ipcChnBit"] = str(ipcChnBit)
+                param["fileSize"] = len_pak
+            body = [{"cmd": "UpgradePrepare", "action": 0, "param": param}]
+            await self.send_setting([body])
             self._sw_upload_progress[channel] = 5
 
             # Start uploading firmware
             param = {"cmd": "Upgrade", "token": self._token, "clearConfig": 0, "file": "upgrade-package"}
             chunk_size = 40960
             uuid = uuid4()
-            len_pak = len(firmware_pak)
             N_chunks = ceil(len_pak / chunk_size)
             # Obtain mutex to not allow other communication during update
             async with self._send_mutex:
