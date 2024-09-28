@@ -2485,8 +2485,9 @@ class Host:
         """Start update of firmware using API or direct upload."""
         self._sw_upload_progress[channel] = 0
         try:
+            cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
             try:
-                await self.get_state(cmd="GetDevInfo")
+                await self.get_state(cmd=cmd)
             except ReolinkError:
                 pass
 
