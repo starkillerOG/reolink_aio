@@ -195,6 +195,7 @@ class Host:
         self._latest_sw_model_version: dict[str, NewSoftwareVersion] = {}
         self._latest_sw_version: dict[int | None, NewSoftwareVersion | str | Literal[False]] = {}
         self._sw_upload_progress: dict[int | None, int] = {}
+        self._updating: bool = False
         self._startup: bool = True
         self._new_devices: bool = False
 
@@ -2529,6 +2530,8 @@ class Host:
                     f"upload_firmware: no new firmware available for {self.camera_name(channel)}, please first check using check_new_firmware function"
                 )
 
+            self._updating = True
+
             # Download firmware file from Reolink Download Center
             response = await self.send_reolink_com(new_version.download_url, "application/octet-stream")
             with ZipFile(BytesIO(await response.read()), "r") as zip_file:
@@ -2564,30 +2567,30 @@ class Host:
             N_chunks = ceil(len_pak / chunk_size)
             # Obtain mutex to not allow other communication during update
             async with self._send_mutex:
-                async with self._long_poll_mutex:
-                    for chunk in range(0, N_chunks, 1):
-                        chunk_start = chunk * chunk_size
-                        chunk_end = min((chunk + 1) * chunk_size, len_pak)
-                        firm_chunk = firmware_pak[chunk_start:chunk_end]
-                        filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
-                        _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
-                        self._sw_upload_progress[channel] = 5 + round(((chunk + 1) / N_chunks) * 55)
-                        with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
-                            payload = mpwriter.append(firm_chunk)
-                            payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
-                            payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
-                            payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
+                for chunk in range(0, N_chunks, 1):
+                    chunk_start = chunk * chunk_size
+                    chunk_end = min((chunk + 1) * chunk_size, len_pak)
+                    firm_chunk = firmware_pak[chunk_start:chunk_end]
+                    filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
+                    _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
+                    self._sw_upload_progress[channel] = 5 + round(((chunk + 1) / N_chunks) * 55)
+                    with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
+                        payload = mpwriter.append(firm_chunk)
+                        payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
+                        payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
+                        payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
 
-                            response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
-                            data = await response.text(encoding="utf-8")
+                        response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
+                        data = await response.text(encoding="utf-8")
 
-                        json_data = json_loads(data)
-                        if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
-                            raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
+                    json_data = json_loads(data)
+                    if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
+                        raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
 
             _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
             await self.wait_untill_firmware_update_complete(channel)
         finally:
+            self._updating = False
             self._sw_upload_progress[channel] = 100
 
     async def wait_untill_firmware_update_complete(self, channel: int | None = None):
@@ -5734,6 +5737,10 @@ class Host:
         _LOGGER.debug("Reolink %s requesting ONVIF pull point message", self.nvr_name)
 
         timeout = aiohttp.ClientTimeout(total=LONG_POLL_TIMEOUT * 60 + 30, connect=self.timeout)
+
+        # If a firmware update is in progress, quite sending pull_point_requests (only one not using send_mutex)
+        while self._updating:
+            await asyncio.sleep(10)
 
         try:
             response = await self.subscription_send(headers, xml, timeout, mutex=self._long_poll_mutex)
