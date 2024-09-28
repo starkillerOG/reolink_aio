@@ -2365,8 +2365,12 @@ class Host:
             chs: list[int | None] = [None]
             chs.extend(self.channels)
             for ch in chs:  # update the cache of all devices in one go
+                hw_ch_i = self.camera_hardware_version(ch).replace(" ", "")
+                mod_ch_i = self.camera_model(ch).replace(" ", "")
                 for device in json_data["data"]:
-                    if device["title"] == self.camera_hardware_version(ch) and device["dlProduct"]["title"] == self.camera_model(ch):
+                    hw_json = device["title"].replace(" ", "")
+                    mod_json = device["dlProduct"]["title"].replace(" ", "")
+                    if hw_json == hw_ch_i and mod_json == mod_ch_i:
                         self._sw_hardware_id[ch] = device["id"]
                         self._sw_model_id[ch] = device["dlProduct"]["id"]
 
@@ -2381,10 +2385,12 @@ class Host:
         json_data = await self.send_reolink_com(request_URL)
 
         firmware_info = json_data["data"][0]["firmwares"][0]
-        hw_ver = firmware_info["hardwareVersion"][0]["title"]
-        mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"]
-        if hw_ver != ch_hw or not mod_ver.startswith(ch_mod):
-            raise UnexpectedDataError(f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{ch_hw}' or '{mod_ver}' != '{ch_mod}'")
+        hw_ver = firmware_info["hardwareVersion"][0]["title"].replace(" ", "")
+        mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"].replace(" ", "")
+        ch_hw_match = ch_hw.replace(" ", "")
+        ch_mod_match = ch_mod.replace(" ", "")
+        if hw_ver != ch_hw_match or mod_ver != ch_mod_match:
+            raise UnexpectedDataError(f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{ch_hw_match}' or '{mod_ver}' != '{ch_mod_match}'")
 
         self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"] = NewSoftwareVersion(
             firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"], last_check=now
