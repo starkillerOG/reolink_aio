@@ -2579,11 +2579,12 @@ class Host:
         start_time = datetime.now()
         try:
             async with asyncio.timeout(300):
-                while True:
+                for sleep_i in range(1, 300, 1):
+                    start_loop_time = datetime.now()
                     # retrieve current firmware version
                     cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
                     try:
-                        async with asyncio.timeout(10):
+                        async with asyncio.timeout(7):
                             await self.get_state(cmd)
                     except Exception:
                         pass
@@ -2596,11 +2597,12 @@ class Host:
                         _LOGGER.debug("Finished firmware update of %s", self.camera_name(channel))
                         return
 
-                    await asyncio.sleep(5)
+                    sleep_time = max(0, 5 - (datetime.now() - start_loop_time).total_seconds())
+                    await asyncio.sleep(sleep_time)
 
-                    # firmware update reboot normally takes about 70 seconds
+                    # firmware update reboot normally takes about 60 seconds
                     time_diff = (datetime.now() - start_time).total_seconds()
-                    self._sw_upload_progress[channel] = 60 + round(min(39 * (time_diff / 70), 39))
+                    self._sw_upload_progress[channel] = 60 + round(min(39 * (time_diff / 60), 39))
                     _LOGGER.debug("Waiting already %s seconds for firmware install reboot of %s", time_diff, self.camera_name(channel))
 
         except asyncio.TimeoutError as err:
