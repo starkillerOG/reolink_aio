@@ -1384,6 +1384,8 @@ class Host:
 
             if self.is_nvr and self.camera_hardware_version(channel) != "Unknown" and self.camera_model(channel) != "Unknown":
                 self._capabilities[channel].add("firmware")
+                if self.api_version("upgrade") >= 2:
+                    self._capabilities[channel].add("update")
 
             if self.api_version("supportWebhook", channel) > 0:
                 self._capabilities[channel].add("webhook")
@@ -2515,6 +2517,9 @@ class Host:
     async def upload_firmware(self, channel: int | None = None, new_version: NewSoftwareVersion | None = None) -> None:
         """Start update of firmware using uploading."""
         try:
+            if not self.supported(channel, "update"):
+                raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
+
             available_update = self.firmware_update_available(channel)
             if new_version is None and isinstance(available_update, NewSoftwareVersion):
                 new_version = available_update
@@ -2549,7 +2554,7 @@ class Host:
                 param["ipcChnBit"] = str(ipcChnBit)
                 param["fileSize"] = len_pak
             body = [{"cmd": "UpgradePrepare", "action": 0, "param": param}]
-            await self.send_setting([body])
+            await self.send_setting(body)
             self._sw_upload_progress[channel] = 5
 
             # Start uploading firmware
@@ -2559,25 +2564,26 @@ class Host:
             N_chunks = ceil(len_pak / chunk_size)
             # Obtain mutex to not allow other communication during update
             async with self._send_mutex:
-                for chunk in range(0, N_chunks, 1):
-                    chunk_start = chunk * chunk_size
-                    chunk_end = min((chunk + 1) * chunk_size, len_pak)
-                    firm_chunk = firmware_pak[chunk_start:chunk_end]
-                    filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
-                    _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
-                    self._sw_upload_progress[channel] = 5 + round(((chunk + 1) / N_chunks) * 55)
-                    with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
-                        payload = mpwriter.append(firm_chunk)
-                        payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
-                        payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
-                        payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
+                async with self._long_poll_mutex:
+                    for chunk in range(0, N_chunks, 1):
+                        chunk_start = chunk * chunk_size
+                        chunk_end = min((chunk + 1) * chunk_size, len_pak)
+                        firm_chunk = firmware_pak[chunk_start:chunk_end]
+                        filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
+                        _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
+                        self._sw_upload_progress[channel] = 5 + round(((chunk + 1) / N_chunks) * 55)
+                        with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
+                            payload = mpwriter.append(firm_chunk)
+                            payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
+                            payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
+                            payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
 
-                        response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
-                        data = await response.text(encoding="utf-8")
+                            response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
+                            data = await response.text(encoding="utf-8")
 
-                    json_data = json_loads(data)
-                    if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
-                        raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
+                        json_data = json_loads(data)
+                        if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
+                            raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
 
             _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
             await self.wait_untill_firmware_update_complete(channel)
@@ -2588,7 +2594,7 @@ class Host:
         start_time = datetime.now()
         try:
             async with asyncio.timeout(300):
-                for sleep_i in range(1, 300, 1):
+                while True:
                     start_loop_time = datetime.now()
                     # retrieve current firmware version
                     cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
@@ -3250,13 +3256,14 @@ class Host:
                     continue
 
                 if data["cmd"] == "GetChnTypeInfo":
-                    self._channel_models[channel] = data["value"]["typeInfo"]
+                    if data["value"]["typeInfo"] != "":
+                        self._channel_models[channel] = data["value"]["typeInfo"]
                     self._is_doorbell[channel] = "Doorbell" in self._channel_models[channel]
-                    if "firmVer" in data["value"]:
+                    if data["value"].get("firmVer", "") != "":
                         self._channel_sw_versions[channel] = data["value"]["firmVer"]
                         if self._channel_sw_versions[channel] is not None:
                             self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
-                    if "boardInfo" in data["value"]:
+                    if data["value"].get("boardInfo", "") != "":
                         self._channel_hw_version[channel] = data["value"]["boardInfo"]
 
                 if data["cmd"] == "GetEvents":
