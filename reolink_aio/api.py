@@ -2549,7 +2549,7 @@ class Host:
             len_pak = len(firmware_pak)
 
             # Check if firmware is correct
-            param = {"restoreCfg": 0, "fileName": firmware_name}
+            param: dict[str, str | int] = {"restoreCfg": 0, "fileName": firmware_name}
             if self.is_nvr:
                 if channel is None:
                     ipcChnBit = 1
@@ -2562,7 +2562,7 @@ class Host:
             self._sw_upload_progress[channel] = 5
 
             # Start uploading firmware
-            param = {"cmd": "Upgrade", "token": self._token, "clearConfig": 0, "file": "upgrade-package"}
+            param = {"cmd": "Upgrade", "token": str(self._token), "clearConfig": 0, "file": "upgrade-package"}
             chunk_size = 40960
             uuid = uuid4()
             N_chunks = ceil(len_pak / chunk_size)
