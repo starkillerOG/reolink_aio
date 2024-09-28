@@ -194,7 +194,7 @@ class Host:
         self._last_sw_id_check: float = 0
         self._latest_sw_model_version: dict[str, NewSoftwareVersion] = {}
         self._latest_sw_version: dict[int | None, NewSoftwareVersion | str | Literal[False]] = {}
-        self._sw_upload_progress: int = 100
+        self._sw_upload_progress: dict[int | None, int] = {}
         self._startup: bool = True
         self._new_devices: bool = False
 
@@ -449,10 +449,6 @@ class Host:
             return False
 
         return not self._nvr_sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
-
-    @property
-    def sw_upload_progress(self) -> int:
-        return self._sw_upload_progress
 
     @property
     def model(self) -> str:
@@ -2476,24 +2472,24 @@ class Host:
 
     async def update_firmware(self, channel: int | None = None) -> None:
         """Start update of firmware using API or direct upload."""
-        self._sw_upload_progress = 0
+        self._sw_upload_progress[channel] = 0
         try:
             await self.get_state(cmd="GetDevInfo")
         except ReolinkError:
             pass
 
         if not self.supported(channel, "update"):
-            self._sw_upload_progress = 100
+            self._sw_upload_progress[channel] = 100
             raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
 
-        self._sw_upload_progress = 1
+        self._sw_upload_progress[channel] = 1
 
         if channel is None:
             # Online Updgrade of channels not yet available
             body = [{"cmd": "UpgradeOnline"}]
             try:
                 await self.send_setting(body)
-                self._sw_upload_progress = 100
+                self._sw_upload_progress[channel] = 100
                 return
             except ApiError as err:
                 if err.rspCode == -30:  # same version
@@ -2503,7 +2499,7 @@ class Host:
                     )
                 _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
 
-        self._sw_upload_progress = 3
+        self._sw_upload_progress[channel] = 3
         await self.upload_firmware(channel)
 
     async def upload_firmware(self, channel: int | None = None, new_version: NewSoftwareVersion | None = None) -> None:
@@ -2526,12 +2522,12 @@ class Host:
         response.release()
 
         _LOGGER.debug("Downloaded firmware for %s: %s", self.camera_name(channel), firmware_name)
-        self._sw_upload_progress = 15
+        self._sw_upload_progress[channel] = 15
 
         # Check if firmware is correct
         body = [{"cmd": "UpgradePrepare", "action": 0, "param": {"restoreCfg": 0, "fileName": firmware_name}}]
         await self.send_setting(body)
-        self._sw_upload_progress = 20
+        self._sw_upload_progress[channel] = 20
 
         # Start uploading firmware
         param = {"cmd": "Upgrade", "token": self._token, "clearConfig": 0, "file": "upgrade-package"}
@@ -2547,7 +2543,7 @@ class Host:
                 firm_chunk = firmware_pak[chunk_start:chunk_end]
                 filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
                 _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
-                self._sw_upload_progress = 20 + round(((chunk + 1) / N_chunks) * 60)
+                self._sw_upload_progress[channel] = 20 + round(((chunk + 1) / N_chunks) * 60)
                 with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
                     payload = mpwriter.append(firm_chunk)
                     payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
@@ -2559,11 +2555,14 @@ class Host:
 
                 json_data = json_loads(data)
                 if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
-                    self._sw_upload_progress = 100
+                    self._sw_upload_progress[channel] = 100
                     raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
 
         _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
-        self._sw_upload_progress = 100
+        self._sw_upload_progress[channel] = 100
+
+    def sw_upload_progress(self, channel: int | None = None) -> int:
+        return self._sw_upload_progress.get(channel, 100)
 
     async def update_progress(self) -> bool | int:
         """check progress of firmware update, returns False if not in progress."""
