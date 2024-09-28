@@ -1600,6 +1600,8 @@ class Host:
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWhiteLed" and self.supported(channel, "floodLight"):
                 ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetChnTypeInfo":    
+                ch_body = [{"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBatteryInfo" and self.supported(channel, "battery"):
                 ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPirInfo" and self.supported(channel, "PIR"):
@@ -2474,92 +2476,115 @@ class Host:
         """Start update of firmware using API or direct upload."""
         self._sw_upload_progress[channel] = 0
         try:
-            await self.get_state(cmd="GetDevInfo")
-        except ReolinkError:
-            pass
-
-        if not self.supported(channel, "update"):
-            self._sw_upload_progress[channel] = 100
-            raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
-
-        self._sw_upload_progress[channel] = 1
-
-        if channel is None:
-            # Online Updgrade of channels not yet available
-            body = [{"cmd": "UpgradeOnline"}]
             try:
-                await self.send_setting(body)
-                self._sw_upload_progress[channel] = 100
-                return
-            except ApiError as err:
-                if err.rspCode == -30:  # same version
-                    _LOGGER.debug(
-                        "Reolink device API could not find new firmware, "
-                        "tring to download from the Reolink download center (https://reolink.com/download-center) and upload directly",
-                    )
-                _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
+                await self.get_state(cmd="GetDevInfo")
+            except ReolinkError:
+                pass
 
-        self._sw_upload_progress[channel] = 3
-        await self.upload_firmware(channel)
+            if not self.supported(channel, "update"):
+                raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
+
+            self._sw_upload_progress[channel] = 1
+
+            if channel is None:
+                # Online Updgrade of channels not yet available
+                body = [{"cmd": "UpgradeOnline"}]
+                try:
+                    await self.send_setting(body)
+                    return
+                except ApiError as err:
+                    if err.rspCode == -30:  # same version
+                        _LOGGER.debug(
+                            "Reolink device API could not find new firmware, "
+                            "tring to download from the Reolink download center (https://reolink.com/download-center) and upload directly",
+                        )
+                    _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
+
+            self._sw_upload_progress[channel] = 3
+            await self.upload_firmware(channel)
+        finally:
+            self._sw_upload_progress[channel] = 100
 
     async def upload_firmware(self, channel: int | None = None, new_version: NewSoftwareVersion | None = None) -> None:
         """Start update of firmware using uploading."""
-        available_update = self.firmware_update_available(channel)
-        if new_version is None and isinstance(available_update, NewSoftwareVersion):
-            new_version = available_update
+        try:
+            available_update = self.firmware_update_available(channel)
+            if new_version is None and isinstance(available_update, NewSoftwareVersion):
+                new_version = available_update
 
-        if new_version is None or new_version.download_url is None:
-            raise InvalidParameterError(f"upload_firmware: no new firmware available for {self.camera_name(channel)}, please first check using check_new_firmware function")
+            if new_version is None or new_version.download_url is None:
+                raise InvalidParameterError(f"upload_firmware: no new firmware available for {self.camera_name(channel)}, please first check using check_new_firmware function")
 
-        # Download firmware file from Reolink Download Center
-        response = await self.send_reolink_com(new_version.download_url, "application/octet-stream")
-        with ZipFile(BytesIO(await response.read()), "r") as zip_file:
-            for info in zip_file.infolist():
-                if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
-                    firmware_pak = zip_file.read(info)
-                    firmware_name = info.filename
-                    break
-        response.release()
+            # Download firmware file from Reolink Download Center
+            response = await self.send_reolink_com(new_version.download_url, "application/octet-stream")
+            with ZipFile(BytesIO(await response.read()), "r") as zip_file:
+                for info in zip_file.infolist():
+                    if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
+                        firmware_pak = zip_file.read(info)
+                        firmware_name = info.filename
+                        break
+            response.release()
 
-        _LOGGER.debug("Downloaded firmware for %s: %s", self.camera_name(channel), firmware_name)
-        self._sw_upload_progress[channel] = 15
+            _LOGGER.debug("Downloaded firmware for %s: %s", self.camera_name(channel), firmware_name)
+            self._sw_upload_progress[channel] = 15
 
-        # Check if firmware is correct
-        body = [{"cmd": "UpgradePrepare", "action": 0, "param": {"restoreCfg": 0, "fileName": firmware_name}}]
-        await self.send_setting(body)
-        self._sw_upload_progress[channel] = 20
+            # Check if firmware is correct
+            body = [{"cmd": "UpgradePrepare", "action": 0, "param": {"restoreCfg": 0, "fileName": firmware_name}}]
+            await self.send_setting(body)
+            self._sw_upload_progress[channel] = 20
 
-        # Start uploading firmware
-        param = {"cmd": "Upgrade", "token": self._token, "clearConfig": 0, "file": "upgrade-package"}
-        chunk_size = 40960
-        uuid = uuid4()
-        len_pak = len(firmware_pak)
-        N_chunks = ceil(len_pak / chunk_size)
-        # Obtain mutex to not allow other communication during update
-        async with self._send_mutex:
-            for chunk in range(0, N_chunks, 1):
-                chunk_start = chunk * chunk_size
-                chunk_end = min((chunk + 1) * chunk_size, len_pak)
-                firm_chunk = firmware_pak[chunk_start:chunk_end]
-                filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
-                _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
-                self._sw_upload_progress[channel] = 20 + round(((chunk + 1) / N_chunks) * 60)
-                with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
-                    payload = mpwriter.append(firm_chunk)
-                    payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
-                    payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
-                    payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
+            # Start uploading firmware
+            param = {"cmd": "Upgrade", "token": self._token, "clearConfig": 0, "file": "upgrade-package"}
+            chunk_size = 40960
+            uuid = uuid4()
+            len_pak = len(firmware_pak)
+            N_chunks = ceil(len_pak / chunk_size)
+            # Obtain mutex to not allow other communication during update
+            async with self._send_mutex:
+                for chunk in range(0, N_chunks, 1):
+                    chunk_start = chunk * chunk_size
+                    chunk_end = min((chunk + 1) * chunk_size, len_pak)
+                    firm_chunk = firmware_pak[chunk_start:chunk_end]
+                    filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
+                    _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
+                    self._sw_upload_progress[channel] = 20 + round(((chunk + 1) / N_chunks) * 60)
+                    with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
+                        payload = mpwriter.append(firm_chunk)
+                        payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
+                        payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
+                        payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
 
-                    response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
-                    data = await response.text(encoding="utf-8")
+                        response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
+                        data = await response.text(encoding="utf-8")
 
-                json_data = json_loads(data)
-                if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
-                    self._sw_upload_progress[channel] = 100
-                    raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
+                    json_data = json_loads(data)
+                    if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
+                        raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}")
 
-        _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
-        self._sw_upload_progress[channel] = 100
+            _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
+            await self.wait_untill_firmware_update_complete(channel)
+        finally:
+            self._sw_upload_progress[channel] = 100
+
+    async def wait_untill_firmware_update_complete(self, channel: int | None = None):
+        try:
+            async with asyncio.timeout(300):
+                while(True):
+                    # retrieve current firmware version
+                    cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
+                    try:
+                        await get_state(cmd)
+                    except Exception:
+                        pass
+                    
+                    # compare firmware versions
+                    if not isinstance(self._latest_sw_version[channel], NewSoftwareVersion):
+                        return
+                    if self.camera_sw_version_object(channel) >= self._latest_sw_version[channel]:
+                        return
+                    await asyncio.sleep(10)
+        except asyncio.TimeoutError:
+            raise ReolinkTimeoutError("Timeout waiting on firmware update completion")
 
     def sw_upload_progress(self, channel: int | None = None) -> int:
         return self._sw_upload_progress.get(channel, 100)
