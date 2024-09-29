@@ -2552,7 +2552,7 @@ class Host:
             param: dict[str, str | int] = {"restoreCfg": 0, "fileName": firmware_name}
             if self.is_nvr:
                 if channel is None:
-                    ipcChnBit = 1
+                    ipcChnBit = 0
                 else:
                     ipcChnBit = 2 ^ channel
                 param["ipcChnBit"] = str(ipcChnBit)
