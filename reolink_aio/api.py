@@ -2485,6 +2485,10 @@ class Host:
         """Start update of firmware using API or direct upload."""
         self._sw_upload_progress[channel] = 0
         try:
+            if self._updating:
+                raise InvalidParameterError("update_firmware: firmware update already running, wait on completion before starting another")
+            self._updating = True
+
             cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
             try:
                 await self.get_state(cmd=cmd)
@@ -2494,8 +2498,7 @@ class Host:
             if not self.supported(channel, "update"):
                 raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
 
-            self._updating = True
-            self._sw_upload_progress[channel] = 1
+            self._sw_upload_progress[channel] = 2
 
             if channel is None:
                 # Online Updgrade of channels not yet available
@@ -2514,7 +2517,7 @@ class Host:
                     else:
                         _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
 
-            self._sw_upload_progress[channel] = 2
+            self._sw_upload_progress[channel] = 3
             await self.upload_firmware(channel)
         finally:
             self._updating = False
@@ -2656,7 +2659,7 @@ class Host:
                         progress = 100 * (time_diff / 50)
 
                     # Update the progress status
-                    self._sw_upload_progress[None] = round(0.6 * progress)
+                    self._sw_upload_progress[None] = 2 + round(0.58 * progress)
                     _LOGGER.debug("Waiting for online update of %s which is at %s %%", self.nvr_name, progress)
 
                     sleep_time = max(0, 5 - (datetime.now() - start_loop_time).total_seconds())
