@@ -2554,7 +2554,7 @@ class Host:
                 if channel is None:
                     ipcChnBit = 0
                 else:
-                    ipcChnBit = 2 ^ channel
+                    ipcChnBit = pow(2, channel)
                 param["ipcChnBit"] = str(ipcChnBit)
                 param["fileSize"] = len_pak
             body = [{"cmd": "UpgradePrepare", "action": 0, "param": param}]
