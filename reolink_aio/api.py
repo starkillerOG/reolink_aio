@@ -672,7 +672,7 @@ class Host:
         return channel
 
     def camera_online(self, channel: int) -> bool:
-        if not self.is_nvr:
+        if not self.is_nvr or not self._GetChannelStatus_present:
             return True
         if channel not in self._channel_online:
             return False
