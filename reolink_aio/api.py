@@ -2650,6 +2650,7 @@ class Host:
                     if not progress:
                         time_diff = (datetime.now() - start_time).total_seconds()
                         if time_diff > 50:
+                            self._sw_upload_progress[None] = 60
                             _LOGGER.debug("Finished online update of %s, rebooting now", self.nvr_name)
                             return
                         progress = 100 * (time_diff / 50)
