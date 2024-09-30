@@ -2494,6 +2494,7 @@ class Host:
             if not self.supported(channel, "update"):
                 raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
 
+            self._updating = True
             self._sw_upload_progress[channel] = 1
 
             if channel is None:
@@ -2501,6 +2502,8 @@ class Host:
                 body = [{"cmd": "UpgradeOnline"}]
                 try:
                     await self.send_setting(body)
+                    await self._wait_untill_online_update_complete()
+                    await self.wait_untill_firmware_update_complete(channel)
                     return
                 except ApiError as err:
                     if err.rspCode == -30:  # same version
@@ -2514,6 +2517,7 @@ class Host:
             self._sw_upload_progress[channel] = 2
             await self.upload_firmware(channel)
         finally:
+            self._updating = False
             self._sw_upload_progress[channel] = 100
 
     async def upload_firmware(self, channel: int | None = None, new_version: NewSoftwareVersion | None = None) -> None:
@@ -2628,6 +2632,36 @@ class Host:
             raise ReolinkTimeoutError("Timeout waiting on firmware update completion") from err
         finally:
             self._sw_upload_progress[channel] = 100
+
+    async def _wait_untill_online_update_complete(self):
+        start_time = datetime.now()
+        try:
+            async with asyncio.timeout(300):
+                while True:
+                    start_loop_time = datetime.now()
+                    # retrieve current firmware version
+                    try:
+                        async with asyncio.timeout(7):
+                            progress = await self.update_progress()
+                    except Exception:
+                        progress = False
+
+                    # Check if done
+                    if not progress:
+                        time_diff = (datetime.now() - start_time).total_seconds()
+                        if time_diff > 50:
+                            _LOGGER.debug("Finished online update of %s, rebooting now", self.nvr_name)
+                            return
+                        progress = 100 * (time_diff / 50)
+
+                    # Update the progress status
+                    self._sw_upload_progress[None] = round(0.6 * progress)
+                    _LOGGER.debug("Waiting for online update of %s which is at %s %%", self.nvr_name, progress)
+
+                    sleep_time = max(0, 5 - (datetime.now() - start_loop_time).total_seconds())
+                    await asyncio.sleep(sleep_time)
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError("Timeout waiting on firmware update completion") from err
 
     def sw_upload_progress(self, channel: int | None = None) -> int:
         return self._sw_upload_progress.get(channel, 100)
