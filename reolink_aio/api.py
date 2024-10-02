@@ -1685,6 +1685,8 @@ class Host:
         # chime states
         if not channels and cmd == "DingDongOpt":
             for chime_id, chime in self._chime_list.items():
+                if not chime.online:
+                    continue
                 chime_ch = chime.channel
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
                 channels.append(chime_ch)
@@ -1822,9 +1824,9 @@ class Host:
             if self.supported(channel, "quick_reply") and inc_cmd("GetAutoReply", channel):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "chime") and (inc_cmd("GetDingDongCfg", channel) or inc_cmd("DingDongOpt", channel) or inc_cmd("GetDingDongList", channel)):
+            if self.supported(channel, "chime") and inc_wake("GetDingDongList", channel):  # always include to discover new chimes and update "online" status
                 ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
-            if self.supported(channel, "chime") and inc_wake("GetDingDongCfg", channel):  # always include to discover new chimes
+            if self.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
                 ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "manual_record") and inc_cmd("GetManualRec", channel):
@@ -1889,7 +1891,7 @@ class Host:
         # chime states
         for chime_id, chime in self._chime_list.items():
             chime_ch = chime.channel
-            if inc_cmd("DingDongOpt", channel):
+            if inc_cmd("DingDongOpt", channel) and chime.online:
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
                 channels.append(chime_ch)
                 chime_ids.append(chime_id)
@@ -2025,7 +2027,7 @@ class Host:
             if self.supported(channel, "quick_reply"):
                 ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
             if self.api_version("supportDingDongCtrl", channel) > 0:
-                ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "webhook"):
                 ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
             # checking range
