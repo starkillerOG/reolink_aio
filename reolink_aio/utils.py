@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, tzinfo as _TzInfo
 from typing import Optional
 
@@ -30,3 +31,9 @@ def datetime_to_reolink_time(time: datetime | str) -> dict[str, int]:
         "sec": time.second,
     }
     return t_dict
+
+
+def strip_model_str(string: str) -> str:
+    string = re.sub("[(].*?[)]", "", string)
+    string = re.sub("[（].*?[）]", "", string)
+    return string.replace(" ", "")
