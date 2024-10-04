@@ -56,7 +56,7 @@ from .exceptions import (
     ReolinkTimeoutError,
 )
 from .software_version import SoftwareVersion, NewSoftwareVersion, MINIMUM_FIRMWARE
-from .utils import datetime_to_reolink_time, reolink_time_to_datetime
+from .utils import datetime_to_reolink_time, reolink_time_to_datetime, strip_model_str
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
@@ -677,7 +677,7 @@ class Host:
         return channel
 
     def camera_online(self, channel: int) -> bool:
-        if not self.is_nvr:
+        if not self.is_nvr or not self._GetChannelStatus_present:
             return True
         if channel not in self._channel_online:
             return False
@@ -1694,6 +1694,8 @@ class Host:
         # chime states
         if not channels and cmd == "DingDongOpt":
             for chime_id, chime in self._chime_list.items():
+                if not chime.online:
+                    continue
                 chime_ch = chime.channel
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
                 channels.append(chime_ch)
@@ -1831,9 +1833,9 @@ class Host:
             if self.supported(channel, "quick_reply") and inc_cmd("GetAutoReply", channel):
                 ch_body.append({"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "chime") and (inc_cmd("GetDingDongCfg", channel) or inc_cmd("DingDongOpt", channel) or inc_cmd("GetDingDongList", channel)):
+            if self.supported(channel, "chime") and inc_wake("GetDingDongList", channel):  # always include to discover new chimes and update "online" status
                 ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
-            if self.supported(channel, "chime") and inc_wake("GetDingDongCfg", channel):  # always include to discover new chimes
+            if self.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
                 ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "manual_record") and inc_cmd("GetManualRec", channel):
@@ -1898,7 +1900,7 @@ class Host:
         # chime states
         for chime_id, chime in self._chime_list.items():
             chime_ch = chime.channel
-            if inc_cmd("DingDongOpt", channel):
+            if inc_cmd("DingDongOpt", channel) and chime.online:
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
                 channels.append(chime_ch)
                 chime_ids.append(chime_id)
@@ -2034,7 +2036,7 @@ class Host:
             if self.supported(channel, "quick_reply"):
                 ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
             if self.api_version("supportDingDongCtrl", channel) > 0:
-                ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "webhook"):
                 ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
             # checking range
@@ -2372,11 +2374,11 @@ class Host:
             chs: list[int | None] = [None]
             chs.extend(self.channels)
             for ch in chs:  # update the cache of all devices in one go
-                hw_ch_i = self.camera_hardware_version(ch).replace(" ", "")
-                mod_ch_i = self.camera_model(ch).replace(" ", "")
+                hw_ch_i = strip_model_str(self.camera_hardware_version(ch))
+                mod_ch_i = strip_model_str(self.camera_model(ch))
                 for device in json_data["data"]:
-                    hw_json = device["title"].replace(" ", "")
-                    mod_json = device["dlProduct"]["title"].replace(" ", "")
+                    hw_json = strip_model_str(device["title"])
+                    mod_json = strip_model_str(device["dlProduct"]["title"])
                     if hw_json == hw_ch_i and mod_json == mod_ch_i:
                         self._sw_hardware_id[ch] = device["id"]
                         self._sw_model_id[ch] = device["dlProduct"]["id"]
@@ -2392,10 +2394,10 @@ class Host:
         json_data = await self.send_reolink_com(request_URL)
 
         firmware_info = json_data["data"][0]["firmwares"][0]
-        hw_ver = firmware_info["hardwareVersion"][0]["title"].replace(" ", "")
-        mod_ver = firmware_info["hardwareVersion"][0]["dlProduct"]["title"].replace(" ", "")
-        ch_hw_match = ch_hw.replace(" ", "")
-        ch_mod_match = ch_mod.replace(" ", "")
+        hw_ver = strip_model_str(firmware_info["hardwareVersion"][0]["title"])
+        mod_ver = strip_model_str(firmware_info["hardwareVersion"][0]["dlProduct"]["title"])
+        ch_hw_match = strip_model_str(ch_hw)
+        ch_mod_match = strip_model_str(ch_mod)
         if hw_ver != ch_hw_match or mod_ver != ch_mod_match:
             raise UnexpectedDataError(f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{ch_hw_match}' or '{mod_ver}' != '{ch_mod_match}'")
 
