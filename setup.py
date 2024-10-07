@@ -11,7 +11,7 @@ HERE = pathlib.Path(__file__).parent
 README = (HERE / "README.md").read_text()
 
 setup(name='reolink_aio',
-      version='0.9.11',
+      version='0.10.0b3',
       description='Reolink NVR/cameras API package',
       long_description=README,
       long_description_content_type="text/markdown",
@@ -21,7 +21,7 @@ setup(name='reolink_aio',
       license='MIT',
       packages=find_packages(),
       package_data={"reolink_aio": ["py.typed"]},
-      python_requires='>=3.10',
+      python_requires='>=3.11',
       install_requires=[
         'aiohttp',
         'aiortsp',
@@ -39,7 +39,6 @@ setup(name='reolink_aio',
           "Topic :: Software Development :: Libraries",
           "Topic :: Home Automation",
           "Programming Language :: Python",
-          "Programming Language :: Python :: 3.10",
           "Programming Language :: Python :: 3.11",
           "Programming Language :: Python :: 3.12",
           ])
