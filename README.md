@@ -1,5 +1,5 @@
 <h2 align="center">
-  <a href="https://reolink.com"><img src="https://raw.githubusercontent.com/starkillerOG/reolink_aio/master/logo.png" width="200"></a>
+  <a href="https://reolink.com"><img src="https://raw.githubusercontent.com/starkillerOG/reolink_aio/master/doc/logo.png" width="200"></a>
   <br>
   <i>Reolink NVR/cameras API package</i>
   <br>
