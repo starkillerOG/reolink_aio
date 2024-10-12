@@ -24,7 +24,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .baichuan import Baichuan
+from .baichuan import Baichuan, PortType
 from .enums import (
     BatteryEnum,
     DayNightEnum,
@@ -1225,6 +1225,7 @@ class Host:
             self._login_mutex.release()
 
     async def _login_try_ports(self) -> None:
+        # try HTTPs port
         first_exc = None
         self._port = 443
         self.enable_https(True)
@@ -1234,13 +1235,52 @@ class Host:
         except LoginError as exc:
             first_exc = exc
 
+        # try HTTP port
         self._port = 80
         self.enable_https(False)
         try:
             await self.login()
-        except LoginError as exc:
+            return
+        except LoginError:
+            pass
+
+        # see which ports are enabled using baichuan protocol on port 9000
+        try:
+            await self.baichuan.get_ports()
+        except ReolinkError as exc:
             # Raise original exception instead of the retry fallback exception
             raise first_exc from exc
+
+        if self.baichuan.https_enabled is None and self.baichuan.http_enabled is None:
+            raise LoginError(
+                f"Reolink device '{self._host}' does not have a HTTPs API, "
+                "a Reolink Home Hub or NVR is required to use this device with reolink_aio, "
+                "connect this device to the Reolink Home Hub/NVR and connect to the Hub/NVR instead to access this device"
+            )
+
+        # open the HTTPs port if needed
+        if not self.baichuan.https_enabled and not self.baichuan.http_enabled:
+            try:
+                await self.baichuan.set_port_enabled(PortType.https, True)
+                await self.baichuan.get_ports()
+            except ReolinkError as exc:
+                # Raise original exception instead of the retry fallback exception
+                raise first_exc from exc
+
+        if self.baichuan.https_enabled and self.baichuan.https_port is not None:
+            self._port = self.baichuan.https_port
+            self.enable_https(True)
+        elif self.baichuan.http_enabled and self.baichuan.http_port is not None:
+            self._port = self.baichuan.http_port
+            self.enable_https(False)
+        else:
+            raise LoginError(f"Failed to open HTTPs port on host '{self._host}' using baichuan, altough no errors returned by API") from first_exc
+
+        # retry login now that the port is open
+        try:
+            await self.login()
+        except LoginError as exc:
+            raise LoginError(f"Failed to login after opening HTTPs port on host '{self._host}' using baichuan protocol: {exc}") from exc
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
