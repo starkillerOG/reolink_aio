@@ -143,11 +143,14 @@ class Baichuan:
                     async with asyncio.timeout(15):
                         self._reader, self._writer = await asyncio.open_connection(self._host, self._port)
                 except asyncio.TimeoutError as err:
-                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
+                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
                 _LOGGER.debug("Baichuan host %s: opened connection", self._host)
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
-                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(body))
+                if mess_len > 0:
+                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(body))
+                else:
+                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
 
             try:
                 async with asyncio.timeout(15):

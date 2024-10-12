@@ -24,6 +24,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
+from .baichuan import Baichuan
 from .enums import (
     BatteryEnum,
     DayNightEnum,
@@ -169,6 +170,10 @@ class Host:
         else:
             self._get_aiohttp_session = lambda: aiohttp.ClientSession(timeout=self._timeout, connector=aiohttp.TCPConnector(ssl=SSL_CONTEXT))
         self._aiohttp_session: aiohttp.ClientSession = self._get_aiohttp_session()
+
+        ##############################################################################
+        # Baichuan protocol (port 9000)
+        self.baichuan = Baichuan(host=host, username=username, password=password)
 
         ##############################################################################
         # NVR (host-level) attributes
@@ -1268,6 +1273,8 @@ class Host:
         finally:
             if not login_mutex_owned:
                 self._login_mutex.release()
+
+        await self.baichuan.logout()
 
     async def expire_session(self, unsubscribe: bool = True):
         if self._lease_time is not None:

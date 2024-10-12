@@ -1,2 +1,5 @@
 [flake8]
 max-line-length = 175
+per-file-ignores =
+    reolink_aio/__init__.py:F401
+    reolink_aio/baichuan/__init__.py:F401
