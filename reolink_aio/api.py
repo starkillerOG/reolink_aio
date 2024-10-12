@@ -1276,11 +1276,28 @@ class Host:
         else:
             raise LoginError(f"Failed to open HTTPs port on host '{self._host}' using baichuan, altough no errors returned by API") from first_exc
 
-        # retry login now that the port is open
+        # retry login now that the port is open, this will also logout the baichuan session
         try:
             await self.login()
+            return
         except LoginError as exc:
-            raise LoginError(f"Failed to login after opening HTTPs port on host '{self._host}' using baichuan protocol: {exc}") from exc
+            if self.baichuan.rtmp_enabled or self.baichuan.rtmp_enabled is None:
+                raise LoginError(f"Failed to login after opening HTTPs port on host '{self._host}' using baichuan protocol: {exc}") from exc
+
+        # open the RTMP port
+        try:
+            await self.baichuan.set_port_enabled(PortType.rtmp, True)
+            await self.baichuan.get_ports()
+        except ReolinkError as exc:
+            # Raise original exception instead of the retry fallback exception
+            raise first_exc from exc
+
+        # retry login now that the RTMP port is also open
+        try:
+            await self.login()
+            return
+        except LoginError as exc:
+            raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
