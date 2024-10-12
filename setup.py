@@ -26,6 +26,7 @@ setup(name='reolink_aio',
         'aiohttp',
         'aiortsp',
         'orjson',
+        'pycryptodomex',
         'typing_extensions'
         ],
       tests_require=[],
