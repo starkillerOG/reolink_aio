@@ -167,7 +167,10 @@ class Baichuan:
 
         rec_cmd_id = int.from_bytes(data[4:8], byteorder="little")
         if rec_cmd_id != cmd_id:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: received cmd_id '{rec_cmd_id}', while sending cmd_id '{cmd_id}'")
+            if retry <= 0:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: received cmd_id '{rec_cmd_id}', while sending cmd_id '{cmd_id}'")
+            _LOGGER.error("Baichuan host %s: received cmd_id '%s', while sending cmd_id '%s', trying again", self._host, rec_cmd_id, cmd_id)
+            return await self.send(cmd_id, body, enc_type, message_class, enc_offset, retry)
 
         len_body = int.from_bytes(data[8:12], byteorder="little")
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
