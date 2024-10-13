@@ -101,6 +101,7 @@ class Baichuan:
 
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
+        self._dev_info: dict[str, str] = {}
 
     async def send(self, cmd_id: int, body: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS) -> str:
         """Generic baichuan send method."""
@@ -254,15 +255,30 @@ class Baichuan:
             redacted = redacted.replace(self._password_hash, "<password_md5_hash>")
         return redacted
 
+    def _get_keys_from_xml(self, xml: str, keys: list[str]) -> dict[str, str]:
+        """Get multiple keys from a xml and return as a dict"""
+        root = XML.fromstring(xml)
+        result = {}
+        for key in keys:
+            xml_value = root.find(f".//{key}")
+            if xml_value is None:
+                continue
+            value = xml_value.text
+            if value is None:
+                continue
+            result[key] = value
+
+        return result
+
+    def _get_value_from_xml(self, xml: str, key: str) -> str | None:
+        """Get the value of a single key in a xml"""
+        return self._get_keys_from_xml(xml, [key]).get(key)
+
     async def _get_nonce(self) -> str:
         """Get the nonce needed for the modern login"""
         # send only a header to receive the nonce (alternatively use legacy login)
         mess = await self.send(cmd_id=1, enc_type=EncType.BC, message_class="1465")
-        root = XML.fromstring(mess)
-        nonce = root.find(".//nonce")
-        if nonce is None:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
-        self._nonce = nonce.text
+        self._nonce = self._get_value_from_xml(mess, "nonce")
         if self._nonce is None:
             raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
 
@@ -332,6 +348,16 @@ class Baichuan:
 
         await self.send(cmd_id=36, body=xml)
 
+    async def get_info(self) -> dict[str, str]:
+        """Get the device info of the host"""
+        mess = await self.send(cmd_id=80)
+        self._dev_info = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
+        return self._dev_info
+
+    async def get_wifi_signal(self) -> None:
+        """Get the wifi signal of the host"""
+        await self.send(cmd_id=115)
+
     @property
     def http_port(self) -> int | None:
         return self._ports.get("http", {}).get("port")
@@ -386,3 +412,19 @@ class Baichuan:
         if enabled is None:
             return None
         return enabled == 1
+
+    @property
+    def model(self) -> str | None:
+        return self._dev_info.get("type")
+
+    @property
+    def hardware_version(self) -> str | None:
+        return self._dev_info.get("hardwareVersion")
+
+    @property
+    def item_number(self) -> str | None:
+        return self._dev_info.get("itemNo")
+
+    @property
+    def sw_version(self) -> str | None:
+        return self._dev_info.get("firmwareVersion")

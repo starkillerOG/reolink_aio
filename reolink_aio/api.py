@@ -45,6 +45,7 @@ from .exceptions import (
     InvalidContentTypeError,
     InvalidParameterError,
     LoginError,
+    LoginFirmwareError,
     NoDataError,
     NotSupportedError,
     ReolinkError,
@@ -1288,15 +1289,31 @@ class Host:
         try:
             await self.baichuan.set_port_enabled(PortType.rtmp, True)
             await self.baichuan.get_ports()
+            await self.baichuan.get_info()
         except ReolinkError as exc:
             # Raise original exception instead of the retry fallback exception
             raise first_exc from exc
+
+        # update info such that minimum firmware can be assest
+        self._nvr_model = self.baichuan.model
+        self._nvr_hw_version = self.baichuan.hardware_version
+        self._nvr_item_number = self.baichuan.item_number
+        self._nvr_sw_version = self.baichuan.sw_version
+        if self.baichuan.sw_version is not None:
+            self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version)
 
         # retry login now that the RTMP port is also open
         try:
             await self.login()
             return
         except LoginError as exc:
+            if self.sw_version_update_required:
+                raise LoginFirmwareError(
+                    f"Failed to login to host '{self._host}', "
+                    f"please update the firmware to version {self.sw_version_required.version_string} "
+                    "using the Reolink Download Center: https://reolink.com/de/download-center, "
+                    f"currently version {self.sw_version} is installed, {exc}"
+                ) from exc
             raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
 
     async def logout(self, login_mutex_owned=False):
