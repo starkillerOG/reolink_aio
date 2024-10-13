@@ -103,7 +103,9 @@ class Baichuan:
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[str, str] = {}
 
-    async def send(self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS) -> str:
+    async def send(
+        self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
+    ) -> str:
         """Generic baichuan send method."""
         retry = retry - 1
 
@@ -131,9 +133,9 @@ class Baichuan:
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(extension+body, enc_offset)
+                enc_body_bytes = encrypt_baichuan(extension + body, enc_offset)
             elif enc_type == EncType.AES:
-                enc_body_bytes = self._aes_encrypt(extension+body)
+                enc_body_bytes = self._aes_encrypt(extension + body)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
@@ -149,7 +151,7 @@ class Baichuan:
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 if mess_len > 0:
-                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension+body))
+                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension + body))
                 else:
                     _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
 
