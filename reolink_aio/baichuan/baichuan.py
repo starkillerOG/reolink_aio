@@ -103,7 +103,7 @@ class Baichuan:
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[str, str] = {}
 
-    async def send(self, cmd_id: int, body: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS) -> str:
+    async def send(self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS) -> str:
         """Generic baichuan send method."""
         retry = retry - 1
 
@@ -111,8 +111,8 @@ class Baichuan:
             # not logged in and requesting a non login/logout cmd, first login
             await self.login()
 
-        mess_len = len(body)
-        payload_offset = 0
+        mess_len = len(extension) + len(body)
+        payload_offset = len(extension)
 
         cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
         mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
@@ -131,9 +131,9 @@ class Baichuan:
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(body, enc_offset)
+                enc_body_bytes = encrypt_baichuan(extension+body, enc_offset)
             elif enc_type == EncType.AES:
-                enc_body_bytes = self._aes_encrypt(body)
+                enc_body_bytes = self._aes_encrypt(extension+body)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
@@ -149,7 +149,7 @@ class Baichuan:
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 if mess_len > 0:
-                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(body))
+                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension+body))
                 else:
                     _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
 
@@ -171,7 +171,7 @@ class Baichuan:
             if retry <= 0:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: received cmd_id '{rec_cmd_id}', while sending cmd_id '{cmd_id}'")
             _LOGGER.error("Baichuan host %s: received cmd_id '%s', while sending cmd_id '%s', trying again", self._host, rec_cmd_id, cmd_id)
-            return await self.send(cmd_id, body, enc_type, message_class, enc_offset, retry)
+            return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
 
         len_body = int.from_bytes(data[8:12], byteorder="little")
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
@@ -183,8 +183,8 @@ class Baichuan:
             len_header = 20
         elif mess_class in ["1464", "0000"]:  # modern 24 byte header
             len_header = 24
-            payload_offset = int.from_bytes(data[20:24], byteorder="little")
-            if payload_offset != 0:
+            rec_payload_offset = int.from_bytes(data[20:24], byteorder="little")
+            if rec_payload_offset != 0:
                 raise InvalidContentTypeError("Baichuan host {self._host}: received a message with a non-zero payload offset, parsing not implemented")
         elif mess_class == "1465":  # legacy 20 byte header
             len_header = 20
@@ -198,7 +198,7 @@ class Baichuan:
             if retry <= 0:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: received {len(enc_body)} bytes in the body, while header specified {len_body} bytes")
             _LOGGER.error("Baichuan host %s: received %s bytes in the body, while header specified %s bytes, trying again", self._host, len(enc_body), len_body)
-            return await self.send(cmd_id, body, enc_type, message_class, enc_offset, retry)
+            return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
 
         # check status code
         if len_header == 24:

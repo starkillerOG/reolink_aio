@@ -25,3 +25,9 @@ LOGOUT_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </LoginUser>
 </body>
 """
+
+CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<channelId>{channel}</channelId>
+</Extension>
+"""
