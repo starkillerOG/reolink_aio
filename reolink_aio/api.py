@@ -1259,11 +1259,18 @@ class Host:
                 "connect this device to the Reolink Home Hub/NVR and connect to the Hub/NVR instead to access this device"
             )
 
-        # open the HTTPs port if needed
-        if not self.baichuan.https_enabled and not self.baichuan.http_enabled:
+        # open the HTTPs, RTSP and ONVIF ports if needed
+        if (not self.baichuan.https_enabled and not self.baichuan.http_enabled) or not self.baichuan.rtsp_enabled or not self.baichuan.onvif_enabled:
             try:
-                await self.baichuan.set_port_enabled(PortType.https, True)
+                if not self.baichuan.https_enabled and not self.baichuan.http_enabled:
+                    await self.baichuan.set_port_enabled(PortType.https, True)
+                if not self.baichuan.rtsp_enabled:
+                    await self.baichuan.set_port_enabled(PortType.rtsp, True)
+                if not self.baichuan.onvif_enabled:
+                    await self.baichuan.set_port_enabled(PortType.onvif, True)
                 await self.baichuan.get_ports()
+                # give the camera some time to startup the HTTP API server
+                await asyncio.sleep(5)
             except ReolinkError as exc:
                 # Raise original exception instead of the retry fallback exception
                 raise first_exc from exc
@@ -1290,6 +1297,8 @@ class Host:
             await self.baichuan.set_port_enabled(PortType.rtmp, True)
             await self.baichuan.get_ports()
             await self.baichuan.get_info()
+            # give the camera some time to startup the HTTP API server
+            await asyncio.sleep(5)
         except ReolinkError as exc:
             # Raise original exception instead of the retry fallback exception
             raise first_exc from exc

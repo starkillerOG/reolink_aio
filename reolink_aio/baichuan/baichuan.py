@@ -147,6 +147,8 @@ class Baichuan:
                         self._reader, self._writer = await asyncio.open_connection(self._host, self._port)
                 except asyncio.TimeoutError as err:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
+                except ConnectionResetError as err:
+                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
                 _LOGGER.debug("Baichuan host %s: opened connection", self._host)
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
@@ -162,20 +164,39 @@ class Baichuan:
 
                     data = await self._reader.read(16384)
             except asyncio.TimeoutError as err:
-                raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error: {str(err)}") from err
+                raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
+            except ConnectionResetError as err:
+                if retry <= 0 or cmd_id == 2:
+                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
+                _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
+                return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
 
         # parse received header
         if data[0:4].hex() != HEADER_MAGIC:
             raise UnexpectedDataError(f"Baichuan host {self._host}: received message with invalid magic header: {data.hex()}")
 
         rec_cmd_id = int.from_bytes(data[4:8], byteorder="little")
-        if rec_cmd_id != cmd_id:
-            if retry <= 0:
-                raise UnexpectedDataError(f"Baichuan host {self._host}: received cmd_id '{rec_cmd_id}', while sending cmd_id '{cmd_id}'")
-            _LOGGER.error("Baichuan host %s: received cmd_id '%s', while sending cmd_id '%s', trying again", self._host, rec_cmd_id, cmd_id)
-            return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
-
         len_body = int.from_bytes(data[8:12], byteorder="little")
+
+        if rec_cmd_id != cmd_id:
+            # check if there are multiple cmds received
+            while rec_cmd_id != cmd_id and len(data) > len_body + 48: 
+                _LOGGER.debug(f"Baichuan host {self._host}: received multiple commmands, skipping cmd_id {rec_cmd_id} because cmd_id {cmd_id} was requested")
+                if data[len_body+24:len_body+28].hex() == HEADER_MAGIC:
+                    data = data[len_body+24::]
+                elif data[len_body+20:len_body+24].hex() == HEADER_MAGIC:
+                    data = data[len_body+20::]
+                else:
+                    break
+                rec_cmd_id = int.from_bytes(data[4:8], byteorder="little")
+                len_body = int.from_bytes(data[8:12], byteorder="little")
+            # check again
+            if rec_cmd_id != cmd_id:
+                if retry <= 0:
+                    raise UnexpectedDataError(f"Baichuan host {self._host}: received cmd_id '{rec_cmd_id}', while sending cmd_id '{cmd_id}'")
+                _LOGGER.error("Baichuan host %s: received cmd_id '%s', while sending cmd_id '%s', trying again", self._host, rec_cmd_id, cmd_id)
+                return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
+
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
         rec_enc_type = data[16:18].hex()
         mess_class = data[18:20].hex()
@@ -310,8 +331,11 @@ class Baichuan:
             except ReolinkError as err:
                 _LOGGER.error("Baichuan host %s: failed to logout: %s", self._host, err)
 
-            self._writer.close()
-            await self._writer.wait_closed()
+            try:
+                self._writer.close()
+                await self._writer.wait_closed()
+            except ConnectionResetError as err:
+                _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
             _LOGGER.debug("Baichuan host %s: closed connection", self._host)
 
         self._logged_in = False
