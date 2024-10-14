@@ -2,12 +2,11 @@
 
 import logging
 import asyncio
-from hashlib import md5
 from xml.etree import ElementTree as XML
-from enum import Enum
 from Cryptodome.Cipher import AES
 
 from . import xmls
+from .tcp_protocol import BaichuanTcpClientProtocol
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -17,61 +16,11 @@ from ..exceptions import (
     ReolinkConnectionError,
     ReolinkTimeoutError,
 )
+from .util import BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern
 
 _LOGGER = logging.getLogger(__name__)
 
-BC_PORT = 9000
-HEADER_MAGIC = "f0debc0a"
 RETRY_ATTEMPTS = 3
-
-XML_KEY = [0x1F, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0xFF]
-AES_IV = b"0123456789abcdef"
-
-
-class EncType(Enum):
-    """encoding types with messege class"""
-
-    BC = "bc"
-    AES = "aes"
-
-
-class PortType(Enum):
-    """communication port"""
-
-    http = "http"
-    https = "https"
-    rtmp = "rtmp"
-    rtsp = "rtsp"
-    onvif = "onvif"
-
-
-def decrypt_baichuan(buf: bytes, offset: int) -> str:
-    """Decrypt a received message using the baichuan protocol"""
-    decrypted = ""
-    for idx, byte in enumerate(buf):
-        key = XML_KEY[(offset + idx) % len(XML_KEY)]
-        char = byte ^ key ^ (offset)
-        decrypted += chr(char)
-    return decrypted
-
-
-def encrypt_baichuan(buf: str, offset: int) -> bytes:
-    """Encrypt a message using the baichuan protocol before sending"""
-    encrypt = b""
-    for idx, char in enumerate(buf):
-        key = XML_KEY[(offset + idx) % len(XML_KEY)]
-        byte = ord(char) ^ key ^ (offset)
-        encrypt += byte.to_bytes(1, "big")
-    return encrypt
-
-
-def md5_str_modern(string: str) -> str:
-    """Get the MD5 hex hash of a string according to the baichuan protocol"""
-    enc_str = string.encode("utf8")
-    md5_bytes = md5(enc_str).digest()
-    md5_hex = md5_bytes.hex()[0:31]
-    md5_HEX = md5_hex.upper()
-    return md5_HEX
 
 
 class Baichuan:
@@ -95,8 +44,9 @@ class Baichuan:
 
         # TCP connection
         self._mutex = asyncio.Lock()
-        self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
+        self._loop = asyncio.get_event_loop()
+        self._transport: asyncio.Transport | None = None
+        self._protocol: BaichuanTcpClientProtocol | None = None
         self._logged_in: bool = False
 
         # states
@@ -141,15 +91,14 @@ class Baichuan:
 
         # send message
         async with self._mutex:
-            if self._writer is None or self._reader is None or self._writer.is_closing():
+            if self._transport is None or self._protocol is None or self._transport.is_closing():
                 try:
                     async with asyncio.timeout(15):
-                        self._reader, self._writer = await asyncio.open_connection(self._host, self._port)
+                        self._transport, self._protocol = await self._loop.create_connection(lambda: BaichuanTcpClientProtocol(self._loop, self._host), self._host, self._port)
                 except asyncio.TimeoutError as err:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
                 except ConnectionResetError as err:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
-                _LOGGER.debug("Baichuan host %s: opened connection", self._host)
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 if mess_len > 0:
@@ -157,12 +106,16 @@ class Baichuan:
                 else:
                     _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
 
+            if self._protocol.expected_cmd_id is not None or self._protocol.receive_future is not None:
+                raise ReolinkError(f"Baichuan host {self._host}: receive future is already set, cannot receive multiple requests simultaneously")
+
+            self._protocol.expected_cmd_id = cmd_id
+            self._protocol.receive_future = self._loop.create_future()
+
             try:
                 async with asyncio.timeout(15):
-                    self._writer.write(header + enc_body_bytes)
-                    await self._writer.drain()
-
-                    data = await self._reader.read(16384)
+                    self._transport.write(header + enc_body_bytes)
+                    data = await self._protocol.receive_future
             except asyncio.TimeoutError as err:
                 raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
             except ConnectionResetError as err:
@@ -170,33 +123,12 @@ class Baichuan:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
                 _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
                 return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
+            finally:
+                self._protocol.expected_cmd_id = None
+                self._protocol.receive_future.cancel()
+                self._protocol.receive_future = None
 
-        # parse received header
-        if data[0:4].hex() != HEADER_MAGIC:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: received message with invalid magic header: {data.hex()}")
-
-        rec_cmd_id = int.from_bytes(data[4:8], byteorder="little")
         len_body = int.from_bytes(data[8:12], byteorder="little")
-
-        if rec_cmd_id != cmd_id:
-            # check if there are multiple cmds received
-            while rec_cmd_id != cmd_id and len(data) > len_body + 48: 
-                _LOGGER.debug(f"Baichuan host {self._host}: received multiple commmands, skipping cmd_id {rec_cmd_id} because cmd_id {cmd_id} was requested")
-                if data[len_body+24:len_body+28].hex() == HEADER_MAGIC:
-                    data = data[len_body+24::]
-                elif data[len_body+20:len_body+24].hex() == HEADER_MAGIC:
-                    data = data[len_body+20::]
-                else:
-                    break
-                rec_cmd_id = int.from_bytes(data[4:8], byteorder="little")
-                len_body = int.from_bytes(data[8:12], byteorder="little")
-            # check again
-            if rec_cmd_id != cmd_id:
-                if retry <= 0:
-                    raise UnexpectedDataError(f"Baichuan host {self._host}: received cmd_id '{rec_cmd_id}', while sending cmd_id '{cmd_id}'")
-                _LOGGER.error("Baichuan host %s: received cmd_id '%s', while sending cmd_id '%s', trying again", self._host, rec_cmd_id, cmd_id)
-                return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
-
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
         rec_enc_type = data[16:18].hex()
         mess_class = data[18:20].hex()
@@ -324,7 +256,7 @@ class Baichuan:
 
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
-        if self._writer is not None:
+        if self._transport is not None and self._protocol is not None:
             try:
                 xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
                 await self.send(cmd_id=2, body=xml)
@@ -332,15 +264,14 @@ class Baichuan:
                 _LOGGER.error("Baichuan host %s: failed to logout: %s", self._host, err)
 
             try:
-                self._writer.close()
-                await self._writer.wait_closed()
+                self._transport.close()
+                await self._protocol.close_future
             except ConnectionResetError as err:
                 _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
-            _LOGGER.debug("Baichuan host %s: closed connection", self._host)
 
         self._logged_in = False
-        self._writer = None
-        self._reader = None
+        self._transport = None
+        self._protocol = None
         self._nonce = None
         self._aes_key = None
         self._user_hash = None
