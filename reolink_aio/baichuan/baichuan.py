@@ -311,6 +311,11 @@ class Baichuan:
         self._dev_info = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
         return self._dev_info
 
+    async def get_channel_uids(self) -> None:
+        """Get a channel list containing the UIDs"""
+        # the NVR sends a message with cmd_id 145 when connecting, but it seems to not allow requesting that id.
+        await self.send(cmd_id=145)
+
     async def get_wifi_signal(self) -> None:
         """Get the wifi signal of the host"""
         await self.send(cmd_id=115)
