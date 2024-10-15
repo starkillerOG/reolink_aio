@@ -115,7 +115,7 @@ class Baichuan:
             try:
                 async with asyncio.timeout(15):
                     self._transport.write(header + enc_body_bytes)
-                    data = await self._protocol.receive_future
+                    data, len_header = await self._protocol.receive_future
             except asyncio.TimeoutError as err:
                 raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
             except ConnectionResetError as err:
@@ -128,32 +128,9 @@ class Baichuan:
                 self._protocol.receive_future.cancel()
                 self._protocol.receive_future = None
 
-        len_body = int.from_bytes(data[8:12], byteorder="little")
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
         rec_enc_type = data[16:18].hex()
-        mess_class = data[18:20].hex()
-
-        # check message class
-        if mess_class == "1466":  # modern 20 byte header
-            len_header = 20
-        elif mess_class in ["1464", "0000"]:  # modern 24 byte header
-            len_header = 24
-            rec_payload_offset = int.from_bytes(data[20:24], byteorder="little")
-            if rec_payload_offset != 0:
-                raise InvalidContentTypeError("Baichuan host {self._host}: received a message with a non-zero payload offset, parsing not implemented")
-        elif mess_class == "1465":  # legacy 20 byte header
-            len_header = 20
-            raise InvalidContentTypeError("Baichuan host {self._host}: received legacy message, parsing not implemented")
-        else:
-            raise InvalidContentTypeError(f"Baichuan host {self._host}: received unknown message class '{mess_class}'")
-
-        # check body length
         enc_body = data[len_header::]
-        if len(enc_body) != len_body:
-            if retry <= 0:
-                raise UnexpectedDataError(f"Baichuan host {self._host}: received {len(enc_body)} bytes in the body, while header specified {len_body} bytes")
-            _LOGGER.error("Baichuan host %s: received %s bytes in the body, while header specified %s bytes, trying again", self._host, len(enc_body), len_body)
-            return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
 
         # check status code
         if len_header == 24:
@@ -174,7 +151,7 @@ class Baichuan:
             raise InvalidContentTypeError(f"Baichuan host {self._host}: received unknown encryption type '{rec_enc_type}', data: {data.hex()}")
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            if len_body > 0:
+            if len(enc_body) > 0:
                 _LOGGER.debug("Baichuan host %s: received:\n%s", self._host, self._hide_password(rec_body))
             else:
                 _LOGGER.debug("Baichuan host %s: received status 200:OK without body", self._host)

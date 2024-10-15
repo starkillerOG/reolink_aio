@@ -6,6 +6,8 @@ import asyncio
 from ..exceptions import (
     UnexpectedDataError,
     ReolinkConnectionError,
+    InvalidContentTypeError,
+    ReolinkError,
 )
 from .util import HEADER_MAGIC
 
@@ -17,6 +19,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
 
     def __init__(self, loop, host: str):
         self._host: str = host
+        self._data: bytes = b""
 
         self.expected_cmd_id: int | None = None
         self.receive_future: asyncio.Future | None = None
@@ -26,32 +29,88 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         """Connection callback"""
         _LOGGER.debug("Baichuan host %s: opened connection", self._host)
 
+    def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError) -> None:
+        """Set a error message to the future or log the error"""
+        self._data = b""
+        if self.receive_future is not None:
+            exc = exc_class(f"Baichuan host {self._host}: received a message {err_mess}")
+            self.receive_future.set_exception(exc)
+        else:
+            _LOGGER.debug("Baichuan host %s: received unrequested message %s, dropping", self._host, err_mess)
+
     def data_received(self, data: bytes) -> None:
         """Data received callback"""
         # parse received header
-        if data[0:4].hex() != HEADER_MAGIC:
-            if self.receive_future is not None:
-                exc = UnexpectedDataError(f"Baichuan host {self._host}: received message with invalid magic header: {data[0:4].hex()}")
-                self.receive_future.set_exception(exc)
+        if data[0:4].hex() == HEADER_MAGIC:
+            if self._data:
+                _LOGGER.debug("Baichuan host %s: received magic header while there is still data in the buffer, clearing old data", self._host)
+            self._data = data
+        else:
+            if self._data:
+                # was waiting on more data so append
+                self._data = self._data + data
             else:
-                _LOGGER.debug("Baichuan host %s: received unrequested message with invalid magic header: %s, ignoring", self._host, data[0:4].hex())
+                self._set_error(f"with invalid magic header: {data[0:4].hex()}", UnexpectedDataError)
+                return
+        
+        self.parse_data()
+
+    def parse_data(self) -> None:
+        """Parse received data"""
+        rec_cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
+        rec_len_body = int.from_bytes(self._data[8:12], byteorder="little")
+        mess_class = self._data[18:20].hex()
+
+        # check message class
+        if mess_class == "1466":  # modern 20 byte header
+            len_header = 20
+        elif mess_class in ["1464", "0000"]:  # modern 24 byte header
+            len_header = 24
+            rec_payload_offset = int.from_bytes(self._data[20:24], byteorder="little")
+            if rec_payload_offset != 0:
+                self._set_error("with a non-zero payload offset, parsing not implemented", InvalidContentTypeError)
+                return
+        elif mess_class == "1465":  # legacy 20 byte header
+            len_header = 20
+            self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError)
+            return
+        else:
+            self._set_error(f"with unknown message class '{mess_class}'", InvalidContentTypeError)
             return
 
-        rec_cmd_id = int.from_bytes(data[4:8], byteorder="little")
-        if self.receive_future is None or self.expected_cmd_id is None:
-            _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, ignoring", self._host, rec_cmd_id)
+        # check message length
+        len_body = len(self._data) - len_header
+        if len_body < rec_len_body:
+            # do not clear self._data, wait for the rest of the data
+            _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while header specified %s bytes, waiting for the rest", self._host, len_body, rec_len_body)
             return
+        
+        data_chunk = self._data[0:rec_len_body+len_header]
+        if len_body > rec_len_body:
+            _LOGGER.debug(f"Baichuan host {self._host}: received {len_body} bytes while header specified {rec_len_body} bytes, parsing multiple messages")
+            self._data = self._data[rec_len_body+len_header::]
+        else:
+            self._data = b''
 
-        if rec_cmd_id != self.expected_cmd_id:
-            _LOGGER.debug(
-                "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, ignoring and waiting for next data",
-                self._host,
-                rec_cmd_id,
-                self.expected_cmd_id,
-            )
-            return
+        try:
+            if self.receive_future is None or self.expected_cmd_id is None:
+                _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, dropping", self._host, rec_cmd_id)
+                return
 
-        self.receive_future.set_result(data)
+            if rec_cmd_id != self.expected_cmd_id:
+                _LOGGER.debug(
+                    "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, ignoring and waiting for next data",
+                    self._host,
+                    rec_cmd_id,
+                    self.expected_cmd_id,
+                )
+                return
+
+            self.receive_future.set_result((data_chunk, len_header))
+        finally:
+            # if multiple messages received, parse the next also
+            if self._data:
+                self.parse_data()
 
     def connection_lost(self, exc: Exception | None) -> None:
         """Connection lost callback"""
