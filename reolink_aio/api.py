@@ -1320,7 +1320,7 @@ class Host:
                 raise LoginFirmwareError(
                     f"Failed to login to host '{self._host}', "
                     f"please update the firmware to version {self.sw_version_required.version_string} "
-                    "using the Reolink Download Center: https://reolink.com/de/download-center, "
+                    "using the Reolink Download Center: https://reolink.com/download-center, "
                     f"currently version {self.sw_version} is installed, {exc}"
                 ) from exc
             raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
