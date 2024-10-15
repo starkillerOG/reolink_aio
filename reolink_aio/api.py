@@ -1269,11 +1269,12 @@ class Host:
                 if not self.baichuan.onvif_enabled:
                     await self.baichuan.set_port_enabled(PortType.onvif, True)
                 await self.baichuan.get_ports()
-                # give the camera some time to startup the HTTP API server
-                await asyncio.sleep(5)
             except ReolinkError as exc:
                 # Raise original exception instead of the retry fallback exception
                 raise first_exc from exc
+
+            # give the camera some time to startup the HTTP API server
+            await asyncio.sleep(5)
 
         if self.baichuan.https_enabled and self.baichuan.https_port is not None:
             self._port = self.baichuan.https_port
@@ -1311,11 +1312,12 @@ class Host:
             try:
                 await self.baichuan.set_port_enabled(PortType.rtmp, True)
                 await self.baichuan.get_ports()
-                # give the camera some time to startup the HTTP API server
-                await asyncio.sleep(5)
             except ReolinkError as exc:
                 # Raise original exception instead of the retry fallback exception
                 raise first_exc from exc
+
+            # give the camera some time to startup the HTTP API server
+            await asyncio.sleep(5)
 
             # retry login now that the RTMP port is also open
             try:
@@ -1331,6 +1333,81 @@ class Host:
             "using the Reolink Download Center: https://reolink.com/download-center, "
             f"currently version {self.sw_version} is installed"
         )
+
+    async def _login_open_port(self) -> None:
+        first_exc = None
+        try:
+            await self.login()
+            return
+        except LoginError as exc:
+            if self._port is None or self._use_https is None:
+                raise
+            first_exc = exc
+
+        # see which ports are enabled using baichuan protocol on port 9000
+        try:
+            await self.baichuan.get_ports()
+        except ReolinkError as exc:
+            # Raise original exception instead of the retry fallback exception
+            raise first_exc from exc
+
+        _LOGGER.warning("HTTP(s) login failed while Baichuan login succeeded, re-opening HTTP(s) port and looking up correct port on host %s", self._host)
+
+        # open the HTTP(s) port
+        if not self.baichuan.https_enabled and not self.baichuan.http_enabled:
+            try:
+                if self._use_https or self._use_https is None:
+                    await self.baichuan.set_port_enabled(PortType.https, True)
+                else:
+                    await self.baichuan.set_port_enabled(PortType.http, True)
+                await self.baichuan.get_ports()
+            except ReolinkError as exc:
+                # Raise original exception instead of the retry fallback exception
+                raise first_exc from exc
+
+            # give the camera some time to startup the HTTP API server
+            await asyncio.sleep(5)
+
+        # select preferred port
+        if self._use_https and self.baichuan.https_enabled and self.baichuan.https_port is not None:
+            self._port = self.baichuan.https_port
+            self.enable_https(True)
+        elif not self._use_https and self.baichuan.http_enabled and self.baichuan.http_port is not None:
+            self._port = self.baichuan.http_port
+            self.enable_https(False)
+        elif self.baichuan.https_enabled and self.baichuan.https_port is not None:
+            self._port = self.baichuan.https_port
+            self.enable_https(True)
+        elif self.baichuan.http_enabled and self.baichuan.http_port is not None:
+            self._port = self.baichuan.http_port
+            self.enable_https(False)
+        else:
+            raise LoginError(f"Failed to open HTTP(s) port on host '{self._host}' using baichuan, altough no errors returned by API") from first_exc
+
+        # retry login now that the port is open, this will also logout the baichuan session
+        try:
+            await self.login()
+            return
+        except LoginError as exc:
+            if self.baichuan.rtmp_enabled or self.baichuan.rtmp_enabled is None:
+                raise LoginError(f"Failed to login after opening HTTPs port on host '{self._host}' using baichuan protocol: {exc}") from exc
+
+        # open the RTMP port
+        try:
+            await self.baichuan.set_port_enabled(PortType.rtmp, True)
+            await self.baichuan.get_ports()
+            # give the camera some time to startup the HTTP API server
+            await asyncio.sleep(5)
+        except ReolinkError as exc:
+            # Raise original exception instead of the retry fallback exception
+            raise first_exc from exc
+
+        # retry login now that the RTMP port is also open
+        try:
+            await self.login()
+            return
+        except LoginError as exc:
+            raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
@@ -4987,7 +5064,7 @@ class Host:
             is_login_logout = cur_command in ["Login", "Logout"]
 
         if not is_login_logout:
-            await self.login()
+            await self._login_open_port()
 
         if not param:
             param = {}
