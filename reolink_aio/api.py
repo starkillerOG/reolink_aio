@@ -1284,24 +1284,11 @@ class Host:
         else:
             raise LoginError(f"Failed to open HTTPs port on host '{self._host}' using baichuan, altough no errors returned by API") from first_exc
 
-        # retry login now that the port is open, this will also logout the baichuan session
+        # check the firmware version
         try:
-            await self.login()
-            return
-        except LoginError as exc:
-            if self.baichuan.rtmp_enabled or self.baichuan.rtmp_enabled is None:
-                raise LoginError(f"Failed to login after opening HTTPs port on host '{self._host}' using baichuan protocol: {exc}") from exc
-
-        # open the RTMP port
-        try:
-            await self.baichuan.set_port_enabled(PortType.rtmp, True)
-            await self.baichuan.get_ports()
             await self.baichuan.get_info()
-            # give the camera some time to startup the HTTP API server
-            await asyncio.sleep(5)
-        except ReolinkError as exc:
-            # Raise original exception instead of the retry fallback exception
-            raise first_exc from exc
+        except ReolinkError:
+            pass
 
         # update info such that minimum firmware can be assest
         self._nvr_model = self.baichuan.model
@@ -1311,19 +1298,39 @@ class Host:
         if self.baichuan.sw_version is not None:
             self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version)
 
-        # retry login now that the RTMP port is also open
+        # retry login now that the port is open, this will also logout the baichuan session
         try:
             await self.login()
             return
         except LoginError as exc:
-            if self.sw_version_update_required:
-                raise LoginFirmwareError(
-                    f"Failed to login to host '{self._host}', "
-                    f"please update the firmware to version {self.sw_version_required.version_string} "
-                    "using the Reolink Download Center: https://reolink.com/download-center, "
-                    f"currently version {self.sw_version} is installed, {exc}"
-                ) from exc
-            raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
+            if (self.baichuan.rtmp_enabled or self.baichuan.rtmp_enabled is None) and not self.sw_version_update_required:
+                raise LoginError(f"Failed to login after opening HTTPs port on host '{self._host}' using baichuan protocol: {exc}") from exc
+
+        # open the RTMP port
+        if not self.baichuan.rtmp_enabled and self.baichuan.rtmp_enabled is not None:
+            try:
+                await self.baichuan.set_port_enabled(PortType.rtmp, True)
+                await self.baichuan.get_ports()
+                # give the camera some time to startup the HTTP API server
+                await asyncio.sleep(5)
+            except ReolinkError as exc:
+                # Raise original exception instead of the retry fallback exception
+                raise first_exc from exc
+
+            # retry login now that the RTMP port is also open
+            try:
+                await self.login()
+                return
+            except LoginError as exc:
+                if not self.sw_version_update_required:
+                    raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
+
+        raise LoginFirmwareError(
+            f"Failed to login to host '{self._host}', "
+            f"please update the firmware to version {self.sw_version_required.version_string} "
+            "using the Reolink Download Center: https://reolink.com/download-center, "
+            f"currently version {self.sw_version} is installed"
+        )
 
     async def logout(self, login_mutex_owned=False):
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
