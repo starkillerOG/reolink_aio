@@ -52,7 +52,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             else:
                 self._set_error(f"with invalid magic header: {data[0:4].hex()}", UnexpectedDataError)
                 return
-        
+
         self.parse_data()
 
     def parse_data(self) -> None:
@@ -84,13 +84,14 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             # do not clear self._data, wait for the rest of the data
             _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while header specified %s bytes, waiting for the rest", self._host, len_body, rec_len_body)
             return
-        
-        data_chunk = self._data[0:rec_len_body+len_header]
+
+        len_chunk = rec_len_body + len_header
+        data_chunk = self._data[0:len_chunk]
         if len_body > rec_len_body:
-            _LOGGER.debug(f"Baichuan host {self._host}: received {len_body} bytes while header specified {rec_len_body} bytes, parsing multiple messages")
-            self._data = self._data[rec_len_body+len_header::]
+            _LOGGER.debug("Baichuan host %s: received %s bytes while header specified %s bytes, parsing multiple messages", self._host, len_body, rec_len_body)
+            self._data = self._data[len_chunk::]
         else:
-            self._data = b''
+            self._data = b""
 
         try:
             if self.receive_future is None or self.expected_cmd_id is None:
