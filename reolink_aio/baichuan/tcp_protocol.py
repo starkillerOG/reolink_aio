@@ -58,7 +58,11 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 self._set_error(f"with invalid magic header: {data[0:4].hex()}", UnexpectedDataError)
                 return
 
-        self.parse_data()
+        try:
+            self.parse_data()
+        except Exception as exc:
+            _LOGGER.exception("Baichuan host %s: error during parsing of received data: %s", self._host, str(exc))
+            self._data = b""
 
     def parse_data(self) -> None:
         """Parse received data"""
