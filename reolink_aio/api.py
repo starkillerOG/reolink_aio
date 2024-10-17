@@ -1249,6 +1249,7 @@ class Host:
         try:
             await self.baichuan.get_ports()
         except ReolinkError as exc:
+            _LOGGER.debug(exc)
             # Raise original exception instead of the retry fallback exception
             raise first_exc from exc
 
@@ -1335,19 +1336,22 @@ class Host:
         )
 
     async def _login_open_port(self) -> None:
+        if self._port is None or self._use_https is None:
+            await self._login_try_ports()
+            return
+
         first_exc = None
         try:
             await self.login()
             return
         except LoginError as exc:
-            if self._port is None or self._use_https is None:
-                raise
             first_exc = exc
 
         # see which ports are enabled using baichuan protocol on port 9000
         try:
             await self.baichuan.get_ports()
         except ReolinkError as exc:
+            _LOGGER.debug(exc)
             # Raise original exception instead of the retry fallback exception
             raise first_exc from exc
 

@@ -97,7 +97,7 @@ class Baichuan:
                         self._transport, self._protocol = await self._loop.create_connection(lambda: BaichuanTcpClientProtocol(self._loop, self._host), self._host, self._port)
                 except asyncio.TimeoutError as err:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
-                except ConnectionResetError as err:
+                except (ConnectionResetError, OSError) as err:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
@@ -118,7 +118,7 @@ class Baichuan:
                     data, len_header = await self._protocol.receive_future
             except asyncio.TimeoutError as err:
                 raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
-            except ConnectionResetError as err:
+            except (ConnectionResetError, OSError) as err:
                 if retry <= 0 or cmd_id == 2:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
                 _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
