@@ -8,7 +8,6 @@ from Cryptodome.Cipher import AES
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
 from ..exceptions import (
-    ApiError,
     InvalidContentTypeError,
     InvalidParameterError,
     ReolinkError,
@@ -94,7 +93,9 @@ class Baichuan:
             if self._transport is None or self._protocol is None or self._transport.is_closing():
                 try:
                     async with asyncio.timeout(15):
-                        self._transport, self._protocol = await self._loop.create_connection(lambda: BaichuanTcpClientProtocol(self._loop, self._host), self._host, self._port)
+                        self._transport, self._protocol = await self._loop.create_connection(
+                            lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback), self._host, self._port
+                        )
                 except asyncio.TimeoutError as err:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
                 except (ConnectionResetError, OSError) as err:
@@ -128,30 +129,11 @@ class Baichuan:
                 self._protocol.receive_future.cancel()
                 self._protocol.receive_future = None
 
-        rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
-        rec_enc_type = data[16:18].hex()
-        enc_body = data[len_header::]
-
-        # check status code
-        if len_header == 24:
-            rec_status_code = int.from_bytes(data[16:18], byteorder="little")
-            if rec_status_code != 200:
-                raise ApiError(f"Baichuan host {self._host}: received status code {rec_status_code}", rspCode=rec_status_code)
-
         # decryption
-        if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or (len_header == 24 and enc_type == EncType.BC):
-            # Baichuan Encryption
-            rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
-        elif (len_header == 20 and rec_enc_type in ["02dd", "03dd"]) or (len_header == 24 and enc_type == EncType.AES):
-            # AES Encryption
-            rec_body = self._aes_decrypt(enc_body)
-        elif rec_enc_type == "00dd":  # Unencrypted
-            rec_body = enc_body.decode("utf8")
-        else:
-            raise InvalidContentTypeError(f"Baichuan host {self._host}: received unknown encryption type '{rec_enc_type}', data: {data.hex()}")
+        rec_body = self._decrypt(data, len_header, enc_type)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            if len(enc_body) > 0:
+            if len(rec_body) > 0:
                 _LOGGER.debug("Baichuan host %s: received:\n%s", self._host, self._hide_password(rec_body))
             else:
                 _LOGGER.debug("Baichuan host %s: received status 200:OK without body", self._host)
@@ -174,6 +156,26 @@ class Baichuan:
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.decrypt(data).decode("utf8")
 
+    def _decrypt(self, data: bytes, len_header: int, enc_type: EncType = EncType.AES) -> str:
+        """Figure out the encryption method and decrypt the message"""
+        rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
+        rec_enc_type = data[16:18].hex()
+        enc_body = data[len_header::]
+
+        # decryption
+        if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or (len_header == 24 and enc_type == EncType.BC):
+            # Baichuan Encryption
+            rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
+        elif (len_header == 20 and rec_enc_type in ["02dd", "03dd"]) or (len_header == 24 and enc_type == EncType.AES):
+            # AES Encryption
+            rec_body = self._aes_decrypt(enc_body)
+        elif rec_enc_type == "00dd":  # Unencrypted
+            rec_body = enc_body.decode("utf8")
+        else:
+            raise InvalidContentTypeError(f"Baichuan host {self._host}: received unknown encryption type '{rec_enc_type}', data: {data.hex()}")
+
+        return rec_body
+
     def _hide_password(self, content: str | bytes | dict | list) -> str:
         """Redact sensitive informtation from the logs"""
         redacted = str(content)
@@ -186,6 +188,18 @@ class Baichuan:
         if self._password_hash:
             redacted = redacted.replace(self._password_hash, "<password_md5_hash>")
         return redacted
+
+    def _push_callback(self, cmd_id: int, data: bytes, len_header: int) -> None:
+        """Callback to parse a received message that was pushed"""
+        # decryption
+        rec_body = self._decrypt(data, len_header)
+
+        if len(rec_body) == 0:
+            _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body", self._host, cmd_id)
+            return
+
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug("Baichuan host %s: received push cmd_id %s:\n%s", self._host, cmd_id, self._hide_password(rec_body))
 
     def _get_keys_from_xml(self, xml: str, keys: list[str]) -> dict[str, str]:
         """Get multiple keys from a xml and return as a dict"""

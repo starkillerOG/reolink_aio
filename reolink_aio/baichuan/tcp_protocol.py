@@ -3,7 +3,11 @@
 import logging
 import asyncio
 
+from collections.abc import Callable
+
+
 from ..exceptions import (
+    ApiError,
     UnexpectedDataError,
     ReolinkConnectionError,
     InvalidContentTypeError,
@@ -17,13 +21,14 @@ _LOGGER = logging.getLogger(__name__)
 class BaichuanTcpClientProtocol(asyncio.Protocol):
     """Reolink Baichuan TCP protocol."""
 
-    def __init__(self, loop, host: str):
+    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int], None] | None = None) -> None:
         self._host: str = host
         self._data: bytes = b""
 
         self.expected_cmd_id: int | None = None
         self.receive_future: asyncio.Future | None = None
         self.close_future: asyncio.Future = loop.create_future()
+        self.push_callback = push_callback
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Connection callback"""
@@ -85,6 +90,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while header specified %s bytes, waiting for the rest", self._host, len_body, rec_len_body)
             return
 
+        # extract data chunk
         len_chunk = rec_len_body + len_header
         data_chunk = self._data[0:len_chunk]
         if len_body > rec_len_body:
@@ -93,18 +99,30 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         else:
             self._data = b""
 
-        try:
-            if self.receive_future is None or self.expected_cmd_id is None:
-                _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, dropping", self._host, rec_cmd_id)
+        # check status code
+        if len_header == 24:
+            rec_status_code = int.from_bytes(data_chunk[16:18], byteorder="little")
+            if rec_status_code != 200:
+                if self.receive_future is not None and rec_cmd_id == self.expected_cmd_id:
+                    exc = ApiError(f"Baichuan host {self._host}: received status code {rec_status_code}", rspCode=rec_status_code)
+                    self.receive_future.set_exception(exc)
+                else:
+                    _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s and status code %s", self._host, rec_cmd_id, rec_status_code)
                 return
 
-            if rec_cmd_id != self.expected_cmd_id:
-                _LOGGER.debug(
-                    "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, ignoring and waiting for next data",
-                    self._host,
-                    rec_cmd_id,
-                    self.expected_cmd_id,
-                )
+        try:
+            if self.receive_future is None or self.expected_cmd_id is None or rec_cmd_id != self.expected_cmd_id:
+                if self.push_callback is not None:
+                    self.push_callback(rec_cmd_id, data_chunk, len_header)
+                elif self.expected_cmd_id is not None:
+                    _LOGGER.debug(
+                        "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
+                        self._host,
+                        rec_cmd_id,
+                        self.expected_cmd_id,
+                    )
+                else:
+                    _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, dropping", self._host, rec_cmd_id)
                 return
 
             self.receive_future.set_result((data_chunk, len_header))
