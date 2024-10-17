@@ -24,7 +24,7 @@ If you appreciate the reolink integration and want to support its development, p
 
 ### Prerequisites
 
-- Python 3.10
+- Python 3.11
 
 ### Installation
 
@@ -106,7 +106,10 @@ if __name__ == "__main__":
 
 ### Acknowledgment
 This library is based on the work of:
-- fwestenberg: https://github.com/fwestenberg/reolink_dev
+- @fwestenberg: https://github.com/fwestenberg/reolink_dev
+
+The baichuan part of this library is based on the work of:
+- @QuantumEntangledAndy and @thirtythreeforty: https://github.com/QuantumEntangledAndy/neolink
 
 **Author**
 

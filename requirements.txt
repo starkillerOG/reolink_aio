@@ -1,4 +1,5 @@
 aiohttp
 aiortsp
 orjson
+pycryptodomex
 typing_extensions

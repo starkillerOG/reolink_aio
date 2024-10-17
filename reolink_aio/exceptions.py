@@ -28,6 +28,10 @@ class LoginError(ReolinkError):
     """Raised when a login attempt fails for another reason than the credentials"""
 
 
+class LoginFirmwareError(LoginError):
+    """Raised when a login attempt fails and the minimum required firmware version is not met"""
+
+
 class NoDataError(ReolinkError):
     """Raised when an API call returns None instead of expected data"""
 
