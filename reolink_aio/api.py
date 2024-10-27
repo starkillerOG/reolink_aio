@@ -2768,7 +2768,7 @@ class Host:
                         payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
                         payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
 
-                        response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False)
+                        response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False, timeout=self._timeout)
                         data = await response.text(encoding="utf-8")
 
                     json_data = json_loads(data)
