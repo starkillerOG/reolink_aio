@@ -174,7 +174,7 @@ class Host:
 
         ##############################################################################
         # Baichuan protocol (port 9000)
-        self.baichuan = Baichuan(host=host, username=username, password=password)
+        self.baichuan = Baichuan(host=host, username=username, password=password, http_api=self)
 
         ##############################################################################
         # NVR (host-level) attributes

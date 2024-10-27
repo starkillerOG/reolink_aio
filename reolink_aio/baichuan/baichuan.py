@@ -1,7 +1,10 @@
 """ Reolink Baichuan API """
 
+from __future__ import annotations
+
 import logging
 import asyncio
+from typing import TYPE_CHECKING
 from xml.etree import ElementTree as XML
 from Cryptodome.Cipher import AES
 
@@ -15,7 +18,11 @@ from ..exceptions import (
     ReolinkConnectionError,
     ReolinkTimeoutError,
 )
+
 from .util import BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern
+
+if TYPE_CHECKING:
+    from ..api import Host
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -31,7 +38,10 @@ class Baichuan:
         username: str,
         password: str,
         port: int = BC_PORT,
+        http_api: Host | None = None,
     ) -> None:
+        self._http_api = http_api
+
         self._host: str = host
         self._port: int = port
         self._username: str = username
@@ -51,6 +61,7 @@ class Baichuan:
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[str, str] = {}
+        self._log_once: list[str] = []
 
     async def send(
         self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
@@ -201,15 +212,21 @@ class Baichuan:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("Baichuan host %s: received push cmd_id %s:\n%s", self._host, cmd_id, self._hide_password(rec_body))
 
+        self._parse_xml(cmd_id, rec_body)
+
+    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None:
+        """Get a value for a key in a xml element"""
+        xml_value = xml_element.find(f".//{key}")
+        if xml_value is None:
+            return None
+        return xml_value.text
+
     def _get_keys_from_xml(self, xml: str, keys: list[str]) -> dict[str, str]:
         """Get multiple keys from a xml and return as a dict"""
         root = XML.fromstring(xml)
         result = {}
         for key in keys:
-            xml_value = root.find(f".//{key}")
-            if xml_value is None:
-                continue
-            value = xml_value.text
+            value = self._get_value_from_xml_element(root, key)
             if value is None:
                 continue
             result[key] = value
@@ -232,6 +249,49 @@ class Baichuan:
         self._aes_key = aes_key_str.encode("utf8")
 
         return self._nonce
+
+    def _parse_xml(self, cmd_id: int, xml: str) -> None:
+        """parce received xml"""
+        if cmd_id == 33:
+            # Motion/AI/Visitor event
+            if self._http_api is None:
+                return
+
+            root = XML.fromstring(xml)
+            for alarm_event_list in root:
+                for alarm_event in alarm_event_list:
+                    channel_str = self._get_value_from_xml_element(alarm_event, "channelId")
+                    states = self._get_value_from_xml_element(alarm_event, "status")
+                    ai_types = self._get_value_from_xml_element(alarm_event, "AItype")
+                    if channel_str is None:
+                        continue
+
+                    channel = int(channel_str)
+
+                    if states is not None:
+                        motion_state = "MD" in states
+                        visitor_state = "visitor" in states
+                        if motion_state != self._http_api._motion_detection_states[channel]:
+                            _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self._http_api.nvr_name, channel, motion_state)
+                        if visitor_state != self._http_api._visitor_states[channel]:
+                            _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self._http_api.nvr_name, channel, visitor_state)
+                        self._http_api._motion_detection_states[channel] = motion_state
+                        self._http_api._visitor_states[channel] = visitor_state
+
+                    if ai_types is not None:
+                        for ai_type_key in self._http_api._ai_detection_states.get(channel, {}):
+                            ai_state = ai_type_key in ai_types
+                            if ai_state != self._http_api._ai_detection_states[channel][ai_type_key]:
+                                _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self._http_api.nvr_name, channel, ai_type_key, ai_state)
+                            self._http_api._ai_detection_states[channel][ai_type_key] = ai_state
+
+                        ai_type_list = ai_types.split(",")
+                        for ai_type in ai_type_list:
+                            if ai_type == "none":
+                                continue
+                            if ai_type not in self._http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
+                                self._log_once.append(f"TCP_event_unknown_{ai_type}")
+                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self._http_api.nvr_name, channel, ai_type)
 
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
