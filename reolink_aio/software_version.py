@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 
 from .exceptions import UnexpectedDataError
+
+_LOGGER = logging.getLogger(__name__)
 
 MINIMUM_FIRMWARE = {
     "RLN8-410": {
@@ -155,11 +158,23 @@ class SoftwareVersion:
             self.is_unknown = True
             return
 
+        build = None
+        date = None
+
         match = version_regex_long.match(self.version_string)
         if match is None:
             match = version_regex.match(self.version_string)
         if match is None:
             match = version_regex_no_date.match(self.version_string)
+            if match is not None:
+                build = match.group("build")
+            if build is not None and len(build) > 10:
+                if int(build[-8:-6]) > 12:
+                    date = build[-8:]
+                    build = build[:-8]
+                elif int(build[-10:-8]) > 12:
+                    date = build[-10:]
+                    build = build[:-10]
         if match is None:
             match = version_regex_old_format.match(self.version_string)
         if match is None:
@@ -168,16 +183,23 @@ class SoftwareVersion:
         self.major = int(match.group("major"))
         self.middle = int(match.group("middle"))
         self.minor = int(match.group("minor"))
-        build = match.group("build")
+        if build is None:
+            build = match.group("build")
         if build is not None:
             self.build = int(build)
-        try:
-            date = match.group("date")
-        except IndexError:
-            date = None
+        if date is None:
+            try:
+                date = match.group("date")
+            except IndexError:
+                date = None
         if date is not None:
             try:
-                self.date = datetime.strptime(date, "%y%m%d%M")
+                if len(date) == 8:
+                    self.date = datetime.strptime(date, "%y%m%d%M")
+                elif len(date) == 10:
+                    self.date = datetime.strptime(date, "%y%m%d%M%S")
+                else:
+                    _LOGGER.warning("Reolink software version string '%s' has unknown date length format '%s'", version_string, date)
             except ValueError:
                 pass
 
