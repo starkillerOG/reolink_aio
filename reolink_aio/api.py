@@ -5087,7 +5087,7 @@ class Host:
             data: bytes | str
             if expected_response_type == "image/jpeg":
                 async with self._send_mutex:
-                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False)
+                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=self._timeout)
 
                 data = await response.read()  # returns bytes
             elif expected_response_type == "application/octet-stream":
@@ -5103,7 +5103,7 @@ class Host:
                     _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(body))
 
                 async with self._send_mutex:
-                    response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False)
+                    response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False, timeout=self._timeout)
 
                 data = await response.text(encoding="utf-8")  # returns str
 
