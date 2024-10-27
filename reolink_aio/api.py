@@ -2571,18 +2571,22 @@ class Host:
         request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._sw_model_id[channel]}&hardwareVersion={self._sw_hardware_id[channel]}&lang=en"
         json_data = await self.send_reolink_com(request_URL)
 
-        firmware_info = json_data["data"][0]["firmwares"][0]
-        hw_ver = strip_model_str(firmware_info["hardwareVersion"][0]["title"])
-        mod_ver = strip_model_str(firmware_info["hardwareVersion"][0]["dlProduct"]["title"])
         ch_hw_match = strip_model_str(ch_hw)
         ch_mod_match = strip_model_str(ch_mod)
-        if hw_ver != ch_hw_match or mod_ver != ch_mod_match:
-            raise UnexpectedDataError(f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{ch_hw_match}' or '{mod_ver}' != '{ch_mod_match}'")
+        key = f"{ch_mod}-{ch_hw}"
+        firmware_info_list = json_data["data"][0]["firmwares"]
+        for firmware_info in firmware_info_list:
+            hw_ver = strip_model_str(firmware_info["hardwareVersion"][0]["title"])
+            mod_ver = strip_model_str(firmware_info["hardwareVersion"][0]["dlProduct"]["title"])
+            if hw_ver != ch_hw_match or mod_ver != ch_mod_match:
+                raise UnexpectedDataError(
+                    f"Hardware version of firmware info from reolink.com does not match: '{hw_ver}' != '{ch_hw_match}' or '{mod_ver}' != '{ch_mod_match}'"
+                )
+            new_sw_version = NewSoftwareVersion(firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"], last_check=now)
+            if key not in self._latest_sw_model_version or new_sw_version >= self._latest_sw_model_version[key]:
+                self._latest_sw_model_version[key] = new_sw_version
 
-        self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"] = NewSoftwareVersion(
-            firmware_info["version"], download_url=firmware_info["url"], release_notes=firmware_info["new"], last_check=now
-        )
-        return self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"]
+        return self._latest_sw_model_version[key]
 
     async def check_new_firmware(self, ch_list: list[None | int] | None = None) -> Literal[False] | NewSoftwareVersion | str:
         """check for new firmware using camera API, returns False if no new firmware available."""
