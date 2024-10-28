@@ -3,8 +3,8 @@
 import logging
 import asyncio
 
+from time import time as time_now
 from collections.abc import Callable
-
 
 from ..exceptions import (
     ApiError,
@@ -21,14 +21,16 @@ _LOGGER = logging.getLogger(__name__)
 class BaichuanTcpClientProtocol(asyncio.Protocol):
     """Reolink Baichuan TCP protocol."""
 
-    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int], None] | None = None) -> None:
+    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
         self._host: str = host
         self._data: bytes = b""
 
         self.expected_cmd_id: int | None = None
         self.receive_future: asyncio.Future | None = None
         self.close_future: asyncio.Future = loop.create_future()
-        self.push_callback = push_callback
+        self._close_callback = close_callback
+        self._push_callback = push_callback
+        self.time_recv: float = 0
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Connection callback"""
@@ -50,6 +52,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             if self._data:
                 _LOGGER.debug("Baichuan host %s: received magic header while there is still data in the buffer, clearing old data", self._host)
             self._data = data
+            self.time_recv = time_now()
         else:
             if self._data:
                 # was waiting on more data so append
@@ -116,8 +119,8 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
 
         try:
             if self.receive_future is None or self.expected_cmd_id is None or rec_cmd_id != self.expected_cmd_id:
-                if self.push_callback is not None:
-                    self.push_callback(rec_cmd_id, data_chunk, len_header)
+                if self._push_callback is not None:
+                    self._push_callback(rec_cmd_id, data_chunk, len_header)
                 elif self.expected_cmd_id is not None:
                     _LOGGER.debug(
                         "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
@@ -142,4 +145,6 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost connection while waiting for cmd_id {self.expected_cmd_id}")
             self.receive_future.set_exception(exc)
         _LOGGER.debug("Baichuan host %s: closed connection", self._host)
+        if self._close_callback is not None:
+            self._close_callback()
         self.close_future.set_result(True)
