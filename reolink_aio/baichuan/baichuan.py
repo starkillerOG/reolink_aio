@@ -1,7 +1,12 @@
 """ Reolink Baichuan API """
 
+from __future__ import annotations
+
 import logging
 import asyncio
+from time import time as time_now
+from typing import TYPE_CHECKING
+from collections.abc import Callable
 from xml.etree import ElementTree as XML
 from Cryptodome.Cipher import AES
 
@@ -15,11 +20,16 @@ from ..exceptions import (
     ReolinkConnectionError,
     ReolinkTimeoutError,
 )
+
 from .util import BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern
+
+if TYPE_CHECKING:
+    from ..api import Host
 
 _LOGGER = logging.getLogger(__name__)
 
 RETRY_ATTEMPTS = 3
+KEEP_ALLIVE_INTERVAL = 30  # seconds
 
 
 class Baichuan:
@@ -31,7 +41,10 @@ class Baichuan:
         username: str,
         password: str,
         port: int = BC_PORT,
+        http_api: Host | None = None,
     ) -> None:
+        self._http_api = http_api
+
         self._host: str = host
         self._port: int = port
         self._username: str = username
@@ -48,9 +61,16 @@ class Baichuan:
         self._protocol: BaichuanTcpClientProtocol | None = None
         self._logged_in: bool = False
 
+        # Event subscription
+        self._subscribed: bool = False
+        self._events_active: bool = False
+        self._keepalive_task: asyncio.Task | None = None
+        self._ext_callback: dict[int | None, dict[int | None, dict[str, Callable[[], None]]]] = {}
+
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[str, str] = {}
+        self._log_once: list[str] = []
 
     async def send(
         self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
@@ -94,7 +114,7 @@ class Baichuan:
                 try:
                     async with asyncio.timeout(15):
                         self._transport, self._protocol = await self._loop.create_connection(
-                            lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback), self._host, self._port
+                            lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self._port
                         )
                 except asyncio.TimeoutError as err:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
@@ -201,15 +221,28 @@ class Baichuan:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("Baichuan host %s: received push cmd_id %s:\n%s", self._host, cmd_id, self._hide_password(rec_body))
 
+        self._parse_xml(cmd_id, rec_body)
+
+    def _close_callback(self) -> None:
+        """Callback for when the connection is closed"""
+        self._logged_in = False
+        self._events_active = False
+        if self._subscribed:
+            _LOGGER.error("Baichuan host %s: lost event subscription", self._host)
+
+    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None:
+        """Get a value for a key in a xml element"""
+        xml_value = xml_element.find(f".//{key}")
+        if xml_value is None:
+            return None
+        return xml_value.text
+
     def _get_keys_from_xml(self, xml: str, keys: list[str]) -> dict[str, str]:
         """Get multiple keys from a xml and return as a dict"""
         root = XML.fromstring(xml)
         result = {}
         for key in keys:
-            xml_value = root.find(f".//{key}")
-            if xml_value is None:
-                continue
-            value = xml_value.text
+            value = self._get_value_from_xml_element(root, key)
             if value is None:
                 continue
             result[key] = value
@@ -233,6 +266,96 @@ class Baichuan:
 
         return self._nonce
 
+    def _parse_xml(self, cmd_id: int, xml: str) -> None:
+        """parce received xml"""
+        channels: set[int | None] = {None}
+        cmd_ids: set[int | None] = {None, cmd_id}
+
+        if cmd_id == 33:  # Motion/AI/Visitor event
+            if self._http_api is None:
+                return
+
+            root = XML.fromstring(xml)
+            for alarm_event_list in root:
+                for alarm_event in alarm_event_list:
+                    channel_str = self._get_value_from_xml_element(alarm_event, "channelId")
+                    states = self._get_value_from_xml_element(alarm_event, "status")
+                    ai_types = self._get_value_from_xml_element(alarm_event, "AItype")
+                    if channel_str is None:
+                        continue
+
+                    channel = int(channel_str)
+                    channels.add(channel)
+                    if self._subscribed and not self._events_active:
+                        self._events_active = True
+
+                    if states is not None:
+                        motion_state = "MD" in states
+                        visitor_state = "visitor" in states
+                        if motion_state != self._http_api._motion_detection_states[channel]:
+                            _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self._http_api.nvr_name, channel, motion_state)
+                        if visitor_state != self._http_api._visitor_states[channel]:
+                            _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self._http_api.nvr_name, channel, visitor_state)
+                        self._http_api._motion_detection_states[channel] = motion_state
+                        self._http_api._visitor_states[channel] = visitor_state
+
+                    if ai_types is not None:
+                        for ai_type_key in self._http_api._ai_detection_states.get(channel, {}):
+                            ai_state = ai_type_key in ai_types
+                            if ai_state != self._http_api._ai_detection_states[channel][ai_type_key]:
+                                _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self._http_api.nvr_name, channel, ai_type_key, ai_state)
+                            self._http_api._ai_detection_states[channel][ai_type_key] = ai_state
+
+                        ai_type_list = ai_types.split(",")
+                        for ai_type in ai_type_list:
+                            if ai_type == "none":
+                                continue
+                            if ai_type not in self._http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
+                                self._log_once.append(f"TCP_event_unknown_{ai_type}")
+                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self._http_api.nvr_name, channel, ai_type)
+
+        elif cmd_id == 623:  # Sleep status
+            pass
+
+        # call the callbacks
+        for cmd in cmd_ids:
+            for ch in channels:
+                for callback in self._ext_callback.get(cmd, {}).get(ch, {}).values():
+                    callback()
+
+    async def _keepalive_loop(self) -> None:
+        """Loop which keeps the TCP connection allive when subscribed for events"""
+        while True:
+            _LOGGER.debug("Baichuan host %s: sending keepalive for event subscription", self._host)
+            try:
+                await self.send(cmd_id=31)
+            except Exception as err:
+                _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
+            await asyncio.sleep(KEEP_ALLIVE_INTERVAL)
+            while self._protocol is not None:
+                sleep_t = KEEP_ALLIVE_INTERVAL - (time_now() - self._protocol.time_recv)
+                if sleep_t < 0.5:
+                    break
+                await asyncio.sleep(sleep_t)
+
+    async def subscribe_events(self) -> None:
+        """Subscribe to baichuan push events, keeping the connection open"""
+        if self._subscribed:
+            _LOGGER.debug("Baichuan host %s: already subscribed to events", self._host)
+            return
+        self._subscribed = True
+        if self._keepalive_task is None:
+            self._keepalive_task = self._loop.create_task(self._keepalive_loop())
+
+    async def unsubscribe_events(self) -> None:
+        """Unsubscribe from the baichuan push events"""
+        self._subscribed = False
+        self._events_active = False
+        if self._keepalive_task is not None:
+            self._keepalive_task.cancel()
+            self._keepalive_task = None
+        await self.logout()
+
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
         nonce = await self._get_nonce()
@@ -247,7 +370,12 @@ class Baichuan:
 
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
-        if self._transport is not None and self._protocol is not None:
+        if self._subscribed:
+            # first call unsubscribe_events
+            _LOGGER.debug("Baichuan host %s: logout called while still subscribed, keeping connection", self._host)
+            return
+
+        if self._logged_in and self._transport is not None and self._protocol is not None:
             try:
                 xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
                 await self.send(cmd_id=2, body=xml)
@@ -261,12 +389,31 @@ class Baichuan:
                 _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
 
         self._logged_in = False
+        self._events_active = False
         self._transport = None
         self._protocol = None
         self._nonce = None
         self._aes_key = None
         self._user_hash = None
         self._password_hash = None
+
+    def register_callback(self, callback_id: str, callback: Callable[[], None], cmd_id: int | None = None, channel: int | None = None) -> None:
+        """Register a callback which is called when a push event is received"""
+        self._ext_callback.setdefault(cmd_id, {})
+        self._ext_callback[cmd_id].setdefault(channel, {})
+        if callback_id in self._ext_callback[cmd_id][channel]:
+            _LOGGER.warning("Baichuan host %s: callback id '%s', cmd_id %s, ch %s already registered, overwriting", self._host, callback_id, cmd_id, channel)
+        self._ext_callback[cmd_id][channel][callback_id] = callback
+
+    def unregister_callback(self, callback_id: str) -> None:
+        """Unregister a callback"""
+        for cmd_id in list(self._ext_callback):
+            for channel in list(self._ext_callback[cmd_id]):
+                self._ext_callback[cmd_id][channel].pop(callback_id, None)
+                if not self._ext_callback[cmd_id][channel]:
+                    self._ext_callback[cmd_id].pop(channel)
+            if not self._ext_callback[cmd_id]:
+                self._ext_callback.pop(cmd_id)
 
     async def get_ports(self) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
@@ -310,6 +457,10 @@ class Baichuan:
     async def get_wifi_signal(self) -> None:
         """Get the wifi signal of the host"""
         await self.send(cmd_id=115)
+
+    @property
+    def events_active(self) -> bool:
+        return self._events_active
 
     @property
     def http_port(self) -> int | None:
