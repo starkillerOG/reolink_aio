@@ -395,6 +395,8 @@ class Baichuan:
         """Register a callback which is called when a push event is received"""
         self._ext_callback.setdefault(cmd_id, {})
         self._ext_callback[cmd_id].setdefault(channel, {})
+        if callback_id in self._ext_callback[cmd_id][channel]:
+            _LOGGER.warning("Baichuan host %s: callback id '%s', cmd_id %s, ch %s already registered, overwriting", self._host, callback_id, cmd_id, channel)
         self._ext_callback[cmd_id][channel][callback_id] = callback
 
     def unregister_callback(self, callback_id: str) -> None:
