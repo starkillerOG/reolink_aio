@@ -63,6 +63,7 @@ class Baichuan:
 
         # Event subscription
         self._subscribed: bool = False
+        self._events_active: bool = False
         self._keepalive_task: asyncio.Task | None = None
         self._ext_callback: dict[int | None, dict[int | None, dict[str, Callable[[], None]]]] = {}
 
@@ -225,6 +226,7 @@ class Baichuan:
     def _close_callback(self) -> None:
         """Callback for when the connection is closed"""
         self._logged_in = False
+        self._events_active = False
         if self._subscribed:
             _LOGGER.error("Baichuan host %s: lost event subscription", self._host)
 
@@ -284,6 +286,8 @@ class Baichuan:
 
                     channel = int(channel_str)
                     channels.add(channel)
+                    if self._subscribed and not self._events_active:
+                        self._events_active = True
 
                     if states is not None:
                         motion_state = "MD" in states
@@ -346,6 +350,7 @@ class Baichuan:
     async def unsubscribe_events(self) -> None:
         """Unsubscribe from the baichuan push events"""
         self._subscribed = False
+        self._events_active = False
         if self._keepalive_task is not None:
             self._keepalive_task.cancel()
             self._keepalive_task = None
@@ -384,6 +389,7 @@ class Baichuan:
                 _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
 
         self._logged_in = False
+        self._events_active = False
         self._transport = None
         self._protocol = None
         self._nonce = None
@@ -451,6 +457,10 @@ class Baichuan:
     async def get_wifi_signal(self) -> None:
         """Get the wifi signal of the host"""
         await self.send(cmd_id=115)
+
+    @property
+    def events_active(self) -> bool:
+        return self._events_active
 
     @property
     def http_port(self) -> int | None:
