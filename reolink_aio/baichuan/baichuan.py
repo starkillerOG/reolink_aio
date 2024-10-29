@@ -6,6 +6,7 @@ import logging
 import asyncio
 from time import time as time_now
 from typing import TYPE_CHECKING
+from collections.abc import Callable
 from xml.etree import ElementTree as XML
 from Cryptodome.Cipher import AES
 
@@ -63,6 +64,7 @@ class Baichuan:
         # Event subscription
         self._subscribed: bool = False
         self._keepalive_task: asyncio.Task | None = None
+        self._ext_callback: dict[int | None, dict[int | None, dict[str, Callable[[], None]]]] = {}
 
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
@@ -264,6 +266,9 @@ class Baichuan:
 
     def _parse_xml(self, cmd_id: int, xml: str) -> None:
         """parce received xml"""
+        channels: set[int | None] = {None}
+        cmd_ids: set[int | None] = {None, cmd_id}
+
         if cmd_id == 33:  # Motion/AI/Visitor event
             if self._http_api is None:
                 return
@@ -278,6 +283,7 @@ class Baichuan:
                         continue
 
                     channel = int(channel_str)
+                    channels.add(channel)
 
                     if states is not None:
                         motion_state = "MD" in states
@@ -306,6 +312,12 @@ class Baichuan:
 
         elif cmd_id == 623:  # Sleep status
             pass
+
+        # call the callbacks
+        for cmd in cmd_ids:
+            for ch in channels:
+                for callback in self._ext_callback.get(cmd, {}).get(ch, {}).values():
+                    callback()
 
     async def _keepalive_loop(self) -> None:
         """Loop which keeps the TCP connection allive when subscribed for events"""
@@ -378,6 +390,22 @@ class Baichuan:
         self._aes_key = None
         self._user_hash = None
         self._password_hash = None
+
+    def register_callback(self, callback_id: str, callback: Callable[[], None], cmd_id: int | None = None, channel: int | None = None) -> None:
+        """Register a callback which is called when a push event is received"""
+        self._ext_callback.setdefault(cmd_id, {})
+        self._ext_callback[cmd_id].setdefault(channel, {})
+        self._ext_callback[cmd_id][channel][callback_id] = callback
+
+    def unregister_callback(self, callback_id: str) -> None:
+        """Unregister a callback"""
+        for cmd_id in list(self._ext_callback):
+            for channel in list(self._ext_callback[cmd_id]):
+                self._ext_callback[cmd_id][channel].pop(callback_id, None)
+                if not self._ext_callback[cmd_id][channel]:
+                    self._ext_callback[cmd_id].pop(channel)
+            if not self._ext_callback[cmd_id]:
+                self._ext_callback.pop(cmd_id)
 
     async def get_ports(self) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
