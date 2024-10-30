@@ -279,22 +279,24 @@ class Baichuan:
             for alarm_event_list in root:
                 for alarm_event in alarm_event_list:
                     channel_str = self._get_value_from_xml_element(alarm_event, "channelId")
-                    states = self._get_value_from_xml_element(alarm_event, "status")
-                    ai_types = self._get_value_from_xml_element(alarm_event, "AItype")
                     if channel_str is None:
                         continue
-
                     channel = int(channel_str)
+                    if channel not in self._http_api._channels:
+                        continue
                     channels.add(channel)
+
+                    states = self._get_value_from_xml_element(alarm_event, "status")
+                    ai_types = self._get_value_from_xml_element(alarm_event, "AItype")
                     if self._subscribed and not self._events_active:
                         self._events_active = True
 
                     if states is not None:
                         motion_state = "MD" in states
                         visitor_state = "visitor" in states
-                        if motion_state != self._http_api._motion_detection_states[channel]:
+                        if motion_state != self._http_api._motion_detection_states.get(channel, motion_state):
                             _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self._http_api.nvr_name, channel, motion_state)
-                        if visitor_state != self._http_api._visitor_states[channel]:
+                        if visitor_state != self._http_api._visitor_states.get(channel, visitor_state):
                             _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self._http_api.nvr_name, channel, visitor_state)
                         self._http_api._motion_detection_states[channel] = motion_state
                         self._http_api._visitor_states[channel] = visitor_state
