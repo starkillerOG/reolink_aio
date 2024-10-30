@@ -2725,7 +2725,7 @@ class Host:
             self._updating = True
 
             # Download firmware file from Reolink Download Center
-            response = await self.send_reolink_com(new_version.download_url, "application/octet-stream")
+            response = await self.send_reolink_com(new_version.download_url, "application/octet-stream", user_agent="reolink-aio-firmware")
             with ZipFile(BytesIO(await response.read()), "r") as zip_file:
                 for info in zip_file.infolist():
                     if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
@@ -5510,6 +5510,7 @@ class Host:
         self,
         URL: str,
         expected_response_type: Literal["application/json"],
+        user_agent: str,
     ) -> dict[str, Any]: ...
 
     @overload
@@ -5517,12 +5518,14 @@ class Host:
         self,
         URL: str,
         expected_response_type: Literal["application/octet-stream"],
+        user_agent: str,
     ) -> aiohttp.ClientResponse: ...
 
     async def send_reolink_com(
         self,
         URL: str,
         expected_response_type: Literal["application/json"] | Literal["application/octet-stream"] = "application/json",
+        user_agent: str = "reolink_aio",
     ) -> dict[str, Any] | aiohttp.ClientResponse:
         """Generic send method for reolink.com site."""
 
@@ -5534,7 +5537,7 @@ class Host:
 
         com_timeout = aiohttp.ClientTimeout(total=2 * self.timeout)
         try:
-            response = await self._aiohttp_session.get(url=URL, headers={"user-agent": "reolink_aio"}, timeout=com_timeout)
+            response = await self._aiohttp_session.get(url=URL, headers={"user-agent": user_agent}, timeout=com_timeout)
         except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
