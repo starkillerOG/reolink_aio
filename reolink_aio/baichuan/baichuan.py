@@ -43,7 +43,7 @@ class Baichuan:
         port: int = BC_PORT,
         http_api: Host | None = None,
     ) -> None:
-        self._http_api = http_api
+        self.http_api = http_api
 
         self._host: str = host
         self._port: int = port
@@ -237,6 +237,15 @@ class Baichuan:
             return None
         return xml_value.text
 
+    def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channel") -> int | None:
+        channel_str = self._get_value_from_xml_element(xml_element, key)
+        if channel_str is None:
+            return None
+        channel = int(channel_str)
+        if self.http_api is not None and channel not in self.http_api._channels:
+            return None
+        return channel
+
     def _get_keys_from_xml(self, xml: str, keys: list[str]) -> dict[str, str]:
         """Get multiple keys from a xml and return as a dict"""
         root = XML.fromstring(xml)
@@ -268,21 +277,18 @@ class Baichuan:
 
     def _parse_xml(self, cmd_id: int, xml: str) -> None:
         """parce received xml"""
+        if self.http_api is None:
+            return
+
         channels: set[int | None] = {None}
         cmd_ids: set[int | None] = {None, cmd_id}
 
         if cmd_id == 33:  # Motion/AI/Visitor event
-            if self._http_api is None:
-                return
-
             root = XML.fromstring(xml)
             for alarm_event_list in root:
                 for alarm_event in alarm_event_list:
-                    channel_str = self._get_value_from_xml_element(alarm_event, "channelId")
-                    if channel_str is None:
-                        continue
-                    channel = int(channel_str)
-                    if channel not in self._http_api._channels:
+                    channel = self._get_channel_from_xml_element(alarm_event, "channelId")
+                    if channel is None:
                         continue
                     channels.add(channel)
 
@@ -294,27 +300,40 @@ class Baichuan:
                     if states is not None:
                         motion_state = "MD" in states
                         visitor_state = "visitor" in states
-                        if motion_state != self._http_api._motion_detection_states.get(channel, motion_state):
-                            _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self._http_api.nvr_name, channel, motion_state)
-                        if visitor_state != self._http_api._visitor_states.get(channel, visitor_state):
-                            _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self._http_api.nvr_name, channel, visitor_state)
-                        self._http_api._motion_detection_states[channel] = motion_state
-                        self._http_api._visitor_states[channel] = visitor_state
+                        if motion_state != self.http_api._motion_detection_states.get(channel, motion_state):
+                            _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
+                        if visitor_state != self.http_api._visitor_states.get(channel, visitor_state):
+                            _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
+                        self.http_api._motion_detection_states[channel] = motion_state
+                        self.http_api._visitor_states[channel] = visitor_state
 
                     if ai_types is not None:
-                        for ai_type_key in self._http_api._ai_detection_states.get(channel, {}):
+                        for ai_type_key in self.http_api._ai_detection_states.get(channel, {}):
                             ai_state = ai_type_key in ai_types
-                            if ai_state != self._http_api._ai_detection_states[channel][ai_type_key]:
-                                _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self._http_api.nvr_name, channel, ai_type_key, ai_state)
-                            self._http_api._ai_detection_states[channel][ai_type_key] = ai_state
+                            if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
+                                _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
+                            self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
 
                         ai_type_list = ai_types.split(",")
                         for ai_type in ai_type_list:
                             if ai_type == "none":
                                 continue
-                            if ai_type not in self._http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
+                            if ai_type not in self.http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
                                 self._log_once.append(f"TCP_event_unknown_{ai_type}")
-                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self._http_api.nvr_name, channel, ai_type)
+                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self.http_api.nvr_name, channel, ai_type)
+
+        elif cmd_id == 291:  # Floodlight
+            root = XML.fromstring(xml)
+            for event_list in root:
+                for event in event_list:
+                    channel = self._get_channel_from_xml_element(event)
+                    if channel is None:
+                        continue
+                    channels.add(channel)
+                    state = self._get_value_from_xml_element(event, "status")
+                    if state is not None:
+                        self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
+                        _LOGGER.info("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 623:  # Sleep status
             pass
