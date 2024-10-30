@@ -74,11 +74,11 @@ await host.set_siren(0, True)
 await host.subscribe('http://192.168.1.11/webhook123')
 
 # After some minutes check the renew timer (keep the eventing alive):
-if (host.renewTimer <= 100):
+if (host.renewtimer() <= 100):
     await host.renew()
 
 # Logout and disconnect
-await host.disconnect()
+await host.logout()
 ````
 
 ### Example
