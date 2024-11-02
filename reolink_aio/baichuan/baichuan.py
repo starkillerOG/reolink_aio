@@ -53,6 +53,7 @@ class Baichuan:
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
+        self._log_once: list[str] = []
 
         # TCP connection
         self._mutex = asyncio.Lock()
@@ -70,7 +71,7 @@ class Baichuan:
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[str, str] = {}
-        self._log_once: list[str] = []
+        self._day_night_state: str | None = None
 
     async def send(
         self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
@@ -282,45 +283,54 @@ class Baichuan:
 
         channels: set[int | None] = {None}
         cmd_ids: set[int | None] = {None, cmd_id}
-
-        if cmd_id == 33:  # Motion/AI/Visitor event
+        if cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
             root = XML.fromstring(xml)
-            for alarm_event_list in root:
-                for alarm_event in alarm_event_list:
-                    channel = self._get_channel_from_xml_element(alarm_event, "channelId")
+            for event_list in root:
+                for event in event_list:
+                    channel = self._get_channel_from_xml_element(event, "channelId")
                     if channel is None:
                         continue
                     channels.add(channel)
 
-                    states = self._get_value_from_xml_element(alarm_event, "status")
-                    ai_types = self._get_value_from_xml_element(alarm_event, "AItype")
-                    if self._subscribed and not self._events_active:
-                        self._events_active = True
+                    if event.tag == "AlarmEvent":
+                        states = self._get_value_from_xml_element(event, "status")
+                        ai_types = self._get_value_from_xml_element(event, "AItype")
+                        if self._subscribed and not self._events_active:
+                            self._events_active = True
 
-                    if states is not None:
-                        motion_state = "MD" in states
-                        visitor_state = "visitor" in states
-                        if motion_state != self.http_api._motion_detection_states.get(channel, motion_state):
-                            _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
-                        if visitor_state != self.http_api._visitor_states.get(channel, visitor_state):
-                            _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
-                        self.http_api._motion_detection_states[channel] = motion_state
-                        self.http_api._visitor_states[channel] = visitor_state
+                        if states is not None:
+                            motion_state = "MD" in states
+                            visitor_state = "visitor" in states
+                            if motion_state != self.http_api._motion_detection_states.get(channel, motion_state):
+                                _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
+                            if visitor_state != self.http_api._visitor_states.get(channel, visitor_state):
+                                _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
+                            self.http_api._motion_detection_states[channel] = motion_state
+                            self.http_api._visitor_states[channel] = visitor_state
 
-                    if ai_types is not None:
-                        for ai_type_key in self.http_api._ai_detection_states.get(channel, {}):
-                            ai_state = ai_type_key in ai_types
-                            if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
-                                _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
-                            self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
+                        if ai_types is not None:
+                            for ai_type_key in self.http_api._ai_detection_states.get(channel, {}):
+                                ai_state = ai_type_key in ai_types
+                                if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
+                                    _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
+                                self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
 
-                        ai_type_list = ai_types.split(",")
-                        for ai_type in ai_type_list:
-                            if ai_type == "none":
-                                continue
-                            if ai_type not in self.http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
-                                self._log_once.append(f"TCP_event_unknown_{ai_type}")
-                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self.http_api.nvr_name, channel, ai_type)
+                            ai_type_list = ai_types.split(",")
+                            for ai_type in ai_type_list:
+                                if ai_type == "none":
+                                    continue
+                                if ai_type not in self.http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
+                                    self._log_once.append(f"TCP_event_unknown_{ai_type}")
+                                    _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self.http_api.nvr_name, channel, ai_type)
+                    elif event.tag == "DayNightEvent":
+                        state = self._get_value_from_xml_element(event, "mode")
+                        if state is not None:
+                            self._day_night_state = state
+                            _LOGGER.info("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
+                    else:
+                        if f"TCP_event_tag_{event.tag}" not in self._log_once:
+                            self._log_once.append(f"TCP_event_tag_{event.tag}")
+                            _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
         elif cmd_id == 291:  # Floodlight
             root = XML.fromstring(xml)
@@ -482,6 +492,11 @@ class Baichuan:
     @property
     def events_active(self) -> bool:
         return self._events_active
+
+    @property
+    def day_night_state(self) -> str | None:
+        """known values: day, night, led_day"""
+        return self._day_night_state
 
     @property
     def http_port(self) -> int | None:
