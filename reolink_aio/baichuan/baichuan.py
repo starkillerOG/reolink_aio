@@ -70,11 +70,11 @@ class Baichuan:
 
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
-        self._dev_info: dict[str, str] = {}
+        self._dev_info: dict[int | None, dict[str, str]] = {}
         self._day_night_state: str | None = None
 
     async def send(
-        self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
+        self, cmd_id: int, channel: int | None = None, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
     ) -> str:
         """Generic baichuan send method."""
         retry = retry - 1
@@ -82,6 +82,11 @@ class Baichuan:
         if not self._logged_in and cmd_id > 2:
             # not logged in and requesting a non login/logout cmd, first login
             await self.login()
+
+        if channel is not None:
+            if extension:
+                raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
+            extension = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
 
         mess_len = len(extension) + len(body)
         payload_offset = len(extension)
@@ -144,7 +149,7 @@ class Baichuan:
                 if retry <= 0 or cmd_id == 2:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
                 _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
-                return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
+                return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
             finally:
                 self._protocol.expected_cmd_id = None
                 self._protocol.receive_future.cancel()
@@ -474,11 +479,14 @@ class Baichuan:
 
         await self.send(cmd_id=36, body=xml)
 
-    async def get_info(self) -> dict[str, str]:
-        """Get the device info of the host"""
-        mess = await self.send(cmd_id=80)
-        self._dev_info = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
-        return self._dev_info
+    async def get_info(self, channel: int | None = None) -> dict[str, str]:
+        """Get the device info of the host or a channel"""
+        if channel is None:
+            mess = await self.send(cmd_id=80)
+        else:
+            mess = await self.send(cmd_id=318, channel=channel)
+        self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
+        return self._dev_info[channel]
 
     async def get_channel_uids(self) -> None:
         """Get a channel list containing the UIDs"""
@@ -553,18 +561,14 @@ class Baichuan:
             return None
         return enabled == 1
 
-    @property
-    def model(self) -> str | None:
-        return self._dev_info.get("type")
+    def model(self, channel: int | None = None) -> str | None:
+        return self._dev_info.get(channel, {}).get("type")
 
-    @property
-    def hardware_version(self) -> str | None:
-        return self._dev_info.get("hardwareVersion")
+    def hardware_version(self, channel: int | None = None) -> str | None:
+        return self._dev_info.get(channel, {}).get("hardwareVersion")
 
-    @property
-    def item_number(self) -> str | None:
-        return self._dev_info.get("itemNo")
+    def item_number(self, channel: int | None = None) -> str | None:
+        return self._dev_info.get(channel, {}).get("itemNo")
 
-    @property
-    def sw_version(self) -> str | None:
-        return self._dev_info.get("firmwareVersion")
+    def sw_version(self, channel: int | None = None) -> str | None:
+        return self._dev_info.get(channel, {}).get("firmwareVersion")
