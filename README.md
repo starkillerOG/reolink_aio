@@ -94,9 +94,9 @@ async def print_mac_address():
     # connect and obtain/cache device settings and capabilities
     await host.get_host_data()
     # check if it is a camera or an NVR
-    print("It is an NVR: %s, number of channels: %s", host.is_nvr, host.num_channels)
+    print(f"It is an NVR: {host.is_nvr}, number of channels: {host.num_channel}")
     # print mac address
-    print(host.mac_address)
+    print(f"MAC: {host.mac_address}")
     # close the device connection
     await host.logout()
 
