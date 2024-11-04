@@ -1648,6 +1648,10 @@ class Host:
                         self._capabilities[channel].add("ptz_guard")
                     if self.api_version("GetPtzCurPos", channel) > 0:
                         self._capabilities[channel].add("ptz_position")
+                        if self.ptz_pan_position(channel) is not None:
+                            self._capabilities[channel].add("ptz_pan_position")
+                        if self.ptz_tilt_position(channel) is not None:
+                            self._capabilities[channel].add("ptz_tilt_position")
                 if ptz_ver in [2, 3]:
                     self._capabilities[channel].add("ptz_speed")
                 if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
@@ -3882,12 +3886,13 @@ class Host:
 
         await self.send_setting(body)
 
-    def ptz_pan_position(self, channel: int) -> int:
+    def ptz_pan_position(self, channel: int) -> int | None:
         """pan position"""
-        if channel not in self._ptz_position:
-            return 0
+        return self._ptz_position.get(channel, {}).get("PtzCurPos", {}).get("Ppos")
 
-        return self._ptz_position[channel]["PtzCurPos"]["Ppos"]
+    def ptz_tilt_position(self, channel: int) -> int | None:
+        """tilt position"""
+        return self._ptz_position.get(channel, {}).get("PtzCurPos", {}).get("Tpos")
 
     def ptz_guard_enabled(self, channel: int) -> bool:
         if channel not in self._ptz_guard_settings:
