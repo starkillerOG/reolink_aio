@@ -570,8 +570,8 @@ class Baichuan:
     def model(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("type")
 
-    def hardware_version(self, channel: int | None = None) -> str | None:
-        return self._dev_info.get(channel, {}).get("hardwareVersion")
+    def hardware_version(self, channel: int | None = None) -> str:
+        return self._dev_info.get(channel, {}).get("hardwareVersion", "Unknown")
 
     def item_number(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("itemNo")

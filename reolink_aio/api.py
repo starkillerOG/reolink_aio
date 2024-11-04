@@ -2278,6 +2278,12 @@ class Host:
 
         self.map_channels_json_response(json_data, channels)
 
+        # Baichuan fallbacks
+        for channel in self._channels:
+            if self.camera_hardware_version(channel) == "Unknown":
+                await self.baichuan.get_info(channel)
+                self._channel_hw_version[channel] = self.baichuan.hardware_version(channel)
+
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
             for x in json_data:
