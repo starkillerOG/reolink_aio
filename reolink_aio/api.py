@@ -656,10 +656,10 @@ class Host:
         if channel is None:
             return self.nvr_name
 
-        if channel not in self._channel_names and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._channel_names and channel in self._stream_channels and channel != 0:
             return self.camera_name(0)  # Dual lens cameras
         if channel not in self._channel_names:
-            if len(self._channels) == 1:
+            if not self.is_nvr:
                 return self.nvr_name
             return "Unknown"
         return self._channel_names[channel]
@@ -692,7 +692,7 @@ class Host:
     def camera_model(self, channel: int | None) -> str:
         if channel is None:
             return self.model
-        if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._channel_models and channel in self._stream_channels and channel != 0:
             return self.camera_model(0)  # Dual lens cameras
         if channel not in self._channel_models:
             return "Unknown"
@@ -701,7 +701,7 @@ class Host:
     def camera_hardware_version(self, channel: int | None) -> str:
         if channel is None:
             return self.hardware_version
-        if channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
             return self.camera_hardware_version(0)  # Dual lens cameras
         if channel not in self._channel_hw_version:
             if not self.is_nvr:
@@ -1298,12 +1298,12 @@ class Host:
             pass
 
         # update info such that minimum firmware can be assest
-        self._nvr_model = self.baichuan.model
-        self._nvr_hw_version = self.baichuan.hardware_version
-        self._nvr_item_number = self.baichuan.item_number
-        self._nvr_sw_version = self.baichuan.sw_version
-        if self.baichuan.sw_version is not None:
-            self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version)
+        self._nvr_model = self.baichuan.model()
+        self._nvr_hw_version = self.baichuan.hardware_version()
+        self._nvr_item_number = self.baichuan.item_number()
+        self._nvr_sw_version = self.baichuan.sw_version()
+        if self.baichuan.sw_version() is not None:
+            self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version())
 
         # retry login now that the port is open, this will also logout the baichuan session
         try:
@@ -1655,6 +1655,10 @@ class Host:
                         self._capabilities[channel].add("ptz_guard")
                     if self.api_version("GetPtzCurPos", channel) > 0:
                         self._capabilities[channel].add("ptz_position")
+                        if self.ptz_pan_position(channel) is not None:
+                            self._capabilities[channel].add("ptz_pan_position")
+                        if self.ptz_tilt_position(channel) is not None:
+                            self._capabilities[channel].add("ptz_tilt_position")
                 if ptz_ver in [2, 3]:
                     self._capabilities[channel].add("ptz_speed")
                 if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
@@ -2282,6 +2286,15 @@ class Host:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
 
         self.map_channels_json_response(json_data, channels)
+
+        # Baichuan fallbacks
+        for channel in self._channels:
+            if self.camera_hardware_version(channel) == "Unknown":
+                try:
+                    await self.baichuan.get_info(channel)
+                except ReolinkError:
+                    continue
+                self._channel_hw_version[channel] = self.baichuan.hardware_version(channel)
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
@@ -4059,12 +4072,13 @@ class Host:
 
         await self.send_setting(body)
 
-    def ptz_pan_position(self, channel: int) -> int:
+    def ptz_pan_position(self, channel: int) -> int | None:
         """pan position"""
-        if channel not in self._ptz_position:
-            return 0
+        return self._ptz_position.get(channel, {}).get("PtzCurPos", {}).get("Ppos")
 
-        return self._ptz_position[channel]["PtzCurPos"]["Ppos"]
+    def ptz_tilt_position(self, channel: int) -> int | None:
+        """tilt position"""
+        return self._ptz_position.get(channel, {}).get("PtzCurPos", {}).get("Tpos")
 
     def ptz_guard_enabled(self, channel: int) -> bool:
         if channel not in self._ptz_guard_settings:

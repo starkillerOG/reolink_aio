@@ -43,7 +43,7 @@ class Baichuan:
         port: int = BC_PORT,
         http_api: Host | None = None,
     ) -> None:
-        self._http_api = http_api
+        self.http_api = http_api
 
         self._host: str = host
         self._port: int = port
@@ -53,6 +53,7 @@ class Baichuan:
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
+        self._log_once: list[str] = []
 
         # TCP connection
         self._mutex = asyncio.Lock()
@@ -69,11 +70,20 @@ class Baichuan:
 
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
-        self._dev_info: dict[str, str] = {}
-        self._log_once: list[str] = []
+        self._dev_info: dict[int | None, dict[str, str]] = {}
+        self._day_night_state: str | None = None
+        self._ptz_position: dict[int, dict[str, str]] = {}
 
     async def send(
-        self, cmd_id: int, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
+        self,
+        cmd_id: int,
+        channel: int | None = None,
+        body: str = "",
+        extension: str = "",
+        enc_type: EncType = EncType.AES,
+        message_class: str = "1464",
+        enc_offset: int = 0,
+        retry: int = RETRY_ATTEMPTS,
     ) -> str:
         """Generic baichuan send method."""
         retry = retry - 1
@@ -81,6 +91,11 @@ class Baichuan:
         if not self._logged_in and cmd_id > 2:
             # not logged in and requesting a non login/logout cmd, first login
             await self.login()
+
+        if channel is not None:
+            if extension:
+                raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
+            extension = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
 
         mess_len = len(extension) + len(body)
         payload_offset = len(extension)
@@ -143,7 +158,7 @@ class Baichuan:
                 if retry <= 0 or cmd_id == 2:
                     raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
                 _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
-                return await self.send(cmd_id, body, extension, enc_type, message_class, enc_offset, retry)
+                return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
             finally:
                 self._protocol.expected_cmd_id = None
                 self._protocol.receive_future.cancel()
@@ -237,6 +252,15 @@ class Baichuan:
             return None
         return xml_value.text
 
+    def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channel") -> int | None:
+        channel_str = self._get_value_from_xml_element(xml_element, key)
+        if channel_str is None:
+            return None
+        channel = int(channel_str)
+        if self.http_api is not None and channel not in self.http_api._channels:
+            return None
+        return channel
+
     def _get_keys_from_xml(self, xml: str, keys: list[str]) -> dict[str, str]:
         """Get multiple keys from a xml and return as a dict"""
         root = XML.fromstring(xml)
@@ -268,51 +292,72 @@ class Baichuan:
 
     def _parse_xml(self, cmd_id: int, xml: str) -> None:
         """parce received xml"""
+        if self.http_api is None:
+            return
+
         channels: set[int | None] = {None}
         cmd_ids: set[int | None] = {None, cmd_id}
-
-        if cmd_id == 33:  # Motion/AI/Visitor event
-            if self._http_api is None:
-                return
-
+        if cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
             root = XML.fromstring(xml)
-            for alarm_event_list in root:
-                for alarm_event in alarm_event_list:
-                    channel_str = self._get_value_from_xml_element(alarm_event, "channelId")
-                    states = self._get_value_from_xml_element(alarm_event, "status")
-                    ai_types = self._get_value_from_xml_element(alarm_event, "AItype")
-                    if channel_str is None:
+            for event_list in root:
+                for event in event_list:
+                    channel = self._get_channel_from_xml_element(event, "channelId")
+                    if channel is None:
                         continue
-
-                    channel = int(channel_str)
                     channels.add(channel)
-                    if self._subscribed and not self._events_active:
-                        self._events_active = True
 
-                    if states is not None:
-                        motion_state = "MD" in states
-                        visitor_state = "visitor" in states
-                        if motion_state != self._http_api._motion_detection_states[channel]:
-                            _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self._http_api.nvr_name, channel, motion_state)
-                        if visitor_state != self._http_api._visitor_states[channel]:
-                            _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self._http_api.nvr_name, channel, visitor_state)
-                        self._http_api._motion_detection_states[channel] = motion_state
-                        self._http_api._visitor_states[channel] = visitor_state
+                    if event.tag == "AlarmEvent":
+                        states = self._get_value_from_xml_element(event, "status")
+                        ai_types = self._get_value_from_xml_element(event, "AItype")
+                        if self._subscribed and not self._events_active:
+                            self._events_active = True
 
-                    if ai_types is not None:
-                        for ai_type_key in self._http_api._ai_detection_states.get(channel, {}):
-                            ai_state = ai_type_key in ai_types
-                            if ai_state != self._http_api._ai_detection_states[channel][ai_type_key]:
-                                _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self._http_api.nvr_name, channel, ai_type_key, ai_state)
-                            self._http_api._ai_detection_states[channel][ai_type_key] = ai_state
+                        if states is not None:
+                            motion_state = "MD" in states
+                            visitor_state = "visitor" in states
+                            if motion_state != self.http_api._motion_detection_states.get(channel, motion_state):
+                                _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
+                            if visitor_state != self.http_api._visitor_states.get(channel, visitor_state):
+                                _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
+                            self.http_api._motion_detection_states[channel] = motion_state
+                            self.http_api._visitor_states[channel] = visitor_state
 
-                        ai_type_list = ai_types.split(",")
-                        for ai_type in ai_type_list:
-                            if ai_type == "none":
-                                continue
-                            if ai_type not in self._http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
-                                self._log_once.append(f"TCP_event_unknown_{ai_type}")
-                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self._http_api.nvr_name, channel, ai_type)
+                        if ai_types is not None:
+                            for ai_type_key in self.http_api._ai_detection_states.get(channel, {}):
+                                ai_state = ai_type_key in ai_types
+                                if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
+                                    _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
+                                self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
+
+                            ai_type_list = ai_types.split(",")
+                            for ai_type in ai_type_list:
+                                if ai_type == "none":
+                                    continue
+                                if ai_type not in self.http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
+                                    self._log_once.append(f"TCP_event_unknown_{ai_type}")
+                                    _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self.http_api.nvr_name, channel, ai_type)
+                    elif event.tag == "DayNightEvent":
+                        state = self._get_value_from_xml_element(event, "mode")
+                        if state is not None:
+                            self._day_night_state = state
+                            _LOGGER.info("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
+                    else:
+                        if f"TCP_event_tag_{event.tag}" not in self._log_once:
+                            self._log_once.append(f"TCP_event_tag_{event.tag}")
+                            _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
+
+        elif cmd_id == 291:  # Floodlight
+            root = XML.fromstring(xml)
+            for event_list in root:
+                for event in event_list:
+                    channel = self._get_channel_from_xml_element(event)
+                    if channel is None:
+                        continue
+                    channels.add(channel)
+                    state = self._get_value_from_xml_element(event, "status")
+                    if state is not None:
+                        self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
+                        _LOGGER.info("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 623:  # Sleep status
             pass
@@ -443,11 +488,14 @@ class Baichuan:
 
         await self.send(cmd_id=36, body=xml)
 
-    async def get_info(self) -> dict[str, str]:
-        """Get the device info of the host"""
-        mess = await self.send(cmd_id=80)
-        self._dev_info = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
-        return self._dev_info
+    async def get_info(self, channel: int | None = None) -> dict[str, str]:
+        """Get the device info of the host or a channel"""
+        if channel is None:
+            mess = await self.send(cmd_id=80)
+        else:
+            mess = await self.send(cmd_id=318, channel=channel)
+        self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
+        return self._dev_info[channel]
 
     async def get_channel_uids(self) -> None:
         """Get a channel list containing the UIDs"""
@@ -458,9 +506,19 @@ class Baichuan:
         """Get the wifi signal of the host"""
         await self.send(cmd_id=115)
 
+    async def get_ptz_position(self, channel: int) -> None:
+        """Get the wifi signal of the host"""
+        mess = await self.send(cmd_id=433, channel=channel)
+        self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
+
     @property
     def events_active(self) -> bool:
         return self._events_active
+
+    @property
+    def day_night_state(self) -> str | None:
+        """known values: day, night, led_day"""
+        return self._day_night_state
 
     @property
     def http_port(self) -> int | None:
@@ -517,18 +575,26 @@ class Baichuan:
             return None
         return enabled == 1
 
-    @property
-    def model(self) -> str | None:
-        return self._dev_info.get("type")
+    def model(self, channel: int | None = None) -> str | None:
+        return self._dev_info.get(channel, {}).get("type")
 
-    @property
-    def hardware_version(self) -> str | None:
-        return self._dev_info.get("hardwareVersion")
+    def hardware_version(self, channel: int | None = None) -> str:
+        return self._dev_info.get(channel, {}).get("hardwareVersion", "Unknown")
 
-    @property
-    def item_number(self) -> str | None:
-        return self._dev_info.get("itemNo")
+    def item_number(self, channel: int | None = None) -> str | None:
+        return self._dev_info.get(channel, {}).get("itemNo")
 
-    @property
-    def sw_version(self) -> str | None:
-        return self._dev_info.get("firmwareVersion")
+    def sw_version(self, channel: int | None = None) -> str | None:
+        return self._dev_info.get(channel, {}).get("firmwareVersion")
+
+    def pan_position(self, channel: int) -> int | None:
+        pos = self._ptz_position.get(channel, {}).get("pPos")
+        if pos is None:
+            return None
+        return int(pos)
+
+    def tilt_position(self, channel: int) -> int | None:
+        pos = self._ptz_position.get(channel, {}).get("tPos")
+        if pos is None:
+            return None
+        return int(pos)
