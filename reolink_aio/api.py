@@ -1293,12 +1293,12 @@ class Host:
             pass
 
         # update info such that minimum firmware can be assest
-        self._nvr_model = self.baichuan.model
-        self._nvr_hw_version = self.baichuan.hardware_version
-        self._nvr_item_number = self.baichuan.item_number
-        self._nvr_sw_version = self.baichuan.sw_version
-        if self.baichuan.sw_version is not None:
-            self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version)
+        self._nvr_model = self.baichuan.model()
+        self._nvr_hw_version = self.baichuan.hardware_version()
+        self._nvr_item_number = self.baichuan.item_number()
+        self._nvr_sw_version = self.baichuan.sw_version()
+        if self.baichuan.sw_version() is not None:
+            self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version())
 
         # retry login now that the port is open, this will also logout the baichuan session
         try:
@@ -2281,7 +2281,10 @@ class Host:
         # Baichuan fallbacks
         for channel in self._channels:
             if self.camera_hardware_version(channel) == "Unknown":
-                await self.baichuan.get_info(channel)
+                try:
+                    await self.baichuan.get_info(channel)
+                except ReolinkError:
+                    continue
                 self._channel_hw_version[channel] = self.baichuan.hardware_version(channel)
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...

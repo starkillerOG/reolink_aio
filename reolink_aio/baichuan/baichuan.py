@@ -72,10 +72,18 @@ class Baichuan:
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[int | None, dict[str, str]] = {}
         self._day_night_state: str | None = None
-        self._ptz_position: dict[int, str] = {}
+        self._ptz_position: dict[int, dict[str, str]] = {}
 
     async def send(
-        self, cmd_id: int, channel: int | None = None, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
+        self,
+        cmd_id: int,
+        channel: int | None = None,
+        body: str = "",
+        extension: str = "",
+        enc_type: EncType = EncType.AES,
+        message_class: str = "1464",
+        enc_offset: int = 0,
+        retry: int = RETRY_ATTEMPTS,
     ) -> str:
         """Generic baichuan send method."""
         retry = retry - 1
