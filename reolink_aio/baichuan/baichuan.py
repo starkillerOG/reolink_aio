@@ -72,6 +72,7 @@ class Baichuan:
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[int | None, dict[str, str]] = {}
         self._day_night_state: str | None = None
+        self._ptz_position: dict[int, str] = {}
 
     async def send(
         self, cmd_id: int, channel: int | None = None, body: str = "", extension: str = "", enc_type: EncType = EncType.AES, message_class: str = "1464", enc_offset: int = 0, retry: int = RETRY_ATTEMPTS
@@ -497,6 +498,11 @@ class Baichuan:
         """Get the wifi signal of the host"""
         await self.send(cmd_id=115)
 
+    async def get_ptz_position(self, channel: int) -> None:
+        """Get the wifi signal of the host"""
+        mess = await self.send(cmd_id=433, channel=channel)
+        self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
+
     @property
     def events_active(self) -> bool:
         return self._events_active
@@ -572,3 +578,15 @@ class Baichuan:
 
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
+
+    def pan_position(self, channel: int) -> int | None:
+        pos = self._ptz_position.get(channel, {}).get("pPos")
+        if pos is None:
+            return None
+        return int(pos)
+
+    def tilt_position(self, channel: int) -> int | None:
+        pos = self._ptz_position.get(channel, {}).get("tPos")
+        if pos is None:
+            return None
+        return int(pos)
