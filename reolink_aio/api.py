@@ -651,10 +651,10 @@ class Host:
         if channel is None:
             return self.nvr_name
 
-        if channel not in self._channel_names and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._channel_names and channel in self._stream_channels and channel != 0:
             return self.camera_name(0)  # Dual lens cameras
         if channel not in self._channel_names:
-            if len(self._channels) == 1:
+            if not self.is_nvr:
                 return self.nvr_name
             return "Unknown"
         return self._channel_names[channel]
@@ -687,7 +687,7 @@ class Host:
     def camera_model(self, channel: int | None) -> str:
         if channel is None:
             return self.model
-        if channel not in self._channel_models and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._channel_models and channel in self._stream_channels and channel != 0:
             return self.camera_model(0)  # Dual lens cameras
         if channel not in self._channel_models:
             return "Unknown"
@@ -696,7 +696,7 @@ class Host:
     def camera_hardware_version(self, channel: int | None) -> str:
         if channel is None:
             return self.hardware_version
-        if channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
             return self.camera_hardware_version(0)  # Dual lens cameras
         if channel not in self._channel_hw_version:
             if not self.is_nvr:
