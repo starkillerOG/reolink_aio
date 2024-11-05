@@ -32,6 +32,8 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         self._push_callback = push_callback
         self.time_recv: float = 0
 
+        self._log_once: list[str] = []
+
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Connection callback"""
         _LOGGER.debug("Baichuan host %s: opened connection", self._host)
@@ -64,7 +66,15 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         try:
             self.parse_data()
         except Exception as exc:
-            _LOGGER.exception("Baichuan host %s: error during parsing of received data: %s", self._host, str(exc))
+            try:
+                cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
+                header = self._data[0:24].hex()
+            except Exception:
+                cmd_id = 0
+                header = "<24"
+            if f"parse_data_cmd_id_{cmd_id}" not in self._log_once:
+                self._log_once.append(f"parse_data_cmd_id_{cmd_id}")
+                _LOGGER.exception("Baichuan host %s: error during parsing of received data, cmd_id %s, header %s: %s", self._host, cmd_id, header, str(exc))
             self._data = b""
 
     def parse_data(self) -> None:
