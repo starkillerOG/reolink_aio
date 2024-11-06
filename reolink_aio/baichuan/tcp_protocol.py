@@ -24,6 +24,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
     def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
         self._host: str = host
         self._data: bytes = b""
+        self._data_chunk: bytes = b""
 
         self.expected_cmd_id: int | None = None
         self.receive_future: asyncio.Future | None = None
@@ -67,8 +68,12 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             self.parse_data()
         except Exception as exc:
             try:
-                cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
-                header = self._data[0:24].hex()
+                if self._data_chunk:
+                    cmd_id = int.from_bytes(self._data_chunk[4:8], byteorder="little")
+                    header = self._data_chunk[0:24].hex()
+                else:
+                    cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
+                    header = self._data[0:24].hex()
             except Exception:
                 cmd_id = 0
                 header = "<24"
@@ -109,16 +114,16 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
 
         # extract data chunk
         len_chunk = rec_len_body + len_header
-        data_chunk = self._data[0:len_chunk]
+        self._data_chunk = self._data[0:len_chunk]
         if len_body > rec_len_body:
             _LOGGER.debug("Baichuan host %s: received %s bytes while header specified %s bytes, parsing multiple messages", self._host, len_body, rec_len_body)
             self._data = self._data[len_chunk::]
-        else:
+        else:  # len_body == rec_len_body
             self._data = b""
 
         # check status code
         if len_header == 24:
-            rec_status_code = int.from_bytes(data_chunk[16:18], byteorder="little")
+            rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
             if rec_status_code != 200:
                 if self.receive_future is not None and rec_cmd_id == self.expected_cmd_id:
                     exc = ApiError(f"Baichuan host {self._host}: received status code {rec_status_code}", rspCode=rec_status_code)
@@ -130,7 +135,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         try:
             if self.receive_future is None or self.expected_cmd_id is None or rec_cmd_id != self.expected_cmd_id:
                 if self._push_callback is not None:
-                    self._push_callback(rec_cmd_id, data_chunk, len_header)
+                    self._push_callback(rec_cmd_id, self._data_chunk, len_header)
                 elif self.expected_cmd_id is not None:
                     _LOGGER.debug(
                         "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
@@ -142,11 +147,12 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                     _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, dropping", self._host, rec_cmd_id)
                 return
 
-            self.receive_future.set_result((data_chunk, len_header))
+            self.receive_future.set_result((self._data_chunk, len_header))
         finally:
             # if multiple messages received, parse the next also
             if self._data:
                 self.parse_data()
+            self._data_chunk = b""
 
     def connection_lost(self, exc: Exception | None) -> None:
         """Connection lost callback"""
