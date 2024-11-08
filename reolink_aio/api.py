@@ -2639,6 +2639,12 @@ class Host:
                 self._latest_sw_version[ch] = await self._check_reolink_firmware(ch)
             except (NotSupportedError, UnexpectedDataError) as err:
                 _LOGGER.debug(err)
+            except ApiError as err:
+                if err.rspCode == 429:
+                    _LOGGER.warning(err)
+                else:
+                    _LOGGER.debug(err)
+                break
             except ReolinkError as err:
                 _LOGGER.debug(err)
                 break
@@ -5362,7 +5368,7 @@ class Host:
 
         if response.status != 200:
             response.release()
-            raise ApiError(f"Request to {URL} returned HTTP status ERROR code {response.status}/{response.reason}")
+            raise ApiError(f"Request to {URL} returned HTTP status ERROR code {response.status}/{response.reason}", rspCode=response.status)
 
         if response.content_type != expected_response_type:
             response.release()
