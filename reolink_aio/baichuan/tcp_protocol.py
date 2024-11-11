@@ -140,7 +140,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 if self._push_callback is not None:
                     self._push_callback(rec_cmd_id, self._data_chunk, len_header)
                 elif self.receive_futures:
-                    expected_cmd_ids = ', '.join(map(str, self.receive_futures.keys()))
+                    expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                     _LOGGER.debug(
                         "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
                         self._host,
@@ -166,7 +166,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         """Connection lost callback"""
         if self.receive_futures:
             if exc is None:
-                expected_cmd_ids = ', '.join(map(str, self.receive_futures.keys()))
+                expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                 exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost connection while waiting for cmd_id {expected_cmd_ids}")
             for receive_future in self.receive_futures.values():
                 receive_future.set_exception(exc)

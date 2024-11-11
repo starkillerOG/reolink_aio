@@ -182,7 +182,7 @@ class Baichuan:
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.encrypt(body.encode("utf8"))
 
-    def _aes_decrypt(self, data: bytes, header: bytes = b'') -> str:
+    def _aes_decrypt(self, data: bytes, header: bytes = b"") -> str:
         """Decrypt a message using AES decryption"""
         if self._aes_key is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES decryption, header: {header.hex()}")
