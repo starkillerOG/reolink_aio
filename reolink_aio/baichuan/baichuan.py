@@ -124,45 +124,46 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
         # send message
-        async with self._mutex:
-            if self._transport is None or self._protocol is None or self._transport.is_closing():
-                try:
-                    async with asyncio.timeout(15):
+        if self._transport is None or self._protocol is None or self._transport.is_closing():
+            try:
+                async with asyncio.timeout(15):
+                    async with self._mutex:
                         self._transport, self._protocol = await self._loop.create_connection(
                             lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self._port
                         )
-                except asyncio.TimeoutError as err:
-                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
-                except (ConnectionResetError, OSError) as err:
-                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
+            except asyncio.TimeoutError as err:
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
+            except (ConnectionResetError, OSError) as err:
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
 
-            if _LOGGER.isEnabledFor(logging.DEBUG):
-                if mess_len > 0:
-                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension + body))
-                else:
-                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            if mess_len > 0:
+                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension + body))
+            else:
+                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
 
-            if self._protocol.expected_cmd_id is not None or self._protocol.receive_future is not None:
-                raise ReolinkError(f"Baichuan host {self._host}: receive future is already set, cannot receive multiple requests simultaneously")
+        if self._protocol.expected_cmd_id is not None or self._protocol.receive_future is not None:
+            raise ReolinkError(f"Baichuan host {self._host}: receive future is already set, cannot receive multiple requests simultaneously")
 
-            self._protocol.expected_cmd_id = cmd_id
-            self._protocol.receive_future = self._loop.create_future()
+        try:
+            async with asyncio.timeout(15):
+                async with self._mutex:
+                    self._protocol.expected_cmd_id = cmd_id
+                    self._protocol.receive_future = self._loop.create_future()
 
-            try:
-                async with asyncio.timeout(15):
                     self._transport.write(header + enc_body_bytes)
                     data, len_header = await self._protocol.receive_future
-            except asyncio.TimeoutError as err:
-                raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
-            except (ConnectionResetError, OSError) as err:
-                if retry <= 0 or cmd_id == 2:
-                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
-                _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
-                return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
-            finally:
-                self._protocol.expected_cmd_id = None
-                self._protocol.receive_future.cancel()
-                self._protocol.receive_future = None
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
+        except (ConnectionResetError, OSError) as err:
+            if retry <= 0 or cmd_id == 2:
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
+            _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
+        finally:
+            self._protocol.expected_cmd_id = None
+            self._protocol.receive_future.cancel()
+            self._protocol.receive_future = None
 
         # decryption
         rec_body = self._decrypt(data, len_header, enc_type)
