@@ -142,17 +142,16 @@ class Baichuan:
             else:
                 _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
 
-        if self._protocol.expected_cmd_id is not None or self._protocol.receive_future is not None:
-            raise ReolinkError(f"Baichuan host {self._host}: receive future is already set, cannot receive multiple requests simultaneously")
+        if cmd_id in self._protocol.receive_futures:
+            raise ReolinkError(f"Baichuan host {self._host}: receive future is already set for cmd_id {cmd_id}, cannot receive multiple requests simultaneously")
+
+        self._protocol.receive_futures[cmd_id] = self._loop.create_future()
 
         try:
             async with asyncio.timeout(15):
                 async with self._mutex:
-                    self._protocol.expected_cmd_id = cmd_id
-                    self._protocol.receive_future = self._loop.create_future()
-
                     self._transport.write(header + enc_body_bytes)
-                    data, len_header = await self._protocol.receive_future
+                data, len_header = await self._protocol.receive_futures[cmd_id]
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
         except (ConnectionResetError, OSError) as err:
@@ -161,9 +160,8 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
             return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
         finally:
-            self._protocol.expected_cmd_id = None
-            self._protocol.receive_future.cancel()
-            self._protocol.receive_future = None
+            self._protocol.receive_futures[cmd_id].cancel()
+            self._protocol.receive_futures.pop(cmd_id, None)
 
         # decryption
         rec_body = self._decrypt(data, len_header, enc_type)
