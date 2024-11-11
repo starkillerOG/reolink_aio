@@ -160,7 +160,6 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 else:
                     _LOGGER.debug("Baichuan host %s: got invalid magic header '%s' during parsing of multiple messages, dropping", self._host, self._data[0:4].hex())
                     self._data = b""
-            self._data_chunk = b""
 
     def connection_lost(self, exc: Exception | None) -> None:
         """Connection lost callback"""
