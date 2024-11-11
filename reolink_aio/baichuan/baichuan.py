@@ -177,7 +177,7 @@ class Baichuan:
     def _aes_encrypt(self, body: str) -> bytes:
         """Encrypt a message using AES encryption"""
         if self._aes_key is None:
-            raise InvalidParameterError("Baichuan host {self._host}: first login before using AES encryption")
+            raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES encryption")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.encrypt(body.encode("utf8"))
@@ -185,7 +185,7 @@ class Baichuan:
     def _aes_decrypt(self, data: bytes) -> str:
         """Decrypt a message using AES decryption"""
         if self._aes_key is None:
-            raise InvalidParameterError("Baichuan host {self._host}: first login before using AES decryption")
+            raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES decryption")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.decrypt(data).decode("utf8")
