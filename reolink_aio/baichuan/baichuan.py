@@ -182,10 +182,10 @@ class Baichuan:
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.encrypt(body.encode("utf8"))
 
-    def _aes_decrypt(self, data: bytes) -> str:
+    def _aes_decrypt(self, data: bytes, header: bytes = b'') -> str:
         """Decrypt a message using AES decryption"""
         if self._aes_key is None:
-            raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES decryption")
+            raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES decryption, header: {header.hex()}")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.decrypt(data).decode("utf8")
@@ -195,6 +195,7 @@ class Baichuan:
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
         rec_enc_type = data[16:18].hex()
         enc_body = data[len_header::]
+        header = data[0:len_header]
 
         # decryption
         if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or (len_header == 24 and enc_type == EncType.BC):
@@ -202,7 +203,7 @@ class Baichuan:
             rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
         elif (len_header == 20 and rec_enc_type in ["02dd", "03dd"]) or (len_header == 24 and enc_type == EncType.AES):
             # AES Encryption
-            rec_body = self._aes_decrypt(enc_body)
+            rec_body = self._aes_decrypt(enc_body, header)
         elif rec_enc_type == "00dd":  # Unencrypted
             rec_body = enc_body.decode("utf8")
         else:
