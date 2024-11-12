@@ -225,7 +225,7 @@ class Baichuan:
                 raise UnexpectedDataError(
                     f"Baichuan host {self._host}: unable to decrypt message with cmd_id {cmd_id}, "
                     f"header '{header.hex()}', decrypted data startswith '{rec_body[0:5]}', "
-                    f"encrypted data startswith '{data[0:5].hex()}' instead of '<?xml'"
+                    f"encrypted data startswith '{enc_body[0:5].hex()}' instead of '<?xml'"
                 )
 
         return rec_body
