@@ -2,6 +2,7 @@
 
 from enum import Enum
 from hashlib import md5
+from .exceptions import InvalidParameterError
 
 BC_PORT = 9000
 HEADER_MAGIC = "f0debc0a"
@@ -29,6 +30,7 @@ class PortType(Enum):
 
 def decrypt_baichuan(buf: bytes, offset: int) -> str:
     """Decrypt a received message using the baichuan protocol"""
+    offset = offset % 256
     decrypted = ""
     for idx, byte in enumerate(buf):
         key = XML_KEY[(offset + idx) % len(XML_KEY)]
@@ -39,6 +41,9 @@ def decrypt_baichuan(buf: bytes, offset: int) -> str:
 
 def encrypt_baichuan(buf: str, offset: int) -> bytes:
     """Encrypt a message using the baichuan protocol before sending"""
+    if offset > 255:
+        raise InvalidParameterError(f"Baichuan encryption offset {offset} can not be larger than 255")
+
     encrypt = b""
     for idx, char in enumerate(buf):
         key = XML_KEY[(offset + idx) % len(XML_KEY)]
