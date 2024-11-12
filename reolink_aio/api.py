@@ -1061,10 +1061,13 @@ class Host:
         return self._hub_audio_settings[channel]["AudioCfg"]["ringToneId"]
 
     def quick_reply_dict(self, channel: int) -> dict[int, str]:
-        if channel not in self._audio_file_list:
-            return {-1: "off"}
-
         audio_dict = {-1: "off"}
+        if channel not in self._audio_file_list:
+            return audio_dict
+
+        if self._audio_file_list[channel]["AudioFileList"] is None:
+            return audio_dict
+
         for audio_file in self._audio_file_list[channel]["AudioFileList"]:
             audio_dict[audio_file["id"]] = audio_file["fileName"]
         return audio_dict
@@ -2645,6 +2648,12 @@ class Host:
                 self._latest_sw_version[ch] = await self._check_reolink_firmware(ch)
             except (NotSupportedError, UnexpectedDataError) as err:
                 _LOGGER.debug(err)
+            except ApiError as err:
+                if err.rspCode == 429:
+                    _LOGGER.warning(err)
+                else:
+                    _LOGGER.debug(err)
+                break
             except ReolinkError as err:
                 _LOGGER.debug(err)
                 break
@@ -5998,7 +6007,7 @@ class Host:
             _LOGGER.debug("Reolink %s received ONVIF pull point message without event", self.nvr_name)
             return []
 
-        _LOGGER.info("Reolink %s received ONVIF pull point event", self.nvr_name)
+        _LOGGER.debug("Reolink %s received ONVIF pull point event", self.nvr_name)
 
         return await self.ONVIF_event_callback(response, root)
 
@@ -6128,7 +6137,7 @@ class Host:
                 self._onvif_only_motion[sub_type] = False
 
             state = data_element.attrib["Value"] == "true"
-            _LOGGER.info("Reolink %s ONVIF event channel %s, %s: %s", self.nvr_name, channel, rule, state)
+            _LOGGER.debug("Reolink %s ONVIF event channel %s, %s: %s", self.nvr_name, channel, rule, state)
 
             if rule == "Motion":
                 self._motion_detection_states[channel] = state

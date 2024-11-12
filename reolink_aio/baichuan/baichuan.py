@@ -124,48 +124,47 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
         # send message
-        async with self._mutex:
-            if self._transport is None or self._protocol is None or self._transport.is_closing():
-                try:
-                    async with asyncio.timeout(15):
+        if self._transport is None or self._protocol is None or self._transport.is_closing():
+            try:
+                async with asyncio.timeout(15):
+                    async with self._mutex:
                         self._transport, self._protocol = await self._loop.create_connection(
                             lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self._port
                         )
-                except asyncio.TimeoutError as err:
-                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
-                except (ConnectionResetError, OSError) as err:
-                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
-
-            if _LOGGER.isEnabledFor(logging.DEBUG):
-                if mess_len > 0:
-                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension + body))
-                else:
-                    _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
-
-            if self._protocol.expected_cmd_id is not None or self._protocol.receive_future is not None:
-                raise ReolinkError(f"Baichuan host {self._host}: receive future is already set, cannot receive multiple requests simultaneously")
-
-            self._protocol.expected_cmd_id = cmd_id
-            self._protocol.receive_future = self._loop.create_future()
-
-            try:
-                async with asyncio.timeout(15):
-                    self._transport.write(header + enc_body_bytes)
-                    data, len_header = await self._protocol.receive_future
             except asyncio.TimeoutError as err:
-                raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
             except (ConnectionResetError, OSError) as err:
-                if retry <= 0 or cmd_id == 2:
-                    raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
-                _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
-                return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
-            finally:
-                self._protocol.expected_cmd_id = None
-                self._protocol.receive_future.cancel()
-                self._protocol.receive_future = None
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
+
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            if mess_len > 0:
+                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension + body))
+            else:
+                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
+
+        if cmd_id in self._protocol.receive_futures:
+            raise ReolinkError(f"Baichuan host {self._host}: receive future is already set for cmd_id {cmd_id}, cannot receive multiple requests simultaneously")
+
+        self._protocol.receive_futures[cmd_id] = self._loop.create_future()
+
+        try:
+            async with asyncio.timeout(15):
+                async with self._mutex:
+                    self._transport.write(header + enc_body_bytes)
+                data, len_header = await self._protocol.receive_futures[cmd_id]
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
+        except (ConnectionResetError, OSError) as err:
+            if retry <= 0 or cmd_id == 2:
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
+            _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
+        finally:
+            self._protocol.receive_futures[cmd_id].cancel()
+            self._protocol.receive_futures.pop(cmd_id, None)
 
         # decryption
-        rec_body = self._decrypt(data, len_header, enc_type)
+        rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if len(rec_body) > 0:
@@ -178,36 +177,56 @@ class Baichuan:
     def _aes_encrypt(self, body: str) -> bytes:
         """Encrypt a message using AES encryption"""
         if self._aes_key is None:
-            raise InvalidParameterError("Baichuan host {self._host}: first login before using AES encryption")
+            raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES encryption")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.encrypt(body.encode("utf8"))
 
-    def _aes_decrypt(self, data: bytes) -> str:
+    def _aes_decrypt(self, data: bytes, header: bytes = b"") -> str:
         """Decrypt a message using AES decryption"""
         if self._aes_key is None:
-            raise InvalidParameterError("Baichuan host {self._host}: first login before using AES decryption")
+            raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES decryption, header: {header.hex()}")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.decrypt(data).decode("utf8")
 
-    def _decrypt(self, data: bytes, len_header: int, enc_type: EncType = EncType.AES) -> str:
+    def _decrypt(self, data: bytes, len_header: int, cmd_id: int, enc_type: EncType = EncType.AES) -> str:
         """Figure out the encryption method and decrypt the message"""
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
         rec_enc_type = data[16:18].hex()
         enc_body = data[len_header::]
+        header = data[0:len_header]
+
+        rec_body = ""
+        if len(enc_body) == 0:
+            return rec_body
 
         # decryption
-        if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or (len_header == 24 and enc_type == EncType.BC):
+        if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or enc_type == EncType.BC:
             # Baichuan Encryption
             rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
+            enc_type = EncType.BC
         elif (len_header == 20 and rec_enc_type in ["02dd", "03dd"]) or (len_header == 24 and enc_type == EncType.AES):
             # AES Encryption
-            rec_body = self._aes_decrypt(enc_body)
+            try:
+                rec_body = self._aes_decrypt(enc_body, header)
+            except UnicodeDecodeError as err:
+                _LOGGER.debug("Baichuan host %s: AES decryption failed for cmd_id %s with UnicodeDecodeError: %s, trying Baichuan decryption", self._host, cmd_id, err)
         elif rec_enc_type == "00dd":  # Unencrypted
             rec_body = enc_body.decode("utf8")
         else:
             raise InvalidContentTypeError(f"Baichuan host {self._host}: received unknown encryption type '{rec_enc_type}', data: {data.hex()}")
+
+        # check if decryption suceeded
+        if not rec_body.startswith("<?xml"):
+            if enc_type != EncType.BC:
+                rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
+            if not rec_body.startswith("<?xml"):
+                raise UnexpectedDataError(
+                    f"Baichuan host {self._host}: unable to decrypt message with cmd_id {cmd_id}, "
+                    f"header '{header.hex()}', decrypted data startswith '{rec_body[0:5]}', "
+                    f"encrypted data startswith '{enc_body[0:5].hex()}' instead of '<?xml'"
+                )
 
         return rec_body
 
@@ -227,7 +246,11 @@ class Baichuan:
     def _push_callback(self, cmd_id: int, data: bytes, len_header: int) -> None:
         """Callback to parse a received message that was pushed"""
         # decryption
-        rec_body = self._decrypt(data, len_header)
+        try:
+            rec_body = self._decrypt(data, len_header, cmd_id)
+        except ReolinkError as err:
+            _LOGGER.warning(err)
+            return
 
         if len(rec_body) == 0:
             _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body", self._host, cmd_id)
@@ -316,9 +339,9 @@ class Baichuan:
                             motion_state = "MD" in states
                             visitor_state = "visitor" in states
                             if motion_state != self.http_api._motion_detection_states.get(channel, motion_state):
-                                _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
+                                _LOGGER.debug("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
                             if visitor_state != self.http_api._visitor_states.get(channel, visitor_state):
-                                _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
+                                _LOGGER.debug("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
                             self.http_api._motion_detection_states[channel] = motion_state
                             self.http_api._visitor_states[channel] = visitor_state
 
@@ -326,7 +349,7 @@ class Baichuan:
                             for ai_type_key in self.http_api._ai_detection_states.get(channel, {}):
                                 ai_state = ai_type_key in ai_types
                                 if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
-                                    _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
+                                    _LOGGER.debug("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
                                 self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
 
                             ai_type_list = ai_types.split(",")
@@ -340,7 +363,7 @@ class Baichuan:
                         state = self._get_value_from_xml_element(event, "mode")
                         if state is not None:
                             self._day_night_state = state
-                            _LOGGER.info("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
+                            _LOGGER.debug("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
                     else:
                         if f"TCP_event_tag_{event.tag}" not in self._log_once:
                             self._log_once.append(f"TCP_event_tag_{event.tag}")
@@ -357,7 +380,7 @@ class Baichuan:
                     state = self._get_value_from_xml_element(event, "status")
                     if state is not None:
                         self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
-                        _LOGGER.info("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
+                        _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 623:  # Sleep status
             pass
