@@ -164,7 +164,7 @@ class Baichuan:
             self._protocol.receive_futures.pop(cmd_id, None)
 
         # decryption
-        rec_body = self._decrypt(data, len_header, enc_type)
+        rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if len(rec_body) > 0:
@@ -190,24 +190,37 @@ class Baichuan:
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.decrypt(data).decode("utf8")
 
-    def _decrypt(self, data: bytes, len_header: int, enc_type: EncType = EncType.AES) -> str:
+    def _decrypt(self, data: bytes, len_header: int, cmd_id: int, enc_type: EncType = EncType.AES) -> str:
         """Figure out the encryption method and decrypt the message"""
         rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
         rec_enc_type = data[16:18].hex()
         enc_body = data[len_header::]
         header = data[0:len_header]
 
+        rec_body = ""
         # decryption
         if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or enc_type == EncType.BC:
             # Baichuan Encryption
             rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
         elif (len_header == 20 and rec_enc_type in ["02dd", "03dd"]) or (len_header == 24 and enc_type == EncType.AES):
             # AES Encryption
-            rec_body = self._aes_decrypt(enc_body, header)
+            try:
+                rec_body = self._aes_decrypt(enc_body, header)
+            except UnicodeDecodeError as err:
+                _LOGGER.debug("Baichuan host %s: AES decryption failed for cmd_id %s with UnicodeDecodeError: %s, trying Baichuan decryption", self._host, cmd_id, err)
+                rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
         elif rec_enc_type == "00dd":  # Unencrypted
             rec_body = enc_body.decode("utf8")
         else:
             raise InvalidContentTypeError(f"Baichuan host {self._host}: received unknown encryption type '{rec_enc_type}', data: {data.hex()}")
+
+        # check if decryption suceeded
+        if not rec_body.startswith("<?xml"):
+            raise UnexpectedDataError(
+                f"Baichuan host {self._host}: unable to decrypt message with cmd_id {cmd_id}, "
+                f"header '{header.hex()}', decrypted data startswith '{rec_body[0:5]}', "
+                f"encrypted data startswith '{data[0:5].hex()}' instead of '<?xml'"
+            )
 
         return rec_body
 
@@ -227,7 +240,11 @@ class Baichuan:
     def _push_callback(self, cmd_id: int, data: bytes, len_header: int) -> None:
         """Callback to parse a received message that was pushed"""
         # decryption
-        rec_body = self._decrypt(data, len_header)
+        try:
+            rec_body = self._decrypt(data, len_header, cmd_id)
+        except ReolinkError as err:
+            _LOGGER.warning(err)
+            return
 
         if len(rec_body) == 0:
             _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body", self._host, cmd_id)
