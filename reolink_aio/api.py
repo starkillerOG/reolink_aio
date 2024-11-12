@@ -8,15 +8,18 @@ import hashlib
 import logging
 import ssl
 import traceback
-import uuid
 import re
+from uuid import uuid4
 from datetime import datetime, timedelta, tzinfo
 from time import time as time_now
 from os.path import basename
 from typing import Any, Literal, Optional, overload
 from urllib import parse
 from xml.etree import ElementTree as XML
+from io import BytesIO
+from zipfile import ZipFile
 from statistics import mean
+from math import ceil
 
 from orjson import JSONDecodeError, loads as json_loads  # pylint: disable=no-name-in-module
 from aiortsp.rtsp.connection import RTSPConnection  # type: ignore
@@ -197,6 +200,8 @@ class Host:
         self._last_sw_id_check: float = 0
         self._latest_sw_model_version: dict[str, NewSoftwareVersion] = {}
         self._latest_sw_version: dict[int | None, NewSoftwareVersion | str | Literal[False]] = {}
+        self._sw_upload_progress: dict[int | None, int] = {}
+        self._updating: bool = False
         self._startup: bool = True
         self._new_devices: bool = False
 
@@ -1561,6 +1566,8 @@ class Host:
 
             if self.is_nvr and self.camera_hardware_version(channel) != "Unknown" and self.camera_model(channel) != "Unknown":
                 self._capabilities[channel].add("firmware")
+                if self.api_version("upgrade") >= 2:
+                    self._capabilities[channel].add("update")
 
             if self.api_version("supportWebhook", channel) > 0:
                 self._capabilities[channel].add("webhook")
@@ -1781,6 +1788,8 @@ class Host:
                 ch_body = [{"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWhiteLed" and self.supported(channel, "floodLight"):
                 ch_body = [{"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetChnTypeInfo":
+                ch_body = [{"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetBatteryInfo" and self.supported(channel, "battery"):
                 ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPirInfo" and self.supported(channel, "PIR"):
@@ -2679,26 +2688,198 @@ class Host:
         return self._latest_sw_version[channel]
 
     async def update_firmware(self, channel: int | None = None) -> None:
-        """check for new firmware."""
+        """Start update of firmware using API or direct upload."""
+        self._sw_upload_progress[channel] = 0
         try:
-            await self.get_state(cmd="GetDevInfo")
-        except ReolinkError:
-            pass
+            if self._updating:
+                raise InvalidParameterError("update_firmware: firmware update already running, wait on completion before starting another")
+            self._updating = True
 
-        if not self.supported(channel, "update"):
-            raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
+            cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
+            try:
+                await self.get_state(cmd=cmd)
+            except ReolinkError:
+                pass
 
-        body = [{"cmd": "UpgradeOnline"}]
+            if not self.supported(channel, "update"):
+                raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
+
+            self._sw_upload_progress[channel] = 2
+
+            if channel is None:
+                # Online Updgrade of channels not yet available
+                body = [{"cmd": "UpgradeOnline"}]
+                try:
+                    await self.send_setting(body)
+                    await self._wait_untill_online_update_complete()
+                    await self.wait_untill_firmware_update_complete(channel)
+                    return
+                except ApiError as err:
+                    if err.rspCode == -30:  # same version
+                        _LOGGER.debug(
+                            "Reolink device API could not find new firmware, "
+                            "tring to download from the Reolink download center (https://reolink.com/download-center) and upload directly",
+                        )
+                    else:
+                        _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
+
+            self._sw_upload_progress[channel] = 3
+            await self.upload_firmware(channel)
+        finally:
+            self._updating = False
+            self._sw_upload_progress[channel] = 100
+
+    async def upload_firmware(self, channel: int | None = None, new_version: NewSoftwareVersion | None = None) -> None:
+        """Start update of firmware using uploading."""
         try:
+            if not self.supported(channel, "update"):
+                raise NotSupportedError(f"update_firmware: not supported by {self.camera_name(channel)}")
+
+            available_update = self.firmware_update_available(channel)
+            if new_version is None and isinstance(available_update, NewSoftwareVersion):
+                new_version = available_update
+
+            if new_version is None or new_version.download_url is None:
+                raise InvalidParameterError(
+                    f"upload_firmware: no new firmware available for {self.camera_name(channel)}, please first check using check_new_firmware function"
+                )
+
+            self._updating = True
+
+            # Download firmware file from Reolink Download Center
+            try:
+                response = await self.send_reolink_com(new_version.download_url, "application/octet-stream", user_agent="reolink-aio-firmware")
+            except ApiError as err:
+                if err.rspCode == 429:
+                    raise ApiError(f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour") from err
+                raise err
+            with ZipFile(BytesIO(await response.read()), "r") as zip_file:
+                for info in zip_file.infolist():
+                    if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
+                        firmware_pak = zip_file.read(info)
+                        firmware_name = info.filename
+                        break
+            response.release()
+
+            _LOGGER.debug("Downloaded firmware for %s: %s", self.camera_name(channel), firmware_name)
+            self._sw_upload_progress[channel] = 4
+
+            len_pak = len(firmware_pak)
+
+            # Check if firmware is correct
+            param: dict[str, str | int] = {"restoreCfg": 0, "fileName": firmware_name}
+            if self.is_nvr:
+                if channel is None:
+                    ipcChnBit = 0
+                else:
+                    ipcChnBit = pow(2, channel)
+                param["ipcChnBit"] = str(ipcChnBit)
+                param["fileSize"] = len_pak
+            body = [{"cmd": "UpgradePrepare", "action": 0, "param": param}]
             await self.send_setting(body)
-        except ApiError as err:
-            if err.rspCode == -30:  # same version
-                raise ApiError(
-                    "Reolink device could not find new firmware, "
-                    "try downloading from the Reolink download center (https://reolink.com/download-center) and update manually",
-                    rspCode=err.rspCode,
-                ) from err
-            raise err
+            self._sw_upload_progress[channel] = 5
+
+            # Start uploading firmware
+            param = {"cmd": "Upgrade", "token": str(self._token), "clearConfig": 0, "file": "upgrade-package"}
+            chunk_size = 40960
+            uuid = uuid4()
+            N_chunks = ceil(len_pak / chunk_size)
+            # Obtain mutex to not allow other communication during update
+            async with self._send_mutex:
+                for chunk in range(0, N_chunks, 1):
+                    chunk_start = chunk * chunk_size
+                    chunk_end = min((chunk + 1) * chunk_size, len_pak)
+                    firm_chunk = firmware_pak[chunk_start:chunk_end]
+                    filename = f"{firmware_name}&{uuid}&{chunk}&{len_pak}"
+                    _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, N_chunks, self.camera_name(channel))
+                    self._sw_upload_progress[channel] = 5 + round(((chunk + 1) / N_chunks) * 55)
+                    with aiohttp.MultipartWriter("form-data", boundary="----WebKitFormBoundaryYkwJBwvTHAd3Nukl") as mpwriter:
+                        payload = mpwriter.append(firm_chunk)
+                        payload.set_content_disposition("form-data", name="upgrade-package", filename=filename, quote_fields=False)
+                        payload.headers[aiohttp.hdrs.CONTENT_TYPE] = "application/octet-stream"
+                        payload.headers.pop(aiohttp.hdrs.CONTENT_LENGTH, None)
+
+                        response = await self._aiohttp_session.post(url=self._url, data=mpwriter, params=param, allow_redirects=False, timeout=self._timeout)
+                        data = await response.text(encoding="utf-8")
+
+                    json_data = json_loads(data)
+                    if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
+                        raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}", rspCode=json_data[0].get("value", {}).get("rspCode", 0))
+
+            _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
+            await self.wait_untill_firmware_update_complete(channel)
+        finally:
+            self._updating = False
+            self._sw_upload_progress[channel] = 100
+
+    async def wait_untill_firmware_update_complete(self, channel: int | None = None):
+        start_time = datetime.now()
+        try:
+            async with asyncio.timeout(300):
+                while True:
+                    start_loop_time = datetime.now()
+                    # retrieve current firmware version
+                    cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
+                    try:
+                        async with asyncio.timeout(7):
+                            await self.get_state(cmd)
+                    except Exception:
+                        pass
+
+                    # compare firmware versions
+                    if not isinstance(self._latest_sw_version[channel], NewSoftwareVersion):
+                        _LOGGER.debug("Finished firmware update of %s", self.camera_name(channel))
+                        return
+                    if self.camera_sw_version_object(channel) >= self._latest_sw_version[channel]:
+                        _LOGGER.debug("Finished firmware update of %s", self.camera_name(channel))
+                        return
+
+                    sleep_time = max(0, 5 - (datetime.now() - start_loop_time).total_seconds())
+                    await asyncio.sleep(sleep_time)
+
+                    # firmware update reboot normally takes about 60 seconds
+                    time_diff = (datetime.now() - start_time).total_seconds()
+                    self._sw_upload_progress[channel] = 60 + round(min(39 * (time_diff / 60), 39))
+                    _LOGGER.debug("Waiting already %s seconds for firmware install reboot of %s", time_diff, self.camera_name(channel))
+
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError("Timeout waiting on firmware update completion") from err
+        finally:
+            self._sw_upload_progress[channel] = 100
+
+    async def _wait_untill_online_update_complete(self):
+        start_time = datetime.now()
+        try:
+            async with asyncio.timeout(300):
+                while True:
+                    start_loop_time = datetime.now()
+                    # retrieve current firmware version
+                    try:
+                        async with asyncio.timeout(7):
+                            progress = await self.update_progress()
+                    except Exception:
+                        progress = False
+
+                    # Check if done
+                    if not progress:
+                        time_diff = (datetime.now() - start_time).total_seconds()
+                        if time_diff > 50:
+                            self._sw_upload_progress[None] = 60
+                            _LOGGER.debug("Finished online update of %s, rebooting now", self.nvr_name)
+                            return
+                        progress = 100 * (time_diff / 50)
+
+                    # Update the progress status
+                    self._sw_upload_progress[None] = 2 + round(0.58 * progress)
+                    _LOGGER.debug("Waiting for online update of %s which is at %s %%", self.nvr_name, progress)
+
+                    sleep_time = max(0, 5 - (datetime.now() - start_loop_time).total_seconds())
+                    await asyncio.sleep(sleep_time)
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError("Timeout waiting on firmware update completion") from err
+
+    def sw_upload_progress(self, channel: int | None = None) -> int:
+        return self._sw_upload_progress.get(channel, 100)
 
     async def update_progress(self) -> bool | int:
         """check progress of firmware update, returns False if not in progress."""
@@ -3328,13 +3509,14 @@ class Host:
                     continue
 
                 if data["cmd"] == "GetChnTypeInfo":
-                    self._channel_models[channel] = data["value"]["typeInfo"]
+                    if data["value"]["typeInfo"] != "":
+                        self._channel_models[channel] = data["value"]["typeInfo"]
                     self._is_doorbell[channel] = "Doorbell" in self._channel_models[channel]
-                    if "firmVer" in data["value"]:
+                    if data["value"].get("firmVer", "") != "":
                         self._channel_sw_versions[channel] = data["value"]["firmVer"]
                         if self._channel_sw_versions[channel] is not None:
                             self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
-                    if "boardInfo" in data["value"]:
+                    if data["value"].get("boardInfo", "") != "":
                         self._channel_hw_version[channel] = data["value"]["boardInfo"]
 
                 if data["cmd"] == "GetEvents":
@@ -5182,7 +5364,10 @@ class Host:
 
             if is_login_logout and response.status == 300:
                 response.release()
-                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}, this may happen if you use HTTP and the camera expects HTTPS")
+                raise ApiError(
+                    f"API returned HTTP status ERROR code {response.status}/{response.reason}, this may happen if you use HTTP and the camera expects HTTPS",
+                    rspCode=response.status,
+                )
 
             if response.status in [404, 502] and retry > 0:
                 _LOGGER.debug("Host %s:%s: %s/%s response, trying to login again and retry the command.", self._host, self._port, response.status, response.reason)
@@ -5192,7 +5377,7 @@ class Host:
 
             if response.status >= 400 or (is_login_logout and response.status != 200):
                 response.release()
-                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}")
+                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}", rspCode=response.status)
 
             expected_content_type: list[str] = [expected_response_type]
             if expected_response_type == "json":
@@ -5345,11 +5530,34 @@ class Host:
             await self.expire_session()
             raise err
 
+    @overload
     async def send_reolink_com(
         self,
         URL: str,
-        expected_response_type: Literal["application/json"] = "application/json",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any]: ...
+
+    @overload
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/json"],
+        user_agent: str,
+    ) -> dict[str, Any]: ...
+
+    @overload
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/octet-stream"],
+        user_agent: str,
+    ) -> aiohttp.ClientResponse: ...
+
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/json"] | Literal["application/octet-stream"] = "application/json",
+        user_agent: str = "reolink_aio",
+    ) -> dict[str, Any] | aiohttp.ClientResponse:
         """Generic send method for reolink.com site."""
 
         if self._aiohttp_session.closed:
@@ -5360,7 +5568,7 @@ class Host:
 
         com_timeout = aiohttp.ClientTimeout(total=2 * self.timeout)
         try:
-            response = await self._aiohttp_session.get(url=URL, headers={"user-agent": "reolink_aio"}, timeout=com_timeout)
+            response = await self._aiohttp_session.get(url=URL, headers={"user-agent": user_agent}, timeout=com_timeout)
         except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
@@ -5373,6 +5581,9 @@ class Host:
         if response.content_type != expected_response_type:
             response.release()
             raise InvalidContentTypeError(f"Request to {URL}, expected type '{expected_response_type}' but received '{response.content_type}'")
+
+        if expected_response_type == "application/octet-stream":
+            return response
 
         try:
             data = await response.text()
@@ -5450,7 +5661,7 @@ class Host:
         try:
             await self.send_setting(body)
         except ApiError as err:
-            raise ApiError(f"Webhook test for url '{webhook_url}' failed: {str(err)}") from err
+            raise ApiError(f"Webhook test for url '{webhook_url}' failed: {str(err)}", rspCode=err.rspCode) from err
 
     async def webhook_remove(self, channel: int, webhook_url: str):
         """Remove a webhook"""
@@ -5539,7 +5750,7 @@ class Host:
         """Get the authorisation digest."""
         time_created = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
-        raw_nonce = uuid.uuid4().bytes
+        raw_nonce = uuid4().bytes
         nonce = base64.b64encode(raw_nonce)
 
         sha1 = hashlib.sha1()
@@ -5548,7 +5759,7 @@ class Host:
         digest_pwd = base64.b64encode(raw_digest)
 
         return {
-            "UsernameToken": str(uuid.uuid4()),
+            "UsernameToken": str(uuid4()),
             "Username": self._username,
             "PasswordDigest": digest_pwd.decode("utf8"),
             "Nonce": nonce.decode("utf8"),
@@ -5603,7 +5814,9 @@ class Host:
                         f"Host {self._host}:{self._port}: subscription request got HTTP status response "
                         f"{response.status}: {response.reason} with 'SOAP-ENV:Fault' as response text"
                     )
-                raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}")
+                raise ApiError(
+                    f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}", rspCode=response.status
+                )
 
             return response_text
 
@@ -5783,6 +5996,10 @@ class Host:
         _LOGGER.debug("Reolink %s requesting ONVIF pull point message", self.nvr_name)
 
         timeout = aiohttp.ClientTimeout(total=LONG_POLL_TIMEOUT * 60 + 30, connect=self.timeout)
+
+        # If a firmware update is in progress, quite sending pull_point_requests (only one not using send_mutex)
+        while self._updating:
+            await asyncio.sleep(10)
 
         try:
             response = await self.subscription_send(headers, xml, timeout, mutex=self._long_poll_mutex)
