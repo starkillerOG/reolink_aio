@@ -202,13 +202,13 @@ class Baichuan:
         if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or enc_type == EncType.BC:
             # Baichuan Encryption
             rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
+            enc_type = EncType.BC
         elif (len_header == 20 and rec_enc_type in ["02dd", "03dd"]) or (len_header == 24 and enc_type == EncType.AES):
             # AES Encryption
             try:
                 rec_body = self._aes_decrypt(enc_body, header)
             except UnicodeDecodeError as err:
                 _LOGGER.debug("Baichuan host %s: AES decryption failed for cmd_id %s with UnicodeDecodeError: %s, trying Baichuan decryption", self._host, cmd_id, err)
-                rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
         elif rec_enc_type == "00dd":  # Unencrypted
             rec_body = enc_body.decode("utf8")
         else:
@@ -216,11 +216,14 @@ class Baichuan:
 
         # check if decryption suceeded
         if not rec_body.startswith("<?xml"):
-            raise UnexpectedDataError(
-                f"Baichuan host {self._host}: unable to decrypt message with cmd_id {cmd_id}, "
-                f"header '{header.hex()}', decrypted data startswith '{rec_body[0:5]}', "
-                f"encrypted data startswith '{data[0:5].hex()}' instead of '<?xml'"
-            )
+            if enc_type != EncType.BC:
+                rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
+            if not rec_body.startswith("<?xml"):
+                raise UnexpectedDataError(
+                    f"Baichuan host {self._host}: unable to decrypt message with cmd_id {cmd_id}, "
+                    f"header '{header.hex()}', decrypted data startswith '{rec_body[0:5]}', "
+                    f"encrypted data startswith '{data[0:5].hex()}' instead of '<?xml'"
+                )
 
         return rec_body
 
