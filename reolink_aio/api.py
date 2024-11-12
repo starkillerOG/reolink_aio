@@ -2751,9 +2751,8 @@ class Host:
                 response = await self.send_reolink_com(new_version.download_url, "application/octet-stream", user_agent="reolink-aio-firmware")
             except ApiError as err:
                 if err.rspCode == 429:
-                    raise ApiError(f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour")
-                else:
-                    raise err
+                    raise ApiError(f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour") from err
+                raise err
             with ZipFile(BytesIO(await response.read()), "r") as zip_file:
                 for info in zip_file.infolist():
                     if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
@@ -2805,7 +2804,7 @@ class Host:
 
                     json_data = json_loads(data)
                     if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", 0) != 200:
-                        raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}", resp_code=json_data[0].get("value", {}).get("rspCode", 0))
+                        raise ApiError(f"Error during firmware upload to {self.camera_name(channel)}: {data}", rspCode=json_data[0].get("value", {}).get("rspCode", 0))
 
             _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
             await self.wait_untill_firmware_update_complete(channel)
@@ -5365,7 +5364,10 @@ class Host:
 
             if is_login_logout and response.status == 300:
                 response.release()
-                raise ApiError(f"API returned HTTP status ERROR code {response.status}/{response.reason}, this may happen if you use HTTP and the camera expects HTTPS", rspCode=response.status)
+                raise ApiError(
+                    f"API returned HTTP status ERROR code {response.status}/{response.reason}, this may happen if you use HTTP and the camera expects HTTPS",
+                    rspCode=response.status,
+                )
 
             if response.status in [404, 502] and retry > 0:
                 _LOGGER.debug("Host %s:%s: %s/%s response, trying to login again and retry the command.", self._host, self._port, response.status, response.reason)
@@ -5812,7 +5814,9 @@ class Host:
                         f"Host {self._host}:{self._port}: subscription request got HTTP status response "
                         f"{response.status}: {response.reason} with 'SOAP-ENV:Fault' as response text"
                     )
-                raise ApiError(f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}", rspCode=response.status)
+                raise ApiError(
+                    f"Host {self._host}:{self._port}: subscription request got a response with wrong HTTP status {response.status}: {response.reason}", rspCode=response.status
+                )
 
             return response_text
 
