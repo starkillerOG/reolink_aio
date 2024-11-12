@@ -339,9 +339,9 @@ class Baichuan:
                             motion_state = "MD" in states
                             visitor_state = "visitor" in states
                             if motion_state != self.http_api._motion_detection_states.get(channel, motion_state):
-                                _LOGGER.info("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
+                                _LOGGER.debug("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
                             if visitor_state != self.http_api._visitor_states.get(channel, visitor_state):
-                                _LOGGER.info("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
+                                _LOGGER.debug("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
                             self.http_api._motion_detection_states[channel] = motion_state
                             self.http_api._visitor_states[channel] = visitor_state
 
@@ -349,7 +349,7 @@ class Baichuan:
                             for ai_type_key in self.http_api._ai_detection_states.get(channel, {}):
                                 ai_state = ai_type_key in ai_types
                                 if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
-                                    _LOGGER.info("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
+                                    _LOGGER.debug("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
                                 self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
 
                             ai_type_list = ai_types.split(",")
@@ -363,7 +363,7 @@ class Baichuan:
                         state = self._get_value_from_xml_element(event, "mode")
                         if state is not None:
                             self._day_night_state = state
-                            _LOGGER.info("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
+                            _LOGGER.debug("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
                     else:
                         if f"TCP_event_tag_{event.tag}" not in self._log_once:
                             self._log_once.append(f"TCP_event_tag_{event.tag}")
@@ -380,7 +380,7 @@ class Baichuan:
                     state = self._get_value_from_xml_element(event, "status")
                     if state is not None:
                         self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
-                        _LOGGER.info("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
+                        _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 623:  # Sleep status
             pass

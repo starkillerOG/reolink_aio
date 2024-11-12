@@ -5794,7 +5794,7 @@ class Host:
             _LOGGER.debug("Reolink %s received ONVIF pull point message without event", self.nvr_name)
             return []
 
-        _LOGGER.info("Reolink %s received ONVIF pull point event", self.nvr_name)
+        _LOGGER.debug("Reolink %s received ONVIF pull point event", self.nvr_name)
 
         return await self.ONVIF_event_callback(response, root)
 
@@ -5924,7 +5924,7 @@ class Host:
                 self._onvif_only_motion[sub_type] = False
 
             state = data_element.attrib["Value"] == "true"
-            _LOGGER.info("Reolink %s ONVIF event channel %s, %s: %s", self.nvr_name, channel, rule, state)
+            _LOGGER.debug("Reolink %s ONVIF event channel %s, %s: %s", self.nvr_name, channel, rule, state)
 
             if rule == "Motion":
                 self._motion_detection_states[channel] = state
