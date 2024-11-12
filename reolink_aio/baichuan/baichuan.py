@@ -198,6 +198,9 @@ class Baichuan:
         header = data[0:len_header]
 
         rec_body = ""
+        if len(enc_body) == 0:
+            return rec_body
+
         # decryption
         if (len_header == 20 and rec_enc_type in ["01dd", "12dd"]) or enc_type == EncType.BC:
             # Baichuan Encryption
