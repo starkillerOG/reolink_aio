@@ -2,7 +2,7 @@
 
 from enum import Enum
 from hashlib import md5
-from .exceptions import InvalidParameterError
+from ..exceptions import InvalidParameterError
 
 BC_PORT = 9000
 HEADER_MAGIC = "f0debc0a"
