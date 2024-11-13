@@ -2746,9 +2746,18 @@ class Host:
 
             self._updating = True
 
+            # Check hourly rate limit on the Reolink servers
+            request_URL = "https://reolink.com/wp-json/reo-v2/download/firmware"
+            try:
+                await self.send_reolink_com(request_URL, expected_response_type="application/json", user_agent="reolink-aio-firmware")
+            except ApiError as err:
+                if err.rspCode == 429:
+                    raise ApiError(f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour") from err
+                raise err
+
             # Download firmware file from Reolink Download Center
             try:
-                response = await self.send_reolink_com(new_version.download_url, "application/octet-stream", user_agent="reolink-aio-firmware")
+                response = await self.send_reolink_com(new_version.download_url, expected_response_type="application/octet-stream")
             except ApiError as err:
                 if err.rspCode == 429:
                     raise ApiError(f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour") from err
@@ -5535,6 +5544,13 @@ class Host:
         self,
         URL: str,
     ) -> dict[str, Any]: ...
+
+    @overload
+    async def send_reolink_com(
+        self,
+        URL: str,
+        expected_response_type: Literal["application/octet-stream"],
+    ) -> aiohttp.ClientResponse: ...
 
     @overload
     async def send_reolink_com(
