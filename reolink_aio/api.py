@@ -1434,7 +1434,10 @@ class Host:
                     # logout sometimes responds with a string of seemingly random caracters, which are always the same for a given camera.
                     await self.send(body, param, expected_response_type="text/html")
                 except ReolinkError as err:
-                    _LOGGER.warning("Error while logging out: %s", str(err))
+                    if self._updating:
+                        _LOGGER.debug("Error while logging out during firmware reboot: %s", str(err))
+                    else:
+                        _LOGGER.warning("Error while logging out: %s", str(err))
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
             # Thus it is not available for now to exit the previous "stuck" sessions after sudden crash or power failure:
