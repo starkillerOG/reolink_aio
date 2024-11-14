@@ -2855,6 +2855,7 @@ class Host:
             raise ReolinkTimeoutError("Timeout waiting on firmware update completion") from err
         finally:
             self._sw_upload_progress[channel] = 100
+            self._new_devices = True  # signal for a reload after a firmware update
 
     async def _wait_untill_online_update_complete(self):
         start_time = datetime.now()
