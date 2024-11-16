@@ -160,8 +160,9 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
             return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
         finally:
-            self._protocol.receive_futures[cmd_id].cancel()
-            self._protocol.receive_futures.pop(cmd_id, None)
+            if cmd_id in self._protocol.receive_futures:
+                self._protocol.receive_futures[cmd_id].cancel()
+                self._protocol.receive_futures.pop(cmd_id, None)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
