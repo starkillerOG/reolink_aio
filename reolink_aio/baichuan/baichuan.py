@@ -398,17 +398,20 @@ class Baichuan:
     async def _keepalive_loop(self) -> None:
         """Loop which keeps the TCP connection allive when subscribed for events"""
         while True:
-            _LOGGER.debug("Baichuan host %s: sending keepalive for event subscription", self._host)
-            try:
-                await self.send(cmd_id=31)
-            except Exception as err:
-                _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
-            await asyncio.sleep(KEEP_ALLIVE_INTERVAL)
             while self._protocol is not None:
                 sleep_t = KEEP_ALLIVE_INTERVAL - (time_now() - self._protocol.time_recv)
                 if sleep_t < 0.5:
                     break
                 await asyncio.sleep(sleep_t)
+            _LOGGER.debug("Baichuan host %s: sending keepalive for event subscription", self._host)
+            try:
+                if self._events_active:
+                    await self.send(cmd_id=93)  # LinkType is used as keepalive
+                else:
+                    await self.send(cmd_id=31)  # Subscribe to events
+            except Exception as err:
+                _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
+            await asyncio.sleep(KEEP_ALLIVE_INTERVAL)
 
     async def subscribe_events(self) -> None:
         """Subscribe to baichuan push events, keeping the connection open"""
@@ -416,6 +419,10 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: already subscribed to events", self._host)
             return
         self._subscribed = True
+        try:
+            await self.send(cmd_id=31)
+        except Exception as err:
+            _LOGGER.debug("Baichuan host %s: error while subscribing: %s", self._host, str(err))
         if self._keepalive_task is None:
             self._keepalive_task = self._loop.create_task(self._keepalive_loop())
 
