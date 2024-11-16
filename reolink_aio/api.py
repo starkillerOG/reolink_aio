@@ -3057,9 +3057,15 @@ class Host:
         _LOGGER.debug("Checking RTSP urls host %s:%s, channel %s, stream %s", self._host, self._port, channel, stream)
 
         if self.api_version("rtsp") >= 3 and stream == "main" and channel in self._rtsp_mainStream:
+            if self.supported(channel, "battery"):
+                _LOGGER.debug("Checking RTSP url host %s, channel %s, stream %s skipped because it is a battery camera", self._host, channel, stream)
+                return self._rtsp_mainStream[channel]
             if await self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
                 return self._rtsp_mainStream[channel]
         if self.api_version("rtsp") >= 3 and stream == "sub" and channel in self._rtsp_subStream:
+            if self.supported(channel, "battery"):
+                _LOGGER.debug("Checking RTSP url host %s, channel %s, stream %s skipped because it is a battery camera", self._host, channel, stream)
+                return self._rtsp_subStream[channel]
             if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
                 return self._rtsp_subStream[channel]
 
