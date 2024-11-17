@@ -3790,7 +3790,8 @@ class Host:
                                 )
                                 self._new_devices = True
                         chime = self._chime_list[chime_id]
-                        chime.name = dev["ringName"]
+                        if "ringName" in dev:
+                            chime.name = dev["ringName"]
                         chime.event_info = dev["type"]
 
                 elif data["cmd"] == "DingDongOpt":
