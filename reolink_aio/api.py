@@ -2615,12 +2615,9 @@ class Host:
             ch_list = [None]
             ch_list.extend(self.channels)
 
-        # check current firmware version and check for host update using API
+        # check current firmware version
         body: typings.reolink_json = [{"cmd": "GetDevInfo", "action": 0, "param": {}}]
         channels = [-1]
-        if self.supported(None, "update"):
-            body.append({"cmd": "CheckFirmware"})
-            channels.append(-1)
         for ch in self.channels:
             if ch in ch_list and self.supported(ch, "firmware"):
                 body.append({"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": ch}})
@@ -2629,17 +2626,28 @@ class Host:
         try:
             json_data = await self.send(body, expected_response_type="json")
         except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(f"Check firmware: {str(err)}") from err
+            raise InvalidContentTypeError(f"Check current firmware: {str(err)}") from err
         except NoDataError as err:
-            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining CheckFirmware response") from err
+            raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining current firmware response") from err
 
         self.map_channels_json_response(json_data, channels)
 
+        # check for host update using API
         if self.supported(None, "update"):
+            body = [{"cmd": "CheckFirmware"}]
+
             try:
+                async with asyncio.timeout(15):
+                    json_data = await self.send(body, expected_response_type="json")
                 new_firmware = json_data[1]["value"]["newFirmware"]
+            except InvalidContentTypeError as err:
+                _LOGGER.debug("CheckFirmware: %s", str(err))
+            except NoDataError:
+                _LOGGER.debug("Host: %s: error obtaining CheckFirmware response", self._host)
+            except asyncio.TimeoutError:
+                _LOGGER.debug("Host %s: Timeout waiting on CheckFirmware API cmd", self._host)
             except KeyError as err:
-                raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from check_new_firmware: {json_data}") from err
+                _LOGGER.debug("Host %s: received an unexpected response from CheckFirmware: %s\n%s", self._host, json_data, str(err))
 
         # check latest available firmware version online
         for ch in ch_list:
