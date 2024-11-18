@@ -2639,15 +2639,13 @@ class Host:
             try:
                 async with asyncio.timeout(15):
                     json_data = await self.send(body, expected_response_type="json")
-                new_firmware = json_data[1]["value"]["newFirmware"]
+                new_firmware = json_data[0].get("value", {}).get("newFirmware", 0)
             except InvalidContentTypeError as err:
                 _LOGGER.debug("CheckFirmware: %s", str(err))
             except NoDataError:
                 _LOGGER.debug("Host: %s: error obtaining CheckFirmware response", self._host)
             except asyncio.TimeoutError:
                 _LOGGER.debug("Host %s: Timeout waiting on CheckFirmware API cmd", self._host)
-            except KeyError as err:
-                _LOGGER.debug("Host %s: received an unexpected response from CheckFirmware: %s\n%s", self._host, json_data, str(err))
 
         # check latest available firmware version online
         for ch in ch_list:
@@ -3770,7 +3768,7 @@ class Host:
                                 )
                                 self._new_devices = True
                         chime = self._chime_list[chime_id]
-                        if dev["deviceName"]:
+                        if dev.get("deviceName"):
                             chime.name = dev["deviceName"]
                         chime.connect_state = dev["netState"]
 
