@@ -6309,4 +6309,7 @@ class Chime:
 
     async def remove(self) -> None:
         body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": self.channel, "id": self.dev_id, "option": 1}}}]
-        await self.host.send_setting(body)
+        try:
+            await self.host.send_setting(body)
+        except ReolinkError as err:
+            _LOGGER.warning("Error while removing chime %s, channel %s: %s", self.dev_id, self.channel, str(err))
