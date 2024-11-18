@@ -547,6 +547,22 @@ class Baichuan:
         mess = await self.send(cmd_id=433, channel=channel)
         self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
 
+    async def get_DingDongList(self, channel: int) -> None:
+        """Get the DingDongList info"""
+        rec_body = await self.send(cmd_id=484, channel=channel)
+        self._parse_xml(484, rec_body)
+
+    async def get_DingDongOpt(self, channel: int, chime_id: int) -> None:
+        """Get the DingDongOpt info"""
+        xml = xmls.DingDongOpt_XML.format(id=chime_id)
+        rec_body = await self.send(cmd_id=485, channel=channel, body=xml)
+        self._parse_xml(485, rec_body)
+
+    async def get_GetDingDongCfg(self, channel: int) -> None:
+        """Get the GetDingDongCfg info"""
+        rec_body = await self.send(cmd_id=486, channel=channel)
+        self._parse_xml(486, rec_body)
+
     @property
     def events_active(self) -> bool:
         return self._events_active

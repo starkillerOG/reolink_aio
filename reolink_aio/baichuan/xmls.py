@@ -31,3 +31,13 @@ CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 <channelId>{channel}</channelId>
 </Extension>
 """
+
+DingDongOpt_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongDeviceOpt version="1.1">
+<id>{id}</id>
+<opt>getParam</opt>
+</dingdongDeviceOpt>
+</body>
+"""
