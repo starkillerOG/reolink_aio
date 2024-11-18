@@ -117,9 +117,9 @@ class Baichuan:
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(extension + body, enc_offset)
+                enc_body_bytes = encrypt_baichuan(extension, enc_offset) + encrypt_baichuan(body, enc_offset)
             elif enc_type == EncType.AES:
-                enc_body_bytes = self._aes_encrypt(extension + body)
+                enc_body_bytes = self._aes_encrypt(extension) + self._aes_encrypt(body)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
@@ -177,6 +177,8 @@ class Baichuan:
 
     def _aes_encrypt(self, body: str) -> bytes:
         """Encrypt a message using AES encryption"""
+        if not body:
+            return b""
         if self._aes_key is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES encryption")
 
