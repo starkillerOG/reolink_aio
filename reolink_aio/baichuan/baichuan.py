@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+from inspect import getmembers
 from time import time as time_now
 from typing import TYPE_CHECKING
 from collections.abc import Callable
@@ -21,7 +22,7 @@ from ..exceptions import (
     ReolinkTimeoutError,
 )
 
-from .util import BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern
+from .util import BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
 
 if TYPE_CHECKING:
     from ..api import Host
@@ -67,6 +68,11 @@ class Baichuan:
         self._events_active: bool = False
         self._keepalive_task: asyncio.Task | None = None
         self._ext_callback: dict[int | None, dict[int | None, dict[str, Callable[[], None]]]] = {}
+
+        # http_cmd functions, set by the http_cmd decorator
+        self.cmd_funcs: dict[str, Callable] = {}
+        for name, func in getmembers(self, lambda o: hasattr(o, 'http_cmd')):
+            self.cmd_funcs[func.http_cmd] = func
 
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
@@ -290,15 +296,22 @@ class Baichuan:
             return None
         return channel
 
-    def _get_keys_from_xml(self, xml: str, keys: list[str]) -> dict[str, str]:
+    def _get_keys_from_xml(self, xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, type]]) -> dict[str, str]:
         """Get multiple keys from a xml and return as a dict"""
-        root = XML.fromstring(xml)
+        if isinstance(xml, str):
+            root = XML.fromstring(xml)
+        else:
+            root = xml
         result = {}
         for key in keys:
             value = self._get_value_from_xml_element(root, key)
             if value is None:
                 continue
-            result[key] = value
+            if isinstance(keys, dict):
+                (new_key, type_class) = keys[key]
+                result[new_key] = type_class(value)
+            else:
+                result[key] = value
 
         return result
 
@@ -324,10 +337,11 @@ class Baichuan:
         if self.http_api is None:
             return
 
+        root = XML.fromstring(xml)
+
         channels: set[int | None] = {None}
         cmd_ids: set[int | None] = {None, cmd_id}
         if cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
-            root = XML.fromstring(xml)
             for event_list in root:
                 for event in event_list:
                     channel = self._get_channel_from_xml_element(event, "channelId")
@@ -376,7 +390,6 @@ class Baichuan:
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
         elif cmd_id == 291:  # Floodlight
-            root = XML.fromstring(xml)
             for event_list in root:
                 for event in event_list:
                     channel = self._get_channel_from_xml_element(event)
@@ -547,10 +560,18 @@ class Baichuan:
         mess = await self.send(cmd_id=433, channel=channel)
         self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
 
+    @http_cmd("GetDingDongList")
     async def get_DingDongList(self, channel: int) -> None:
         """Get the DingDongList info"""
-        rec_body = await self.send(cmd_id=484, channel=channel)
-        self._parse_xml(484, rec_body)
+        mess = await self.send(cmd_id=484, channel=channel)
+        root = XML.fromstring(mess)
+
+        chime_list = []
+        for chime in root.findall(".//dingdongDeviceInfo"):
+            data = self._get_keys_from_xml(chime, {"id": ("deviceId", int), "name": ("deviceName", str), "netstate": ("netState", int)})
+            chime_list.append(data)
+        json_data = [{"cmd": "GetDingDongList", "code": 0, "value": {"DingDongList": {"pairedlist": chime_list}}}]
+        self.http_api.map_channel_json_response(json_data, channel)
 
     async def get_DingDongOpt(self, channel: int, chime_id: int) -> None:
         """Get the DingDongOpt info"""

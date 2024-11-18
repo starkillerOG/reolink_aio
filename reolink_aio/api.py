@@ -5474,7 +5474,22 @@ class Host:
                 retry_idxs = []
                 for idx, cmd_data in enumerate(json_data):
                     if cmd_data["code"] != 0 and cmd_data.get("error", {}).get("rspCode", 0) in [-12, -13, -17]:
-                        retry_cmd.append(body[idx])
+                        cmd = body[idx]
+                        # check if baichuan has a backup function
+                        if retry > 0 and cmd.get("cmd") in self.baichuan.cmd_funcs:
+                            func = self.baichuan.cmd_funcs[cmd["cmd"]]
+                            args = {}
+                            if channel := cmd.get("param", {}).get("channel"):
+                                args["channel"] = channel
+                            try:
+                                await func(**args)
+                            except ReolinkError as err:
+                                _LOGGER.debug("Baichuan backup failed for %s: %s", cmd.get("cmd"), err)
+                            else:
+                                _LOGGER.debug("Baichuan backup succeeded for %s", cmd.get("cmd"))
+                                continue
+                        # add to the list of cmds to retry
+                        retry_cmd.append(cmd)
                         retry_idxs.append(idx)
                 if retry_cmd and retry > 0:
                     _LOGGER.debug(

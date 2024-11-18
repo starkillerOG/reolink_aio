@@ -59,3 +59,11 @@ def md5_str_modern(string: str) -> str:
     md5_hex = md5_bytes.hex()[0:31]
     md5_HEX = md5_hex.upper()
     return md5_HEX
+
+
+# Decorators
+def http_cmd(cmd) -> None:
+    def decorator_http_cmd(func):
+        func.http_cmd = cmd
+        return func
+    return decorator_http_cmd
