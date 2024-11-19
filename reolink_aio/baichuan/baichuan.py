@@ -413,6 +413,17 @@ class Baichuan:
                             self._log_once.append(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
+        if cmd_id == 145:  # ChannelInfoList: Sleep status
+            for event in root.findall(".//ChannelInfo"):
+                channel = self._get_channel_from_xml_element(event, "channelId")
+                if channel is None:
+                    continue
+                channels.add(channel)
+                state = self._get_value_from_xml_element(event, "loginState") == "standby"
+                if state != self.http_api._sleep.get(channel):
+                    _LOGGER.debug("Reolink %s TCP event channel %s, sleeping: %s", self.http_api.nvr_name, channel, state)
+                self.http_api._sleep[channel] = state
+
         elif cmd_id == 291:  # Floodlight
             for event_list in root:
                 for event in event_list:
@@ -424,9 +435,6 @@ class Baichuan:
                     if state is not None:
                         self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
-
-        elif cmd_id == 623:  # Sleep status
-            pass
 
         # call the callbacks
         for cmd in cmd_ids:
