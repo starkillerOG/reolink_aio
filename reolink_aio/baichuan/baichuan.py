@@ -561,7 +561,7 @@ class Baichuan:
         self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
 
     @http_cmd("GetDingDongList")
-    async def get_DingDongList(self, channel: int) -> None:
+    async def get_DingDongList(self, channel: int, **kwargs) -> None:
         """Get the DingDongList info"""
         mess = await self.send(cmd_id=484, channel=channel)
         root = XML.fromstring(mess)
@@ -573,16 +573,28 @@ class Baichuan:
         json_data = [{"cmd": "GetDingDongList", "code": 0, "value": {"DingDongList": {"pairedlist": chime_list}}}]
         self.http_api.map_channel_json_response(json_data, channel)
 
-    async def get_DingDongOpt(self, channel: int, chime_id: int) -> None:
+    async def get_DingDongOpt(self, channel: int, chime_id: int, **kwargs) -> None:
         """Get the DingDongOpt info"""
         xml = xmls.DingDongOpt_XML.format(id=chime_id)
-        rec_body = await self.send(cmd_id=485, channel=channel, body=xml)
-        self._parse_xml(485, rec_body)
+        mess = await self.send(cmd_id=485, channel=channel, body=xml)
+        self._parse_xml(485, mess)
 
-    async def get_GetDingDongCfg(self, channel: int) -> None:
+    @http_cmd("GetDingDongCfg")
+    async def get_GetDingDongCfg(self, channel: int, **kwargs) -> None:
         """Get the GetDingDongCfg info"""
-        rec_body = await self.send(cmd_id=486, channel=channel)
-        self._parse_xml(486, rec_body)
+        mess = await self.send(cmd_id=486, channel=channel)
+        root = XML.fromstring(mess)
+        
+        chime_list = []
+        for chime in root.findall(".//deviceCfg"):
+            data = self._get_keys_from_xml(chime, {"id": ("ringId", int)})
+            data["type"] = {}
+            for ringtone in chime.findall(".//alarminCfg"):
+                tone_type = self._get_value_from_xml_element(ringtone, "type")
+                data["type"][tone_type] = self._get_keys_from_xml(ringtone, {"valid": ("switch", int), "musicId": ("musicId", int)})
+            chime_list.append(data)
+        json_data = [{"cmd": "GetDingDongCfg", "code": 0, "value": {"DingDongCfg": {"pairedlist": chime_list}}}]
+        self.http_api.map_channel_json_response(json_data, channel)
 
     @property
     def events_active(self) -> bool:
