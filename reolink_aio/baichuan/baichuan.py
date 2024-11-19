@@ -376,6 +376,7 @@ class Baichuan:
                         if self._subscribed and not self._events_active:
                             self._events_active = True
 
+                        motion_state = False
                         if states is not None:
                             motion_state = "MD" in states
                             visitor_state = "visitor" in states
@@ -392,6 +393,8 @@ class Baichuan:
                                 if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
                                     _LOGGER.debug("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
                                 self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
+                                if ai_type_key == "other" and not motion_state:
+                                    self.http_api._motion_detection_states[channel] = ai_state
 
                             ai_type_list = ai_types.split(",")
                             for ai_type in ai_type_list:
