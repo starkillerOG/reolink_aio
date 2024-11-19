@@ -585,7 +585,7 @@ class Baichuan:
         mess = await self.send(cmd_id=485, channel=channel, body=xml)
         root = XML.fromstring(mess)
         
-        data = self._get_keys_from_xml(root, {"name": ("name", str), "volLevel": ("volLevel", str), "ledState": ("ledState", str)})
+        data = self._get_keys_from_xml(root, {"name": ("name", str), "volLevel": ("volLevel", int), "ledState": ("ledState", int)})
         json_data = [{"cmd": "DingDongOpt", "code": 0, "value": {"DingDong": data}}]
         self.http_api.map_channel_json_response(json_data, channel, chime_id)
 
