@@ -31,11 +31,13 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         self._close_callback = close_callback
         self._push_callback = push_callback
         self.time_recv: float = 0
+        self.time_connect: float = 0
 
         self._log_once: list[str] = []
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Connection callback"""
+        self.time_connect = time_now()
         _LOGGER.debug("Baichuan host %s: opened connection", self._host)
 
     def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None) -> None:

@@ -277,8 +277,29 @@ class Baichuan:
         if self._subscribed:
             if self.http_api is not None and self.http_api._updating:
                 _LOGGER.debug("Baichuan host %s: lost event subscription during firmware reboot", self._host)
+                return
+            if self._protocol is not None:
+                now = time_now()
+                time_since_recv = now - self._protocol.time_recv
+                time_since_connect = now - self._protocol.time_connect
             else:
-                _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s", self._host, time_now() - self._protocol.time_recv)
+                time_since_recv = 0
+                time_since_connect = 0
+            if time_since_connect > 150:  # limit the amount of reconnects to prevent fast loops
+                self._loop.create_task(self._reestablish_connection(time_since_recv))
+                return
+
+            _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s", self._host, time_since_recv)
+
+    async def _reestablish_connection(self, time_since_recv: float) -> None:
+        """Try to reestablish the connection after a connection is closed"""
+        try:
+            await self.send(cmd_id=31)  # Subscribe to events
+        except Exception as err:
+            _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s and failed to reestablished connection", self._host, time_since_recv)
+            _LOGGER.debug("Baichuan host %s: failed to reestablished connection: %s", self._host, str(err))
+        else:
+            _LOGGER.debug("Baichuan host %s: lost event subscription after %.2f s, but reestablished connection immediately", self._host, time_since_recv)
 
     def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None:
         """Get a value for a key in a xml element"""
