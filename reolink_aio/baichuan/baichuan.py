@@ -6,7 +6,7 @@ import logging
 import asyncio
 from inspect import getmembers
 from time import time as time_now
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from collections.abc import Callable
 from xml.etree import ElementTree as XML
 from Cryptodome.Cipher import AES
@@ -71,7 +71,7 @@ class Baichuan:
 
         # http_cmd functions, set by the http_cmd decorator
         self.cmd_funcs: dict[str, Callable] = {}
-        for name, func in getmembers(self, lambda o: hasattr(o, 'http_cmd')):
+        for _name, func in getmembers(self, lambda o: hasattr(o, "http_cmd")):
             self.cmd_funcs[func.http_cmd] = func
 
         # states
@@ -561,8 +561,11 @@ class Baichuan:
         self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
 
     @http_cmd("GetDingDongList")
-    async def get_DingDongList(self, channel: int, **kwargs) -> None:
+    async def get_DingDongList(self, channel: int, **_kwargs) -> None:
         """Get the DingDongList info"""
+        if self.http_api is None:
+            return
+
         mess = await self.send(cmd_id=484, channel=channel)
         root = XML.fromstring(mess)
 
@@ -576,6 +579,8 @@ class Baichuan:
     @http_cmd("DingDongOpt")
     async def get_DingDongOpt(self, channel: int = -1, chime_id: int = -1, **kwargs) -> None:
         """Get the DingDongOpt info"""
+        if self.http_api is None:
+            return
         if ch := kwargs.get("DingDong", {}).get("channel"):
             channel = ch
         if ring_id := kwargs.get("DingDong", {}).get("id"):
@@ -584,20 +589,23 @@ class Baichuan:
         xml = xmls.DingDongOpt_XML.format(id=chime_id)
         mess = await self.send(cmd_id=485, channel=channel, body=xml)
         root = XML.fromstring(mess)
-        
+
         data = self._get_keys_from_xml(root, {"name": ("name", str), "volLevel": ("volLevel", int), "ledState": ("ledState", int)})
         json_data = [{"cmd": "DingDongOpt", "code": 0, "value": {"DingDong": data}}]
         self.http_api.map_channel_json_response(json_data, channel, chime_id)
 
     @http_cmd("GetDingDongCfg")
-    async def get_GetDingDongCfg(self, channel: int, **kwargs) -> None:
+    async def get_GetDingDongCfg(self, channel: int, **_kwargs) -> None:
         """Get the GetDingDongCfg info"""
+        if self.http_api is None:
+            return
+
         mess = await self.send(cmd_id=486, channel=channel)
         root = XML.fromstring(mess)
-        
+
         chime_list = []
         for chime in root.findall(".//deviceCfg"):
-            data = self._get_keys_from_xml(chime, {"id": ("ringId", int)})
+            data: dict[str, Any] = self._get_keys_from_xml(chime, {"id": ("ringId", int)})
             data["type"] = {}
             for ringtone in chime.findall(".//alarminCfg"):
                 tone_type = self._get_value_from_xml_element(ringtone, "type")

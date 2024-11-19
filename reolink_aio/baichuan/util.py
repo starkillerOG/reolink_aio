@@ -2,6 +2,7 @@
 
 from enum import Enum
 from hashlib import md5
+from collections.abc import Callable
 from ..exceptions import InvalidParameterError
 
 BC_PORT = 9000
@@ -62,8 +63,9 @@ def md5_str_modern(string: str) -> str:
 
 
 # Decorators
-def http_cmd(cmd) -> None:
+def http_cmd(cmd: str) -> Callable:
     def decorator_http_cmd(func):
         func.http_cmd = cmd
         return func
+
     return decorator_http_cmd
