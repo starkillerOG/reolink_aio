@@ -278,7 +278,7 @@ class Baichuan:
             if self.http_api is not None and self.http_api._updating:
                 _LOGGER.debug("Baichuan host %s: lost event subscription during firmware reboot", self._host)
             else:
-                _LOGGER.error("Baichuan host %s: lost event subscription", self._host)
+                _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s", self._host, time_now() - self._protocol.time_recv)
 
     def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None:
         """Get a value for a key in a xml element"""
