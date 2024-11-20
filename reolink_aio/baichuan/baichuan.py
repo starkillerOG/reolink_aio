@@ -21,6 +21,7 @@ from ..exceptions import (
     ReolinkConnectionError,
     ReolinkTimeoutError,
 )
+from ..enums import BatteryEnum
 
 from .util import BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
 
@@ -308,7 +309,7 @@ class Baichuan:
             return None
         return xml_value.text
 
-    def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channel") -> int | None:
+    def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
         channel_str = self._get_value_from_xml_element(xml_element, key)
         if channel_str is None:
             return None
@@ -317,7 +318,7 @@ class Baichuan:
             return None
         return channel
 
-    def _get_keys_from_xml(self, xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, type]]) -> dict[str, str]:
+    def _get_keys_from_xml(self, xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, type]]) -> dict[str, Any]:
         """Get multiple keys from a xml and return as a dict"""
         if isinstance(xml, str):
             root = XML.fromstring(xml)
@@ -360,12 +361,13 @@ class Baichuan:
 
         root = XML.fromstring(xml)
 
+        state: Any
         channels: set[int | None] = {None}
         cmd_ids: set[int | None] = {None, cmd_id}
         if cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
             for event_list in root:
                 for event in event_list:
-                    channel = self._get_channel_from_xml_element(event, "channelId")
+                    channel = self._get_channel_from_xml_element(event)
                     if channel is None:
                         continue
                     channels.add(channel)
@@ -415,7 +417,7 @@ class Baichuan:
 
         if cmd_id == 145:  # ChannelInfoList: Sleep status
             for event in root.findall(".//ChannelInfo"):
-                channel = self._get_channel_from_xml_element(event, "channelId")
+                channel = self._get_channel_from_xml_element(event)
                 if channel is None:
                     continue
                 channels.add(channel)
@@ -424,10 +426,40 @@ class Baichuan:
                     _LOGGER.debug("Reolink %s TCP event channel %s, sleeping: %s", self.http_api.nvr_name, channel, state)
                 self.http_api._sleep[channel] = state
 
+        if cmd_id == 252:  # BatteryInfo
+            for event in root.findall(".//BatteryInfo"):
+                channel = self._get_channel_from_xml_element(event)
+                if channel is None:
+                    continue
+                channels.add(channel)
+                data = self._get_keys_from_xml(
+                    root,
+                    {
+                        "adapterStatus": ("adapterStatus", str),
+                        "batteryPercent": ("batteryPercent", int),
+                        "batteryVersion": ("batteryVersion", int),
+                        "chargeStatus": ("chargeStatus", str),
+                        "current": ("current", int),
+                        "lowPower": ("lowPowerFlag", int),
+                        "temperature": ("temperature", int),
+                        "voltage": ("voltage", int),
+                    },
+                )
+                if data["chargeStatus"] == "none":
+                    data["chargeStatus"] = "discharging"
+                try:
+                    data["chargeStatus"] = BatteryEnum[data["chargeStatus"]].value
+                except KeyError:
+                    _LOGGER.warning("BatteryInfo cmd_id 252 push contained unknown chargeStatus: %s, assuming discharging", data["chargeStatus"])
+                    data["chargeStatus"] = BatteryEnum.discharging.value
+                self.http_api._battery.setdefault(channel, {})
+                self.http_api._battery[channel].update(data)
+                _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
+
         elif cmd_id == 291:  # Floodlight
             for event_list in root:
                 for event in event_list:
-                    channel = self._get_channel_from_xml_element(event)
+                    channel = self._get_channel_from_xml_element(event, "channel")
                     if channel is None:
                         continue
                     channels.add(channel)
