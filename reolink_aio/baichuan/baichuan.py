@@ -603,7 +603,7 @@ class Baichuan:
 
         chime_list = []
         for chime in root.findall(".//dingdongDeviceInfo"):
-            data = self._get_keys_from_xml(chime, {"id": ("deviceId", int), "name": ("deviceName", str), "netstate": ("netState", int)})
+            data = self._get_keys_from_xml(chime, {"id": ("deviceId", int), "name": ("deviceName", str), "netstate": ("netState", int), "netState": ("netState", int)})
             chime_list.append(data)
         json_data = [{"cmd": "GetDingDongList", "code": 0, "value": {"DingDongList": {"pairedlist": chime_list}}}]
         self.http_api.map_channel_json_response(json_data, channel)

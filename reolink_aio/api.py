@@ -3773,7 +3773,7 @@ class Host:
                         chime.connect_state = dev["netState"]
 
                     for dev_id, chime in self._chime_list.items():
-                        if dev_id not in id_list:
+                        if chime.channel == channel and dev_id not in id_list:
                             chime.connect_state = -1
 
                 elif data["cmd"] == "GetDingDongCfg":
