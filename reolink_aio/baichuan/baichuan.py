@@ -395,12 +395,13 @@ class Baichuan:
                                 if ai_state != self.http_api._ai_detection_states[channel][ai_type_key]:
                                     _LOGGER.debug("Reolink %s TCP event channel %s, %s: %s", self.http_api.nvr_name, channel, ai_type_key, ai_state)
                                 self.http_api._ai_detection_states[channel][ai_type_key] = ai_state
-                                if ai_type_key == "other" and not motion_state:
-                                    self.http_api._motion_detection_states[channel] = ai_state
+
+                            if not motion_state:
+                                self.http_api._motion_detection_states[channel] = "other" in ai_types
 
                             ai_type_list = ai_types.split(",")
                             for ai_type in ai_type_list:
-                                if ai_type == "none":
+                                if ai_type in ("none", "other"):
                                     continue
                                 if ai_type not in self.http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
                                     self._log_once.append(f"TCP_event_unknown_{ai_type}")
