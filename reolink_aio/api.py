@@ -1421,7 +1421,7 @@ class Host:
         except LoginError as exc:
             raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
 
-    async def logout(self, login_mutex_owned=False):
+    async def logout(self, login_mutex_owned: bool = False) -> None:
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
 
         if not login_mutex_owned:
