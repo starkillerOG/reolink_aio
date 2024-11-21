@@ -5142,7 +5142,7 @@ class Host:
         _LOGGER.debug("Response from cmd '%s' from %s:%s: %s", command, self._host, self._port, json_data)
 
         try:
-            if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
+            if (json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200) and not json_data[0].get("Baichuan_fallback_succes", False):
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
                 rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
                 detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
@@ -5486,8 +5486,10 @@ class Host:
                                 await func(**args)
                             except ReolinkError as err:
                                 _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd.get("cmd"), str(err))
+                                json_data[idx]["Baichuan_fallback_succes"] = False
                             else:
                                 _LOGGER.debug("Baichuan fallback succeeded for %s", cmd.get("cmd"))
+                                json_data[idx]["Baichuan_fallback_succes"] = True
                                 continue
                         # add to the list of cmds to retry
                         retry_cmd.append(cmd)
