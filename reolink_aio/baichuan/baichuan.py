@@ -625,7 +625,7 @@ class Baichuan:
         self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
 
     @http_cmd("GetDingDongList")
-    async def get_DingDongList(self, channel: int, **_kwargs) -> None:
+    async def GetDingDongList(self, channel: int, **_kwargs) -> None:
         """Get the DingDongList info"""
         if self.http_api is None:
             return
@@ -649,17 +649,29 @@ class Baichuan:
             channel = ch
         if ring_id := kwargs.get("DingDong", {}).get("id"):
             chime_id = ring_id
+        option = kwargs.get("DingDong", {}).get("option", 2)
 
-        xml = xmls.DingDongOpt_XML.format(id=chime_id)
+        xml = ""
+        if option == 2:
+            xml = xmls.DingDongOpt_2_XML.format(chime_id=chime_id)
+        if option == 3:
+            name = kwargs.get("DingDong", {}).get("name", "Reolink Chime")
+            vol = kwargs.get("DingDong", {}).get("volLevel", 4)
+            led = kwargs.get("DingDong", {}).get("ledState", 1)
+            xml = xmls.DingDongOpt_3_XML.format(chime_id=chime_id, vol=vol, led=led, name=name)
+        if option == 4:
+            xml = xmls.DingDongOpt_4_XML.format(chime_id=chime_id)
+
         mess = await self.send(cmd_id=485, channel=channel, body=xml)
-        root = XML.fromstring(mess)
 
-        data = self._get_keys_from_xml(root, {"name": ("name", str), "volLevel": ("volLevel", int), "ledState": ("ledState", int)})
-        json_data = [{"cmd": "DingDongOpt", "code": 0, "value": {"DingDong": data}}]
-        self.http_api.map_channel_json_response(json_data, channel, chime_id)
+        if option == 2:
+            root = XML.fromstring(mess)
+            data = self._get_keys_from_xml(root, {"name": ("name", str), "volLevel": ("volLevel", int), "ledState": ("ledState", int)})
+            json_data = [{"cmd": "DingDongOpt", "code": 0, "value": {"DingDong": data}}]
+            self.http_api.map_channel_json_response(json_data, channel, chime_id)
 
     @http_cmd("GetDingDongCfg")
-    async def get_GetDingDongCfg(self, channel: int, **_kwargs) -> None:
+    async def GetDingDongCfg(self, channel: int, **_kwargs) -> None:
         """Get the GetDingDongCfg info"""
         if self.http_api is None:
             return
@@ -677,6 +689,18 @@ class Baichuan:
             chime_list.append(data)
         json_data = [{"cmd": "GetDingDongCfg", "code": 0, "value": {"DingDongCfg": {"pairedlist": chime_list}}}]
         self.http_api.map_channel_json_response(json_data, channel)
+
+    @http_cmd("SetDingDongCfg")
+    async def SetDingDongCfg(self, **kwargs) -> None:
+        """Get the GetDingDongCfg info"""
+        channel = kwargs.get("DingDongCfg", {}).get("channel", -1)
+        chime_id = kwargs.get("DingDongCfg", {}).get("ringId", -1)
+        event_type = list(kwargs.get("DingDongCfg", {}).get("type", {"event": {}}).keys())[0]
+        state = kwargs.get("DingDongCfg", {}).get("type", {}).get(event_type, {}).get("switch", 0)
+        tone_id = kwargs.get("DingDongCfg", {}).get("type", {}).get(event_type, {}).get("musicId", -1)
+
+        xml = xmls.SetDingDongCfg_XML.format(chime_id=chime_id, event_type=event_type, state=state, tone_id=tone_id)
+        await self.send(cmd_id=487, channel=channel, body=xml)
 
     @property
     def events_active(self) -> bool:

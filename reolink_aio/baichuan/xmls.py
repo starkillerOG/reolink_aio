@@ -32,12 +32,51 @@ CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </Extension>
 """
 
-DingDongOpt_XML = """
+DingDongOpt_2_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
 <dingdongDeviceOpt version="1.1">
-<id>{id}</id>
+<id>{chime_id}</id>
 <opt>getParam</opt>
 </dingdongDeviceOpt>
+</body>
+"""
+
+DingDongOpt_3_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongDeviceOpt version="1.1">
+<opt>setParam</opt>
+<id>{chime_id}</id>
+<volLevel>{vol}</volLevel>
+<ledState>{led}</ledState>
+<name>{name}</name>
+</dingdongDeviceOpt>
+</body>
+"""
+
+DingDongOpt_4_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongDeviceOpt version="1.1">
+<id>{chime_id}</id>
+<opt>{opt}</opt>
+</dingdongDeviceOpt>
+</body>
+"""
+
+SetDingDongCfg_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongCfg version="1.1">
+<deviceCfg>
+<id>{chime_id}</id>
+<alarminCfg>
+<valid>{state}</valid>
+<musicId>{tone_id}</musicId>
+<type>{event_type}</type>
+</alarminCfg>
+</deviceCfg>
+</dingdongCfg>
 </body>
 """
