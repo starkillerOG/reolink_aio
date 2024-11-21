@@ -140,7 +140,7 @@ version_regex_old_format = re.compile(r"^(?P<unknown>[0-9]+)_(?P<date>[0-9]+)_v(
 class SoftwareVersion:
     """SoftwareVersion class"""
 
-    def __init__(self, version_string: str | None):
+    def __init__(self, version_string: str | None) -> None:
         self.is_unknown = False
         self.major = 0
         self.middle = 0
@@ -203,10 +203,10 @@ class SoftwareVersion:
             except ValueError:
                 pass
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<SoftwareVersion: {self.version_string}>"
 
-    def is_greater_than(self, target_version: "SoftwareVersion"):
+    def is_greater_than(self, target_version: "SoftwareVersion") -> bool:
         # first look at date, then major, middle, minor and build
         if self.date > target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
@@ -225,7 +225,7 @@ class SoftwareVersion:
 
         return False
 
-    def is_greater_or_equal_than(self, target_version: "SoftwareVersion"):
+    def is_greater_or_equal_than(self, target_version: "SoftwareVersion") -> bool:
         # first look at date, then major, middle, minor and build
         if self.date > target_version.date and self.date != DEFAULT_VERSION_DATA and target_version.date != DEFAULT_VERSION_DATA:
             return True
@@ -244,41 +244,48 @@ class SoftwareVersion:
 
         return False
 
-    def is_lower_than(self, target_version: "SoftwareVersion"):
+    def is_lower_than(self, target_version: "SoftwareVersion") -> bool:
         return not self.is_greater_or_equal_than(target_version)
 
-    def is_lower_or_equal_than(self, target_version: "SoftwareVersion"):
+    def is_lower_or_equal_than(self, target_version: "SoftwareVersion") -> bool:
         return not self.is_greater_than(target_version)
 
-    def equals(self, target_version: "SoftwareVersion"):
+    def equals(self, target_version: "SoftwareVersion") -> bool:
         if target_version.major == self.major and target_version.middle == self.middle and target_version.minor == self.minor and target_version.build == self.build:
             if target_version.date == self.date or self.date == DEFAULT_VERSION_DATA or target_version.date == DEFAULT_VERSION_DATA:
                 return True
         return False
 
-    def __lt__(self, other):
+    def __lt__(self, other: object) -> bool:
+        assert isinstance(other, SoftwareVersion)
         return self.is_lower_than(other)
 
-    def __le__(self, other):
+    def __le__(self, other: object) -> bool:
+        assert isinstance(other, SoftwareVersion)
         return self.is_lower_or_equal_than(other)
 
-    def __gt__(self, other):
+    def __gt__(self, other: object) -> bool:
+        assert isinstance(other, SoftwareVersion)
         return self.is_greater_than(other)
 
-    def __ge__(self, other):
+    def __ge__(self, other: object) -> bool:
+        assert isinstance(other, SoftwareVersion)
         return self.is_greater_or_equal_than(other)
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
+        assert isinstance(other, SoftwareVersion)
         return self.equals(other)
 
-    def generate_str_from_numbers(self):
+    def generate_str_from_numbers(self) -> str:
         return f"{self.major}.{self.middle}.{self.minor}-{self.build}"
 
 
 class NewSoftwareVersion(SoftwareVersion):
     """SoftwareVersion class for available software updates"""
 
-    def __init__(self, version_string: str | None, download_url: str | None = None, release_notes: str = "", last_check: float = 0, online_update_available: bool = False):
+    def __init__(
+        self, version_string: str | None, download_url: str | None = None, release_notes: str = "", last_check: float = 0, online_update_available: bool = False
+    ) -> None:
         self.download_url = download_url
         self.release_notes = release_notes
         self.online_update_available = online_update_available
