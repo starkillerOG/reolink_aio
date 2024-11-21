@@ -100,7 +100,7 @@ DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
 }
 DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
 
-WAKING_COMMANDS = [
+WAKING_COMMANDS = {
     "GetWhiteLed",
     "GetZoomFocus",
     "GetAudioCfg",
@@ -111,7 +111,10 @@ WAKING_COMMANDS = [
     "GetAiAlarm",
     "GetPtzCurPos",
     "GetAudioAlarm",
-]
+    "GetDingDongList",
+    "GetDingDongCfg",
+    "DingDongOpt,"
+}
 
 # not all chars in a password can be used in the URLS of for instance the FLV stream
 ALLOWED_SPECIAL_CHARS = r"@$*~_-+=!?.,:;'()[]"
