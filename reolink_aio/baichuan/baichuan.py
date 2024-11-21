@@ -449,12 +449,11 @@ class Baichuan:
                 if data["chargeStatus"] == "none":
                     data["chargeStatus"] = "discharging"
                 try:
-                    data["chargeStatus"] = BatteryEnum[data["chargeStatus"]].value
+                    data["chargeStatus"] = BatteryEnum[data["chargeStatus"].lower()].value
                 except KeyError:
                     _LOGGER.warning("BatteryInfo cmd_id 252 push contained unknown chargeStatus: %s, assuming discharging", data["chargeStatus"])
                     data["chargeStatus"] = BatteryEnum.discharging.value
-                self.http_api._battery.setdefault(channel, {})
-                self.http_api._battery[channel].update(data)
+                self.http_api._battery.setdefault(channel, {}).update(data)
                 _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
 
         elif cmd_id == 291:  # Floodlight
