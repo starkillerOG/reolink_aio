@@ -32,6 +32,16 @@ CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </Extension>
 """
 
+DingDongOpt_1_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongDeviceOpt version="1.1">
+<opt>delDevice</opt>
+<id>{chime_id}</id>
+</dingdongDeviceOpt>
+</body>
+"""
+
 DingDongOpt_2_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>

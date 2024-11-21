@@ -652,6 +652,8 @@ class Baichuan:
         option = kwargs.get("DingDong", {}).get("option", 2)
 
         xml = ""
+        if option == 1:
+            xml = xmls.DingDongOpt_1_XML.format(chime_id=chime_id)
         if option == 2:
             xml = xmls.DingDongOpt_2_XML.format(chime_id=chime_id)
         if option == 3:
