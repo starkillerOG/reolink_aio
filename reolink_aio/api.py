@@ -137,7 +137,7 @@ class Host:
         timeout: int = DEFAULT_TIMEOUT,
         rtmp_auth_method: str = DEFAULT_RTMP_AUTH_METHOD,
         aiohttp_get_session_callback=None,
-    ):
+    ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
         self._long_poll_mutex = asyncio.Lock()
@@ -1145,11 +1145,11 @@ class Host:
     def zoom_range(self, channel: int) -> dict:
         return self._zoom_focus_range[channel]
 
-    def enable_https(self, enable: bool):
+    def enable_https(self, enable: bool) -> None:
         self._use_https = enable
         self.refresh_base_url()
 
-    def refresh_base_url(self):
+    def refresh_base_url(self) -> None:
         if self._use_https:
             self._url = f"https://{self._host}:{self._port}/cgi-bin/api.cgi"
         else:
@@ -1458,7 +1458,7 @@ class Host:
 
         await self.baichuan.logout()
 
-    async def expire_session(self, unsubscribe: bool = True):
+    async def expire_session(self, unsubscribe: bool = True) -> None:
         if self._lease_time is not None:
             self._lease_time = datetime.now() - timedelta(seconds=5)
         if unsubscribe:
@@ -1466,7 +1466,7 @@ class Host:
         if self._aiohttp_session_internall:
             await self._aiohttp_session.close()
 
-    def clear_token(self):
+    def clear_token(self) -> None:
         self._token = None
         self._lease_time = None
 
@@ -1945,18 +1945,18 @@ class Host:
         if any_battery and wake:
             _LOGGER.debug("Host %s:%s: Waking the battery cameras for the get_states update", self._host, self._port)
 
-        def inc_host_cmd(cmd):
+        def inc_host_cmd(cmd: str) -> bool:
             return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
 
-        def inc_cmd(cmd, channel):
+        def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
                 wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
             )
 
-        def inc_wake(cmd, channel):
+        def inc_wake(cmd: str, channel: int) -> bool:
             return wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
 
-        def inc_host_wake(cmd):
+        def inc_host_wake(cmd: str) -> bool:
             return wake or not any_battery or cmd not in WAKING_COMMANDS
 
         for channel in self._stream_channels:
@@ -2830,7 +2830,7 @@ class Host:
             self._updating = False
             self._sw_upload_progress[channel] = 100
 
-    async def wait_untill_firmware_update_complete(self, channel: int | None = None):
+    async def wait_untill_firmware_update_complete(self, channel: int | None = None) -> None:
         start_time = datetime.now()
         try:
             async with asyncio.timeout(300):
@@ -2866,7 +2866,7 @@ class Host:
             self._sw_upload_progress[channel] = 100
             self._new_devices = True  # signal for a reload after a firmware update
 
-    async def _wait_untill_online_update_complete(self):
+    async def _wait_untill_online_update_complete(self) -> None:
         start_time = datetime.now()
         try:
             async with asyncio.timeout(300):
@@ -3289,7 +3289,7 @@ class Host:
 
         return typings.VOD_download(response.content_length, response.content_disposition.filename, response.content, response.release, response.headers.get("ETag"))
 
-    def ensure_channel_uid_unique(self):
+    def ensure_channel_uid_unique(self) -> None:
         """Make sure the channel UIDs are all unique."""
         rev_channel_uids = {}
         for key, value in self._channel_uids.items():
@@ -3299,7 +3299,7 @@ class Host:
             for ch in duplicate:
                 self._channel_uids[ch] = f"{self._channel_uids[ch]}_{ch}"
 
-    def map_host_json_response(self, json_data: typings.reolink_json):
+    def map_host_json_response(self, json_data: typings.reolink_json) -> None:
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
             try:
@@ -3504,7 +3504,7 @@ class Host:
                 )
                 continue
 
-    def map_channels_json_response(self, json_data, channels: list[int], chime_ids: list[int] | None = None):
+    def map_channels_json_response(self, json_data, channels: list[int], chime_ids: list[int] | None = None) -> None:
         if len(json_data) != len(channels):
             raise UnexpectedDataError(
                 f"Host {self._host}:{self._port} error mapping response to channels, received {len(json_data)} responses while requesting {len(channels)} responses",
@@ -3524,7 +3524,7 @@ class Host:
 
             self.map_channel_json_response([data], channel, chime_id)
 
-    def map_channel_json_response(self, json_data, channel: int, chime_id: int = -1):
+    def map_channel_json_response(self, json_data, channel: int, chime_id: int = -1) -> None:
         """Map the JSON objects to internal cache-objects."""
         response_channel = channel
         for data in json_data:
@@ -5657,7 +5657,7 @@ class Host:
 
     ##############################################################################
     # WEBHOOK managing
-    async def webhook_add(self, channel: int, webhook_url: str):
+    async def webhook_add(self, channel: int, webhook_url: str) -> None:
         """
         Add a new webhook, reolink web interface -> settings -> survailance -> push -> For developers.
         Webhook will be called on motion or AI person/vehicle/animal.
@@ -5692,7 +5692,7 @@ class Host:
         ]
         await self.send_setting(body)
 
-    async def webhook_test(self, channel: int, webhook_url: str):
+    async def webhook_test(self, channel: int, webhook_url: str) -> None:
         """Send a test message to a webhook"""
         if not self.supported(channel, "webhook"):
             raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
@@ -5709,7 +5709,7 @@ class Host:
         except ApiError as err:
             raise ApiError(f"Webhook test for url '{webhook_url}' failed: {str(err)}", rspCode=err.rspCode) from err
 
-    async def webhook_remove(self, channel: int, webhook_url: str):
+    async def webhook_remove(self, channel: int, webhook_url: str) -> None:
         """Remove a webhook"""
         if not self.supported(channel, "webhook"):
             raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
@@ -5734,7 +5734,7 @@ class Host:
         ]
         await self.send_setting(body)
 
-    async def webhook_disable(self, channel: int, webhook_url: str):
+    async def webhook_disable(self, channel: int, webhook_url: str) -> None:
         """Disable a webhook"""
         if not self.supported(channel, "webhook"):
             raise NotSupportedError(f"Webhooks not supported on camera {self.camera_name(channel)}")
@@ -5871,7 +5871,7 @@ class Host:
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Host {self._host}:{self._port}: connection timeout exception.") from err
 
-    async def subscribe(self, webhook_url: str | None = None, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push, retry: bool = False):
+    async def subscribe(self, webhook_url: str | None = None, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push, retry: bool = False) -> None:
         """Subscribe to ONVIF events."""
         headers = templates.HEADERS
         if sub_type == SubType.push:
@@ -5961,7 +5961,7 @@ class Host:
 
         return
 
-    async def renew(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push):
+    async def renew(self, sub_type: Literal[SubType.push, SubType.long_poll] = SubType.push) -> None:
         """Renew the ONVIF event subscription."""
         if not self.subscribed(sub_type):
             raise SubscriptionError(f"Host {self._host}:{self._port}: failed to renew {sub_type} subscription, not previously subscribed")
@@ -6023,7 +6023,7 @@ class Host:
 
         return
 
-    async def pull_point_request(self):
+    async def pull_point_request(self) -> list[int] | None:
         """Request message from ONVIF pull point."""
         if not self.subscribed(SubType.long_poll):
             raise SubscriptionError(f"Host {self._host}:{self._port}: failed to request pull point message, not yet subscribed")
@@ -6061,7 +6061,7 @@ class Host:
 
         return await self.ONVIF_event_callback(response, root)
 
-    async def unsubscribe(self, sub_type: SubType = SubType.all):
+    async def unsubscribe(self, sub_type: SubType = SubType.all) -> None:
         """Unsubscribe from ONVIF events."""
         if sub_type == SubType.all:
             await self.unsubscribe(SubType.push)
@@ -6089,7 +6089,7 @@ class Host:
         self._subscription_time_difference.pop(sub_type, None)
         return
 
-    async def unsubscribe_all(self, sub_type: SubType = SubType.all):
+    async def unsubscribe_all(self, sub_type: SubType = SubType.all) -> None:
         """Unsubscribe from ONVIF events. Normally only needed during entry initialization/setup, to free possibly dangling subscriptions."""
         await self.unsubscribe(sub_type)
 
@@ -6110,7 +6110,7 @@ class Host:
                 except ReolinkError as err:
                     _LOGGER.debug("Expected error from unsubscribing all: %s", str(err))
 
-        return True
+        return
 
     async def ONVIF_event_callback(self, data: str, root: XML.Element | None = None) -> list[int] | None:
         """Handle incoming ONVIF event from the webhook called by the Reolink device."""
@@ -6230,7 +6230,7 @@ class Host:
 class Chime:
     """Reolink chime class."""
 
-    def __init__(self, host: Host, dev_id: int, channel: int):
+    def __init__(self, host: Host, dev_id: int, channel: int) -> None:
         self.host = host
         self.dev_id = dev_id
         self.channel = channel
@@ -6240,7 +6240,7 @@ class Chime:
         self.connect_state: int | None = None
         self.event_info: dict[str, dict[str, int]] | None = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}, online: {self.online}>"
 
     @property
