@@ -259,7 +259,7 @@ class Baichuan:
         try:
             rec_body = self._decrypt(data, len_header, cmd_id)
         except ReolinkError as err:
-            _LOGGER.warning(err)
+            _LOGGER.debug(err)
             return
 
         if len(rec_body) == 0:

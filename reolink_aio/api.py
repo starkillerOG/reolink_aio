@@ -5485,7 +5485,7 @@ class Host:
                             try:
                                 await func(**args)
                             except ReolinkError as err:
-                                _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd.get("cmd"), err)
+                                _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd.get("cmd"), str(err))
                             else:
                                 _LOGGER.debug("Baichuan fallback succeeded for %s", cmd.get("cmd"))
                                 continue
