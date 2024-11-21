@@ -60,7 +60,8 @@ DingDongOpt_4_XML = """
 <body>
 <dingdongDeviceOpt version="1.1">
 <id>{chime_id}</id>
-<opt>{opt}</opt>
+<opt>ringWithMusic</opt>
+<musicId>{tone_id}</musicId>
 </dingdongDeviceOpt>
 </body>
 """

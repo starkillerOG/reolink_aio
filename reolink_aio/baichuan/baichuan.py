@@ -660,7 +660,8 @@ class Baichuan:
             led = kwargs.get("DingDong", {}).get("ledState", 1)
             xml = xmls.DingDongOpt_3_XML.format(chime_id=chime_id, vol=vol, led=led, name=name)
         if option == 4:
-            xml = xmls.DingDongOpt_4_XML.format(chime_id=chime_id)
+            tone_id = kwargs.get("DingDong", {}).get("musicId", 0)
+            xml = xmls.DingDongOpt_4_XML.format(chime_id=chime_id, tone_id=tone_id)
 
         mess = await self.send(cmd_id=485, channel=channel, body=xml)
 
