@@ -2886,7 +2886,7 @@ class Host:
                             self._sw_upload_progress[None] = 60
                             _LOGGER.debug("Finished online update of %s, rebooting now", self.nvr_name)
                             return
-                        progress = 100 * (time_diff / 50)
+                        progress = int(100 * (time_diff / 50))
 
                     # Update the progress status
                     self._sw_upload_progress[None] = 2 + round(0.58 * progress)
@@ -3291,7 +3291,7 @@ class Host:
 
     def ensure_channel_uid_unique(self) -> None:
         """Make sure the channel UIDs are all unique."""
-        rev_channel_uids = {}
+        rev_channel_uids: dict[str, set[int]] = {}
         for key, value in self._channel_uids.items():
             rev_channel_uids.setdefault(value, set()).add(key)
         duplicate_uids = [values for key, values in rev_channel_uids.items() if len(values) > 1]
