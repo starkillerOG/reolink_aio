@@ -3371,7 +3371,7 @@ class Host:
                                         self._channel_models[cur_channel] = ch_info["typeInfo"]
                                         self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
 
-                                    if "uid" in ch_info:
+                                    if "uid" in ch_info and ch_info["uid"] != "":
                                         self._channel_uids[cur_channel] = ch_info["uid"]
 
                                     self._channels.append(cur_channel)
