@@ -981,7 +981,7 @@ class Host:
 
     def bit_rate_list(self, channel: int, stream: str | None = None) -> list[int]:
         if channel not in self._enc_range:
-            return None
+            return []
         if stream is None:
             stream = "main"
 
@@ -997,7 +997,7 @@ class Host:
 
     def frame_rate_list(self, channel: int, stream: str | None = None) -> list[int]:
         if channel not in self._enc_range:
-            return None
+            return []
         if stream is None:
             stream = "main"
 
