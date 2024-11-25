@@ -1749,6 +1749,11 @@ class Host:
             if self.api_version("supportAiStayTime", channel) > 0:
                 self._capabilities[channel].add("ai_delay")
 
+            if self.frame_rate(channel) is not None:
+                self._capabilities[channel].add("frame_rate")
+            if self.bit_rate(channel) is not None:
+                self._capabilities[channel].add("bit_rate")
+
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].add("isp_hue")
             if self.api_version("ispSatruation", channel) > 0:
