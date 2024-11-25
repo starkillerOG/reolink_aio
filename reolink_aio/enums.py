@@ -61,6 +61,14 @@ class HDREnum(Enum):
     auto = 1
 
 
+class BinningModeEnum(Enum):
+    """Options for the Binning mode setting"""
+
+    off = 0
+    on = 2
+    auto = 1
+
+
 class PtzEnum(Enum):
     """Options for PTZ control"""
 

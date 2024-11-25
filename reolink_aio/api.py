@@ -30,6 +30,7 @@ from . import templates, typings
 from .baichuan import Baichuan, PortType
 from .enums import (
     BatteryEnum,
+    BinningModeEnum,
     DayNightEnum,
     StatusLedEnum,
     SpotlightModeEnum,
@@ -1024,6 +1025,12 @@ class Host:
 
         return self._isp_settings[channel]["Isp"].get("hdr", -1)
 
+    def binning_mode(self, channel: int) -> int:
+        if channel not in self._isp_settings:
+            return -1
+
+        return self._isp_settings[channel]["Isp"].get("binningMode", -1)
+
     def daynight_threshold(self, channel: int) -> int | None:
         if channel not in self._isp_settings:
             return None
@@ -1753,6 +1760,9 @@ class Host:
                 self._capabilities[channel].add("frame_rate")
             if self.bit_rate(channel) is not None:
                 self._capabilities[channel].add("bit_rate")
+
+            if self.api_version("supportIspBinningModeCfg", channel) > 0:
+                self._capabilities[channel].add("binning_mode")
 
             if self.api_version("ispHue", channel) > 0:
                 self._capabilities[channel].add("isp_hue")
@@ -4891,6 +4901,24 @@ class Host:
 
         body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
         body[0]["param"]["Isp"]["dayNight"] = value
+
+        await self.send_setting(body)
+
+    async def set_binning_mode(self, channel: int, value: int) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_binning_mode: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "binning_mode"):
+            raise NotSupportedError(f"set_binning_mode: ISP Binning mode on camera {self.camera_name(channel)} is not available")
+        await self.get_state(cmd="GetIsp")
+        if channel not in self._isp_settings or not self._isp_settings[channel]:
+            raise NotSupportedError(f"set_binning_mode: ISP on camera {self.camera_name(channel)} is not available")
+
+        val_list = [val.value for val in BinningModeEnum]
+        if value not in val_list:
+            raise InvalidParameterError(f"set_binning_mode: value {value} not in {val_list}")
+
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body[0]["param"]["Isp"]["binningMode"] = value
 
         await self.send_setting(body)
 
