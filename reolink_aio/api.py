@@ -274,6 +274,7 @@ class Host:
         self._push_settings: dict[int, dict] = {}
         self._webhook_settings: dict[int, dict] = {}
         self._enc_settings: dict[int, dict] = {}
+        self._enc_range: dict[int, dict] = {}
         self._ptz_presets_settings: dict[int, dict] = {}
         self._ptz_patrol_settings: dict[int, dict] = {}
         self._ptz_guard_settings: dict[int, dict] = {}
@@ -968,6 +969,38 @@ class Host:
             return False
 
         return self._sleep[channel]
+
+    def bit_rate(self, channel: int, stream: str | None = None) -> int | None:
+        if channel not in self._enc_settings:
+            return None
+        if stream is None:
+            stream = "main"
+
+        return self._enc_settings[channel]["Enc"][f"{stream}Stream"]["bitRate"]
+
+    def bit_rate_list(self, channel: int, stream: str | None = None) -> list[int]:
+        if channel not in self._enc_range:
+            return None
+        if stream is None:
+            stream = "main"
+
+        return sorted(self._enc_range[channel]["Enc"][0][f"{stream}Stream"]["bitRate"])
+
+    def frame_rate(self, channel: int, stream: str | None = None) -> int | None:
+        if channel not in self._enc_settings:
+            return None
+        if stream is None:
+            stream = "main"
+
+        return self._enc_settings[channel]["Enc"][f"{stream}Stream"]["frameRate"]
+
+    def frame_rate_list(self, channel: int, stream: str | None = None) -> list[int]:
+        if channel not in self._enc_range:
+            return None
+        if stream is None:
+            stream = "main"
+
+        return sorted(self._enc_range[channel]["Enc"][0][f"{stream}Stream"]["frameRate"])
 
     def daynight_state(self, channel: int) -> Optional[str]:
         if channel not in self._isp_settings:
@@ -2192,7 +2225,7 @@ class Host:
         channels = []
         for channel in self._stream_channels:
             ch_body = [
-                {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetEnc", "action": 1, "param": {"channel": channel}},
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
             ]
             body.extend(ch_body)
@@ -3653,6 +3686,8 @@ class Host:
                     # GetEnc returns incorrect channel for DUO camera
                     # response_channel = data["value"]["Enc"]["channel"]
                     self._enc_settings[channel] = data["value"]
+                    if "range" in data:
+                        self._enc_range[channel] = data["range"]
 
                 elif data["cmd"] == "GetRtspUrl":
                     response_channel = data["value"]["rtspUrl"]["channel"]
@@ -4482,6 +4517,34 @@ class Host:
 
         body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
         body[0]["param"]["Enc"]["audio"] = 1 if enable else 0
+
+        await self.send_setting(body)
+
+    async def set_bit_rate(self, channel: int, value: int, stream: str | None = None) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_bit_rate: no camera connected to channel '{channel}'")
+        await self.get_state(cmd="GetEnc")
+        if channel not in self._enc_settings:
+            raise NotSupportedError(f"set_bit_rate: Bit rate on camera {self.camera_name(channel)} is not available")
+        if stream is None:
+            stream = "main"
+
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body[0]["param"]["Enc"][f"{stream}Stream"]["bitRate"] = value
+
+        await self.send_setting(body)
+
+    async def set_frame_rate(self, channel: int, value: int, stream: str | None = None) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_frame_rate: no camera connected to channel '{channel}'")
+        await self.get_state(cmd="GetEnc")
+        if channel not in self._enc_settings:
+            raise NotSupportedError(f"set_frame_rate: Frame rate on camera {self.camera_name(channel)} is not available")
+        if stream is None:
+            stream = "main"
+
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body[0]["param"]["Enc"][f"{stream}Stream"]["frameRate"] = value
 
         await self.send_setting(body)
 
