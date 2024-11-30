@@ -1665,7 +1665,7 @@ class Host:
             if (self.api_version("supportAudioFileList", channel) > 0) or (not self.is_nvr and self.api_version("supportAudioFileList") > 0):
                 if self.api_version("supportAutoReply", channel) > 0 or (not self.is_nvr and self.api_version("supportAutoReply") > 0):
                     self._capabilities[channel].add("quick_reply")
-                    self._capabilities[channel].add("play_quick_reply") # Baichuan fallback
+                    self._capabilities[channel].add("play_quick_reply")  # Baichuan fallback
                 elif self.api_version("supportAudioPlay", channel) > 0 or self.api_version("supportQuickReplyPlay", channel) > 0:
                     self._capabilities[channel].add("play_quick_reply")
 
@@ -5573,10 +5573,10 @@ class Host:
                 retry_cmd = []
                 retry_idxs = []
                 for idx, cmd_data in enumerate(json_data):
-                    if cmd_data["code"] != 0 and cmd_data.get("error", {}).get("rspCode", 0) in [-12, -13, -17]:
+                    if cmd_data["code"] != 0:
                         cmd = body[idx]
                         # check if baichuan has a fallback function
-                        if retry > 0 and cmd.get("cmd") in self.baichuan.cmd_funcs:
+                        if retry > 0 and cmd.get("cmd") in self.baichuan.cmd_funcs and cmd_data.get("error", {}).get("rspCode", 0) in [-9, -12, -13, -17]:
                             func = self.baichuan.cmd_funcs[cmd["cmd"]]
                             args = cmd.get("param", {})
                             try:
@@ -5588,9 +5588,10 @@ class Host:
                                 _LOGGER.debug("Baichuan fallback succeeded for %s", cmd.get("cmd"))
                                 json_data[idx]["Baichuan_fallback_succes"] = True
                                 continue
-                        # add to the list of cmds to retry
-                        retry_cmd.append(cmd)
-                        retry_idxs.append(idx)
+                        if cmd_data.get("error", {}).get("rspCode", 0) in [-12, -13, -17]:
+                            # add to the list of cmds to retry
+                            retry_cmd.append(cmd)
+                            retry_idxs.append(idx)
                 if retry_cmd and retry > 0:
                     _LOGGER.debug(
                         "cmd %s: returned response code %s/%s, retrying in 1.0 s",
