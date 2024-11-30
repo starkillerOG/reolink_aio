@@ -487,9 +487,10 @@ class Baichuan:
 
     async def _keepalive_loop(self) -> None:
         """Loop which keeps the TCP connection allive when subscribed for events"""
-        try:
-            now: float = 0
-            while True:
+        now: float = 0
+        while True:
+            try:
+
                 while self._protocol is not None:
                     now = time_now()
                     sleep_t = min(self._keepalive_interval - (now - self._protocol.time_recv), self._keepalive_interval)
@@ -517,8 +518,8 @@ class Baichuan:
                     _LOGGER.debug("Baichuan host %s: increasing keepalive interval from %.2f to %.2f s", self._host, origianal_keepalive, self._keepalive_interval)
 
                 await asyncio.sleep(self._keepalive_interval)
-        except Exception as err:
-            _LOGGER.exception("Baichuan host %s: error during keepalive loop: %s", self._host, str(err))
+            except Exception as err:
+                _LOGGER.exception("Baichuan host %s: error during keepalive loop: %s", self._host, str(err))
 
     async def subscribe_events(self) -> None:
         """Subscribe to baichuan push events, keeping the connection open"""
