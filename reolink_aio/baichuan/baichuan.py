@@ -32,6 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 
 RETRY_ATTEMPTS = 3
 KEEP_ALLIVE_INTERVAL = 30  # seconds
+MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 
 
 class Baichuan:
@@ -68,6 +69,9 @@ class Baichuan:
         self._subscribed: bool = False
         self._events_active: bool = False
         self._keepalive_task: asyncio.Task | None = None
+        self._keepalive_interval: float = KEEP_ALLIVE_INTERVAL
+        self._time_reestablish: float = 0
+        self._time_keepalive_increase: float = 0
         self._ext_callback: dict[int | None, dict[int | None, dict[str, Callable[[], None]]]] = {}
 
         # http_cmd functions, set by the http_cmd decorator
@@ -282,11 +286,13 @@ class Baichuan:
             if self._protocol is not None:
                 now = time_now()
                 time_since_recv = now - self._protocol.time_recv
-                time_since_connect = now - self._protocol.time_connect
+                time_since_reestablish = now - self._time_reestablish
             else:
+                now = 0
                 time_since_recv = 0
-                time_since_connect = 0
-            if time_since_connect > 150:  # limit the amount of reconnects to prevent fast loops
+                time_since_reestablish = 0
+            if time_since_reestablish > 150:  # limit the amount of reconnects to prevent fast loops
+                self._time_reestablish = now
                 self._loop.create_task(self._reestablish_connection(time_since_recv))
                 return
 
@@ -294,6 +300,7 @@ class Baichuan:
 
     async def _reestablish_connection(self, time_since_recv: float) -> None:
         """Try to reestablish the connection after a connection is closed"""
+        time_start = time_now()
         try:
             await self.send(cmd_id=31)  # Subscribe to events
         except Exception as err:
@@ -301,6 +308,10 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: failed to reestablished connection: %s", self._host, str(err))
         else:
             _LOGGER.debug("Baichuan host %s: lost event subscription after %.2f s, but reestablished connection immediately", self._host, time_since_recv)
+            if time_now() - time_start < 5:
+                origianal_keepalive = self._keepalive_interval
+                self._keepalive_interval = max(MIN_KEEP_ALLIVE_INTERVAL, min(time_since_recv - 1, self._keepalive_interval - 1))
+                _LOGGER.debug("Baichuan host %s: reducing keepalive interval from %.2f to %.2f s", self._host, origianal_keepalive, self._keepalive_interval)
 
     def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None:
         """Get a value for a key in a xml element"""
@@ -476,21 +487,38 @@ class Baichuan:
 
     async def _keepalive_loop(self) -> None:
         """Loop which keeps the TCP connection allive when subscribed for events"""
-        while True:
-            while self._protocol is not None:
-                sleep_t = KEEP_ALLIVE_INTERVAL - (time_now() - self._protocol.time_recv)
-                if sleep_t < 0.5:
-                    break
-                await asyncio.sleep(sleep_t)
-            _LOGGER.debug("Baichuan host %s: sending keepalive for event subscription", self._host)
-            try:
-                if self._events_active:
-                    await self.send(cmd_id=93)  # LinkType is used as keepalive
-                else:
-                    await self.send(cmd_id=31)  # Subscribe to events
-            except Exception as err:
-                _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
-            await asyncio.sleep(KEEP_ALLIVE_INTERVAL)
+        try:
+            now: float = 0
+            while True:
+                while self._protocol is not None:
+                    now = time_now()
+                    sleep_t = min(self._keepalive_interval - (now - self._protocol.time_recv), self._keepalive_interval)
+                    if sleep_t < 0.5:
+                        break
+                    await asyncio.sleep(sleep_t)
+                _LOGGER.debug("Baichuan host %s: sending keepalive for event subscription", self._host)
+                try:
+                    if self._events_active:
+                        await self.send(cmd_id=93)  # LinkType is used as keepalive
+                    else:
+                        await self.send(cmd_id=31)  # Subscribe to events
+                except Exception as err:
+                    _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
+
+                if (
+                    self._keepalive_interval < KEEP_ALLIVE_INTERVAL
+                    and self._protocol is not None
+                    and now - self._protocol.time_connect > 3600
+                    and now - self._time_keepalive_increase > 3600
+                ):
+                    self._time_keepalive_increase = now
+                    origianal_keepalive = self._keepalive_interval
+                    self._keepalive_interval = min(KEEP_ALLIVE_INTERVAL, self._keepalive_interval + 1)
+                    _LOGGER.debug("Baichuan host %s: increasing keepalive interval from %.2f to %.2f s", self._host, origianal_keepalive, self._keepalive_interval)
+
+                await asyncio.sleep(self._keepalive_interval)
+        except Exception as err:
+            _LOGGER.exception("Baichuan host %s: error during keepalive loop: %s", self._host, str(err))
 
     async def subscribe_events(self) -> None:
         """Subscribe to baichuan push events, keeping the connection open"""
