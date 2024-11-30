@@ -70,6 +70,7 @@ class Baichuan:
         self._events_active: bool = False
         self._keepalive_task: asyncio.Task | None = None
         self._keepalive_interval: float = KEEP_ALLIVE_INTERVAL
+        self._time_keepalive_loop: float = 0
         self._time_reestablish: float = 0
         self._time_keepalive_increase: float = 0
         self._time_connection_lost: float = 0
@@ -490,9 +491,9 @@ class Baichuan:
         now: float = 0
         while True:
             try:
-
                 while self._protocol is not None:
                     now = time_now()
+                    self._time_keepalive_loop = now
                     sleep_t = min(self._keepalive_interval - (now - self._protocol.time_recv), self._keepalive_interval)
                     if sleep_t < 0.5:
                         break
@@ -542,6 +543,20 @@ class Baichuan:
             self._keepalive_task.cancel()
             self._keepalive_task = None
         await self.logout()
+
+    async def check_subscribe_events(self) -> None:
+        """Subscribe to baichuan push events, keeping the connection open"""
+        if not self._subscribed:
+            await self.subscribe_events()
+            return
+
+        if time_now() - self._time_keepalive_loop > 5 * KEEP_ALLIVE_INTERVAL:
+            # keepalive loop seems to have stopped running, restart
+            _LOGGER.error("Baichuan host %s: keepalive loop seems to have stopped running, restarting", self._host)
+            self._events_active = False
+            if self._keepalive_task is not None:
+                self._keepalive_task.cancel()
+            self._keepalive_task = self._loop.create_task(self._keepalive_loop())
 
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
