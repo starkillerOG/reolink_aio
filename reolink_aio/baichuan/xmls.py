@@ -91,3 +91,14 @@ SetDingDongCfg_XML = """
 </dingdongCfg>
 </body>
 """
+
+QuickReplyPlay_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<audioFileInfo version="1.1">
+<channelId>{channel}</channelId>
+<id>{file_id}</id>
+<timeout>0</timeout>
+</audioFileInfo>
+</body>
+"""

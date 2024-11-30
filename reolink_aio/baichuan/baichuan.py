@@ -749,6 +749,15 @@ class Baichuan:
         xml = xmls.SetDingDongCfg_XML.format(chime_id=chime_id, event_type=event_type, state=state, tone_id=tone_id)
         await self.send(cmd_id=487, channel=channel, body=xml)
 
+    @http_cmd("QuickReplyPlay")
+    async def QuickReplyPlay(self, **kwargs) -> None:
+        """Get the GetDingDongCfg info"""
+        channel = kwargs.get("channel", -1)
+        file_id = kwargs.get("id", -1)
+
+        xml = xmls.QuickReplyPlay_XML.format(channel=channel, file_id=file_id)
+        await self.send(cmd_id=349, channel=channel, body=xml)
+
     @property
     def events_active(self) -> bool:
         return self._events_active and time_now() - self._time_connection_lost > 120
