@@ -72,6 +72,7 @@ class Baichuan:
         self._keepalive_interval: float = KEEP_ALLIVE_INTERVAL
         self._time_reestablish: float = 0
         self._time_keepalive_increase: float = 0
+        self._time_connection_lost: float = 0
         self._ext_callback: dict[int | None, dict[int | None, dict[str, Callable[[], None]]]] = {}
 
         # http_cmd functions, set by the http_cmd decorator
@@ -283,19 +284,17 @@ class Baichuan:
             if self.http_api is not None and self.http_api._updating:
                 _LOGGER.debug("Baichuan host %s: lost event subscription during firmware reboot", self._host)
                 return
+            now = time_now()
             if self._protocol is not None:
-                now = time_now()
                 time_since_recv = now - self._protocol.time_recv
-                time_since_reestablish = now - self._time_reestablish
             else:
-                now = 0
                 time_since_recv = 0
-                time_since_reestablish = 0
-            if time_since_reestablish > 150:  # limit the amount of reconnects to prevent fast loops
+            if now - self._time_reestablish > 150:  # limit the amount of reconnects to prevent fast loops
                 self._time_reestablish = now
                 self._loop.create_task(self._reestablish_connection(time_since_recv))
                 return
 
+            self._time_connection_lost = now
             _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s", self._host, time_since_recv)
 
     async def _reestablish_connection(self, time_since_recv: float) -> None:
@@ -306,6 +305,7 @@ class Baichuan:
         except Exception as err:
             _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s and failed to reestablished connection", self._host, time_since_recv)
             _LOGGER.debug("Baichuan host %s: failed to reestablished connection: %s", self._host, str(err))
+            self._time_connection_lost = time_start
         else:
             _LOGGER.debug("Baichuan host %s: lost event subscription after %.2f s, but reestablished connection immediately", self._host, time_since_recv)
             if time_now() - time_start < 5:
@@ -735,7 +735,7 @@ class Baichuan:
 
     @property
     def events_active(self) -> bool:
-        return self._events_active
+        return self._events_active and time_now() - self._time_connection_lost > 120
 
     @property
     def day_night_state(self) -> str | None:
