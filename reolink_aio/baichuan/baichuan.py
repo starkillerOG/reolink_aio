@@ -476,7 +476,7 @@ class Baichuan:
                         continue
                     channels.add(channel)
                     state = self._get_value_from_xml_element(event, "status")
-                    if state is not None:
+                    if state is not None and channel in self.http_api._whiteled_settings:
                         self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
