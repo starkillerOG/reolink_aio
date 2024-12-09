@@ -4488,10 +4488,17 @@ class Host:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
+        await self.get_state(cmd="GetRec")
+        if channel not in self._recording_settings:
+            raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
+
+        params = self._recording_settings[channel]
         if self.api_version("GetRec") >= 1:
-            body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec": {"scheduleEnable": on_off, "schedule": {"channel": channel}}}}]
+            params["Rec"]["scheduleEnable"] = on_off
+            body = [{"cmd": "SetRecV20", "action": 0, "param": params}]
         else:
-            body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": {"schedule": {"enable": on_off, "channel": channel}}}}]
+            params["Rec"]["schedule"]["enable"] = on_off
+            body = [{"cmd": "SetRec", "action": 0, "param": params}]
 
         await self.send_setting(body)
 
