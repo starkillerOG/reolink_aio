@@ -174,7 +174,8 @@ class Baichuan:
             return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
         finally:
             if cmd_id in self._protocol.receive_futures:
-                self._protocol.receive_futures[cmd_id].cancel()
+                if not self._protocol.receive_futures[cmd_id].done():
+                    self._protocol.receive_futures[cmd_id].cancel()
                 self._protocol.receive_futures.pop(cmd_id, None)
 
         # decryption
