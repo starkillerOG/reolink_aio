@@ -759,6 +759,17 @@ class Baichuan:
         xml = xmls.QuickReplyPlay_XML.format(channel=channel, file_id=file_id)
         await self.send(cmd_id=349, channel=channel, body=xml)
 
+    @http_cmd("SetRecV20")
+    async def SetRecV20(self, **kwargs) -> None:
+        """Get the GetDingDongCfg info"""
+        channel = kwargs.get("Rec", {}).get("schedule", {}).get("channel")
+        enable = kwargs.get("Rec", {}).get("scheduleEnable")
+        if channel is None or enable is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: SetRecV20 invalid input params")
+
+        xml = xmls.SetRecEnable.format(channel=channel, enable=enable)
+        await self.send(cmd_id=82, channel=channel, body=xml)
+
     @property
     def events_active(self) -> bool:
         return self._events_active and time_now() - self._time_connection_lost > 120

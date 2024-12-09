@@ -5585,7 +5585,7 @@ class Host:
                     if cmd_data["code"] != 0:
                         cmd = body[idx]
                         # check if baichuan has a fallback function
-                        if retry > 0 and cmd.get("cmd") in self.baichuan.cmd_funcs and cmd_data.get("error", {}).get("rspCode", 0) in [-9, -12, -13, -17]:
+                        if retry > 0 and cmd.get("cmd") in self.baichuan.cmd_funcs and cmd_data.get("error", {}).get("rspCode", 0) in [-4, -9, -12, -13, -17]:
                             func = self.baichuan.cmd_funcs[cmd["cmd"]]
                             args = cmd.get("param", {})
                             try:
