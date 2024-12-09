@@ -170,7 +170,7 @@ class Host:
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
         # Connection session
-        self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout, connect=timeout, sock_connect=timeout)
+        self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout, connect=timeout, sock_connect=timeout, sock_read=timeout)
         self._aiohttp_session_internall: bool = True
         if aiohttp_get_session_callback is not None:
             self._get_aiohttp_session = aiohttp_get_session_callback
