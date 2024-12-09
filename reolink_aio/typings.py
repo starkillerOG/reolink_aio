@@ -413,7 +413,7 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     if not split[0].startswith("Rec") or len(split[0]) != 6:
         _LOGGER.debug("%s does not match known formats, could not find version", file_name)
         return None
-    version = int(split[0][5])
+    version = int(split[0][4:6], 16)
 
     dev_type = "cam"
     if len(split) == 6:
