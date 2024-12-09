@@ -5421,10 +5421,11 @@ class Host:
         try:
             data: bytes | str
             if expected_response_type == "image/jpeg":
-                async with self._send_mutex:
-                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=self._timeout)
+                async with asyncio.timeout(self.timeout + 5):
+                    async with self._send_mutex:
+                        response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=self._timeout)
 
-                data = await response.read()  # returns bytes
+                    data = await response.read()  # returns bytes
             elif expected_response_type == "application/octet-stream":
                 async with self._send_mutex:
                     dl_timeout = aiohttp.ClientTimeout(connect=self.timeout, sock_read=self.timeout)
@@ -5437,10 +5438,11 @@ class Host:
                 if _LOGGER.isEnabledFor(logging.DEBUG):
                     _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, self._hide_password(body))
 
-                async with self._send_mutex:
-                    response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False, timeout=self._timeout)
+                async with asyncio.timeout(self.timeout + 5):
+                    async with self._send_mutex:
+                        response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False, timeout=self._timeout)
 
-                data = await response.text(encoding="utf-8")  # returns str
+                    data = await response.text(encoding="utf-8")  # returns str
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 _LOGGER.debug(
@@ -5715,9 +5717,11 @@ class Host:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("%s requesting reolink.com '%s'", self.nvr_name, URL)
 
-        com_timeout = aiohttp.ClientTimeout(total=2 * self.timeout)
+        com_timeout_sec = 2 * self.timeout
+        com_timeout = aiohttp.ClientTimeout(total=com_timeout_sec)
         try:
-            response = await self._aiohttp_session.get(url=URL, headers={"user-agent": user_agent}, timeout=com_timeout)
+            async with asyncio.timeout(com_timeout_sec + 5):
+                response = await self._aiohttp_session.get(url=URL, headers={"user-agent": user_agent}, timeout=com_timeout)
         except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Connetion error to {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
@@ -5735,7 +5739,8 @@ class Host:
             return response
 
         try:
-            data = await response.text()
+            async with asyncio.timeout(com_timeout_sec):
+                data = await response.text()
         except (aiohttp.ClientConnectorError, aiohttp.ClientOSError, aiohttp.ServerConnectionError) as err:
             raise ReolinkConnectionError(f"Connetion error reading response from {URL}: {str(err)}") from err
         except asyncio.TimeoutError as err:
@@ -5937,18 +5942,21 @@ class Host:
             timeout = self._timeout
         if mutex is None:
             mutex = self._send_mutex
+        timeout_sec = timeout.total or DEFAULT_TIMEOUT
 
         try:
-            async with mutex:
-                response = await self._aiohttp_session.post(
-                    url=self._subscribe_url,
-                    data=data,
-                    headers=headers,
-                    allow_redirects=False,
-                    timeout=timeout,
-                )
+            async with asyncio.timeout(timeout_sec + 5):
+                async with mutex:
+                    response = await self._aiohttp_session.post(
+                        url=self._subscribe_url,
+                        data=data,
+                        headers=headers,
+                        allow_redirects=False,
+                        timeout=timeout,
+                    )
 
-            response_text = await response.text()
+                response_text = await response.text()
+
             _LOGGER.debug(
                 "Host %s:%s: subscription got response status: %s. Payload:\n%s\n",
                 self._host,
