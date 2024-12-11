@@ -499,6 +499,8 @@ class Baichuan:
                     if sleep_t < 0.5:
                         break
                     await asyncio.sleep(sleep_t)
+
+                self._time_keepalive_loop = time_now()
                 _LOGGER.debug("Baichuan host %s: sending keepalive for event subscription", self._host)
                 try:
                     if self._events_active:
@@ -529,6 +531,7 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: already subscribed to events", self._host)
             return
         self._subscribed = True
+        self._time_keepalive_loop = time_now()
         try:
             await self.send(cmd_id=31)
         except Exception as err:
