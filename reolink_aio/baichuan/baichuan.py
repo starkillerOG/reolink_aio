@@ -173,7 +173,7 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
             return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
         finally:
-            if cmd_id in self._protocol.receive_futures:
+            if self._protocol is not None and cmd_id in self._protocol.receive_futures:
                 if not self._protocol.receive_futures[cmd_id].done():
                     self._protocol.receive_futures[cmd_id].cancel()
                 self._protocol.receive_futures.pop(cmd_id, None)
