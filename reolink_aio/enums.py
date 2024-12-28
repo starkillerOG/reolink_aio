@@ -21,8 +21,9 @@ class VodRequestType(Enum):
     """VOD url request types"""
 
     RTMP = "RTMP"
-    PLAYBACK = "playback"
+    PLAYBACK = "Playback"
     FLV = "FLV"
+    DOWNLOAD = "Download"
 
 
 class SpotlightModeEnum(Enum):

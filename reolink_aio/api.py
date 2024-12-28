@@ -3250,13 +3250,15 @@ class Host:
 
             # seek = start x seconds into the file
             url = f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=playback.bcs&channel={channel}&type={stream_type}&start={filename}&seek=0"
-        elif request_type == VodRequestType.PLAYBACK:
+        elif request_type in [VodRequestType.PLAYBACK, VodRequestType.DOWNLOAD]:
             start_time = ""
+            time_start = ""
             match = re.match(r".*Rec(\w{3})(?:_|_DST)(\d{8})_(\d{6})_.*", filename)
             if match is not None:
-                start_time = f"&start={match.group(2)}{match.group(3)}"
+                time_start = f"{match.group(2)}{match.group(3)}"
+                start_time = f"&start={time_start}"
 
-            url = f"{self._url}?cmd=Playback&source={filename}&output={filename.replace('/', '_')}{start_time}"
+            url = f"{self._url}?cmd={request_type.value}&source={filename.replace(' ', '%20')}&output=ha_playback_{time_start}.mp4{start_time}"
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
