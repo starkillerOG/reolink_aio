@@ -170,6 +170,8 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                 exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost connection while waiting for cmd_id {expected_cmd_ids}")
             for receive_future in self.receive_futures.values():
+                if receive_future.done():
+                    continue
                 receive_future.set_exception(exc)
         _LOGGER.debug("Baichuan host %s: closed connection", self._host)
         if self._close_callback is not None:
