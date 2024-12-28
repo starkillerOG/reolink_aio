@@ -115,6 +115,7 @@ WAKING_COMMANDS = {
     "GetDingDongList",
     "GetDingDongCfg",
     "DingDongOpt",
+    "GetPerformance",
 }
 
 # not all chars in a password can be used in the URLS of for instance the FLV stream
