@@ -677,6 +677,11 @@ class Baichuan:
         mess = await self.send(cmd_id=433, channel=channel)
         self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
 
+    async def get_cry_detection_supported(self, channel: int) -> bool:
+        """Check if cry detection is supported"""
+        mess = await self.send(cmd_id=299, channel=channel)
+        return self._get_value_from_xml(mess, "cryDetectAbility") == "1"
+
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, **_kwargs) -> None:
         """Get the DingDongList info"""

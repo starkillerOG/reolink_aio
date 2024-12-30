@@ -2355,6 +2355,15 @@ class Host:
 
         # Baichuan fallbacks
         for channel in self._channels:
+            try:
+                if await self.baichuan.get_cry_detection_supported(channel):
+                    self._ai_detection_support.setdefault(channel, {})
+                    self._ai_detection_states.setdefault(channel, {})
+                    self._ai_detection_support[channel]["cry"] = True
+                    self._ai_detection_states[channel]["cry"] = False
+            except ReolinkError:
+                pass
+
             if self.camera_hardware_version(channel) == "Unknown":
                 try:
                     await self.baichuan.get_info(channel)
@@ -3623,8 +3632,8 @@ class Host:
                         _LOGGER.error("Host %s:%s: GetEvents response channel %s does not equal requested channel %s", self._host, self._port, response_channel, channel)
                         continue
                     if "ai" in data["value"]:
-                        self._ai_detection_states[channel] = {}
-                        self._ai_detection_support[channel] = {}
+                        self._ai_detection_states.setdefault(channel, {})
+                        self._ai_detection_support.setdefault(channel, {})
                         for key, value in data["value"]["ai"].items():
                             supported: bool = value.get("support", 0) == 1
                             self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
@@ -3657,8 +3666,8 @@ class Host:
                     self._ai_alarm_settings[channel][ai_type] = data["value"]["AiAlarm"]
 
                 elif data["cmd"] == "GetAiState":
-                    self._ai_detection_states[channel] = {}
-                    self._ai_detection_support[channel] = {}
+                    self._ai_detection_states.setdefault(channel, {})
+                    self._ai_detection_support.setdefault(channel, {})
                     response_channel = data["value"].get("channel", channel)
                     if response_channel != channel:
                         _LOGGER.error("Host %s:%s: GetAiState response channel %s does not equal requested channel %s", self._host, self._port, response_channel, channel)
