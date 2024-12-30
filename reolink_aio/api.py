@@ -2677,8 +2677,11 @@ class Host:
             ch_list.extend(self.channels)
 
         # check current firmware version
-        body: typings.reolink_json = [{"cmd": "GetDevInfo", "action": 0, "param": {}}]
-        channels = [-1]
+        body: typings.reolink_json = []
+        channels: list[int] = []
+        if None in ch_list:
+            body.append({"cmd": "GetDevInfo", "action": 0, "param": {}})
+            channels.append(-1)
         for ch in self.channels:
             if ch in ch_list and self.supported(ch, "firmware"):
                 body.append({"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": ch}})
@@ -2694,7 +2697,7 @@ class Host:
         self.map_channels_json_response(json_data, channels)
 
         # check for host update using API
-        if self.supported(None, "update"):
+        if None in ch_list and self.supported(None, "update"):
             body = [{"cmd": "CheckFirmware"}]
 
             try:
@@ -2739,16 +2742,18 @@ class Host:
                 self._latest_sw_version[ch] = False
 
         # check host online update result
-        latest_sw_version_host = self._latest_sw_version[None]
-        if new_firmware != 0 and latest_sw_version_host is False:
-            if new_firmware == 1:
-                latest_sw_version_host = "New firmware available"
-            else:
-                latest_sw_version_host = str(new_firmware)
-        if isinstance(latest_sw_version_host, NewSoftwareVersion):
-            latest_sw_version_host.online_update_available = new_firmware == 1
+        latest_sw_version_host = False
+        if None in ch_list:
+            latest_sw_version_host = self._latest_sw_version[None]
+            if new_firmware != 0 and latest_sw_version_host is False:
+                if new_firmware == 1:
+                    latest_sw_version_host = "New firmware available"
+                else:
+                    latest_sw_version_host = str(new_firmware)
+            if isinstance(latest_sw_version_host, NewSoftwareVersion):
+                latest_sw_version_host.online_update_available = new_firmware == 1
+            self._latest_sw_version[None] = latest_sw_version_host
 
-        self._latest_sw_version[None] = latest_sw_version_host
         return latest_sw_version_host
 
     def firmware_update_available(self, channel: int | None = None) -> Literal[False] | NewSoftwareVersion | str:
