@@ -2391,8 +2391,9 @@ class Host:
         if self.protocol == "rtsp":
             # Cache the RTSP urls
             for channel in self._stream_channels:
-                await self.get_rtsp_stream_source(channel, "sub")
-                await self.get_rtsp_stream_source(channel, "main")
+                check = not self.supported(channel, "battery")
+                await self.get_rtsp_stream_source(channel, "sub", check)
+                await self.get_rtsp_stream_source(channel, "main", check)
 
         self._startup = False
 
@@ -3103,7 +3104,7 @@ class Host:
         self._rtsp_verified[channel][stream] = url
         return True
 
-    async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
+    async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None, check: bool = True) -> Optional[str]:
         if channel not in self._stream_channels:
             return None
 
@@ -3113,17 +3114,16 @@ class Host:
         if channel in self._rtsp_verified and stream in self._rtsp_verified[channel]:
             return self._rtsp_verified[channel][stream]
 
-        _LOGGER.debug("Checking RTSP urls host %s:%s, channel %s, stream %s", self._host, self._port, channel, stream)
+        if check:
+            _LOGGER.debug("Checking RTSP urls host %s:%s, channel %s, stream %s", self._host, self._port, channel, stream)
 
         if self.api_version("rtsp") >= 3 and stream == "main" and channel in self._rtsp_mainStream:
-            if self.supported(channel, "battery"):
-                _LOGGER.debug("Checking RTSP url host %s, channel %s, stream %s skipped because it is a battery camera", self._host, channel, stream)
+            if not check:
                 return self._rtsp_mainStream[channel]
             if await self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
                 return self._rtsp_mainStream[channel]
         if self.api_version("rtsp") >= 3 and stream == "sub" and channel in self._rtsp_subStream:
-            if self.supported(channel, "battery"):
-                _LOGGER.debug("Checking RTSP url host %s, channel %s, stream %s skipped because it is a battery camera", self._host, channel, stream)
+            if not check:
                 return self._rtsp_subStream[channel]
             if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
                 return self._rtsp_subStream[channel]
@@ -3136,10 +3136,14 @@ class Host:
 
         encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is None and stream == "main" and channel in self._rtsp_mainStream:
+            if not check:
+                return self._rtsp_mainStream[channel]
             if await self._check_rtsp_url(self._rtsp_mainStream[channel], channel, stream):
                 return self._rtsp_mainStream[channel]
 
         if encoding is None and stream == "sub" and channel in self._rtsp_subStream:
+            if not check:
+                return self._rtsp_subStream[channel]
             if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
                 return self._rtsp_subStream[channel]
 
@@ -3163,6 +3167,8 @@ class Host:
 
         # RTSP needs encoded password
         url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
+        if not check:
+            return url
         if await self._check_rtsp_url(url, channel, stream):
             return url
 
@@ -3179,7 +3185,7 @@ class Host:
         _LOGGER.error("Host %s:%s, could not verify a working RTSP url for channel %s, stream %s", self._host, self._port, channel, stream)
         return self._rtsp_verified[channel][stream]
 
-    async def get_stream_source(self, channel: int, stream: Optional[str] = None) -> Optional[str]:
+    async def get_stream_source(self, channel: int, stream: Optional[str] = None, check: bool = True) -> Optional[str]:
         """Return the stream source url."""
         try:
             await self.login()
@@ -3196,7 +3202,7 @@ class Host:
         if self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub"]:
             return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtsp":
-            return await self.get_rtsp_stream_source(channel, stream)
+            return await self.get_rtsp_stream_source(channel, stream, check)
         return None
 
     async def get_vod_source(
