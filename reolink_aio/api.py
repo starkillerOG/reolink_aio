@@ -284,6 +284,7 @@ class Host:
         self._email_settings: dict[int, dict] = {}
         self._ir_settings: dict[int, dict] = {}
         self._status_led_settings: dict[int, dict] = {}
+        self._status_led_range: dict[int, dict] = {}
         self._whiteled_settings: dict[int, dict] = {}
         self._sleep: dict[int, bool] = {}
         self._battery: dict[int, dict] = {}
@@ -825,7 +826,11 @@ class Host:
             mode_values.append(StatusLedEnum.stayoff)
         mode_values.extend([StatusLedEnum.auto, StatusLedEnum.alwaysonatnight])
         if self.api_version("supportDoorbellLightKeepOn", channel) > 0:
-            mode_values.append(StatusLedEnum.alwayson)
+            options = self._status_led_range.get(channel, {}).get("PowerLed").get("eDoorbellLightState", [])
+            if "KeepOn" in options:
+                mode_values.append(StatusLedEnum.alwayson)
+            else:
+                mode_values.append(StatusLedEnum.always)
 
         return [val.name for val in mode_values]
 
@@ -2281,6 +2286,8 @@ class Host:
             if self.supported(channel, "webhook"):
                 ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
             # checking range
+            if self.supported(channel, "doorbell_led"):
+                ch_body.append({"cmd": "GetPowerLed", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "zoom_basic") or self.api_version("supportDigitalZoom", channel) > 0:
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
@@ -3744,6 +3751,8 @@ class Host:
                     # GetPowerLed returns incorrect channel
                     # response_channel = data["value"]["PowerLed"]["channel"]
                     self._status_led_settings[channel] = data["value"]
+                    if "range" in data:
+                        self._status_led_range[channel] = data["range"]
 
                 elif data["cmd"] == "GetWhiteLed":
                     response_channel = data["value"]["WhiteLed"]["channel"]
