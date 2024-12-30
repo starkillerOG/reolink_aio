@@ -1907,6 +1907,8 @@ class Host:
             elif cmd == "GetAiAlarm" and self.supported(channel, "ai_sensitivity"):
                 ch_body = []
                 for ai_type in self.ai_supported_types(channel):
+                    if ai_type == "cry":
+                        continue
                     ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
             elif cmd in ["GetEmail", "GetEmailV20"] and (self.supported(channel, "email") or (self.supported(None, "email") and channel == 0)):
                 if self.api_version("GetEmail") >= 1:
@@ -2137,6 +2139,8 @@ class Host:
 
             if self.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
                 for ai_type in self.ai_supported_types(channel):
+                    if ai_type == "cry":
+                        continue
                     ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
 
             body.extend(ch_body)
