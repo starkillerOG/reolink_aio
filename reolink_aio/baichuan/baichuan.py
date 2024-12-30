@@ -281,12 +281,17 @@ class Baichuan:
     def _close_callback(self) -> None:
         """Callback for when the connection is closed"""
         self._logged_in = False
+        events_active = self._events_active
         self._events_active = False
         if self._subscribed:
+            now = time_now()
+            if not events_active:  # Their was no proper connection, or close_callback is beeing called multiple times
+                self._time_connection_lost = now
+                _LOGGER.debug("Baichuan host %s: disconnected while event subscription was not active", self._host)
+                return
             if self.http_api is not None and self.http_api._updating:
                 _LOGGER.debug("Baichuan host %s: lost event subscription during firmware reboot", self._host)
                 return
-            now = time_now()
             if self._protocol is not None:
                 time_since_recv = now - self._protocol.time_recv
             else:
