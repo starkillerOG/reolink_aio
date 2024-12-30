@@ -826,7 +826,7 @@ class Host:
             mode_values.append(StatusLedEnum.stayoff)
         mode_values.extend([StatusLedEnum.auto, StatusLedEnum.alwaysonatnight])
         if self.api_version("supportDoorbellLightKeepOn", channel) > 0:
-            options = self._status_led_range.get(channel, {}).get("PowerLed").get("eDoorbellLightState", [])
+            options = self._status_led_range.get(channel, {}).get("PowerLed", {}).get("eDoorbellLightState", [])
             if "KeepOn" in options:
                 mode_values.append(StatusLedEnum.alwayson)
             else:
@@ -2755,7 +2755,7 @@ class Host:
                 self._latest_sw_version[ch] = False
 
         # check host online update result
-        latest_sw_version_host = False
+        latest_sw_version_host: Literal[False] | NewSoftwareVersion | str = False
         if None in ch_list:
             latest_sw_version_host = self._latest_sw_version[None]
             if new_firmware != 0 and latest_sw_version_host is False:
