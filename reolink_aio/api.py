@@ -2681,7 +2681,7 @@ class Host:
 
         return self._latest_sw_model_version[key]
 
-    async def check_new_firmware(self, ch_list: list[None | int] | None = None) -> Literal[False] | NewSoftwareVersion | str:
+    async def check_new_firmware(self, ch_list: list[None | int] | None = None) -> dict[None | int, Literal[False] | NewSoftwareVersion | str]:
         """check for new firmware using camera API, returns False if no new firmware available."""
         new_firmware = 0
         ch: int | None
@@ -2755,7 +2755,6 @@ class Host:
                 self._latest_sw_version[ch] = False
 
         # check host online update result
-        latest_sw_version_host: Literal[False] | NewSoftwareVersion | str = False
         if None in ch_list:
             latest_sw_version_host = self._latest_sw_version[None]
             if new_firmware != 0 and latest_sw_version_host is False:
@@ -2767,7 +2766,7 @@ class Host:
                 latest_sw_version_host.online_update_available = new_firmware == 1
             self._latest_sw_version[None] = latest_sw_version_host
 
-        return latest_sw_version_host
+        return {key: self.firmware_update_available(key) for key in ch_list}
 
     def firmware_update_available(self, channel: int | None = None) -> Literal[False] | NewSoftwareVersion | str:
         if channel not in self._latest_sw_version:
