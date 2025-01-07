@@ -2150,7 +2150,7 @@ class Host:
         # chime states
         for chime_id, chime in self._chime_list.items():
             chime_ch = chime.channel
-            if inc_cmd("DingDongOpt", channel) and chime.online:
+            if inc_cmd("DingDongOpt", chime_ch) and chime.online:
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
                 channels.append(chime_ch)
                 chime_ids.append(chime_id)
