@@ -33,6 +33,7 @@ _LOGGER = logging.getLogger(__name__)
 RETRY_ATTEMPTS = 3
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
+TIMEOUT = 15  # seconds
 
 
 class Baichuan:
@@ -87,6 +88,35 @@ class Baichuan:
         self._day_night_state: str | None = None
         self._ptz_position: dict[int, dict[str, str]] = {}
 
+    async def _connect_if_needed(self):
+        """Initialize the protocol and make the connection if needed."""
+        if self._transport is not None and self._protocol is not None and not self._transport.is_closing():
+            return  # connection is open
+
+        if self._protocol is not None and self._protocol.receive_futures:
+            # Ensure all previous receive futures get the change to throw their exceptions
+            _LOGGER.debug("Baichuan host %s: waiting for previous receive futures to finish before opening a new connection", self._host)
+            try:
+                async with asyncio.timeout(TIMEOUT + 5):
+                    while self._protocol.receive_futures:
+                        await asyncio.sleep(0)
+            except asyncio.TimeoutError:
+                _LOGGER.warning("Baichuan host %s: Previous receive futures did not finish before opening a new connection", self._host)
+
+        try:
+            async with asyncio.timeout(TIMEOUT):
+                async with self._mutex:
+                    if self._transport is not None and self._protocol is not None and not self._transport.is_closing():
+                        return  # connection already opened in the meantime
+
+                    self._transport, self._protocol = await self._loop.create_connection(
+                        lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self._port
+                    )
+        except asyncio.TimeoutError as err:
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
+        except (ConnectionResetError, OSError) as err:
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
+
     async def send(
         self,
         cmd_id: int,
@@ -137,17 +167,10 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
         # send message
-        if self._transport is None or self._protocol is None or self._transport.is_closing():
-            try:
-                async with asyncio.timeout(15):
-                    async with self._mutex:
-                        self._transport, self._protocol = await self._loop.create_connection(
-                            lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self._port
-                        )
-            except asyncio.TimeoutError as err:
-                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
-            except (ConnectionResetError, OSError) as err:
-                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._protocol is not None
+            assert self._transport is not None
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
@@ -161,7 +184,7 @@ class Baichuan:
         self._protocol.receive_futures[cmd_id] = self._loop.create_future()
 
         try:
-            async with asyncio.timeout(15):
+            async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
                     self._transport.write(header + enc_body_bytes)
                 data, len_header = await self._protocol.receive_futures[cmd_id]
