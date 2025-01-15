@@ -609,8 +609,13 @@ class Baichuan:
         self._password_hash = md5_str_modern(f"{self._password}{nonce}")
         xml = xmls.LOGIN_XML.format(userName=self._user_hash, password=self._password_hash)
 
-        await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
+        mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
         self._logged_in = True
+        
+        # privacy mode
+        privacy_mode = self._get_value_from_xml(mess, "sleep")
+        if privacy_mode is not None:
+            self._privacy_mode[0] = privacy_mode == "1"
 
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
