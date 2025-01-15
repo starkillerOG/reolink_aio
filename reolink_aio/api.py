@@ -50,6 +50,7 @@ from .exceptions import (
     InvalidParameterError,
     LoginError,
     LoginFirmwareError,
+    LoginPrivacyModeError,
     NoDataError,
     NotSupportedError,
     ReolinkError,
@@ -1204,6 +1205,19 @@ class Host:
         else:
             self._url = f"http://{self._host}:{self._port}/cgi-bin/api.cgi"
 
+    async def _check_privacy_mode(self) -> None:
+        if self.baichuan.privacy_mode(0) is None:
+            return
+
+        try:
+            await self.baichuan.get_privacy_mode(0)
+        except ReolinkError as exc:
+            _LOGGER.debug("Failed to retrieve privacy mode during login of host %s: %s", self._host, exc)
+            return
+
+        if self.baichuan.privacy_mode(0):
+            raise LoginPrivacyModeError(f"Could not login because privacy mode is turned on for host {self._host}, Baichuan login successfull, HTTP(s) login failed")
+
     async def login(self) -> None:
         if self._port is None or self._use_https is None:
             await self._login_try_ports()
@@ -1211,6 +1225,10 @@ class Host:
 
         if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
             return  # succes
+
+        # check privacy mode
+        if self.baichuan.privacy_mode(0):
+            await self._check_privacy_mode()
 
         await self._login_mutex.acquire()
         try:
@@ -1309,6 +1327,9 @@ class Host:
             _LOGGER.debug(exc)
             # Raise original exception instead of the retry fallback exception
             raise first_exc from exc
+
+        # check privacy mode
+        await self._check_privacy_mode()
 
         if self.baichuan.https_enabled is None and self.baichuan.http_enabled is None:
             raise LoginError(
@@ -1411,6 +1432,9 @@ class Host:
             _LOGGER.debug(exc)
             # Raise original exception instead of the retry fallback exception
             raise first_exc from exc
+
+        # check privacy mode
+        await self._check_privacy_mode()
 
         _LOGGER.warning("HTTP(s) login failed while Baichuan login succeeded, re-opening HTTP(s) port and looking up correct port on host %s", self._host)
 

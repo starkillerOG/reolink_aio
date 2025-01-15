@@ -28,6 +28,10 @@ class LoginError(ReolinkError):
     """Raised when a login attempt fails for another reason than the credentials"""
 
 
+class LoginPrivacyModeError(LoginError):
+    """Raised when a login attempt fails because privacy mode is turned on"""
+
+
 class LoginFirmwareError(LoginError):
     """Raised when a login attempt fails and the minimum required firmware version is not met"""
 

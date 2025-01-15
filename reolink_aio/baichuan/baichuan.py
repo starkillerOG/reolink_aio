@@ -611,7 +611,7 @@ class Baichuan:
 
         mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
         self._logged_in = True
-        
+
         # privacy mode
         privacy_mode = self._get_value_from_xml(mess, "sleep")
         if privacy_mode is not None:
