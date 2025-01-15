@@ -112,3 +112,12 @@ SetRecEnable = """
 </Record>
 </body>
 """
+
+SetPrivacyMode = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<sleepState version="1.1">
+<operate>2</operate>
+<sleep>{enable}</sleep>
+</sleepState>
+</body>"""

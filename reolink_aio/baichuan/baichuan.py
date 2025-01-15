@@ -87,6 +87,7 @@ class Baichuan:
         self._dev_info: dict[int | None, dict[str, str]] = {}
         self._day_night_state: str | None = None
         self._ptz_position: dict[int, dict[str, str]] = {}
+        self._privacy_mode: dict[int, bool] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -509,6 +510,15 @@ class Baichuan:
                         self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
+        elif cmd_id == 623:  # Privacy mode
+            channel = 0
+            channels.add(channel)
+            state = self._get_value_from_xml_element(root, "sleep")
+            if state is not None:
+                value = state == "1"
+                self._privacy_mode[channel] = value
+                _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, value)
+
         # call the callbacks
         for cmd in cmd_ids:
             for ch in channels:
@@ -705,6 +715,21 @@ class Baichuan:
         mess = await self.send(cmd_id=299, channel=channel)
         return self._get_value_from_xml(mess, "cryDetectAbility") == "1"
 
+    async def get_privacy_mode(self, channel: int) -> bool:
+        """Get the privacy mode state"""
+        mess = await self.send(cmd_id=574, channel=channel)
+        value = self._get_value_from_xml(mess, "sleep") == "1"
+        self._privacy_mode[channel] = value
+        return value
+
+    async def set_privacy_mode(self, channel: int, enable: bool) -> None:
+        """Set the privacy mode"""
+        enable_str = "1" if enable else "0"
+        xml = xmls.SetPrivacyMode.format(enable=enable_str)
+        await self.send(cmd_id=575, channel=channel, body=xml)
+        # get the new privacy mode status
+        await self.get_privacy_mode(channel)
+
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, **_kwargs) -> None:
         """Get the DingDongList info"""
@@ -881,6 +906,9 @@ class Baichuan:
 
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
+
+    def privacy_mode(self, channel: int) -> bool | None:
+        return self._privacy_mode.get(channel)
 
     def pan_position(self, channel: int) -> int | None:
         pos = self._ptz_position.get(channel, {}).get("pPos")
