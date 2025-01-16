@@ -1209,6 +1209,8 @@ class Host:
         if self.baichuan.privacy_mode(0) is None:
             return
 
+        _LOGGER.debug("Checking privacy mode before login into host %s", self._host)
+
         try:
             await self.baichuan.get_privacy_mode(0)
         except ReolinkError as exc:
@@ -1301,6 +1303,9 @@ class Host:
             self._login_mutex.release()
 
     async def _login_try_ports(self) -> None:
+        original_port = self._port
+        original_https = self._use_https
+
         # try HTTPs port
         first_exc = None
         self._port = 443
@@ -1329,7 +1334,12 @@ class Host:
             raise first_exc from exc
 
         # check privacy mode
-        await self._check_privacy_mode()
+        try:
+            await self._check_privacy_mode()
+        except LoginPrivacyModeError:
+            self._port = original_port
+            self._use_https = original_https
+            raise
 
         if self.baichuan.https_enabled is None and self.baichuan.http_enabled is None:
             raise LoginError(
@@ -2225,6 +2235,8 @@ class Host:
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
+        privacy_mode_enabled = False
+
         body: typings.reolink_json = [
             {"cmd": "GetChannelstatus"},
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
@@ -2245,6 +2257,16 @@ class Host:
             raise InvalidContentTypeError(f"Get host-settings error: {str(err)}") from err
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings") from err
+        except LoginPrivacyModeError:
+            privacy_mode_enabled = True
+            _LOGGER.debug("Temporarily disabeling privacy mode to get host data from %s", self._host)
+            await self.baichuan.set_privacy_mode(0, False)
+            await asyncio.sleep(5)  # give the camera some time to startup the HTTP API server
+            try:
+                json_data = await self.send(body, expected_response_type="json")
+            except ReolinkError:
+                await self.baichuan.set_privacy_mode(0, True)
+                raise
 
         self.map_host_json_response(json_data)
         self.construct_capabilities(warnings=False)
@@ -2438,6 +2460,9 @@ class Host:
                 check = not self.supported(channel, "battery")
                 await self.get_rtsp_stream_source(channel, "sub", check)
                 await self.get_rtsp_stream_source(channel, "main", check)
+
+        if privacy_mode_enabled:
+            await self.baichuan.set_privacy_mode(0, True)
 
         self._startup = False
 
