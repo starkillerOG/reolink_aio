@@ -2462,6 +2462,10 @@ class Host:
                 await self.get_rtsp_stream_source(channel, "main", check)
 
         if privacy_mode_enabled:
+            try:
+                await self.logout()
+            except ReolinkError:
+                pass
             await self.baichuan.set_privacy_mode(0, True)
 
         self._startup = False
@@ -2755,8 +2759,10 @@ class Host:
             raise InvalidContentTypeError(f"Check current firmware: {str(err)}") from err
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining current firmware response") from err
-
-        self.map_channels_json_response(json_data, channels)
+        except LoginPrivacyModeError:
+            _LOGGER.debug("Host: %s: could not check current firmware because privacy mode is enabled", self._host)
+        else:
+            self.map_channels_json_response(json_data, channels)
 
         # check for host update using API
         if None in ch_list and self.supported(None, "update"):
@@ -2766,7 +2772,7 @@ class Host:
                 async with asyncio.timeout(15):
                     json_data = await self.send(body, expected_response_type="json")
                 new_firmware = json_data[0].get("value", {}).get("newFirmware", 0)
-            except InvalidContentTypeError as err:
+            except (InvalidContentTypeError, LoginPrivacyModeError) as err:
                 _LOGGER.debug("CheckFirmware: %s", str(err))
             except NoDataError:
                 _LOGGER.debug("Host: %s: error obtaining CheckFirmware response", self._host)
