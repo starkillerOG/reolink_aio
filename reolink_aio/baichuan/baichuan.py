@@ -58,6 +58,7 @@ class Baichuan:
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
         self._log_once: list[str] = []
+        self.last_privacy_check: float = 0
 
         # TCP connection
         self._mutex = asyncio.Lock()
@@ -738,6 +739,7 @@ class Baichuan:
         mess = await self.send(cmd_id=574, channel=channel)
         value = self._get_value_from_xml(mess, "sleep") == "1"
         self._privacy_mode[channel] = value
+        self.last_privacy_check = time_now()
         return value
 
     async def set_privacy_mode(self, channel: int, enable: bool) -> None:

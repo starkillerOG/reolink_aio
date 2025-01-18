@@ -1206,18 +1206,19 @@ class Host:
             self._url = f"http://{self._host}:{self._port}/cgi-bin/api.cgi"
 
     async def _check_privacy_mode(self) -> None:
-        if self.baichuan.privacy_mode(0) is None:
+        if self.baichuan.privacy_mode() is None:
             return
 
-        _LOGGER.debug("Checking privacy mode before login into host %s", self._host)
+        now = time_now()
+        if now - self.baichuan.last_privacy_check > 2:
+            _LOGGER.debug("Checking privacy mode before login into host %s", self._host)
+            try:
+                await self.baichuan.get_privacy_mode()
+            except ReolinkError as exc:
+                _LOGGER.debug("Failed to retrieve privacy mode during login of host %s: %s", self._host, exc)
+                return
 
-        try:
-            await self.baichuan.get_privacy_mode(0)
-        except ReolinkError as exc:
-            _LOGGER.debug("Failed to retrieve privacy mode during login of host %s: %s", self._host, exc)
-            return
-
-        if self.baichuan.privacy_mode(0):
+        if self.baichuan.privacy_mode():
             raise LoginPrivacyModeError(f"Could not login because privacy mode is turned on for host {self._host}, Baichuan login successfull, HTTP(s) login failed")
 
     async def login(self) -> None:
@@ -1229,7 +1230,7 @@ class Host:
             return  # succes
 
         # check privacy mode
-        if self.baichuan.privacy_mode(0):
+        if self.baichuan.privacy_mode():
             await self._check_privacy_mode()
 
         await self._login_mutex.acquire()
@@ -6021,6 +6022,9 @@ class Host:
 
     async def subscription_send(self, headers, data, timeout: aiohttp.ClientTimeout | None = None, mutex: asyncio.Lock | None = None) -> str:
         """Send subscription data to the camera."""
+        if self.baichuan.privacy_mode():
+            await self._check_privacy_mode()
+
         if self._subscribe_url is None:
             await self.get_state("GetNetPort")
 
