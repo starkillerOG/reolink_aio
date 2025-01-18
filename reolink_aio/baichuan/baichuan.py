@@ -720,7 +720,7 @@ class Baichuan:
         mess = await self.send(cmd_id=299, channel=channel)
         return self._get_value_from_xml(mess, "cryDetectAbility") == "1"
 
-    async def get_privacy_mode(self, channel: int) -> bool:
+    async def get_privacy_mode(self, channel: int = 0) -> bool:
         """Get the privacy mode state"""
         mess = await self.send(cmd_id=574, channel=channel)
         value = self._get_value_from_xml(mess, "sleep") == "1"
@@ -836,6 +836,20 @@ class Baichuan:
         xml = xmls.SetRecEnable.format(channel=channel, enable=enable)
         await self.send(cmd_id=82, channel=channel, body=xml)
 
+    @http_cmd("SetNetPort")
+    async def SetNetPort(self, **kwargs) -> None:
+        """Backup for enabeling ONVIF/RTSP/RTMP"""
+        enable_onvif = kwargs.get("NetPort", {}).get("onvifEnable")
+        enable_rtmp = kwargs.get("NetPort", {}).get("rtmpEnable")
+        enable_rtsp = kwargs.get("NetPort", {}).get("rtspEnable")
+
+        if enable_onvif is not None:
+            await self.set_port_enabled(PortType.onvif, enable_onvif == 1)
+        if enable_rtmp is not None:
+            await self.set_port_enabled(PortType.rtmp, enable_rtmp == 1)
+        if enable_rtsp is not None:
+            await self.set_port_enabled(PortType.rtsp, enable_rtsp == 1)
+
     @property
     def events_active(self) -> bool:
         return self._events_active and time_now() - self._time_connection_lost > 120
@@ -912,7 +926,7 @@ class Baichuan:
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
 
-    def privacy_mode(self, channel: int) -> bool | None:
+    def privacy_mode(self, channel: int = 0) -> bool | None:
         return self._privacy_mode.get(channel)
 
     def pan_position(self, channel: int) -> int | None:
