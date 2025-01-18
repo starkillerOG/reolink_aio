@@ -771,11 +771,12 @@ class Baichuan:
         """Get the DingDongOpt info"""
         if self.http_api is None:
             return
-        if ch := kwargs.get("DingDong", {}).get("channel"):
+        dingdong = kwargs.get("DingDong", {})
+        if ch := dingdong.get("channel"):
             channel = ch
-        if ring_id := kwargs.get("DingDong", {}).get("id"):
+        if ring_id := dingdong.get("id"):
             chime_id = ring_id
-        option = kwargs.get("DingDong", {}).get("option", 2)
+        option = dingdong.get("option", 2)
 
         xml = ""
         if option == 1:
@@ -783,12 +784,12 @@ class Baichuan:
         if option == 2:
             xml = xmls.DingDongOpt_2_XML.format(chime_id=chime_id)
         if option == 3:
-            name = kwargs.get("DingDong", {}).get("name", "Reolink Chime")
-            vol = kwargs.get("DingDong", {}).get("volLevel", 4)
-            led = kwargs.get("DingDong", {}).get("ledState", 1)
+            name = dingdong.get("name", "Reolink Chime")
+            vol = dingdong.get("volLevel", 4)
+            led = dingdong.get("ledState", 1)
             xml = xmls.DingDongOpt_3_XML.format(chime_id=chime_id, vol=vol, led=led, name=name)
         if option == 4:
-            tone_id = kwargs.get("DingDong", {}).get("musicId", 0)
+            tone_id = dingdong.get("musicId", 0)
             xml = xmls.DingDongOpt_4_XML.format(chime_id=chime_id, tone_id=tone_id)
 
         mess = await self.send(cmd_id=485, channel=channel, body=xml)
@@ -822,11 +823,13 @@ class Baichuan:
     @http_cmd("SetDingDongCfg")
     async def SetDingDongCfg(self, **kwargs) -> None:
         """Get the GetDingDongCfg info"""
-        channel = kwargs.get("DingDongCfg", {}).get("channel", -1)
-        chime_id = kwargs.get("DingDongCfg", {}).get("ringId", -1)
-        event_type = list(kwargs.get("DingDongCfg", {}).get("type", {"event": {}}).keys())[0]
-        state = kwargs.get("DingDongCfg", {}).get("type", {}).get(event_type, {}).get("switch", 0)
-        tone_id = kwargs.get("DingDongCfg", {}).get("type", {}).get(event_type, {}).get("musicId", -1)
+        dingdong_cfg = kwargs.get("DingDongCfg", {})
+        channel = dingdong_cfg.get("channel", -1)
+        chime_id = dingdong_cfg.get("ringId", -1)
+        event_type_dict = dingdong_cfg.get("type", {"event": {}})
+        event_type = list(event_type_dict.keys())[0]
+        state = event_type_dict.get(event_type, {}).get("switch", 0)
+        tone_id = event_type_dict.get(event_type, {}).get("musicId", -1)
 
         xml = xmls.SetDingDongCfg_XML.format(chime_id=chime_id, event_type=event_type, state=state, tone_id=tone_id)
         await self.send(cmd_id=487, channel=channel, body=xml)
@@ -843,8 +846,9 @@ class Baichuan:
     @http_cmd("SetRecV20")
     async def SetRecV20(self, **kwargs) -> None:
         """Get the GetDingDongCfg info"""
-        channel = kwargs.get("Rec", {}).get("schedule", {}).get("channel")
-        enable = kwargs.get("Rec", {}).get("scheduleEnable")
+        rec = kwargs.get("Rec", {})
+        channel = rec.get("schedule", {}).get("channel")
+        enable = rec.get("scheduleEnable")
         if channel is None or enable is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: SetRecV20 invalid input params")
 
@@ -854,9 +858,10 @@ class Baichuan:
     @http_cmd("SetNetPort")
     async def SetNetPort(self, **kwargs) -> None:
         """Backup for enabeling ONVIF/RTSP/RTMP"""
-        enable_onvif = kwargs.get("NetPort", {}).get("onvifEnable")
-        enable_rtmp = kwargs.get("NetPort", {}).get("rtmpEnable")
-        enable_rtsp = kwargs.get("NetPort", {}).get("rtspEnable")
+        net_port = kwargs.get("NetPort", {})
+        enable_onvif = net_port.get("onvifEnable")
+        enable_rtmp = net_port.get("rtmpEnable")
+        enable_rtsp = net_port.get("rtspEnable")
 
         if enable_onvif is not None:
             await self.set_port_enabled(PortType.onvif, enable_onvif == 1)
