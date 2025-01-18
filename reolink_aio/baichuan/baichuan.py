@@ -173,16 +173,29 @@ class Baichuan:
             assert self._protocol is not None
             assert self._transport is not None
 
+        # check for simultaneous cmd_ids
+        if cmd_id in self._protocol.receive_futures:
+            try:
+                async with asyncio.timeout(TIMEOUT):
+                    try:
+                        await self._protocol.receive_futures[cmd_id]
+                    except Exception:
+                        pass
+                    while cmd_id in self._protocol.receive_futures:
+                        await asyncio.sleep(0.010)
+            except asyncio.TimeoutError as err:
+                raise ReolinkError(
+                    f"Baichuan host {self._host}: receive future is already set for cmd_id {cmd_id} "
+                    "and timeout waiting for it to finish, cannot receive multiple requests simultaneously"
+                ) from err
+
+        self._protocol.receive_futures[cmd_id] = self._loop.create_future()
+
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
                 _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension + body))
             else:
                 _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
-
-        if cmd_id in self._protocol.receive_futures:
-            raise ReolinkError(f"Baichuan host {self._host}: receive future is already set for cmd_id {cmd_id}, cannot receive multiple requests simultaneously")
-
-        self._protocol.receive_futures[cmd_id] = self._loop.create_future()
 
         try:
             async with asyncio.timeout(TIMEOUT):

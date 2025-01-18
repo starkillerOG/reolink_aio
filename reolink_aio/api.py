@@ -1432,6 +1432,8 @@ class Host:
         try:
             await self.login()
             return
+        except LoginPrivacyModeError:
+            raise
         except LoginError as exc:
             first_exc = exc
 
