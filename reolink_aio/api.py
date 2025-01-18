@@ -1829,6 +1829,10 @@ class Host:
             if self.backlight_state(channel) is not None:
                 self._capabilities[channel].add("backLight")
 
+            # Baichuan capabilities
+            if self.baichuan.privacy_mode(channel) is not None:
+                self._capabilities[channel].add("privacy_mode")
+
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
         if channel is None:
@@ -3268,6 +3272,8 @@ class Host:
         """Return the stream source url."""
         try:
             await self.login()
+        except LoginPrivacyModeError:
+            pass
         except LoginError:
             return None
 
