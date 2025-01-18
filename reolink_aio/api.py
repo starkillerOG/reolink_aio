@@ -2465,10 +2465,7 @@ class Host:
                 await self.get_rtsp_stream_source(channel, "main", check)
 
         if privacy_mode_enabled:
-            try:
-                await self.logout()
-            except ReolinkError:
-                pass
+            await self.expire_session(unsubscribe=False)
             await self.baichuan.set_privacy_mode(0, True)
 
         self._startup = False
