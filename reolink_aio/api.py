@@ -2244,7 +2244,6 @@ class Host:
 
         self.map_channels_json_response(json_data, channels, chime_ids)
 
-
     def get_raw_host_data(self) -> str:
         """Get the cache of the host data as a string."""
         return json_dumps(self._host_data_raw).decode("utf-8")
