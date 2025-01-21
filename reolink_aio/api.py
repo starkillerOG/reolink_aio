@@ -1524,7 +1524,7 @@ class Host:
                 except ReolinkError as err:
                     if self._updating:
                         _LOGGER.debug("Error while logging out during firmware reboot: %s", str(err))
-                    else:
+                    elif not self.baichuan.privacy_mode():
                         _LOGGER.warning("Error while logging out: %s", str(err))
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
@@ -2247,7 +2247,7 @@ class Host:
 
     def get_raw_host_data(self) -> str:
         """Get the cache of the host data as a string."""
-        return json_dumps(self._host_data_raw)
+        return json_dumps(self._host_data_raw).decode("utf-8")
 
     def set_raw_host_data(self, data: str) -> None:
         """Set the cache of the host data using a string."""
