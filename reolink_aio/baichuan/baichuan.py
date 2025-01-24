@@ -742,7 +742,7 @@ class Baichuan:
         self.last_privacy_check = time_now()
         return value
 
-    async def set_privacy_mode(self, channel: int, enable: bool) -> None:
+    async def set_privacy_mode(self, channel: int = 0, enable: bool = False) -> None:
         """Set the privacy mode"""
         enable_str = "1" if enable else "0"
         xml = xmls.SetPrivacyMode.format(enable=enable_str)
