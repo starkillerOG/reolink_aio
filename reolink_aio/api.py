@@ -21,7 +21,7 @@ from zipfile import ZipFile
 from statistics import mean
 from math import ceil
 
-from orjson import JSONDecodeError, loads as json_loads  # pylint: disable=no-name-in-module
+from orjson import JSONDecodeError, loads as json_loads, dumps as json_dumps  # pylint: disable=no-name-in-module
 from aiortsp.rtsp.connection import RTSPConnection  # type: ignore
 from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
@@ -258,6 +258,8 @@ class Host:
 
         ##############################################################################
         # Saved settings response-blocks
+        # Host data response
+        self._host_data_raw: dict = {}
         # Host-level
         self._time_settings: Optional[dict] = None
         self._host_time_difference: float = 0
@@ -1522,7 +1524,7 @@ class Host:
                 except ReolinkError as err:
                     if self._updating:
                         _LOGGER.debug("Error while logging out during firmware reboot: %s", str(err))
-                    else:
+                    elif not self.baichuan.privacy_mode():
                         _LOGGER.warning("Error while logging out: %s", str(err))
             # Reolink has a bug in some cameras' firmware: the Logout command issued without a token breaks the subsequent commands:
             # even if Login command issued AFTER that successfully returns a token, any command with that token would return "Please login first" error.
@@ -1832,6 +1834,8 @@ class Host:
             # Baichuan capabilities
             if self.baichuan.privacy_mode(channel) is not None:
                 self._capabilities[channel].add("privacy_mode")
+                if "privacy_mode" not in self._capabilities["Host"]:
+                    self._capabilities["Host"].add("privacy_mode")
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
@@ -2240,10 +2244,16 @@ class Host:
 
         self.map_channels_json_response(json_data, channels, chime_ids)
 
+    def get_raw_host_data(self) -> str:
+        """Get the cache of the host data as a string."""
+        return json_dumps(self._host_data_raw).decode("utf-8")
+
+    def set_raw_host_data(self, data: str) -> None:
+        """Set the cache of the host data using a string."""
+        self._host_data_raw = json_loads(data)
+
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
-        privacy_mode_enabled = False
-
         body: typings.reolink_json = [
             {"cmd": "GetChannelstatus"},
             {"cmd": "GetDevInfo", "action": 0, "param": {}},
@@ -2265,15 +2275,12 @@ class Host:
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining host-settings") from err
         except LoginPrivacyModeError:
-            privacy_mode_enabled = True
-            _LOGGER.debug("Temporarily disabeling privacy mode to get host data from %s", self._host)
-            await self.baichuan.set_privacy_mode(0, False)
-            await asyncio.sleep(5)  # give the camera some time to startup the HTTP API server
-            try:
-                json_data = await self.send(body, expected_response_type="json")
-            except ReolinkError:
-                await self.baichuan.set_privacy_mode(0, True)
+            if "host" not in self._host_data_raw:
                 raise
+            _LOGGER.debug("Using old host data for %s because privacy mode is enabled", self._host)
+            json_data = self._host_data_raw["host"]
+        else:
+            self._host_data_raw["host"] = json_data
 
         self.map_host_json_response(json_data)
         self.construct_capabilities(warnings=False)
@@ -2407,6 +2414,12 @@ class Host:
             raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
+        except LoginPrivacyModeError:
+            if "channel" not in self._host_data_raw:
+                raise
+            json_data = self._host_data_raw["channel"]
+        else:
+            self._host_data_raw["channel"] = json_data
 
         self.map_channels_json_response(json_data, channels)
 
@@ -2461,16 +2474,12 @@ class Host:
         # Check for special chars in password
         self.valid_password()
 
-        if self.protocol == "rtsp":
+        if self.protocol == "rtsp" and not self.baichuan.privacy_mode():
             # Cache the RTSP urls
             for channel in self._stream_channels:
                 check = not self.supported(channel, "battery")
                 await self.get_rtsp_stream_source(channel, "sub", check)
                 await self.get_rtsp_stream_source(channel, "main", check)
-
-        if privacy_mode_enabled:
-            await self.expire_session(unsubscribe=False)
-            await self.baichuan.set_privacy_mode(0, True)
 
         self._startup = False
 
