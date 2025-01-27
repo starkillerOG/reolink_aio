@@ -750,6 +750,10 @@ class Baichuan:
         # get the new privacy mode status
         await self.get_privacy_mode(channel)
 
+    async def reboot(self) -> None:
+        """Reboot the host device"""
+        await self.send(cmd_id=23)
+
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, **_kwargs) -> None:
         """Get the DingDongList info"""

@@ -3071,12 +3071,16 @@ class Host:
             raise NotSupportedError(f"Reboot: not supported by {self.nvr_name}")
 
         body = [{"cmd": "Reboot"}]
-        json_data = await self.send(body, expected_response_type="json")
+        try:
+            json_data = await self.send(body, expected_response_type="json")
 
-        if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
-            rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
-            detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
-            raise ApiError(f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}", rspCode=rspCode)
+            if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
+                rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
+                detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
+                raise ApiError(f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}", rspCode=rspCode)
+        except ReolinkError as err:
+            _LOGGER.debug("Error trying to reboot %s over HTTP(s): %s, trying baichuan reboot instead", err, self.nvr_name)
+            await self.baichuan.reboot()
 
     async def get_snapshot(self, channel: int, stream: Optional[str] = None) -> bytes | None:
         """Get the still image."""
