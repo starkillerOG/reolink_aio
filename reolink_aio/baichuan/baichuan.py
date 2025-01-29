@@ -490,7 +490,7 @@ class Baichuan:
                     continue
                 channels.add(channel)
                 data = self._get_keys_from_xml(
-                    root,
+                    event,
                     {
                         "adapterStatus": ("adapterStatus", str),
                         "batteryPercent": ("batteryPercent", int),
