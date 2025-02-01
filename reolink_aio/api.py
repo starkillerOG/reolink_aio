@@ -5748,6 +5748,24 @@ class Host:
                     f"Error decoding response to text: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
                     f"content type '{response.content_type}', charset '{response.charset}'"
                 ) from err
+            if retry == 1 and len(body) > 1 and expected_response_type == "json":
+                _LOGGER.debug(
+                    "Host %s error decoding response to text: %s, retrying by sending each command separately",
+                    self._host,
+                    str(err),
+                )
+                json_data_sep = []
+                for command in body:
+                    try:
+                        # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
+                        json_data_sep.extend(await self.send([command], param, expected_response_type, retry + 1))
+                    except ReolinkError as individual_err:
+                        raise InvalidContentTypeError(
+                            f"Error decoding response to text: originally received {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
+                            f"content type '{response.content_type}', charset '{response.charset}', "
+                            f"during separete sending retry of cmd '{command}' got error: {str(individual_err)}"
+                        ) from individual_err
+                return json_data_sep
             _LOGGER.debug("Error decoding response to text: %s, trying again", str(err))
             await self.expire_session(unsubscribe=False)
             return await self.send(body, param, expected_response_type, retry)
