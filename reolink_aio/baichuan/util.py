@@ -5,7 +5,7 @@ from hashlib import md5
 from collections.abc import Callable
 from ..exceptions import InvalidParameterError
 
-BC_PORT = 9000
+DEFAULT_BC_PORT = 9000
 HEADER_MAGIC = "f0debc0a"
 
 XML_KEY = [0x1F, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0xFF]

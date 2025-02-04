@@ -27,7 +27,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 import aiohttp
 
 from . import templates, typings
-from .baichuan import Baichuan, PortType
+from .baichuan import Baichuan, PortType, DEFAULT_BC_PORT
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
@@ -143,6 +143,7 @@ class Host:
         timeout: int = DEFAULT_TIMEOUT,
         rtmp_auth_method: str = DEFAULT_RTMP_AUTH_METHOD,
         aiohttp_get_session_callback=None,
+        bc_port: int = DEFAULT_BC_PORT,
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -183,7 +184,7 @@ class Host:
 
         ##############################################################################
         # Baichuan protocol (port 9000)
-        self.baichuan = Baichuan(host=host, username=username, password=password, http_api=self)
+        self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, http_api=self)
 
         ##############################################################################
         # NVR (host-level) attributes
@@ -3630,6 +3631,8 @@ class Host:
                     self._rtmp_enabled = net_port.get("rtmpEnable", 1) == 1
                     self._onvif_enabled = net_port.get("onvifEnable", 1) == 1
                     self._subscribe_url = f"http://{self._host}:{self._onvif_port}/onvif/event_service"
+                    if "mediaPort" in net_port:
+                        self.baichuan.port = net_port["mediaPort"]
 
                 elif data["cmd"] == "GetP2p":
                     self._nvr_uid = data["value"]["P2p"]["uid"]

@@ -23,7 +23,7 @@ from ..exceptions import (
 )
 from ..enums import BatteryEnum
 
-from .util import BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
+from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
 
 if TYPE_CHECKING:
     from ..api import Host
@@ -44,13 +44,13 @@ class Baichuan:
         host: str,
         username: str,
         password: str,
-        port: int = BC_PORT,
+        port: int = DEFAULT_BC_PORT,
         http_api: Host | None = None,
     ) -> None:
         self.http_api = http_api
 
         self._host: str = host
-        self._port: int = port
+        self.port: int = port
         self._username: str = username
         self._password: str = password
         self._nonce: str | None = None
@@ -112,7 +112,7 @@ class Baichuan:
                         return  # connection already opened in the meantime
 
                     self._transport, self._protocol = await self._loop.create_connection(
-                        lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self._port
+                        lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self.port
                     )
         except asyncio.TimeoutError as err:
             raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
@@ -692,6 +692,10 @@ class Baichuan:
                     continue
                 self._ports.setdefault(proto_key, {})
                 self._ports[proto_key][sub_key] = int(key.text)
+
+        if (bc_port := self._ports.get("server", {}).get("port")) is not None and bc_port != self.port:
+            _LOGGER.warning("Baichuan host %s: baichuan port changed from %s to %s", self._host, self.port, bc_port)
+            self.port = bc_port
 
         return self._ports
 
