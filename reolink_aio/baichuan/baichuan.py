@@ -6,7 +6,7 @@ import logging
 import asyncio
 from inspect import getmembers
 from time import time as time_now
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 from collections.abc import Callable
 from xml.etree import ElementTree as XML
 from Cryptodome.Cipher import AES
@@ -21,7 +21,7 @@ from ..exceptions import (
     ReolinkConnectionError,
     ReolinkTimeoutError,
 )
-from ..enums import BatteryEnum
+from ..enums import BatteryEnum, DayNightEnum
 
 from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
 
@@ -34,6 +34,8 @@ RETRY_ATTEMPTS = 3
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 15  # seconds
+
+T = TypeVar("T")
 
 
 class Baichuan:
@@ -358,18 +360,20 @@ class Baichuan:
                 self._keepalive_interval = max(MIN_KEEP_ALLIVE_INTERVAL, min(time_since_recv - 1, self._keepalive_interval - 1))
                 _LOGGER.debug("Baichuan host %s: reducing keepalive interval from %.2f to %.2f s", self._host, origianal_keepalive, self._keepalive_interval)
 
-    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None:
+    @overload
+    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None: ...
+    @overload
+    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str, type_class: type[T]) -> T | None: ...
+
+    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str, type_class=str):
         """Get a value for a key in a xml element"""
         xml_value = xml_element.find(f".//{key}")
         if xml_value is None:
             return None
-        return xml_value.text
+        return type_class(xml_value.text)
 
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
-        channel_str = self._get_value_from_xml_element(xml_element, key)
-        if channel_str is None:
-            return None
-        channel = int(channel_str)
+        channel = self._get_value_from_xml_element(xml_element, key, int)
         if self.http_api is not None and channel not in self.http_api._channels:
             return None
         return channel
@@ -380,7 +384,7 @@ class Baichuan:
             root = XML.fromstring(xml)
         else:
             root = xml
-        result = {}
+        result: dict[str, Any] = {}
         for key in keys:
             value = self._get_value_from_xml_element(root, key)
             if value is None:
@@ -410,6 +414,11 @@ class Baichuan:
 
         return self._nonce
 
+    async def _send_and_parse(self, cmd_id: int, channel: int | None = None) -> None:
+        """Send the command and parse the response"""
+        rec_body = await self.send(cmd_id=cmd_id, channel=channel)
+        self._parse_xml(cmd_id, rec_body)
+
     def _parse_xml(self, cmd_id: int, xml: str) -> None:
         """parce received xml"""
         if self.http_api is None:
@@ -420,7 +429,30 @@ class Baichuan:
         state: Any
         channels: set[int | None] = {None}
         cmd_ids: set[int | None] = {None, cmd_id}
-        if cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
+        if cmd_id == 26:
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            VideoInput = root.find(".//VideoInput")
+            data = self._get_keys_from_xml(
+                VideoInput,
+                {
+                    "bright": ("bright", int),
+                    "contrast": ("contrast", int),
+                    "saturation": ("saturation", int),
+                    "hue": ("hue", str),
+                    "sharpen": ("sharpen", int),
+                },
+            )
+            self.http_api._image_settings[channel]["Image"].update(data)
+            DayNight = root.find(".//DayNight")
+            value = self._get_value_from_xml_element(DayNight, "mode")
+            value = value.replace("And", "&")
+            value = value[0].upper() + value[1:]
+            self.http_api._isp_settings[channel]["Isp"]["dayNight"] = DayNightEnum(value).value
+
+        elif cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
             for event_list in root:
                 for event in event_list:
                     channel = self._get_channel_from_xml_element(event)
@@ -472,7 +504,7 @@ class Baichuan:
                             self._log_once.append(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
-        if cmd_id == 145:  # ChannelInfoList: Sleep status
+        elif cmd_id == 145:  # ChannelInfoList: Sleep status
             for event in root.findall(".//ChannelInfo"):
                 channel = self._get_channel_from_xml_element(event)
                 if channel is None:
@@ -483,7 +515,7 @@ class Baichuan:
                     _LOGGER.debug("Reolink %s TCP event channel %s, sleeping: %s", self.http_api.nvr_name, channel, state)
                 self.http_api._sleep[channel] = state
 
-        if cmd_id == 252:  # BatteryInfo
+        elif cmd_id == 252:  # BatteryInfo
             for event in root.findall(".//BatteryInfo"):
                 channel = self._get_channel_from_xml_element(event)
                 if channel is None:
@@ -519,10 +551,18 @@ class Baichuan:
                     if channel is None:
                         continue
                     channels.add(channel)
-                    state = self._get_value_from_xml_element(event, "status")
+                    state = self._get_value_from_xml_element(event, "status", int)
                     if state is not None and channel in self.http_api._whiteled_settings:
-                        self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = int(state)
+                        self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
+
+        elif cmd_id == 580:  # modify Cfg
+            channel = self._get_channel_from_xml_element(root)
+            cmd_id_modified = self._get_value_from_xml_element(root, "cmdId", int)
+            if cmd_id_modified not in {26}:
+                return
+            self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
+            return
 
         elif cmd_id == 623:  # Privacy mode
             channel = 0
