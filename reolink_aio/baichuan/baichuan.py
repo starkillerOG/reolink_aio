@@ -434,23 +434,26 @@ class Baichuan:
             if channel is None:
                 return
             channels.add(channel)
-            VideoInput = root.find(".//VideoInput")
-            data = self._get_keys_from_xml(
-                VideoInput,
-                {
-                    "bright": ("bright", int),
-                    "contrast": ("contrast", int),
-                    "saturation": ("saturation", int),
-                    "hue": ("hue", str),
-                    "sharpen": ("sharpen", int),
-                },
-            )
-            self.http_api._image_settings[channel]["Image"].update(data)
-            DayNight = root.find(".//DayNight")
-            value = self._get_value_from_xml_element(DayNight, "mode")
-            value = value.replace("And", "&")
-            value = value[0].upper() + value[1:]
-            self.http_api._isp_settings[channel]["Isp"]["dayNight"] = DayNightEnum(value).value
+
+            if (VideoInput := root.find(".//VideoInput")) is not None:
+                data = self._get_keys_from_xml(
+                    VideoInput,
+                    {
+                        "bright": ("bright", int),
+                        "contrast": ("contrast", int),
+                        "saturation": ("saturation", int),
+                        "hue": ("hue", str),
+                        "sharpen": ("sharpen", int),
+                    },
+                )
+                self.http_api._image_settings[channel]["Image"].update(data)
+
+            if (DayNight := root.find(".//DayNight")) is not None:
+                value = self._get_value_from_xml_element(DayNight, "mode")
+                if value is not None:
+                    value = value.replace("And", "&")
+                    value = value[0].upper() + value[1:]
+                    self.http_api._isp_settings[channel]["Isp"]["dayNight"] = DayNightEnum(value).value
 
         elif cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
             for event_list in root:
@@ -569,9 +572,8 @@ class Baichuan:
             channels.add(channel)
             state = self._get_value_from_xml_element(root, "sleep")
             if state is not None:
-                value = state == "1"
-                self._privacy_mode[channel] = value
-                _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, value)
+                self._privacy_mode[channel] = state == "1"
+                _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, self._privacy_mode[channel])
 
         # call the callbacks
         for cmd in cmd_ids:
