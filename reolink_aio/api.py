@@ -3464,6 +3464,7 @@ class Host:
         for data in json_data:
             try:
                 if data["code"] == 1:  # Error, like "ability error"
+                    _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
                 if data["cmd"] == "GetChannelstatus":
@@ -5763,11 +5764,8 @@ class Host:
                         # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
                         json_data_sep.extend(await self.send([command], param, expected_response_type, retry + 1))
                     except ReolinkError as individual_err:
-                        raise InvalidContentTypeError(
-                            f"Error decoding response to text: originally received {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
-                            f"content type '{response.content_type}', charset '{response.charset}', "
-                            f"during separete sending retry of cmd '{command}' got error: {str(individual_err)}"
-                        ) from individual_err
+                        json_data_sep.append({"cmd": "Failed", "code": 1, "error": {"detail": f"Error decoding response to {command}", "rspCode": -9999}})
+                        _LOGGER.debug("Error decoding response to text during separete sending retry of cmd '%s' got error: %s", command, str(individual_err))
                 return json_data_sep
             _LOGGER.debug("Error decoding response to text: %s, trying again", str(err))
             await self.expire_session(unsubscribe=False)
