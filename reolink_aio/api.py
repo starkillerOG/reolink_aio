@@ -185,6 +185,7 @@ class Host:
         ##############################################################################
         # Baichuan protocol (port 9000)
         self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, http_api=self)
+        self.baichuan_cmds: set[str] = set()
 
         ##############################################################################
         # NVR (host-level) attributes
@@ -3464,7 +3465,8 @@ class Host:
         for data in json_data:
             try:
                 if data["code"] == 1:  # Error, like "ability error"
-                    _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
+                    if not data.get("Baichuan_fallback_succes"):
+                        _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
                 if data["cmd"] == "GetChannelstatus":
@@ -3693,7 +3695,8 @@ class Host:
         for data in json_data:
             try:
                 if data["code"] == 1:  # -->Error, like "ability error"
-                    _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
+                    if not data.get("Baichuan_fallback_succes"):
+                        _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
                 if data["cmd"] == "GetChnTypeInfo":
@@ -5515,11 +5518,13 @@ class Host:
         """Generic send method."""
         retry = retry - 1
 
+        cmds = [cmd.get("cmd", "") for cmd in body]
+        baichuan_idxs: dict[int, str] = {}
         if expected_response_type in ["image/jpeg", "application/octet-stream"]:
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
         else:
-            cur_command = "" if len(body) == 0 else body[0].get("cmd", "")
+            cur_command = "" if len(cmds) == 0 else cmds[0]
             is_login_logout = cur_command in ["Login", "Logout"]
 
         if not is_login_logout:
@@ -5534,6 +5539,25 @@ class Host:
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, self.hide_password(param))
+
+        # filter baichuan fallbacks
+        filtered_body = body
+        if expected_response_type == "json" and self.baichuan_cmds:
+            filtered_body = body.copy()
+            for baichuan_cmd in self.baichuan_cmds:
+                if baichuan_cmd in cmds:
+                    idx = cmds.index(baichuan_cmd)
+                    func = self.baichuan.cmd_funcs[baichuan_cmd]
+                    args = body[idx].get("param", {})
+                    try:
+                        await func(**args)
+                    except ReolinkError as err:
+                        _LOGGER.debug("Baichuan failed for %s: %s", baichuan_cmd, str(err))
+                        continue
+                    _LOGGER.debug("Used Baichuan for %s successfully", baichuan_cmd)
+                    baichuan_idxs[idx] = baichuan_cmd
+            for idx in sorted(baichuan_idxs, reverse=True):       
+               filtered_body.pop(idx)
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -5556,11 +5580,11 @@ class Host:
                     data = await response.text(encoding="utf-8")  # Error occured, read the error message
             else:
                 if _LOGGER.isEnabledFor(logging.DEBUG):
-                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, self.hide_password(body))
+                    _LOGGER.debug("%s/%s:%s::send() HTTP Request body =\n%s\n", self.nvr_name, self._host, self._port, self.hide_password(filtered_body))
 
                 async with asyncio.timeout(self.timeout + 5):
                     async with self._send_mutex:
-                        response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False, timeout=self._timeout)
+                        response = await self._aiohttp_session.post(url=self._url, json=filtered_body, params=param, allow_redirects=False, timeout=self._timeout)
 
                     data = await response.text(encoding="utf-8")  # returns str
 
@@ -5648,7 +5672,7 @@ class Host:
                 except (TypeError, JSONDecodeError) as err:
                     if retry <= 0:
                         raise InvalidContentTypeError(
-                            f"Error translating JSON response: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
+                            f"Error translating JSON response: {str(err)}, from commands {cmds}, "
                             f"content type '{response.content_type}', data:\n{data}\n"
                         ) from err
                     _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), self.hide_password(data))
@@ -5657,6 +5681,11 @@ class Host:
                 if json_data is None:
                     await self.expire_session(unsubscribe=False)
                     raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
+
+                # re-insert baichuan fallbacks
+                for idx, cmd in sorted(baichuan_idxs.items()):
+                    json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
+
                 if len(json_data) != len(body) and len(body) != 1:
                     if retry <= 0:
                         raise UnexpectedDataError(
@@ -5696,23 +5725,26 @@ class Host:
                 retry_idxs = []
                 for idx, cmd_data in enumerate(json_data):
                     if cmd_data["code"] != 0:
-                        cmd = body[idx]
+                        cmd_body = body[idx]
+                        cmd = cmd_body.get("cmd")
+                        rsp_code = cmd_data.get("error", {}).get("rspCode", 0)
                         # check if baichuan has a fallback function
-                        if retry > 0 and cmd.get("cmd") in self.baichuan.cmd_funcs and cmd_data.get("error", {}).get("rspCode", 0) in [-4, -9, -12, -13, -17]:
-                            func = self.baichuan.cmd_funcs[cmd["cmd"]]
-                            args = cmd.get("param", {})
+                        if retry > 0 and cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
+                            func = self.baichuan.cmd_funcs[cmd]
+                            args = cmd_body.get("param", {})
                             try:
                                 await func(**args)
                             except ReolinkError as err:
-                                _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd.get("cmd"), str(err))
+                                _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd, str(err))
                                 json_data[idx]["Baichuan_fallback_succes"] = False
                             else:
-                                _LOGGER.debug("Baichuan fallback succeeded for %s", cmd.get("cmd"))
+                                _LOGGER.debug("Baichuan fallback succeeded for %s", cmd)
                                 json_data[idx]["Baichuan_fallback_succes"] = True
+                                self.baichuan_cmds.add(cmd)
                                 continue
-                        if cmd_data.get("error", {}).get("rspCode", 0) in [-12, -13, -17]:
+                        if rsp_code in [-12, -13, -17]:
                             # add to the list of cmds to retry
-                            retry_cmd.append(cmd)
+                            retry_cmd.append(cmd_body)
                             retry_idxs.append(idx)
                 if retry_cmd and retry > 0:
                     _LOGGER.debug(
@@ -5749,7 +5781,7 @@ class Host:
         except UnicodeDecodeError as err:
             if retry <= 0:
                 raise InvalidContentTypeError(
-                    f"Error decoding response to text: {str(err)}, from commands {[cmd.get('cmd') for cmd in body]}, "
+                    f"Error decoding response to text: {str(err)}, from commands {cmds}, "
                     f"content type '{response.content_type}', charset '{response.charset}'"
                 ) from err
             if retry == 1 and len(body) > 1 and expected_response_type == "json":
