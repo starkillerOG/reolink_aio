@@ -2346,7 +2346,7 @@ class Host:
             ch_body.append({"cmd": "GetOsd", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "quick_reply"):
                 ch_body.append({"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}})
-            if self.api_version("supportDingDongCtrl", channel) > 0:
+            if self.api_version("supportDingDongCtrl", channel) > 0 and not (self._is_hub and self.supported(channel, "battery")):
                 ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "webhook"):
                 ch_body.append({"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}})
