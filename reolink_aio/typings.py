@@ -419,6 +419,9 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     if len(split) == 6:
         # RecM01_20201222_075939_080140_6D28808_1A468F9
         (_, start_date, start_time, end_time, hex_value, _filesize) = split
+    elif len(split) == 7:
+        # RecS07_20250219_111146_111238_0_A714C0A000_21E67C
+        (_, start_date, start_time, end_time, _animal_type, hex_value, _filesize) = split
     elif len(split) == 9:
         # RecM02_DST20240827_090302_090334_0_800_800_033C820000_61B6F0
         dev_type = "hub"
@@ -523,6 +526,7 @@ FLAGS_LENGTH = {
         2: 7,  # Version 2
         3: 7,  # Version 3
         4: 9,  # Version 4
+        7: 10,  # Version 7
         9: 14,  # Version 9
     },
     "hub": {
@@ -535,6 +539,7 @@ FLAGS_MAPPING = {
         2: FLAGS_CAM_V2,
         3: FLAGS_CAM_V2,
         4: FLAGS_CAM_V2,
+        7: FLAGS_CAM_V2,
         9: FLAGS_CAM_V2,
     },
     "hub": {
