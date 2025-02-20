@@ -2431,6 +2431,11 @@ class Host:
         self.map_channels_json_response(json_data, channels)
 
         # Baichuan fallbacks
+        try:
+            await self.baichuan.get_privacy_mode()
+        except ReolinkError:
+            pass
+
         for channel in self._channels:
             try:
                 if await self.baichuan.get_cry_detection_supported(channel):
