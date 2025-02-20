@@ -223,9 +223,9 @@ class Baichuan:
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if len(rec_body) > 0:
-                _LOGGER.debug("Baichuan host %s: received:\n%s", self._host, self._hide_password(rec_body))
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s:\n%s", self._host, cmd_id, self._hide_password(rec_body))
             else:
-                _LOGGER.debug("Baichuan host %s: received status 200:OK without body", self._host)
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s status 200:OK without body", cmd_id, self._host)
 
         return rec_body
 
