@@ -5564,6 +5564,9 @@ class Host:
                     baichuan_idxs[idx] = baichuan_cmd
             for idx in sorted(baichuan_idxs, reverse=True):
                 filtered_body.pop(idx)
+            if not filtered_body and baichuan_idxs:
+                _LOGGER.debug("No commands left after Baichuan filtering, continuing with parsing")
+                return await self._parse_json("[]", baichuan_idxs, body, param, retry)
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -5673,96 +5676,7 @@ class Host:
                 raise InvalidContentTypeError(err_mess)
 
             if expected_response_type == "json" and isinstance(data, str):
-                try:
-                    json_data = json_loads(data)
-                except (TypeError, JSONDecodeError) as err:
-                    if retry <= 0:
-                        raise InvalidContentTypeError(
-                            f"Error translating JSON response: {str(err)}, from commands {cmds}, " f"content type '{response.content_type}', data:\n{data}\n"
-                        ) from err
-                    _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), self.hide_password(data))
-                    await self.expire_session(unsubscribe=False)
-                    return await self.send(body, param, expected_response_type, retry)
-                if json_data is None:
-                    await self.expire_session(unsubscribe=False)
-                    raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
-
-                # re-insert baichuan fallbacks
-                for idx, cmd in sorted(baichuan_idxs.items()):
-                    json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
-
-                if len(json_data) != len(body) and len(body) != 1:
-                    if retry <= 0:
-                        raise UnexpectedDataError(
-                            f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
-                        )
-                    if retry == 1:
-                        _LOGGER.debug(
-                            "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
-                            self._host,
-                            self._port,
-                            len(json_data),
-                            len(body),
-                        )
-                        json_data_sep = []
-                        for command in body:
-                            try:
-                                # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
-                                json_data_sep.extend(await self.send([command], param, expected_response_type, retry + 1))
-                            except ReolinkError as err:
-                                raise UnexpectedDataError(
-                                    f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
-                                    f"while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
-                                ) from err
-                        return json_data_sep
-
-                    _LOGGER.debug(
-                        "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, trying again",
-                        self._host,
-                        self._port,
-                        len(json_data),
-                        len(body),
-                    )
-                    await self.expire_session(unsubscribe=False)
-                    return await self.send(body, param, expected_response_type, retry)
-                # retry commands that have not been received by the camera (battery cam waking from sleep)
-                retry_cmd = []
-                retry_idxs = []
-                for idx, cmd_data in enumerate(json_data):
-                    if cmd_data["code"] != 0:
-                        cmd_body = body[idx]
-                        cmd = cmd_body.get("cmd", "")
-                        rsp_code = cmd_data.get("error", {}).get("rspCode", 0)
-                        # check if baichuan has a fallback function
-                        if retry > 0 and cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
-                            func = self.baichuan.cmd_funcs[cmd]
-                            args = cmd_body.get("param", {})
-                            try:
-                                await func(**args)
-                            except ReolinkError as err:
-                                _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd, str(err))
-                                json_data[idx]["Baichuan_fallback_succes"] = False
-                            else:
-                                _LOGGER.debug("Baichuan fallback succeeded for %s", cmd)
-                                json_data[idx]["Baichuan_fallback_succes"] = True
-                                self.baichuan_cmds.add(cmd)
-                                continue
-                        if rsp_code in [-12, -13, -17]:
-                            # add to the list of cmds to retry
-                            retry_cmd.append(cmd_body)
-                            retry_idxs.append(idx)
-                if retry_cmd and retry > 0:
-                    _LOGGER.debug(
-                        "cmd %s: returned response code %s/%s, retrying in 1.0 s",
-                        [cmd.get("cmd") for cmd in retry_cmd],
-                        [json_data[idx].get("error", {}).get("rspCode") for idx in retry_idxs],
-                        [json_data[idx].get("error", {}).get("detail") for idx in retry_idxs],
-                    )
-                    await asyncio.sleep(1.0)  # give the battery cam time to wake
-                    retry_data = await self.send(retry_cmd, param, expected_response_type, retry)
-                    for idx, retry_resp in enumerate(retry_data):
-                        json_data[retry_idxs[idx]] = retry_resp
-                return json_data
+                return await self._parse_json(data, baichuan_idxs, body, param, retry)
 
             if expected_response_type == "image/jpeg" and isinstance(data, bytes):
                 return data
@@ -5844,6 +5758,105 @@ class Host:
             _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
             await self.expire_session()
             raise err
+
+    async def _parse_json(
+        self,
+        data: str,
+        baichuan_idxs: dict[int, str],
+        body: typings.reolink_json,
+        param: dict[str, Any] | None,
+        retry: int,
+    ) -> typings.reolink_json:
+        """Parse a json response."""
+        try:
+            json_data = json_loads(data)
+        except (TypeError, JSONDecodeError) as err:
+            if retry <= 0:
+                cmds = [cmd.get("cmd", "") for cmd in body]
+                raise InvalidContentTypeError(f"Error translating JSON response: {str(err)}, from commands {cmds}, data:\n{data}\n") from err
+            _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), self.hide_password(data))
+            await self.expire_session(unsubscribe=False)
+            return await self.send(body, param, "json", retry)
+        if json_data is None:
+            await self.expire_session(unsubscribe=False)
+            raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
+
+        # re-insert baichuan fallbacks
+        for idx, cmd in sorted(baichuan_idxs.items()):
+            json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
+
+        if len(json_data) != len(body) and len(body) != 1:
+            if retry <= 0:
+                raise UnexpectedDataError(
+                    f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
+                )
+            if retry == 1:
+                _LOGGER.debug(
+                    "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
+                    self._host,
+                    self._port,
+                    len(json_data),
+                    len(body),
+                )
+                json_data_sep = []
+                for command in body:
+                    try:
+                        # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
+                        json_data_sep.extend(await self.send([command], param, "json", retry + 1))
+                    except ReolinkError as err:
+                        raise UnexpectedDataError(
+                            f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
+                            f"while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
+                        ) from err
+                return json_data_sep
+
+            _LOGGER.debug(
+                "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, trying again",
+                self._host,
+                self._port,
+                len(json_data),
+                len(body),
+            )
+            await self.expire_session(unsubscribe=False)
+            return await self.send(body, param, "json", retry)
+        # retry commands that have not been received by the camera (battery cam waking from sleep)
+        retry_cmd = []
+        retry_idxs = []
+        for idx, cmd_data in enumerate(json_data):
+            if cmd_data["code"] != 0:
+                cmd_body = body[idx]
+                cmd = cmd_body.get("cmd", "")
+                rsp_code = cmd_data.get("error", {}).get("rspCode", 0)
+                # check if baichuan has a fallback function
+                if retry > 0 and cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
+                    func = self.baichuan.cmd_funcs[cmd]
+                    args = cmd_body.get("param", {})
+                    try:
+                        await func(**args)
+                    except ReolinkError as err:
+                        _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd, str(err))
+                        json_data[idx]["Baichuan_fallback_succes"] = False
+                    else:
+                        _LOGGER.debug("Baichuan fallback succeeded for %s", cmd)
+                        json_data[idx]["Baichuan_fallback_succes"] = True
+                        self.baichuan_cmds.add(cmd)
+                        continue
+                if rsp_code in [-12, -13, -17]:
+                    # add to the list of cmds to retry
+                    retry_cmd.append(cmd_body)
+                    retry_idxs.append(idx)
+        if retry_cmd and retry > 0:
+            _LOGGER.debug(
+                "cmd %s: returned response code %s/%s, retrying in 1.0 s",
+                [cmd.get("cmd") for cmd in retry_cmd],
+                [json_data[idx].get("error", {}).get("rspCode") for idx in retry_idxs],
+                [json_data[idx].get("error", {}).get("detail") for idx in retry_idxs],
+            )
+            await asyncio.sleep(1.0)  # give the battery cam time to wake
+            retry_data = await self.send(retry_cmd, param, "json", retry)
+            for idx, retry_resp in enumerate(retry_data):
+                json_data[retry_idxs[idx]] = retry_resp
+        return json_data
 
     @overload
     async def send_reolink_com(
