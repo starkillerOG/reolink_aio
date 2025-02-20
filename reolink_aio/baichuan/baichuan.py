@@ -801,13 +801,23 @@ class Baichuan:
         await self.send(cmd_id=23)
 
     @http_cmd("GetDingDongList")
-    async def GetDingDongList(self, channel: int, **_kwargs) -> None:
+    async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
         """Get the DingDongList info"""
+        retry = retry - 1
         if self.http_api is None:
             return
 
         mess = await self.send(cmd_id=484, channel=channel)
         root = XML.fromstring(mess)
+
+        # check channel
+        rec_channel = self._get_channel_from_xml_element(root, "channel")
+        if rec_channel is not None and rec_channel != channel:
+            # got a push command not belonging to the intended channel, retry
+            if retry < 0:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: GetDingDongList received channel {rec_channel} while requesting channel {channel}")
+            _LOGGER.debug("Baichuan host %s: GetDingDongList received channel %s from a push while requesting channel %s, retrying...", self._host, rec_channel, channel)
+            return self.GetDingDongList(channel=channel, retry=retry)
 
         chime_list = []
         for chime in root.findall(".//dingdongDeviceInfo"):
