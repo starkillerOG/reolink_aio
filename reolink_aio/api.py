@@ -60,7 +60,7 @@ from .exceptions import (
     ReolinkTimeoutError,
 )
 from .software_version import SoftwareVersion, NewSoftwareVersion, MINIMUM_FIRMWARE
-from .utils import datetime_to_reolink_time, reolink_time_to_datetime, strip_model_str
+from .utils import datetime_to_reolink_time, reolink_time_to_datetime, strip_model_str, search_channel
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
@@ -1865,11 +1865,14 @@ class Host:
 
         return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", no_key_return)
 
-    async def get_state(self, cmd: str) -> None:
+    async def get_state(self, cmd: str, ch: int | None = None) -> None:
+        stream_channels = [ch] if ch is not None else self._stream_channels
+        request_channels = [ch] if ch is not None else self._channels
+
         body = []
         channels = []
         chime_ids = []
-        for channel in self._stream_channels:
+        for channel in stream_channels:
             ch_body = []
             if cmd == "GetEnc":
                 ch_body = [{"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}]
@@ -1879,7 +1882,7 @@ class Host:
             channels.extend([channel] * len(ch_body))
             chime_ids.extend([-1] * len(ch_body))
 
-        for channel in self._channels:
+        for channel in request_channels:
             ch_body = []
             if cmd == "GetIsp":
                 ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
@@ -1992,6 +1995,8 @@ class Host:
                 if not chime.online:
                     continue
                 chime_ch = chime.channel
+                if ch is not None and chime_ch != ch:
+                    continue
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
                 channels.append(chime_ch)
                 chime_ids.append(chime_id)
@@ -4158,9 +4163,7 @@ class Host:
             }
         ]
 
-        await self.send_setting(body)
-        await asyncio.sleep(3)
-        await self.get_state(cmd="GetZoomFocus")
+        await self.send_setting(body, getcmd="GetZoomFocus", wait_before_get=3)
 
     def autofocus_enabled(self, channel: int) -> bool:
         """Auto focus enabled."""
@@ -4211,9 +4214,7 @@ class Host:
             }
         ]
 
-        await self.send_setting(body)
-        await asyncio.sleep(3)
-        await self.get_state(cmd="GetZoomFocus")
+        await self.send_setting(body, getcmd="GetZoomFocus", wait_before_get=3)
 
     def ptz_presets(self, channel: int) -> dict:
         if channel not in self._ptz_presets:
@@ -4604,7 +4605,7 @@ class Host:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
-        await self.get_state(cmd="GetRec")
+        await self.get_state(cmd="GetRec", ch=channel)
         if channel not in self._recording_settings:
             raise NotSupportedError(f"set_recording: recording on camera {self.camera_name(channel)} is not available")
 
@@ -4650,7 +4651,7 @@ class Host:
     async def set_audio(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_audio: no camera connected to channel '{channel}'")
-        await self.get_state(cmd="GetEnc")
+        await self.get_state(cmd="GetEnc", ch=channel)
         if channel not in self._enc_settings:
             raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
@@ -4662,7 +4663,7 @@ class Host:
     async def set_bit_rate(self, channel: int, value: int, stream: str | None = None) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_bit_rate: no camera connected to channel '{channel}'")
-        await self.get_state(cmd="GetEnc")
+        await self.get_state(cmd="GetEnc", ch=channel)
         if channel not in self._enc_settings:
             raise NotSupportedError(f"set_bit_rate: Bit rate on camera {self.camera_name(channel)} is not available")
         if stream is None:
@@ -4676,7 +4677,7 @@ class Host:
     async def set_frame_rate(self, channel: int, value: int, stream: str | None = None) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_frame_rate: no camera connected to channel '{channel}'")
-        await self.get_state(cmd="GetEnc")
+        await self.get_state(cmd="GetEnc", ch=channel)
         if channel not in self._enc_settings:
             raise NotSupportedError(f"set_frame_rate: Frame rate on camera {self.camera_name(channel)} is not available")
         if stream is None:
@@ -5015,7 +5016,7 @@ class Host:
     async def set_daynight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_daynight: no camera connected to channel '{channel}'")
-        await self.get_state(cmd="GetIsp")
+        await self.get_state(cmd="GetIsp", ch=channel)
         if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_daynight: ISP on camera {self.camera_name(channel)} is not available")
 
@@ -5033,7 +5034,7 @@ class Host:
             raise InvalidParameterError(f"set_binning_mode: no camera connected to channel '{channel}'")
         if not self.supported(channel, "binning_mode"):
             raise NotSupportedError(f"set_binning_mode: ISP Binning mode on camera {self.camera_name(channel)} is not available")
-        await self.get_state(cmd="GetIsp")
+        await self.get_state(cmd="GetIsp", ch=channel)
         if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_binning_mode: ISP on camera {self.camera_name(channel)} is not available")
 
@@ -5051,7 +5052,7 @@ class Host:
             raise InvalidParameterError(f"set_HDR: no camera connected to channel '{channel}'")
         if not self.supported(channel, "HDR"):
             raise NotSupportedError(f"set_HDR: ISP HDR on camera {self.camera_name(channel)} is not available")
-        await self.get_state(cmd="GetIsp")
+        await self.get_state(cmd="GetIsp", ch=channel)
         if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_HDR: ISP on camera {self.camera_name(channel)} is not available")
 
@@ -5071,7 +5072,7 @@ class Host:
     async def set_daynight_threshold(self, channel: int, value: int) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_daynight_threshold: no camera connected to channel '{channel}'")
-        await self.get_state(cmd="GetIsp")
+        await self.get_state(cmd="GetIsp", ch=channel)
         if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_daynight_threshold: ISP on camera {self.camera_name(channel)} is not available")
         if value < 0 or value > 100:
@@ -5085,7 +5086,7 @@ class Host:
     async def set_backlight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_backlight: no camera connected to channel '{channel}'")
-        await self.get_state(cmd="GetIsp")
+        await self.get_state(cmd="GetIsp", ch=channel)
         if channel not in self._isp_settings or not self._isp_settings[channel]:
             raise NotSupportedError(f"set_backlight: ISP on camera {self.camera_name(channel)} is not available")
 
@@ -5373,9 +5374,10 @@ class Host:
         if not getcmd and command[:3] == "Set":
             getcmd = command.replace("Set", "Get")
         if getcmd:
+            ch = search_channel(body)
             if wait_before_get > 0:
                 await asyncio.sleep(wait_before_get)
-            await self.get_state(cmd=getcmd)
+            await self.get_state(cmd=getcmd, ch=ch)
 
     @overload
     async def send(

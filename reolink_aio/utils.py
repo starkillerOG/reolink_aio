@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, tzinfo as _TzInfo
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .typings import reolink_json
 
 
 def reolink_time_to_datetime(time: dict[str, int], tzinfo: Optional[_TzInfo] = None) -> datetime:
@@ -37,3 +40,16 @@ def strip_model_str(string: str) -> str:
     string = re.sub("[(].*?[)]", "", string)
     string = re.sub("[（].*?[）]", "", string)
     return string.replace(" ", "")
+
+
+def search_channel(body: reolink_json) -> int | None:
+    ch: int | None = None
+    try:
+        par = body[0].get("param", {})
+        ch = par.get("channel")
+        if ch is None:
+            params: dict = next(iter(par.values()), {})
+            ch = params.get("channel")
+    except AttributeError:
+        pass
+    return ch
