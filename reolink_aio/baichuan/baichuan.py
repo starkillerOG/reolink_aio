@@ -129,6 +129,7 @@ class Baichuan:
         extension: str = "",
         enc_type: EncType = EncType.AES,
         message_class: str = "1464",
+        mess_id: int | None = None,
         retry: int = RETRY_ATTEMPTS,
     ) -> str:
         """Generic baichuan send method."""
@@ -138,9 +139,14 @@ class Baichuan:
             # not logged in and requesting a non login/logout cmd, first login
             await self.login()
 
-        mess_id = 250  # 0 = push, 1-100 = channel, 250 = host
+        # mess_id: 0/251 = push, 1-100 = channel, 250 = host
+        if mess_id is None:
+            if channel is None:
+                mess_id = 250
+            else:
+                mess_id = channel + 1
+
         if channel is not None:
-            mess_id = channel + 1
             if extension:
                 raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
             extension = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
@@ -212,7 +218,7 @@ class Baichuan:
             if retry <= 0 or cmd_id == 2:
                 raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
             _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, retry)
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, mess_id, retry)
         finally:
             if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
                 if not receive_future.done():
@@ -354,7 +360,7 @@ class Baichuan:
         """Try to reestablish the connection after a connection is closed"""
         time_start = time_now()
         try:
-            await self.send(cmd_id=31)  # Subscribe to events
+            await self.send(cmd_id=31, mess_id=251)  # Subscribe to events
         except Exception as err:
             _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s and failed to reestablished connection", self._host, time_since_recv)
             _LOGGER.debug("Baichuan host %s: failed to reestablished connection: %s", self._host, str(err))
@@ -606,7 +612,7 @@ class Baichuan:
                     if self._events_active:
                         await self.send(cmd_id=93)  # LinkType is used as keepalive
                     else:
-                        await self.send(cmd_id=31)  # Subscribe to events
+                        await self.send(cmd_id=31, mess_id=251)  # Subscribe to events
                 except Exception as err:
                     _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
 
@@ -633,7 +639,7 @@ class Baichuan:
         self._subscribed = True
         self._time_keepalive_loop = time_now()
         try:
-            await self.send(cmd_id=31)
+            await self.send(cmd_id=31, mess_id=251)
         except Exception as err:
             _LOGGER.debug("Baichuan host %s: error while subscribing: %s", self._host, str(err))
         if self._keepalive_task is None:

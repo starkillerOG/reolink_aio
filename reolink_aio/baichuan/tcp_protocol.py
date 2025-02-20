@@ -95,7 +95,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         """Parse received data"""
         rec_cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
         rec_len_body = int.from_bytes(self._data[8:12], byteorder="little")
-        rec_mess_id = int.from_bytes(self._data[12:16], byteorder="little")  # mess_id = enc_offset: 0 = push, 250 = host, 1-100 = channel
+        rec_mess_id = int.from_bytes(self._data[12:16], byteorder="little")  # mess_id = enc_offset: 0/251 = push, 250 = host, 1-100 = channel
 
         mess_class = self._data[18:20].hex()
 
