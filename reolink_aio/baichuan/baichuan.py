@@ -129,7 +129,7 @@ class Baichuan:
         extension: str = "",
         enc_type: EncType = EncType.AES,
         message_class: str = "1464",
-        enc_offset: int = 0,
+        mess_id: int | None = None,
         retry: int = RETRY_ATTEMPTS,
     ) -> str:
         """Generic baichuan send method."""
@@ -138,6 +138,13 @@ class Baichuan:
         if not self._logged_in and cmd_id > 2:
             # not logged in and requesting a non login/logout cmd, first login
             await self.login()
+
+        # mess_id: 0/251 = push, 1-100 = channel, 250 = host
+        if mess_id is None:
+            if channel is None:
+                mess_id = 250
+            else:
+                mess_id = channel + 1
 
         if channel is not None:
             if extension:
@@ -149,22 +156,22 @@ class Baichuan:
 
         cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
         mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
-        enc_offset_bytes = (enc_offset).to_bytes(4, byteorder="little")
+        mess_id_bytes = (mess_id).to_bytes(4, byteorder="little")
         payload_offset_bytes = (payload_offset).to_bytes(4, byteorder="little")
 
         if message_class == "1465":
             encrypt = "12dc"
-            header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + enc_offset_bytes + bytes.fromhex(encrypt + message_class)
+            header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex(encrypt + message_class)
         elif message_class == "1464":
             status_code = "0000"
-            header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + enc_offset_bytes + bytes.fromhex(status_code + message_class) + payload_offset_bytes
+            header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex(status_code + message_class) + payload_offset_bytes
         else:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param message_class '{message_class}'")
 
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(extension, enc_offset) + encrypt_baichuan(body, enc_offset)
+                enc_body_bytes = encrypt_baichuan(extension, mess_id) + encrypt_baichuan(body, mess_id)  # enc_offset = mess_id
             elif enc_type == EncType.AES:
                 enc_body_bytes = self._aes_encrypt(extension) + self._aes_encrypt(body)
             else:
@@ -176,15 +183,15 @@ class Baichuan:
             assert self._protocol is not None
             assert self._transport is not None
 
-        # check for simultaneous cmd_ids
-        if cmd_id in self._protocol.receive_futures:
+        # check for simultaneous cmd_ids with same mess_id
+        if (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
             try:
                 async with asyncio.timeout(TIMEOUT):
                     try:
-                        await self._protocol.receive_futures[cmd_id]
+                        await receive_future
                     except Exception:
                         pass
-                    while cmd_id in self._protocol.receive_futures:
+                    while self._protocol.receive_futures.get(cmd_id, {}).get(mess_id) is not None:
                         await asyncio.sleep(0.010)
             except asyncio.TimeoutError as err:
                 raise ReolinkError(
@@ -192,7 +199,7 @@ class Baichuan:
                     "and timeout waiting for it to finish, cannot receive multiple requests simultaneously"
                 ) from err
 
-        self._protocol.receive_futures[cmd_id] = self._loop.create_future()
+        self._protocol.receive_futures.setdefault(cmd_id, {})[mess_id] = self._loop.create_future()
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
@@ -204,28 +211,33 @@ class Baichuan:
             async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
                     self._transport.write(header + enc_body_bytes)
-                data, len_header = await self._protocol.receive_futures[cmd_id]
+                data, len_header = await self._protocol.receive_futures[cmd_id][mess_id]
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
         except (ConnectionResetError, OSError) as err:
             if retry <= 0 or cmd_id == 2:
                 raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
             _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, enc_offset, retry)
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, mess_id, retry)
         finally:
-            if self._protocol is not None and cmd_id in self._protocol.receive_futures:
-                if not self._protocol.receive_futures[cmd_id].done():
-                    self._protocol.receive_futures[cmd_id].cancel()
-                self._protocol.receive_futures.pop(cmd_id, None)
+            if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
+                if not receive_future.done():
+                    receive_future.cancel()
+                self._protocol.receive_futures[cmd_id].pop(mess_id, None)
+                if not self._protocol.receive_futures[cmd_id]:
+                    self._protocol.receive_futures.pop(cmd_id, None)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
+            ch_str = ""
+            if channel is not None:
+                ch_str = f" ch {channel}"
             if len(rec_body) > 0:
-                _LOGGER.debug("Baichuan host %s: received cmd_id %s:\n%s", self._host, cmd_id, self._hide_password(rec_body))
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s:\n%s", self._host, cmd_id, ch_str, self._hide_password(rec_body))
             else:
-                _LOGGER.debug("Baichuan host %s: received cmd_id %s status 200:OK without body", cmd_id, self._host)
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s status 200:OK without body", cmd_id, ch_str, self._host)
 
         return rec_body
 
@@ -249,7 +261,7 @@ class Baichuan:
 
     def _decrypt(self, data: bytes, len_header: int, cmd_id: int, enc_type: EncType = EncType.AES) -> str:
         """Figure out the encryption method and decrypt the message"""
-        rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")
+        rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")  # mess_id = enc_offset
         rec_enc_type = data[16:18].hex()
         enc_body = data[len_header::]
         header = data[0:len_header]
@@ -348,7 +360,7 @@ class Baichuan:
         """Try to reestablish the connection after a connection is closed"""
         time_start = time_now()
         try:
-            await self.send(cmd_id=31)  # Subscribe to events
+            await self.send(cmd_id=31, mess_id=251)  # Subscribe to events
         except Exception as err:
             _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s and failed to reestablished connection", self._host, time_since_recv)
             _LOGGER.debug("Baichuan host %s: failed to reestablished connection: %s", self._host, str(err))
@@ -600,7 +612,7 @@ class Baichuan:
                     if self._events_active:
                         await self.send(cmd_id=93)  # LinkType is used as keepalive
                     else:
-                        await self.send(cmd_id=31)  # Subscribe to events
+                        await self.send(cmd_id=31, mess_id=251)  # Subscribe to events
                 except Exception as err:
                     _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
 
@@ -627,7 +639,7 @@ class Baichuan:
         self._subscribed = True
         self._time_keepalive_loop = time_now()
         try:
-            await self.send(cmd_id=31)
+            await self.send(cmd_id=31, mess_id=251)
         except Exception as err:
             _LOGGER.debug("Baichuan host %s: error while subscribing: %s", self._host, str(err))
         if self._keepalive_task is None:

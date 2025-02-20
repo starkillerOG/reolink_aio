@@ -5556,14 +5556,14 @@ class Host:
                 for i, result in enumerate(results):
                     (idx, baichuan_cmd, _) = coroutines[i]
                     if isinstance(result, ReolinkError):
-                        _LOGGER.debug("Baichuan failed for %s: %s", baichuan_cmd, str(err))
+                        _LOGGER.debug("Baichuan failed for %s: %s", baichuan_cmd, str(result))
                         continue
                     if isinstance(result, BaseException):
                         raise result
                     _LOGGER.debug("Used Baichuan for %s successfully", baichuan_cmd)
                     baichuan_idxs[idx] = baichuan_cmd
-            for idx in sorted(baichuan_idxs, reverse=True):       
-               filtered_body.pop(idx)
+            for idx in sorted(baichuan_idxs, reverse=True):
+                filtered_body.pop(idx)
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -5678,8 +5678,7 @@ class Host:
                 except (TypeError, JSONDecodeError) as err:
                     if retry <= 0:
                         raise InvalidContentTypeError(
-                            f"Error translating JSON response: {str(err)}, from commands {cmds}, "
-                            f"content type '{response.content_type}', data:\n{data}\n"
+                            f"Error translating JSON response: {str(err)}, from commands {cmds}, " f"content type '{response.content_type}', data:\n{data}\n"
                         ) from err
                     _LOGGER.debug("Error translating JSON response: %s, trying again, data:\n%s\n", str(err), self.hide_password(data))
                     await self.expire_session(unsubscribe=False)
@@ -5732,7 +5731,7 @@ class Host:
                 for idx, cmd_data in enumerate(json_data):
                     if cmd_data["code"] != 0:
                         cmd_body = body[idx]
-                        cmd = cmd_body.get("cmd")
+                        cmd = cmd_body.get("cmd", "")
                         rsp_code = cmd_data.get("error", {}).get("rspCode", 0)
                         # check if baichuan has a fallback function
                         if retry > 0 and cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
@@ -5787,8 +5786,7 @@ class Host:
         except UnicodeDecodeError as err:
             if retry <= 0:
                 raise InvalidContentTypeError(
-                    f"Error decoding response to text: {str(err)}, from commands {cmds}, "
-                    f"content type '{response.content_type}', charset '{response.charset}'"
+                    f"Error decoding response to text: {str(err)}, from commands {cmds}, " f"content type '{response.content_type}', charset '{response.charset}'"
                 ) from err
             if retry == 1 and len(body) > 1 and expected_response_type == "json":
                 _LOGGER.debug(
