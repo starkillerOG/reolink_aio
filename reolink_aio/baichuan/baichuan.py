@@ -146,13 +146,14 @@ class Baichuan:
             else:
                 mess_id = channel + 1
 
+        ext = extension  # do not overwrite the original arguments for retries
         if channel is not None:
             if extension:
                 raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
-            extension = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
+            ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
 
-        mess_len = len(extension) + len(body)
-        payload_offset = len(extension)
+        mess_len = len(ext) + len(body)
+        payload_offset = len(ext)
 
         cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
         mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
@@ -171,9 +172,9 @@ class Baichuan:
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(extension, mess_id) + encrypt_baichuan(body, mess_id)  # enc_offset = mess_id
+                enc_body_bytes = encrypt_baichuan(ext, mess_id) + encrypt_baichuan(body, mess_id)  # enc_offset = mess_id
             elif enc_type == EncType.AES:
-                enc_body_bytes = self._aes_encrypt(extension) + self._aes_encrypt(body)
+                enc_body_bytes = self._aes_encrypt(ext) + self._aes_encrypt(body)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
@@ -203,10 +204,11 @@ class Baichuan:
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
-                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(extension + body))
+                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(ext + body))
             else:
                 _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
 
+        retrying = False
         try:
             async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
@@ -218,7 +220,7 @@ class Baichuan:
             if retry <= 0 or cmd_id == 2:
                 raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
             _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, mess_id, retry)
+            retrying = True
         finally:
             if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
                 if not receive_future.done():
@@ -226,6 +228,10 @@ class Baichuan:
                 self._protocol.receive_futures[cmd_id].pop(mess_id, None)
                 if not self._protocol.receive_futures[cmd_id]:
                     self._protocol.receive_futures.pop(cmd_id, None)
+
+        if retrying:
+            # needed because the receive_future first needs to be cleared.
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, mess_id, retry)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
