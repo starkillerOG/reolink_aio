@@ -5544,16 +5544,22 @@ class Host:
         filtered_body = body
         if expected_response_type == "json" and self.baichuan_cmds:
             filtered_body = body.copy()
+            coroutines = []
             for baichuan_cmd in self.baichuan_cmds:
                 if baichuan_cmd in cmds:
                     idx = cmds.index(baichuan_cmd)
                     func = self.baichuan.cmd_funcs[baichuan_cmd]
                     args = body[idx].get("param", {})
-                    try:
-                        await func(**args)
-                    except ReolinkError as err:
+                    coroutines.append((idx, baichuan_cmd, func(**args)))
+            if coroutines:
+                results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=False)
+                for i, result in enumerate(results):
+                    (idx, baichuan_cmd, _) = coroutines[i]
+                    if isinstance(result, ReolinkError):
                         _LOGGER.debug("Baichuan failed for %s: %s", baichuan_cmd, str(err))
                         continue
+                    if isinstance(result, BaseException):
+                        raise result
                     _LOGGER.debug("Used Baichuan for %s successfully", baichuan_cmd)
                     baichuan_idxs[idx] = baichuan_cmd
             for idx in sorted(baichuan_idxs, reverse=True):       
