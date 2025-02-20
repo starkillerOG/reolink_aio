@@ -85,6 +85,9 @@ class Baichuan:
         for _name, func in getmembers(self, lambda o: hasattr(o, "http_cmd")):
             self.cmd_funcs[func.http_cmd] = func
 
+        # supported
+        self._supported: dict[int | None, set[str]] = {}
+
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -686,6 +689,11 @@ class Baichuan:
         mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
         self._logged_in = True
 
+        # privacy mode
+        privacy_mode = self._get_value_from_xml(mess, "sleep")
+        if privacy_mode is not None:
+            self._privacy_mode[0] = privacy_mode == "1"
+
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
         if self._subscribed:
@@ -732,6 +740,13 @@ class Baichuan:
                     self._ext_callback[cmd_id].pop(channel)
             if not self._ext_callback[cmd_id]:
                 self._ext_callback.pop(cmd_id)
+
+    def supported(self, channel: int | None, capability: str) -> bool:
+        """Return if a capability is supported by a camera channel."""
+        if channel not in self._supported:
+            return False
+
+        return capability in self._supported[channel]
 
     async def get_ports(self) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
@@ -796,9 +811,16 @@ class Baichuan:
     async def get_privacy_mode(self, channel: int = 0) -> bool:
         """Get the privacy mode state"""
         mess = await self.send(cmd_id=574, channel=channel)
-        value = self._get_value_from_xml(mess, "sleep") == "1"
+        sleep = self._get_value_from_xml(mess, "sleep")
+        if sleep is None:
+            return None
+        value = sleep == "1"
         self._privacy_mode[channel] = value
         self.last_privacy_check = time_now()
+
+        if "privacy_mode" not in self._supported.setdefault(channel, set()):
+            self._supported[channel].add("privacy_mode")
+
         return value
 
     async def set_privacy_mode(self, channel: int = 0, enable: bool = False) -> None:

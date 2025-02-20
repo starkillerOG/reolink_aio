@@ -1834,7 +1834,7 @@ class Host:
                 self._capabilities[channel].add("backLight")
 
             # Baichuan capabilities
-            if self.baichuan.privacy_mode(channel) is not None:
+            if self.baichuan.supported(channel, "privacy_mode"):
                 self._capabilities[channel].add("privacy_mode")
                 if "privacy_mode" not in self._capabilities["Host"]:
                     self._capabilities["Host"].add("privacy_mode")
@@ -2431,11 +2431,6 @@ class Host:
         self.map_channels_json_response(json_data, channels)
 
         # Baichuan fallbacks
-        try:
-            await self.baichuan.get_privacy_mode()
-        except ReolinkError:
-            pass
-
         for channel in self._channels:
             try:
                 if await self.baichuan.get_cry_detection_supported(channel):
@@ -2452,6 +2447,13 @@ class Host:
                 except ReolinkError:
                     continue
                 self._channel_hw_version[channel] = self.baichuan.hardware_version(channel)
+
+        # Baichuan host fallbacks (needs to be after first baichuan connection)
+        if self.baichuan.privacy_mode(channel) is not None:
+            try:
+                await self.baichuan.get_privacy_mode()  # check to be sure
+            except ReolinkError:
+                pass
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
