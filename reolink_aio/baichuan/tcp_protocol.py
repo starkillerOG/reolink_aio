@@ -26,7 +26,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         self._data: bytes = b""
         self._data_chunk: bytes = b""
 
-        self.receive_futures: dict[int, asyncio.Future] = {}  # expected_cmd_id: rec_future
+        self.receive_futures: dict[int, dict[int, asyncio.Future]] = {}  # expected_cmd_id: rec_future
         self.close_future: asyncio.Future = loop.create_future()
         self._close_callback = close_callback
         self._push_callback = push_callback
@@ -40,16 +40,20 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         self.time_connect = time_now()
         _LOGGER.debug("Baichuan host %s: opened connection", self._host)
 
-    def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None) -> None:
+    def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None, mess_id: int | None = None) -> None:
         """Set a error message to the future or log the error"""
         self._data = b""
         if self.receive_futures and (cmd_id is None or cmd_id in self.receive_futures):
             exc = exc_class(f"Baichuan host {self._host}: received a message {err_mess}")
             if cmd_id is None:
-                for receive_future in self.receive_futures.values():
+                for val in self.receive_futures.values():
+                    for receive_future in val.values():
+                        receive_future.set_exception(exc)
+            elif mess_id is None or mess_id not in self.receive_futures[cmd_id]:
+                for receive_future in self.receive_futures[cmd_id].values():
                     receive_future.set_exception(exc)
             else:
-                self.receive_futures[cmd_id].set_exception(exc)
+                self.receive_futures[cmd_id][mess_id].set_exception(exc)
         else:
             _LOGGER.debug("Baichuan host %s: received unrequested message %s, dropping", self._host, err_mess)
 
@@ -91,6 +95,8 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         """Parse received data"""
         rec_cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
         rec_len_body = int.from_bytes(self._data[8:12], byteorder="little")
+        rec_mess_id = int.from_bytes(self._data[12:16], byteorder="little")  # mess_id = enc_offset: 0 = push, 250 = host, 1-100 = channel
+
         mess_class = self._data[18:20].hex()
 
         # check message class
@@ -100,14 +106,14 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             len_header = 24
             rec_payload_offset = int.from_bytes(self._data[20:24], byteorder="little")
             if rec_payload_offset != 0:
-                self._set_error("with a non-zero payload offset, parsing not implemented", InvalidContentTypeError, rec_cmd_id)
+                self._set_error("with a non-zero payload offset, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
                 return
         elif mess_class == "1465":  # legacy 20 byte header
             len_header = 20
-            self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError, rec_cmd_id)
+            self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
             return
         else:
-            self._set_error(f"with unknown message class '{mess_class}'", InvalidContentTypeError, rec_cmd_id)
+            self._set_error(f"with unknown message class '{mess_class}'", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
             return
 
         # check message length
@@ -126,34 +132,38 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         else:  # len_body == rec_len_body
             self._data = b""
 
+        # extract receive future
+        receive_future = self.receive_futures.get(rec_cmd_id, {}).get(rec_mess_id)
+
         # check status code
         if len_header == 24:
             rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
             if rec_status_code != 200:
-                if rec_cmd_id in self.receive_futures:
+                if receive_future is not None:
                     exc = ApiError(f"Baichuan host {self._host}: received status code {rec_status_code}", rspCode=rec_status_code)
-                    self.receive_futures[rec_cmd_id].set_exception(exc)
+                    receive_future.set_exception(exc)
                 else:
                     _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s and status code %s", self._host, rec_cmd_id, rec_status_code)
                 return
 
         try:
-            if rec_cmd_id not in self.receive_futures:
+            if receive_future is None:
                 if self._push_callback is not None:
                     self._push_callback(rec_cmd_id, self._data_chunk, len_header)
                 elif self.receive_futures:
                     expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                     _LOGGER.debug(
-                        "Baichuan host %s: received unrequested message with cmd_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
+                        "Baichuan host %s: received unrequested message with cmd_id %s mess_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
                         self._host,
                         rec_cmd_id,
+                        rec_mess_id,
                         expected_cmd_ids,
                     )
                 else:
                     _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, dropping", self._host, rec_cmd_id)
                 return
 
-            self.receive_futures[rec_cmd_id].set_result((self._data_chunk, len_header))
+            receive_future.set_result((self._data_chunk, len_header))
         finally:
             # if multiple messages received, parse the next also
             if self._data:
@@ -169,10 +179,11 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             if exc is None:
                 expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                 exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost connection while waiting for cmd_id {expected_cmd_ids}")
-            for receive_future in self.receive_futures.values():
-                if receive_future.done():
-                    continue
-                receive_future.set_exception(exc)
+            for val in self.receive_futures.values():
+                for receive_future in val.values():
+                    if receive_future.done():
+                        continue
+                    receive_future.set_exception(exc)
         _LOGGER.debug("Baichuan host %s: closed connection", self._host)
         if self._close_callback is not None:
             self._close_callback()
