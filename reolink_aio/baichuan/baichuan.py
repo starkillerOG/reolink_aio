@@ -808,7 +808,7 @@ class Baichuan:
         mess = await self.send(cmd_id=299, channel=channel)
         return self._get_value_from_xml(mess, "cryDetectAbility") == "1"
 
-    async def get_privacy_mode(self, channel: int = 0) -> bool:
+    async def get_privacy_mode(self, channel: int = 0) -> bool | None:
         """Get the privacy mode state"""
         mess = await self.send(cmd_id=574, channel=channel)
         sleep = self._get_value_from_xml(mess, "sleep")
