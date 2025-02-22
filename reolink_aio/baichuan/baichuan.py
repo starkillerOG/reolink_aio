@@ -64,6 +64,7 @@ class Baichuan:
 
         # TCP connection
         self._mutex = asyncio.Lock()
+        self._login_mutex = asyncio.Lock()
         self._loop = asyncio.get_event_loop()
         self._transport: asyncio.Transport | None = None
         self._protocol: BaichuanTcpClientProtocol | None = None
@@ -679,15 +680,19 @@ class Baichuan:
 
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
-        nonce = await self._get_nonce()
+        async with self._login_mutex:
+            if self._logged_in:
+                return
 
-        # modern login
-        self._user_hash = md5_str_modern(f"{self._username}{nonce}")
-        self._password_hash = md5_str_modern(f"{self._password}{nonce}")
-        xml = xmls.LOGIN_XML.format(userName=self._user_hash, password=self._password_hash)
+            nonce = await self._get_nonce()
 
-        mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
-        self._logged_in = True
+            # modern login
+            self._user_hash = md5_str_modern(f"{self._username}{nonce}")
+            self._password_hash = md5_str_modern(f"{self._password}{nonce}")
+            xml = xmls.LOGIN_XML.format(userName=self._user_hash, password=self._password_hash)
+
+            mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
+            self._logged_in = True
 
         # privacy mode
         privacy_mode = self._get_value_from_xml(mess, "sleep")
