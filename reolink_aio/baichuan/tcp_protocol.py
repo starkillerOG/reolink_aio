@@ -140,7 +140,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
             if rec_status_code != 200:
                 if receive_future is not None:
-                    exc = ApiError(f"Baichuan host {self._host}: received status code {rec_status_code}", rspCode=rec_status_code)
+                    exc = ApiError(f"Baichuan host {self._host}: received status code {rec_status_code} from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
                     receive_future.set_exception(exc)
                 else:
                     _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s and status code %s", self._host, rec_cmd_id, rec_status_code)

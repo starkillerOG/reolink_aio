@@ -14,6 +14,7 @@ from Cryptodome.Cipher import AES
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
 from ..exceptions import (
+    ApiError,
     InvalidContentTypeError,
     InvalidParameterError,
     ReolinkError,
@@ -218,6 +219,11 @@ class Baichuan:
                 async with self._mutex:
                     self._transport.write(header + enc_body_bytes)
                 data, len_header = await self._protocol.receive_futures[cmd_id][mess_id]
+        except ApiError as err:
+            if retry <= 0 or err.rspCode != 400:
+                raise err
+            _LOGGER.debug("%s, trying again", str(err))
+            retrying = True
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
         except (ConnectionResetError, OSError) as err:
