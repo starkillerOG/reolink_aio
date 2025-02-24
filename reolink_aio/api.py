@@ -5561,7 +5561,7 @@ class Host:
                     args = body[idx].get("param", {})
                     coroutines.append((idx, baichuan_cmd, func(**args)))
             if coroutines:
-                results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=False)
+                results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
                 for i, result in enumerate(results):
                     (idx, baichuan_cmd, _) = coroutines[i]
                     if isinstance(result, ReolinkError):
