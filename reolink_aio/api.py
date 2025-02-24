@@ -2449,7 +2449,7 @@ class Host:
                 self._channel_hw_version[channel] = self.baichuan.hardware_version(channel)
 
         # Baichuan host fallbacks (needs to be after first baichuan connection)
-        if self.baichuan.privacy_mode(channel) is not None:
+        if self.baichuan.privacy_mode() is not None:
             try:
                 await self.baichuan.get_privacy_mode()  # check to be sure
             except ReolinkError:
