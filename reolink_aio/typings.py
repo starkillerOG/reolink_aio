@@ -406,7 +406,11 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     # "/mnt/sda/<UID>-<NAME>/Mp4Record/2024-08-27/RecM02_DST20240827_090302_090334_0_800_800_033C820000_61B6F0.mp4"
     # https://github.com/sven337/ReolinkLinux/wiki/Figuring-out-the-file-names
 
-    (path_name, ext) = file_name.rsplit(".", 2)
+    try:
+        (path_name, ext) = file_name.rsplit(".", 1)
+    except ValueError:
+        _LOGGER.debug("%s does not match known formats, no extension '.'", file_name)
+        return None
     name = path_name.rsplit("/", 1)[-1]
     split = name.split("_")
 
