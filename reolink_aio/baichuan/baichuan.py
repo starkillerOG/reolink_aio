@@ -254,7 +254,7 @@ class Baichuan:
             if len(rec_body) > 0:
                 _LOGGER.debug("Baichuan host %s: received cmd_id %s%s:\n%s", self._host, cmd_id, ch_str, self._hide_password(rec_body))
             else:
-                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s status 200:OK without body", cmd_id, ch_str, self._host)
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s status 200:OK without body", self._host, cmd_id, ch_str)
 
         return rec_body
 
