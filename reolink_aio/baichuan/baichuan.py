@@ -88,7 +88,7 @@ class Baichuan:
             self.cmd_funcs[func.http_cmd] = func
 
         # supported
-        self._supported: dict[int | None, set[str]] = {}
+        self.capabilities: dict[int | None, set[str]] = {}
 
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
@@ -752,12 +752,45 @@ class Baichuan:
             if not self._ext_callback[cmd_id]:
                 self._ext_callback.pop(cmd_id)
 
+    async def get_host_data(self) -> None:
+        """Fetch the host settings/capabilities."""
+        if self.http_api is None:
+            return
+
+        await self.login()
+        
+        # Host capabilities
+        if self.privacy_mode() is not None:
+            try:
+                await self.get_privacy_mode()  # check to be sure
+            except ReolinkError:
+                pass
+
+        # Channel Capabilities
+        for channel in self.http_api._channels:
+            try:
+                if await self.get_cry_detection_supported(channel):
+                    self.http_api._ai_detection_support.setdefault(channel, {})
+                    self.http_api._ai_detection_states.setdefault(channel, {})
+                    self.http_api._ai_detection_support[channel]["cry"] = True
+                    self.http_api._ai_detection_states[channel]["cry"] = False
+            except ReolinkError:
+                pass
+
+            if self.http_api.camera_hardware_version(channel) == "Unknown":
+                try:
+                    await self.get_info(channel)
+                except ReolinkError:
+                    pass
+                else:
+                    self.http_api._channel_hw_version[channel] = self.hardware_version(channel)
+
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
-        if channel not in self._supported:
+        if channel not in self.capabilities:
             return False
 
-        return capability in self._supported[channel]
+        return capability in self.capabilities[channel]
 
     async def get_ports(self) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
@@ -829,8 +862,10 @@ class Baichuan:
         self._privacy_mode[channel] = value
         self.last_privacy_check = time_now()
 
-        if "privacy_mode" not in self._supported.setdefault(channel, set()):
-            self._supported[channel].add("privacy_mode")
+        if "privacy_mode" not in self.capabilities.setdefault(channel, set()):
+            self.capabilities[channel].add("privacy_mode")
+        if "privacy_mode" not in self.capabilities.setdefault(None, set()):
+            self.capabilities[None].add("privacy_mode")
 
         return value
 

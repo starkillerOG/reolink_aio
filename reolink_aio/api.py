@@ -1631,6 +1631,9 @@ class Host:
         if self.api_version("reboot") > 0:
             self._capabilities["Host"].add("reboot")
 
+        # Baichuan capabilities
+        self._capabilities["Host"] = self._capabilities["Host"].union(self.baichuan.capabilities[None])
+
         # Stream capabilities
         for channel in self._stream_channels:
             self._capabilities[channel] = set()
@@ -1834,10 +1837,7 @@ class Host:
                 self._capabilities[channel].add("backLight")
 
             # Baichuan capabilities
-            if self.baichuan.supported(channel, "privacy_mode"):
-                self._capabilities[channel].add("privacy_mode")
-                if "privacy_mode" not in self._capabilities["Host"]:
-                    self._capabilities["Host"].add("privacy_mode")
+            self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
@@ -2430,30 +2430,8 @@ class Host:
 
         self.map_channels_json_response(json_data, channels)
 
-        # Baichuan fallbacks
-        for channel in self._channels:
-            try:
-                if await self.baichuan.get_cry_detection_supported(channel):
-                    self._ai_detection_support.setdefault(channel, {})
-                    self._ai_detection_states.setdefault(channel, {})
-                    self._ai_detection_support[channel]["cry"] = True
-                    self._ai_detection_states[channel]["cry"] = False
-            except ReolinkError:
-                pass
-
-            if self.camera_hardware_version(channel) == "Unknown":
-                try:
-                    await self.baichuan.get_info(channel)
-                except ReolinkError:
-                    continue
-                self._channel_hw_version[channel] = self.baichuan.hardware_version(channel)
-
-        # Baichuan host fallbacks (needs to be after first baichuan connection)
-        if self.baichuan.privacy_mode() is not None:
-            try:
-                await self.baichuan.get_privacy_mode()  # check to be sure
-            except ReolinkError:
-                pass
+        # Baichuan capabilities
+        await self.baichuan.get_host_data()
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
