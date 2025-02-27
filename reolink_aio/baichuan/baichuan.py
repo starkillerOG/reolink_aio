@@ -817,12 +817,13 @@ class Baichuan:
     @property
     def abilities(self) -> dict[int | str, Any]:
         """Return the abilities as a dictionary"""
-        abilities_dict = {}
+        abilities_dict: dict[int | str, dict[str, int | str]] = {}
         for key, xml in self._abilities.items():
-            pretty_key = key if key is not None else "Host"
+            pretty_key: str | int = key if key is not None else "Host"
             abilities_dict[pretty_key] = {}
             for feature in xml:
                 if feature.text is not None:
+                    value: int | str
                     try:
                         value = int(feature.text)
                     except ValueError:
