@@ -1632,7 +1632,8 @@ class Host:
             self._capabilities["Host"].add("reboot")
 
         # Baichuan capabilities
-        self._capabilities["Host"] = self._capabilities["Host"].union(self.baichuan.capabilities[None])
+        if None in self.baichuan.capabilities:
+            self._capabilities["Host"] = self._capabilities["Host"].union(self.baichuan.capabilities[None])
 
         # Stream capabilities
         for channel in self._stream_channels:
@@ -1659,6 +1660,12 @@ class Host:
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 continue
+
+            if self.baichuan.supported(channel, "ai_cry"):
+                self._ai_detection_support.setdefault(channel, {})
+                self._ai_detection_states.setdefault(channel, {})
+                self._ai_detection_support[channel]["cry"] = True
+                self._ai_detection_states[channel]["cry"] = False
 
             if self.is_nvr and self.camera_hardware_version(channel) != "Unknown" and self.camera_model(channel) != "Unknown":
                 self._capabilities[channel].add("firmware")
@@ -1837,7 +1844,8 @@ class Host:
                 self._capabilities[channel].add("backLight")
 
             # Baichuan capabilities
-            self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
+            if channel in self.baichuan.capabilities:
+                self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""

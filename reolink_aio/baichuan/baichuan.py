@@ -89,6 +89,7 @@ class Baichuan:
 
         # supported
         self.capabilities: dict[int | None, set[str]] = {}
+        self._abilities: dict[int | None, XML.Element] = {}
 
         # states
         self._ports: dict[str, dict[str, int | bool]] = {}
@@ -757,26 +758,36 @@ class Baichuan:
         if self.http_api is None:
             return
 
-        await self.login()
-        
+        # Get Baichaun capabilities
+        mess = await self.send(cmd_id=199)
+        root = XML.fromstring(mess)
+        for support in root:
+            for item in support.findall("item"):
+                # channel item
+                channel = self._get_channel_from_xml_element(item, "chnID")
+                self._abilities[channel] = item
+                support.remove(item)
+            self._abilities[None] = support
+
         # Host capabilities
-        if self.privacy_mode() is not None:
-            try:
-                await self.get_privacy_mode()  # check to be sure
-            except ReolinkError:
-                pass
+        self.capabilities.setdefault(None, set())
 
         # Channel Capabilities
         for channel in self.http_api._channels:
+            self.capabilities.setdefault(channel, set())
+
+            if self.privacy_mode() is not None and self.api_version("remoteAbility", channel) > 0:
+                self.capabilities[channel].add("privacy_mode")
+                self.capabilities[None].add("privacy_mode")
+
             try:
                 if await self.get_cry_detection_supported(channel):
-                    self.http_api._ai_detection_support.setdefault(channel, {})
-                    self.http_api._ai_detection_states.setdefault(channel, {})
-                    self.http_api._ai_detection_support[channel]["cry"] = True
-                    self.http_api._ai_detection_states[channel]["cry"] = False
+                    self.capabilities[channel].add("ai_cry")
             except ReolinkError:
                 pass
 
+        # Fallback for missing information
+        for channel in self.http_api._channels:
             if self.http_api.camera_hardware_version(channel) == "Unknown":
                 try:
                     await self.get_info(channel)
@@ -791,6 +802,17 @@ class Baichuan:
             return False
 
         return capability in self.capabilities[channel]
+
+    def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
+        """Return the api version of a capability, 0=not supported, >0 is supported"""
+        if channel not in self._abilities:
+            return 0
+
+        value = self._get_value_from_xml_element(self._abilities[channel], capability, int)
+        if value is None:
+            return no_key_return
+
+        return value
 
     async def get_ports(self) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
@@ -862,10 +884,8 @@ class Baichuan:
         self._privacy_mode[channel] = value
         self.last_privacy_check = time_now()
 
-        if "privacy_mode" not in self.capabilities.setdefault(channel, set()):
-            self.capabilities[channel].add("privacy_mode")
-        if "privacy_mode" not in self.capabilities.setdefault(None, set()):
-            self.capabilities[None].add("privacy_mode")
+        self.capabilities.setdefault(channel, set()).add("privacy_mode")
+        self.capabilities.setdefault(None, set()).add("privacy_mode")
 
         return value
 
