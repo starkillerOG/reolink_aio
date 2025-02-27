@@ -97,6 +97,7 @@ class Baichuan:
         self._day_night_state: str | None = None
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._privacy_mode: dict[int, bool] = {}
+        self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -399,7 +400,11 @@ class Baichuan:
         xml_value = xml_element.find(f".//{key}")
         if xml_value is None:
             return None
-        return type_class(xml_value.text)
+        try:
+            return type_class(xml_value.text)
+        except ValueError as err:
+            _LOGGER.debug(err)
+            return None
 
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
         channel = self._get_value_from_xml_element(xml_element, key, int)
@@ -588,6 +593,15 @@ class Baichuan:
                         self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
+        elif cmd_id == 527:  # crossline detection
+            channel = self._get_channel_from_xml_element(root)
+            for item in root.findall(".//crosslineDetectItem"):
+                idx = self._get_value_from_xml_element(item, "index", int)
+                crossline = self._ai_detect[channel]["crossline"].setdefault(idx, {})
+                crossline["name"] = self._get_value_from_xml_element(item, "name", str) 
+                crossline["sensitivity"] = self._get_value_from_xml_element(item, "sesensitivity", int)
+                crossline.setdefault("state", False)
+
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
             cmd_id_modified = self._get_value_from_xml_element(root, "cmdId", int)
@@ -773,6 +787,7 @@ class Baichuan:
         self.capabilities.setdefault(None, set())
 
         # Channel Capabilities
+        coroutines = []
         for channel in self.http_api._channels:
             self.capabilities.setdefault(channel, set())
 
@@ -780,11 +795,26 @@ class Baichuan:
                 self.capabilities[channel].add("privacy_mode")
                 self.capabilities[None].add("privacy_mode")
 
-            try:
-                if await self.get_cry_detection_supported(channel):
+            if self.api_version("smartAI", channel) > 0:
+                coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))
+
+            coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
+
+        if coroutines:
+            results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
+            for i, result in enumerate(results):
+                (cmd_id, channel, _) = coroutines[i]
+                if isinstance(result, ReolinkError):
+                    continue
+                if isinstance(result, BaseException):
+                    raise result
+                
+                if cmd_id == 527: # crossline detection
+                    self.capabilities[channel].add("ai_crossline")
+                    self._ai_detect.setdefault(channel, {}).setdefault("crossline", {})
+                    self._parse_xml(cmd_id, result)
+                elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
-            except ReolinkError:
-                pass
 
         # Fallback for missing information
         for channel in self.http_api._channels:
