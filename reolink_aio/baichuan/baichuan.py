@@ -814,6 +814,22 @@ class Baichuan:
 
         return value
 
+    @property
+    def abilities(self) -> dict[int | str, Any]:
+        """Return the abilities as a dictionary"""
+        abilities_dict = {}
+        for key, xml in self._abilities.items():
+            pretty_key = key if key is not None else "Host"
+            abilities_dict[pretty_key] = {}
+            for feature in xml:
+                if feature.text is not None:
+                    try:
+                        value = int(feature.text)
+                    except ValueError:
+                        value = feature.text
+                    abilities_dict[pretty_key][feature.tag] = value
+        return abilities_dict
+
     async def get_ports(self) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
         mess = await self.send(cmd_id=37)
