@@ -36,7 +36,7 @@ KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 15  # seconds
 
-AI_DETECTS = {"people", "vehicle", "dog_cat"}
+AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 
 T = TypeVar("T")
 
@@ -620,25 +620,20 @@ class Baichuan:
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 527:  # crossline detection
-            channel = self._get_channel_from_xml_element(root)
-            if channel is not None:
-                for item in root.findall(".//crosslineDetectItem"):
-                    loc = self._get_value_from_xml_element(item, "location", int)
-                    ai_types = self._get_value_from_xml_element(item, "aiType", str)
-                    if loc is None or ai_types is None:
-                        continue
-                    crossline = self._ai_detect[channel]["crossline"].setdefault(loc, {})
-                    crossline["name"] = self._get_value_from_xml_element(item, "name", str)
-                    crossline["sensitivity"] = self._get_value_from_xml_element(item, "sesensitivity", int)
-                    crossline["index"] = self._get_value_from_xml_element(item, "index", int)
-                    ai_type_list = ai_types.split(",")
-                    for ai_type in ai_type_list:
-                        crossline.setdefault(ai_type, False)
+            self._parse_smart_ai_settings(root, channels, "crossline")
+        elif cmd_id == 529:  # intrusion detection
+            self._parse_smart_ai_settings(root, channels, "intrusion")
+        elif cmd_id == 531:  # linger detection
+            self._parse_smart_ai_settings(root, channels, "loitering")
+        elif cmd_id == 549:  # forgotten item
+            self._parse_smart_ai_settings(root, channels, "legacy")
+        elif cmd_id == 551:  # taken item
+            self._parse_smart_ai_settings(root, channels, "loss")
 
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
             cmd_id_modified = self._get_value_from_xml_element(root, "cmdId", int)
-            if cmd_id_modified not in {26}:
+            if cmd_id_modified not in {26, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -656,6 +651,31 @@ class Baichuan:
             for ch in channels:
                 for callback in self._ext_callback.get(cmd, {}).get(ch, {}).values():
                     callback()
+
+    def _parse_smart_ai_settings(self, root: XML.Element, channels: set[int | None], smart_type: str) -> None:
+        """Parse smart ai settings response"""
+        channel = self._get_channel_from_xml_element(root)
+        if channel is None:
+            return
+        channels.add(channel)
+        for item in root.findall(f".//{smart_type}DetectItem"):
+            loc = self._get_value_from_xml_element(item, "location", int)
+            if loc is None:
+                continue
+            smart_ai = self._ai_detect[channel][smart_type].setdefault(loc, {})
+            smart_ai["name"] = self._get_value_from_xml_element(item, "name", str)
+            smart_ai["sensitivity"] = self._get_value_from_xml_element(item, "sesensitivity", int)
+            if (delay := self._get_value_from_xml_element(item, "stayTime", int)) is not None:
+                smart_ai["delay"] = delay
+            if (delay := self._get_value_from_xml_element(item, "timeThresh", int)) is not None:
+                smart_ai["delay"] = delay
+            smart_ai["index"] = self._get_value_from_xml_element(item, "index", int)
+            if (ai_types := self._get_value_from_xml_element(item, "aiType", str)) is not None:
+                ai_type_list = ai_types.split(",")
+                for ai_type in ai_type_list:
+                    smart_ai.setdefault(ai_type, False)
+            else:
+                smart_ai.setdefault("state", False)
 
     async def _keepalive_loop(self) -> None:
         """Loop which keeps the TCP connection allive when subscribed for events"""
@@ -830,6 +850,10 @@ class Baichuan:
 
             if self.api_version("smartAI", channel) > 0:
                 coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))
+                coroutines.append((529, channel, self.send(cmd_id=529, channel=channel)))
+                coroutines.append((531, channel, self.send(cmd_id=531, channel=channel)))
+                coroutines.append((549, channel, self.send(cmd_id=549, channel=channel)))
+                coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
 
@@ -845,6 +869,22 @@ class Baichuan:
                 if cmd_id == 527:  # crossline detection
                     self.capabilities[channel].add("ai_crossline")
                     self._ai_detect.setdefault(channel, {}).setdefault("crossline", {})
+                    self._parse_xml(cmd_id, result)
+                elif cmd_id == 529:  # intrusion detection
+                    self.capabilities[channel].add("ai_intrusion")
+                    self._ai_detect.setdefault(channel, {}).setdefault("intrusion", {})
+                    self._parse_xml(cmd_id, result)
+                elif cmd_id == 531:  # linger detection
+                    self.capabilities[channel].add("ai_linger")
+                    self._ai_detect.setdefault(channel, {}).setdefault("loitering", {})
+                    self._parse_xml(cmd_id, result)
+                elif cmd_id == 549:  # forgotten item
+                    self.capabilities[channel].add("ai_forgotten_item")
+                    self._ai_detect.setdefault(channel, {}).setdefault("legacy", {})
+                    self._parse_xml(cmd_id, result)
+                elif cmd_id == 551:  # taken item
+                    self.capabilities[channel].add("ai_taken_item")
+                    self._ai_detect.setdefault(channel, {}).setdefault("loss", {})
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
