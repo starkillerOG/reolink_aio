@@ -6,7 +6,7 @@ import logging
 import asyncio
 from inspect import getmembers
 from time import time as time_now
-from typing import TYPE_CHECKING, Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload, Coroutine
 from collections.abc import Callable
 from xml.etree import ElementTree as XML
 from Cryptodome.Cipher import AES
@@ -35,6 +35,8 @@ RETRY_ATTEMPTS = 3
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 15  # seconds
+
+AI_DETECTS = {"people", "vehicle", "dog_cat"}
 
 T = TypeVar("T")
 
@@ -531,6 +533,30 @@ class Baichuan:
                                 if ai_type not in self.http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
                                     self._log_once.append(f"TCP_event_unknown_{ai_type}")
                                     _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self.http_api.nvr_name, channel, ai_type)
+
+                        # reset all smart AI events to False
+                        for smart_type_dict in self._ai_detect[channel].values():
+                            for smart_ai_dict in smart_type_dict.values():
+                                ai_type_set = AI_DETECTS.intersection(smart_ai_dict)
+                                for ai_type in ai_type_set:
+                                    smart_ai_dict[ai_type] = False
+                        # set all detected smart AI events to True
+                        smart_list = event.find("smartAiTypeList")
+                        if smart_list is not None:
+                            for smart_ai in smart_list.findall(".//smartAiType"):
+                                smart_type = self._get_value_from_xml_element(smart_ai, "type")
+                                if smart_type is None:
+                                    continue
+                                for sub_list in smart_ai.findall("subList"):
+                                    location_ob = sub_list.find("index")
+                                    ai_type_ob = sub_list.find("type")
+                                    if location_ob is None or ai_type_ob is None or location_ob.text is None or ai_type_ob.text is None:
+                                        continue
+                                    location = int(location_ob.text)
+                                    ai_type = ai_type_ob.text
+                                    self._ai_detect[channel][smart_type][location][ai_type] = True
+                                    _LOGGER.debug("Reolink %s TCP event channel %s, %s idx %s detected %s", self.http_api.nvr_name, channel, smart_type, location, ai_type)
+
                     elif event.tag == "DayNightEvent":
                         state = self._get_value_from_xml_element(event, "mode")
                         if state is not None:
@@ -595,12 +621,19 @@ class Baichuan:
 
         elif cmd_id == 527:  # crossline detection
             channel = self._get_channel_from_xml_element(root)
-            for item in root.findall(".//crosslineDetectItem"):
-                idx = self._get_value_from_xml_element(item, "index", int)
-                crossline = self._ai_detect[channel]["crossline"].setdefault(idx, {})
-                crossline["name"] = self._get_value_from_xml_element(item, "name", str) 
-                crossline["sensitivity"] = self._get_value_from_xml_element(item, "sesensitivity", int)
-                crossline.setdefault("state", False)
+            if channel is not None:
+                for item in root.findall(".//crosslineDetectItem"):
+                    loc = self._get_value_from_xml_element(item, "location", int)
+                    ai_types = self._get_value_from_xml_element(item, "aiType", str)
+                    if loc is None or ai_types is None:
+                        continue
+                    crossline = self._ai_detect[channel]["crossline"].setdefault(loc, {})
+                    crossline["name"] = self._get_value_from_xml_element(item, "name", str)
+                    crossline["sensitivity"] = self._get_value_from_xml_element(item, "sesensitivity", int)
+                    crossline["index"] = self._get_value_from_xml_element(item, "index", int)
+                    ai_type_list = ai_types.split(",")
+                    for ai_type in ai_type_list:
+                        crossline.setdefault(ai_type, False)
 
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
@@ -787,7 +820,7 @@ class Baichuan:
         self.capabilities.setdefault(None, set())
 
         # Channel Capabilities
-        coroutines = []
+        coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._channels:
             self.capabilities.setdefault(channel, set())
 
@@ -808,8 +841,8 @@ class Baichuan:
                     continue
                 if isinstance(result, BaseException):
                     raise result
-                
-                if cmd_id == 527: # crossline detection
+
+                if cmd_id == 527:  # crossline detection
                     self.capabilities[channel].add("ai_crossline")
                     self._ai_detect.setdefault(channel, {}).setdefault("crossline", {})
                     self._parse_xml(cmd_id, result)
@@ -1156,6 +1189,22 @@ class Baichuan:
 
     def privacy_mode(self, channel: int = 0) -> bool | None:
         return self._privacy_mode.get(channel)
+
+    def smart_type_list(self, channel: int) -> list[str]:
+        return list(self._ai_detect.get(channel, {}).keys())
+
+    def smart_location_list(self, channel: int, smart_type: str) -> list[int]:
+        return list(self._ai_detect.get(channel, {}).get(smart_type, {}).keys())
+
+    def smart_ai_name(self, channel: int, smart_type: str, location: int) -> str:
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", "Unknown")
+
+    def smart_ai_type_list(self, channel: int, smart_type: str, location: int) -> list[str]:
+        smart_ai = self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {})
+        return list(AI_DETECTS.intersection(smart_ai))
+
+    def smart_ai_state(self, channel: int, smart_type: str, location: int, ai_type: str) -> bool:
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get(ai_type, False)
 
     def pan_position(self, channel: int) -> int | None:
         pos = self._ptz_position.get(channel, {}).get("pPos")
