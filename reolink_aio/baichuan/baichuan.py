@@ -1243,7 +1243,7 @@ class Baichuan:
         smart_ai = self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {})
         return list(AI_DETECTS.intersection(smart_ai))
 
-    def smart_ai_state(self, channel: int, smart_type: str, location: int, ai_type: str) -> bool:
+    def smart_ai_state(self, channel: int, smart_type: str, location: int, ai_type: str = "state") -> bool:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get(ai_type, False)
 
     def pan_position(self, channel: int) -> int | None:
