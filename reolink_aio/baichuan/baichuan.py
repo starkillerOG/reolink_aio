@@ -548,13 +548,13 @@ class Baichuan:
                                 if smart_type is None:
                                     continue
                                 sub_list = smart_ai.findall("subList")
-                                index_bit_ob = smart_list.find("index")
+                                index_bit_ob = smart_ai.find("index")
                                 if index_bit_ob is not None and index_bit_ob.text is not None:
                                     # The index is based on bits, bit 0 = loc 0, bit 1 = loc 1, index 7 = loc 1, 2 and 3.
                                     index_bit = int(index_bit_ob.text)
                                     loop_bit = 1
                                     while index_bit >= loop_bit:
-                                        location = loop_bit.bit_length()
+                                        location = loop_bit.bit_length() - 1
                                         detected = index_bit & loop_bit > 0
                                         self._ai_detect[channel][smart_type][location]["state"] = detected
                                         if sub_list is None and detected:
