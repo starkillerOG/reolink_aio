@@ -1250,12 +1250,15 @@ class Baichuan:
     def smart_location_list(self, channel: int, smart_type: str) -> list[int]:
         return list(self._ai_detect.get(channel, {}).get(smart_type, {}).keys())
 
-    def smart_ai_name(self, channel: int, smart_type: str, location: int) -> str:
-        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", "Unknown")
-
     def smart_ai_type_list(self, channel: int, smart_type: str, location: int) -> list[str]:
         smart_ai = self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {})
         return list(AI_DETECTS.intersection(smart_ai))
+
+    def smart_ai_name(self, channel: int, smart_type: str, location: int) -> str:
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", "Unknown")
+        
+    def smart_ai_index(self, channel: int, smart_type: str, location: int) -> int:
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("index", 0)
 
     def smart_ai_state(self, channel: int, smart_type: str, location: int, ai_type: str = "state") -> bool:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get(ai_type, False)
