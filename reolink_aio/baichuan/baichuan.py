@@ -547,15 +547,30 @@ class Baichuan:
                                 smart_type = self._get_value_from_xml_element(smart_ai, "type")
                                 if smart_type is None:
                                     continue
-                                for sub_list in smart_ai.findall("subList"):
-                                    location_ob = sub_list.find("index")
-                                    ai_type_ob = sub_list.find("type")
+                                sub_list = smart_ai.findall("subList")
+                                index_bit_ob = smart_list.find("index")
+                                if index_bit_ob is not None and index_bit_ob.text is not None:
+                                    # The index is based on bits, bit 0 = loc 0, bit 1 = loc 1, index 7 = loc 1, 2 and 3.
+                                    index_bit = int(index_bit_ob.text)
+                                    loop_bit = 1
+                                    while index_bit >= loop_bit:
+                                        location = loop_bit.bit_length()
+                                        detected = index_bit & loop_bit > 0
+                                        self._ai_detect[channel][smart_type][location]["state"] = detected
+                                        if sub_list is None and detected:
+                                            _LOGGER.debug("Reolink %s TCP event channel %s, %s location %s detected", self.http_api.nvr_name, channel, smart_type, location)
+                                        loop_bit <<= 1
+                                for sub in sub_list:
+                                    location_ob = sub.find("index")
+                                    ai_type_ob = sub.find("type")
                                     if location_ob is None or ai_type_ob is None or location_ob.text is None or ai_type_ob.text is None:
                                         continue
                                     location = int(location_ob.text)
                                     ai_type = ai_type_ob.text
                                     self._ai_detect[channel][smart_type][location][ai_type] = True
-                                    _LOGGER.debug("Reolink %s TCP event channel %s, %s idx %s detected %s", self.http_api.nvr_name, channel, smart_type, location, ai_type)
+                                    _LOGGER.debug(
+                                        "Reolink %s TCP event channel %s, %s location %s detected %s", self.http_api.nvr_name, channel, smart_type, location, ai_type
+                                    )
 
                     elif event.tag == "DayNightEvent":
                         state = self._get_value_from_xml_element(event, "mode")
@@ -670,12 +685,11 @@ class Baichuan:
             if (delay := self._get_value_from_xml_element(item, "timeThresh", int)) is not None:
                 smart_ai["delay"] = delay
             smart_ai["index"] = self._get_value_from_xml_element(item, "index", int)
+            smart_ai.setdefault("state", False)
             if (ai_types := self._get_value_from_xml_element(item, "aiType", str)) is not None:
                 ai_type_list = ai_types.split(",")
                 for ai_type in ai_type_list:
                     smart_ai.setdefault(ai_type, False)
-            else:
-                smart_ai.setdefault("state", False)
 
     async def _keepalive_loop(self) -> None:
         """Loop which keeps the TCP connection allive when subscribed for events"""
