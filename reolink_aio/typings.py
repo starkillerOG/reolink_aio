@@ -1,4 +1,4 @@
-""" Typings for type validation and documentation """
+"""Typings for type validation and documentation"""
 
 from __future__ import annotations
 

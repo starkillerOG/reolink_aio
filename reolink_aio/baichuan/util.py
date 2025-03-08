@@ -1,4 +1,4 @@
-""" Reolink Baichuan constants and utility functions """
+"""Reolink Baichuan constants and utility functions"""
 
 from enum import Enum
 from hashlib import md5

@@ -1,4 +1,4 @@
-""" Reolink Baichuan API """
+"""Reolink Baichuan API"""
 
 from __future__ import annotations
 

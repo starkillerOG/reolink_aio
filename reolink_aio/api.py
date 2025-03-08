@@ -1,4 +1,4 @@
-""" Reolink NVR/camera network API """
+"""Reolink NVR/camera network API"""
 
 from __future__ import annotations
 

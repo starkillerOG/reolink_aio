@@ -1,4 +1,4 @@
-""" TCP protocol and transport for the Reolink Baichuan API """
+"""TCP protocol and transport for the Reolink Baichuan API"""
 
 import logging
 import asyncio

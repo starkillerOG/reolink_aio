@@ -1,4 +1,4 @@
-""" Enums for reolink features """
+"""Enums for reolink features"""
 
 from enum import Enum
 

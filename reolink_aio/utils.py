@@ -1,4 +1,4 @@
-""" Utility functions for Reolink """
+"""Utility functions for Reolink"""
 
 from __future__ import annotations
 
