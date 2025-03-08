@@ -673,11 +673,18 @@ class Baichuan:
         if channel is None:
             return
         channels.add(channel)
+
+        original_index_dict = {}
+        for loc in self.smart_location_list(channel, smart_type):
+            idx = self.smart_ai_index(channel, smart_type, loc)
+            original_index_dict[f"{loc}_{idx}"] = self.smart_ai_type_list(channel, smart_type, loc)
+
+        index_dict = {}
         for item in root.findall(f".//{smart_type}DetectItem"):
-            loc = self._get_value_from_xml_element(item, "location", int)
-            if loc is None:
+            location = self._get_value_from_xml_element(item, "location", int)
+            if location is None:
                 continue
-            smart_ai = self._ai_detect[channel][smart_type].setdefault(loc, {})
+            smart_ai = self._ai_detect[channel][smart_type].setdefault(location, {})
             smart_ai["name"] = self._get_value_from_xml_element(item, "name", str)
             smart_ai["sensitivity"] = self._get_value_from_xml_element(item, "sesensitivity", int)
             if (delay := self._get_value_from_xml_element(item, "stayTime", int)) is not None:
@@ -690,6 +697,16 @@ class Baichuan:
                 ai_type_list = ai_types.split(",")
                 for ai_type in ai_type_list:
                     smart_ai.setdefault(ai_type, False)
+
+            index_dict[f"{location}_{smart_ai['index']}"] = self.smart_ai_type_list(channel, smart_type, location)
+
+        if self.http_api is not None and not self.http_api._startup and index_dict != original_index_dict:
+            _LOGGER.info(
+                "New Reolink %s smart detection zone discovered for %s",
+                smart_type,
+                self.http_api.camera_name(channel),
+            )
+            self.http_api._new_devices = True
 
     async def _keepalive_loop(self) -> None:
         """Loop which keeps the TCP connection allive when subscribed for events"""
@@ -1256,7 +1273,7 @@ class Baichuan:
 
     def smart_ai_name(self, channel: int, smart_type: str, location: int) -> str:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", "Unknown")
-        
+
     def smart_ai_index(self, channel: int, smart_type: str, location: int) -> int:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("index", 0)
 
