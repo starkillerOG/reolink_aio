@@ -37,6 +37,13 @@ MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 15  # seconds
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
+SMART_AI = {
+    "crossline": (527, 528),
+    "intrusion": (529, 530),
+    "loitering": (531, 532),
+    "legacy": (549, 550),
+    "loss": (551, 552),
+}
 
 T = TypeVar("T")
 
@@ -1181,6 +1188,39 @@ class Baichuan:
             await self.set_port_enabled(PortType.rtmp, enable_rtmp == 1)
         if enable_rtsp is not None:
             await self.set_port_enabled(PortType.rtsp, enable_rtsp == 1)
+
+    async def set_smart_ai(self, channel: int, smart_type: str, location: int, sensitivity: int | None = None, delay: int | None = None) -> None:
+        """Change smart AI settings"""
+        mess = await self.send(cmd_id=SMART_AI[smart_type][0], channel=channel)
+        root = XML.fromstring(mess)
+
+        location_found = False
+        main_key = f"{smart_type[0].upper() + smart_type[1:]}Detect"
+        main = root.find(main_key)
+        if main is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: set_smart_ai cannot find {main_key} in {smart_type} smart AI")
+        if (main_ob := main.find("op")) is not None:
+            main_ob.text = "modify"  # add/delete/modify
+        for item in main.findall(f"{smart_type}DetectItem"):
+            loc = self._get_value_from_xml_element(item, "location", int)
+            if loc != location:
+                main.remove(item)
+                continue
+            location_found = True
+            if sensitivity is not None and (sens_ob := item.find("sesensitivity")) is not None:
+                sens_ob.text = str(sensitivity)
+            if delay is not None and (delay_ob := item.find("stayTime")) is not None:
+                delay_ob.text = str(delay)
+            if delay is not None and (delay_ob := item.find("timeThresh")) is not None:
+                delay_ob.text = str(delay)
+
+        if not location_found:
+            raise InvalidParameterError(f"Baichuan host {self._host}: cannot find location {location} in {smart_type} smart AI")
+
+        xml = XML.tostring(root, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+
+        await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
 
     @property
     def events_active(self) -> bool:
