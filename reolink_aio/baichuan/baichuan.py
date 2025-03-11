@@ -864,15 +864,19 @@ class Baichuan:
             return
 
         # Get Baichaun capabilities
-        mess = await self.send(cmd_id=199)
-        root = XML.fromstring(mess)
-        for support in root:
-            for item in support.findall("item"):
-                # channel item
-                channel = self._get_channel_from_xml_element(item, "chnID")
-                self._abilities[channel] = item
-                support.remove(item)
-            self._abilities[None] = support
+        try:
+            mess = await self.send(cmd_id=199)
+        except ReolinkError:
+            _LOGGER.debug("Baichuan host %s: Could not obtain abilities (cmd_id 199)", self._host)
+        else:
+            root = XML.fromstring(mess)
+            for support in root:
+                for item in support.findall("item"):
+                    # channel item
+                    channel = self._get_channel_from_xml_element(item, "chnID")
+                    self._abilities[channel] = item
+                    support.remove(item)
+                self._abilities[None] = support
 
         # Host capabilities
         self.capabilities.setdefault(None, set())
