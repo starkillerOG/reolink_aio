@@ -1317,6 +1317,12 @@ class Baichuan:
     def smart_ai_index(self, channel: int, smart_type: str, location: int) -> int:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("index", 0)
 
+    def smart_ai_sensitivity(self, channel: int, smart_type: str, location: int) -> int:
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("sensitivity", 0)
+
+    def smart_ai_delay(self, channel: int, smart_type: str, location: int) -> int:
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("delay", 0)
+
     def smart_ai_state(self, channel: int, smart_type: str, location: int, ai_type: str = "state") -> bool:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get(ai_type, False)
 
