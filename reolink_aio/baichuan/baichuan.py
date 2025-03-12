@@ -542,7 +542,7 @@ class Baichuan:
                                     _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self.http_api.nvr_name, channel, ai_type)
 
                         # reset all smart AI events to False
-                        for smart_type_dict in self._ai_detect[channel].values():
+                        for smart_type_dict in self._ai_detect.get(channel, {}).values():
                             for smart_ai_dict in smart_type_dict.values():
                                 ai_type_set = AI_DETECTS.intersection(smart_ai_dict)
                                 for ai_type in ai_type_set:
@@ -691,7 +691,7 @@ class Baichuan:
             location = self._get_value_from_xml_element(item, "location", int)
             if location is None:
                 continue
-            smart_ai = self._ai_detect[channel][smart_type].setdefault(location, {})
+            smart_ai = self._ai_detect.setdefault(channel, {}).setdefault(smart_type, {}).setdefault(location, {})
             smart_ai["name"] = self._get_value_from_xml_element(item, "name", str)
             smart_ai["sensitivity"] = self._get_value_from_xml_element(item, "sesensitivity", int)
             if (delay := self._get_value_from_xml_element(item, "stayTime", int)) is not None:
@@ -910,23 +910,18 @@ class Baichuan:
 
                 if cmd_id == 527:  # crossline detection
                     self.capabilities[channel].add("ai_crossline")
-                    self._ai_detect.setdefault(channel, {}).setdefault("crossline", {})
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 529:  # intrusion detection
                     self.capabilities[channel].add("ai_intrusion")
-                    self._ai_detect.setdefault(channel, {}).setdefault("intrusion", {})
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 531:  # linger detection
                     self.capabilities[channel].add("ai_linger")
-                    self._ai_detect.setdefault(channel, {}).setdefault("loitering", {})
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 549:  # forgotten item
                     self.capabilities[channel].add("ai_forgotten_item")
-                    self._ai_detect.setdefault(channel, {}).setdefault("legacy", {})
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 551:  # taken item
                     self.capabilities[channel].add("ai_taken_item")
-                    self._ai_detect.setdefault(channel, {}).setdefault("loss", {})
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
