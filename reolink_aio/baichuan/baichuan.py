@@ -111,6 +111,7 @@ class Baichuan:
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
+        self._network_info: dict[int | None, dict[str, str]] = {}
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
@@ -899,6 +900,7 @@ class Baichuan:
         # Host capabilities
         self.capabilities.setdefault(None, set())
         host_coroutines: list[tuple[Any, Coroutine]] = []
+        host_coroutines.append(("network_info", self.get_network_info()))
         if self.api_version("sceneModeCfg") > 0:
             host_coroutines.append((603, self.send(cmd_id=603)))
 
@@ -933,6 +935,7 @@ class Baichuan:
                 coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
+            coroutines.append(("network_info", channel, self.get_network_info(channel)))
 
         for scene_id in self._scenes:
             if scene_id < 0:
@@ -1080,6 +1083,15 @@ class Baichuan:
             mess = await self.send(cmd_id=318, channel=channel)
         self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
         return self._dev_info[channel]
+
+    async def get_network_info(self, channel: int | None = None) -> dict[str, str]:
+        """Get the network info including MAC of the host or a channel"""
+        if channel is None:
+            mess = await self.send(cmd_id=76)
+        else:
+            mess = await self.send(cmd_id=76, channel=channel)
+        self._network_info[channel] = self._get_keys_from_xml(mess, ["ip", "mac"])
+        return self._network_info[channel]
 
     async def get_channel_uids(self) -> None:
         """Get a channel list containing the UIDs"""
@@ -1421,6 +1433,9 @@ class Baichuan:
 
     def item_number(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("itemNo")
+
+    def mac_address(self, channel: int | None = None) -> str:
+        return self._network_info.get(channel, {}).get("mac", "Unknown")
 
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
