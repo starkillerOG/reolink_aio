@@ -1437,6 +1437,9 @@ class Baichuan:
     def mac_address(self, channel: int | None = None) -> str:
         return self._network_info.get(channel, {}).get("mac", "Unknown")
 
+    def ip_address(self, channel: int | None = None) -> str:
+        return self._network_info.get(channel, {}).get("ip", "Unknown")
+
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
 
