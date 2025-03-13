@@ -23,6 +23,7 @@ from ..exceptions import (
     UnexpectedDataError,
     ReolinkConnectionError,
     ReolinkTimeoutError,
+    CredentialsInvalidError,
 )
 from ..enums import BatteryEnum, DayNightEnum
 
@@ -815,7 +816,12 @@ class Baichuan:
             self._password_hash = md5_str_modern(f"{self._password}{nonce}")
             xml = xmls.LOGIN_XML.format(userName=self._user_hash, password=self._password_hash)
 
-            mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
+            try:
+                mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
+            except ApiError as err:
+                if err.rspCode == 401:
+                    raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login")
+                raise
             self._logged_in = True
 
         # privacy mode
@@ -878,8 +884,8 @@ class Baichuan:
         # Get Baichaun capabilities
         try:
             mess = await self.send(cmd_id=199)
-        except ReolinkError:
-            _LOGGER.debug("Baichuan host %s: Could not obtain abilities (cmd_id 199)", self._host)
+        except ReolinkError as err:
+            _LOGGER.debug("Baichuan host %s: Could not obtain abilities (cmd_id 199): %s", self._host, str(err).replace(f"Baichuan host {self._host}: ", ""))
         else:
             root = XML.fromstring(mess)
             for support in root:
