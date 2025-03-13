@@ -13,6 +13,8 @@ from Cryptodome.Cipher import AES
 
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
+from ..const import WAKING_COMMANDS
+from ..typings import cmd_list_type
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -100,10 +102,14 @@ class Baichuan:
         self.capabilities: dict[int | None, set[str]] = {}
         self._abilities: dict[int | None, XML.Element] = {}
 
-        # states
+        # host states
         self._ports: dict[str, dict[str, int | bool]] = {}
-        self._dev_info: dict[int | None, dict[str, str]] = {}
+        self._scenes: dict[int, str] = {}
+        self._active_scene: int = -1
         self._day_night_state: str | None = None
+
+        # channel states
+        self._dev_info: dict[int | None, dict[str, str]] = {}
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
@@ -660,6 +666,12 @@ class Baichuan:
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
 
+        elif cmd_id == 603:  # sceneListID
+            for scene_id in root.findall(".//id"):
+                if scene_id.text is not None:
+                    self._scenes[int(scene_id.text)] = "Unknown"
+            cmd_id_modified = self._get_value_from_xml_element(root, "cmdId", int)
+
         elif cmd_id == 623:  # Privacy mode
             channel = 0
             channels.add(channel)
@@ -880,6 +892,23 @@ class Baichuan:
 
         # Host capabilities
         self.capabilities.setdefault(None, set())
+        host_coroutines: list[tuple[Any, Coroutine]] = []
+        if self.api_version("sceneModeCfg") > 0:
+            host_coroutines.append((603, self.send(cmd_id=603)))
+
+        if host_coroutines:
+            results = await asyncio.gather(*[cor[1] for cor in host_coroutines], return_exceptions=True)
+            for i, result in enumerate(results):
+                (cmd_id, _) = host_coroutines[i]
+                if isinstance(result, ReolinkError):
+                    continue
+                if isinstance(result, BaseException):
+                    raise result
+
+                if cmd_id == 603:  # sceneListID
+                    self.capabilities[None].add("scenes")
+                    self._scenes[-1] = "off"
+                    self._parse_xml(cmd_id, result)
 
         # Channel Capabilities
         coroutines: list[tuple[Any, int, Coroutine]] = []
@@ -898,6 +927,11 @@ class Baichuan:
                 coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
+
+        for scene_id in self._scenes:
+            if scene_id < 0:
+                continue
+            coroutines.append(("scene", scene_id, self.get_scene_info(scene_id)))
 
         if coroutines:
             results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
@@ -970,6 +1004,35 @@ class Baichuan:
                         value = feature.text
                     abilities_dict[pretty_key][feature.tag] = value
         return abilities_dict
+
+    async def get_states(self, cmd_list: cmd_list_type = None, wake: bool = True) -> None:
+        """Update the state information of polling data"""
+        if cmd_list is None:
+            cmd_list = {}
+        if self.http_api is None:
+            return
+
+        any_battery = any(self.http_api.supported(ch, "battery") for ch in self.http_api._channels)
+
+        def inc_host_cmd(cmd: str) -> bool:
+            return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
+
+        # def inc_cmd(cmd: str, channel: int) -> bool:
+        #    return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
+        #        wake or cmd not in WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
+        #    )
+
+        coroutines: list[Coroutine] = []
+        if self.supported(None, "scenes") and inc_host_cmd("GetScene"):
+            coroutines.append(self.get_scene())
+
+        if coroutines:
+            results = await asyncio.gather(*coroutines, return_exceptions=True)
+            for result in results:
+                if isinstance(result, ReolinkError):
+                    _LOGGER.debug(result)
+                if isinstance(result, BaseException):
+                    raise result
 
     async def get_ports(self) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
@@ -1188,6 +1251,53 @@ class Baichuan:
         if enable_rtsp is not None:
             await self.set_port_enabled(PortType.rtsp, enable_rtsp == 1)
 
+    async def get_scene_info(self, scene_id: int) -> None:
+        """Get the name of a scene"""
+        xml = xmls.GetSceneInfo.format(scene_id=scene_id)
+        mess = await self.send(cmd_id=604, body=xml)
+        root = XML.fromstring(mess)
+
+        data = self._get_keys_from_xml(root, {"id": ("scene_id", int), "valid": ("valid", int), "name": ("name", str)})
+        if data.get("scene_id") != scene_id:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: get_scene_info requested scene_id {scene_id} but received {data.get('scene_id')}")
+        if data.get("valid") != 1:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: get_scene_info got invalid scene for scene_id {scene_id}")
+
+        self._scenes[scene_id] = data["name"]
+
+    async def get_scene(self) -> int:
+        """Get the currently active scene"""
+        mess = await self.send(cmd_id=601)
+        root = XML.fromstring(mess)
+
+        if self._get_value_from_xml_element(root, "enable", int) != 1:
+            self._active_scene = -1
+            return -1  # scene mode off
+
+        cur_scene = self._get_value_from_xml_element(root, "curSceneId", int)
+        if cur_scene is None:
+            self._active_scene = -1
+        else:
+            self._active_scene = cur_scene
+        return self._active_scene
+
+    async def set_scene(self, scene_id: int | None = None, scene_name: str | None = None) -> None:
+        """Set the active scene"""
+        if scene_name is not None:
+            ids = [key for key, val in self._scenes.items() if val == scene_name]
+            if ids:
+                scene_id = ids[0]
+        if scene_id not in self._scenes:
+            raise InvalidParameterError(f"Baichuan host {self._host}: set_scene scene_id {scene_id} not in {list(self._scenes.keys())}")
+
+        if scene_id < 0:
+            xml = xmls.DisableScene
+        else:
+            xml = xmls.SetScene.format(scene_id=scene_id)
+
+        await self.send(cmd_id=602, body=xml)
+        await self.get_scene()
+
     async def set_smart_ai(self, channel: int, smart_type: str, location: int, sensitivity: int | None = None, delay: int | None = None) -> None:
         """Change smart AI settings"""
         mess = await self.send(cmd_id=SMART_AI[smart_type][0], channel=channel)
@@ -1284,6 +1394,18 @@ class Baichuan:
         if enabled is None:
             return None
         return enabled == 1
+
+    @property
+    def active_scene_id(self) -> int:
+        return self._active_scene
+
+    @property
+    def scene_names(self) -> list[str]:
+        return list(self._scenes.values())
+
+    @property
+    def active_scene(self) -> str:
+        return self._scenes.get(self._active_scene, "Unknown")
 
     def model(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("type")

@@ -28,6 +28,7 @@ import aiohttp
 
 from . import templates, typings
 from .baichuan import Baichuan, PortType, DEFAULT_BC_PORT
+from .const import WAKING_COMMANDS
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
@@ -101,23 +102,6 @@ DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
     "RLC-81MA",
 }
 DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
-
-WAKING_COMMANDS = {
-    "GetWhiteLed",
-    "GetZoomFocus",
-    "GetAudioCfg",
-    "GetPtzGuard",
-    "GetAutoReply",
-    "GetPtzTraceSection",
-    "GetAiCfg",
-    "GetAiAlarm",
-    "GetPtzCurPos",
-    "GetAudioAlarm",
-    "GetDingDongList",
-    "GetDingDongCfg",
-    "DingDongOpt",
-    "GetPerformance",
-}
 
 # not all chars in a password can be used in the URLS of for instance the FLV stream
 ALLOWED_SPECIAL_CHARS = r"@$*~_-+=!?.,:;'()[]"
@@ -2258,6 +2242,8 @@ class Host:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining channel-state response") from err
 
         self.map_channels_json_response(json_data, channels, chime_ids)
+
+        await self.baichuan.get_states(cmd_list, wake)
 
     def get_raw_host_data(self) -> str:
         """Get the cache of the host data as a string."""

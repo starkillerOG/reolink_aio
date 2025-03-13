@@ -122,3 +122,28 @@ SetPrivacyMode = """
 <sleep>{enable}</sleep>
 </sleepState>
 </body>"""
+
+GetSceneInfo = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<sceneCfg version="1.1">
+<id>{scene_id}</id>
+</sceneCfg>
+</body>"""
+
+DisableScene = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<sceneModeCfg version="1.1">
+<enable>0</enable>
+</sceneModeCfg>
+</body>"""
+
+SetScene = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<sceneModeCfg version="1.1">
+<enable>1</enable>
+<curSceneId>{scene_id}</curSceneId>
+</sceneModeCfg>
+</body>"""
