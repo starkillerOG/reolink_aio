@@ -383,13 +383,13 @@ class Baichuan:
                 time_since_recv = now - self._protocol.time_recv
             else:
                 time_since_recv = 0
-            if now - self._time_reestablish > 150:  # limit the amount of reconnects to prevent fast loops
+            if now - self._time_reestablish > 60:  # limit the amount of reconnects to prevent fast loops
                 self._time_reestablish = now
                 self._loop.create_task(self._reestablish_connection(time_since_recv))
                 return
 
             self._time_connection_lost = now
-            _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s", self._host, time_since_recv)
+            _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s, last reestablish %.2f s ago", self._host, time_since_recv, now - self._time_reestablish)
 
     async def _reestablish_connection(self, time_since_recv: float) -> None:
         """Try to reestablish the connection after a connection is closed"""
@@ -404,7 +404,7 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: lost event subscription after %.2f s, but reestablished connection immediately", self._host, time_since_recv)
             if time_now() - time_start < 5:
                 origianal_keepalive = self._keepalive_interval
-                self._keepalive_interval = max(MIN_KEEP_ALLIVE_INTERVAL, min(time_since_recv - 1, self._keepalive_interval - 1))
+                self._keepalive_interval = max(MIN_KEEP_ALLIVE_INTERVAL, min(time_since_recv - 2, self._keepalive_interval - 1))
                 _LOGGER.debug("Baichuan host %s: reducing keepalive interval from %.2f to %.2f s", self._host, origianal_keepalive, self._keepalive_interval)
 
     @overload
