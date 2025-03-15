@@ -7,12 +7,16 @@ from asyncio import TimeoutError as AsyncioTimeoutError
 class ReolinkError(Exception):
     """Base Reolink error class"""
 
+    def __init__(self, message: str, translation_key: str = ""):
+        super().__init__(message)
+        self.translation_key = translation_key
+
 
 class ApiError(ReolinkError):
     """Raised when API returns an error code"""
 
-    def __init__(self, message: str, rspCode: int | None = None):
-        super().__init__(message)
+    def __init__(self, message: str, translation_key: str = "", rspCode: int | None = None):
+        super().__init__(message, translation_key)
         self.rspCode = rspCode
 
 

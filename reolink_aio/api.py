@@ -2834,7 +2834,9 @@ class Host:
         self._sw_upload_progress[channel] = 0
         try:
             if self._updating:
-                raise InvalidParameterError("update_firmware: firmware update already running, wait on completion before starting another")
+                raise InvalidParameterError(
+                    "update_firmware: firmware update already running, wait on completion before starting another", translation_key="update_already_running"
+                )
             self._updating = True
 
             cmd = "GetDevInfo" if channel is None else "GetChnTypeInfo"
@@ -2894,7 +2896,11 @@ class Host:
                 await self.send_reolink_com(request_URL, expected_response_type="application/json", user_agent="reolink-aio-firmware")
             except ApiError as err:
                 if err.rspCode == 429:
-                    raise ApiError(f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour") from err
+                    raise ApiError(
+                        f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour",
+                        rspCode=err.rspCode,
+                        translation_key="firmware_rate_limit",
+                    ) from err
                 raise err
 
             # Download firmware file from Reolink Download Center
@@ -2902,7 +2908,11 @@ class Host:
                 response = await self.send_reolink_com(new_version.download_url, expected_response_type="application/octet-stream")
             except ApiError as err:
                 if err.rspCode == 429:
-                    raise ApiError(f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour") from err
+                    raise ApiError(
+                        f"Reolink firmware update server reached hourly rate limit: updating {self.camera_name(channel)} can be tried again in 1 hour",
+                        rspCode=err.rspCode,
+                        translation_key="firmware_rate_limit",
+                    ) from err
                 raise err
             with ZipFile(BytesIO(await response.read()), "r") as zip_file:
                 for info in zip_file.infolist():
