@@ -153,7 +153,7 @@ class Host:
         # Login session
         self._username: str = username
         self._password: str = password
-        self.valid_password() # Check for special chars in password
+        self.valid_password()  # Check for special chars in password
         self._enc_password = parse.quote(self._password, safe="")
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None

@@ -107,7 +107,7 @@ class Baichuan:
         self._ports: dict[str, dict[str, int | bool]] = {}
         self._scenes: dict[int, str] = {}
         self._active_scene: int = -1
-        self._day_night_state: str | None = None
+        self._day_night_state: dict[int, str] = {}
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -590,7 +590,7 @@ class Baichuan:
                     elif event.tag == "DayNightEvent":
                         state = self._get_value_from_xml_element(event, "mode")
                         if state is not None:
-                            self._day_night_state = state
+                            self._day_night_state[channel] = state
                             _LOGGER.debug("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
                     else:
                         if f"TCP_event_tag_{event.tag}" not in self._log_once:
@@ -821,7 +821,7 @@ class Baichuan:
                 mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
             except ApiError as err:
                 if err.rspCode == 401:
-                    raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login")
+                    raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login") from err
                 raise
             self._logged_in = True
 
@@ -934,6 +934,9 @@ class Baichuan:
                 coroutines.append((549, channel, self.send(cmd_id=549, channel=channel)))
                 coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))
 
+            if (self.api_version("newIspCfg", channel) >> 16) & 1:  # 17th bit (65536), shift 16
+                coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
+
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
 
@@ -966,6 +969,8 @@ class Baichuan:
                 elif cmd_id == 551:  # taken item
                     self.capabilities[channel].add("ai_taken_item")
                     self._parse_xml(cmd_id, result)
+                elif cmd_id == "day_night_state" and self.day_night_state is not None:
+                    self.capabilities[channel].add("day_night_state")
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
 
@@ -1026,14 +1031,18 @@ class Baichuan:
         def inc_host_cmd(cmd: str) -> bool:
             return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
 
-        # def inc_cmd(cmd: str, channel: int) -> bool:
-        #    return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-        #        wake or cmd not in WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
-        #    )
+        def inc_cmd(cmd: str, channel: int) -> bool:
+            return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
+                wake or cmd not in WAKING_COMMANDS or self.http_api is None or not self.http_api.supported(channel, "battery")
+            )
 
         coroutines: list[Coroutine] = []
         if self.supported(None, "scenes") and inc_host_cmd("GetScene"):
             coroutines.append(self.get_scene())
+
+        for channel in self.http_api._channels:
+            if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
+                coroutines.append(self.get_day_night_state(channel))
 
         if coroutines:
             results = await asyncio.gather(*coroutines, return_exceptions=True)
@@ -1111,6 +1120,12 @@ class Baichuan:
         """Check if cry detection is supported"""
         mess = await self.send(cmd_id=299, channel=channel)
         return self._get_value_from_xml(mess, "cryDetectAbility") == "1"
+
+    async def get_day_night_state(self, channel: int) -> None:
+        """Get the day night state"""
+        mess = await self.send(cmd_id=296, channel=channel)
+        data = self._get_keys_from_xml(mess, ["stat"])
+        self._day_night_state[channel] = data["stat"]
 
     async def get_privacy_mode(self, channel: int = 0) -> bool | None:
         """Get the privacy mode state"""
@@ -1354,11 +1369,6 @@ class Baichuan:
         return self._events_active and time_now() - self._time_connection_lost > 120
 
     @property
-    def day_night_state(self) -> str | None:
-        """known values: day, night, led_day"""
-        return self._day_night_state
-
-    @property
     def http_port(self) -> int | None:
         return self._ports.get("http", {}).get("port")
 
@@ -1445,6 +1455,10 @@ class Baichuan:
 
     def privacy_mode(self, channel: int = 0) -> bool | None:
         return self._privacy_mode.get(channel)
+
+    def day_night_state(self, channel: int) -> str | None:
+        """known values: day, night, led_day"""
+        return self._day_night_state.get(channel)
 
     def smart_type_list(self, channel: int) -> list[str]:
         return list(self._ai_detect.get(channel, {}).keys())
