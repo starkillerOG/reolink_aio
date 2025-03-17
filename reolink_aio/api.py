@@ -152,8 +152,7 @@ class Host:
         ##############################################################################
         # Login session
         self._username: str = username
-        self._password: str = password
-        self.valid_password()  # Check for special chars in password
+        self._password: str = password[:31]
         self._enc_password = parse.quote(self._password, safe="")
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
@@ -554,9 +553,6 @@ class Host:
     def valid_password(self) -> bool:
         """check if the password contains incompatible characters"""
         password_set = set(self._password)
-        if len(self._password) >= 32:
-            _LOGGER.warning("Reolink password can not be longer than 31 characters, please change the password to limit it to 31 characters")
-            return False
         if len(password_set - ALLOWED_CHARS.union(FORBIDEN_CHARS)) != 0:
             # password contains chars not in ALLOWED_CHARS or FORBIDEN_CHARS
             unknown_chars = password_set - ALLOWED_CHARS.union(FORBIDEN_CHARS)
@@ -2460,6 +2456,9 @@ class Host:
             self._api_version["GetMdAlarm"] = 0
 
         self.construct_capabilities()
+
+        # Check for special chars in password
+        self.valid_password()
 
         if self.protocol == "rtsp" and not self.baichuan.privacy_mode():
             # Cache the RTSP urls
