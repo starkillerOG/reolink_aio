@@ -4,15 +4,12 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: read
-
 jobs:
   verify:
-    runs-on: ubuntu-20.04
-    environment: PyPi publish
-
     name: Verify Python build context
+    runs-on: ubuntu-20.04
+    permissions:
+      contents: read
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python
@@ -55,12 +52,11 @@ jobs:
         mypy reolink_aio 
 
   build:
-    name: Build and publish PyPi package
+    name: Build package
     needs: verify
     runs-on: ubuntu-20.04
-    environment: PyPi publish
     permissions:
-      id-token: write
+      contents: read
     if: github.repository_owner == 'starkillerOG'
     steps:
     - uses: actions/checkout@v3
@@ -74,5 +70,22 @@ jobs:
         python -m pip install --upgrade build
     - name: Build package
       run: python -m build
+    - uses: actions/upload-artifact@v4
+      with:
+        path: ./dist
+
+  pypi-publish:
+    name: Publish PyPi package
+    needs: build
+    runs-on: ubuntu-20.04
+    environment: PyPi publish
+    permissions:
+      id-token: write
+    if: github.repository_owner == 'starkillerOG'
+    steps:
+    - uses: actions/download-artifact@v4
+
     - name: Publish package
       uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages_dir: artifact/
