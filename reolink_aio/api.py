@@ -2207,8 +2207,6 @@ class Host:
         host_body = []
         if self.supported(None, "wifi") and self.wifi_connection and inc_host_cmd("GetWifiSignal"):
             host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
-        if self.supported(None, "performance") and inc_host_cmd("GetPerformance"):
-            host_body.append({"cmd": "GetPerformance", "action": 0, "param": {}})
         if self.supported(None, "state_light") and inc_host_cmd("GetStateLight"):
             host_body.append({"cmd": "GetStateLight", "action": 0, "param": {}})
         if self.supported(None, "hdd") and inc_host_cmd("GetHddInfo"):
@@ -2221,6 +2219,11 @@ class Host:
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
         chime_ids.extend([-1] * len(host_body))
+
+        # send GetPerformace seperately and first, since the polling will influence the read CPU usage
+        if self.supported(None, "performance") and inc_host_cmd("GetPerformance"):
+            json_data = await self.send([{"cmd": "GetPerformance", "action": 0, "param": {}}], expected_response_type="json")
+            self.map_host_json_response(json_data)
 
         if not body:
             _LOGGER.debug(
