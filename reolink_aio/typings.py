@@ -532,6 +532,7 @@ FLAGS_LENGTH = {
         4: 9,  # Version 4
         7: 10,  # Version 7
         9: 14,  # Version 9
+        10: 14,  # Version 10
     },
     "hub": {
         2: 10,  # Version 2
@@ -545,6 +546,7 @@ FLAGS_MAPPING = {
         4: FLAGS_CAM_V2,
         7: FLAGS_CAM_V2,
         9: FLAGS_CAM_V2,
+        10: FLAGS_CAM_V2,
     },
     "hub": {
         0: FLAGS_HUB_V0,
