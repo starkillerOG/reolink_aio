@@ -668,6 +668,17 @@ class Baichuan:
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
 
+        elif cmd_id == 588:  # manual record
+            for item in root.findall(".//manualRec"):
+                channel = self._get_channel_from_xml_element(item, "channel")
+                if channel is None:
+                    continue
+                channels.add(channel)
+                state = self._get_value_from_xml_element(item, "stat", int)
+                if state is not None and channel in self.http_api._whiteled_settings:
+                    self.http_api._manual_record_settings[channel]["Rec"]["enable"] = state
+                    _LOGGER.debug("Reolink %s TCP event channel %s, Manual record: %s", self.http_api.nvr_name, channel, state)
+
         elif cmd_id == 603:  # sceneListID
             for scene_id in root.findall(".//id"):
                 if scene_id.text is not None:
