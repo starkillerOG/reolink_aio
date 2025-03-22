@@ -894,7 +894,7 @@ class Host:
         if channel not in self._manual_record_settings:
             return False
 
-        return self._manual_record_settings[channel]["Rec"]["enable"] == 1
+        return self._manual_record_settings[channel]["Rec"]["enable"] > 0
 
     def buzzer_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -4619,8 +4619,10 @@ class Host:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_manual_record: no camera connected to channel '{channel}'")
 
-        on_off = 1 if enable else 0
-        body = [{"cmd": "SetManualRec", "action": 0, "param": {"Rec": {"channel": channel, "enable": on_off}}}]
+        params = {"channel": channel, "enable": 1 if enable else 0}
+        if enable:
+            params["duration"] = 600
+        body = [{"cmd": "SetManualRec", "action": 0, "param": {"Rec": params}}]
         await self.send_setting(body)
 
     async def set_buzzer(self, channel: int | None, enable: bool) -> None:
