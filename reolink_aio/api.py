@@ -2295,7 +2295,7 @@ class Host:
 
         # Check for invalid NVT-IPC cameras
         for channel in self._channels:
-            if self.camera_name(channel) == "NVT":
+            if self.camera_name(channel) in {"NVT", "IPCAM"}:
                 body = [{"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}}]
                 try:
                     json_data = await self.send(body, expected_response_type="json")
@@ -2306,7 +2306,7 @@ class Host:
                     self.map_channel_json_response(json_data, channel)
                     if self.camera_model(channel) == "IPC":
                         self._channels.remove(channel)
-                        _LOGGER.debug("Reolink camera on channel %s, called 'NVT' with model 'IPC', removing this invalid channel", channel)
+                        _LOGGER.debug("Reolink camera on channel %s, called 'NVT' or 'IPCAM' with model 'IPC', removing this invalid channel", channel)
 
         if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
             self._stream_channels = [0, 1]
