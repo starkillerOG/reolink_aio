@@ -280,6 +280,7 @@ class Host:
         self._battery: dict[int, dict] = {}
         self._pir: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
+        self._recording_range: dict[int, dict] = {}
         self._manual_record_settings: dict[int, dict] = {}
         self._md_alarm_settings: dict[int, dict] = {}
         self._ai_alarm_settings: dict[int, dict] = {}
@@ -889,6 +890,20 @@ class Host:
             return self._recording_settings[channel]["Rec"]["scheduleEnable"] == 1
 
         return self._recording_settings[channel]["Rec"]["schedule"]["enable"] == 1
+
+    @property
+    def recording_packing_time(self) -> str:
+        if not self._recording_settings:
+            return ""
+        channel = next(iter(self._recording_settings))
+        return self._recording_settings[channel]["Rec"]["packTime"]
+
+    @property
+    def recording_packing_time_list(self) -> list[str]:
+        if not self._recording_range:
+            return []
+        channel = next(iter(self._recording_range))
+        return self._recording_range[channel]["Rec"]["packTime"]
 
     def manual_record_enabled(self, channel: int) -> bool:
         if channel not in self._manual_record_settings:
@@ -1590,6 +1605,9 @@ class Host:
 
         if self._recording_settings and not self._is_hub:
             self._capabilities["Host"].add("recording")
+
+        if self.recording_packing_time_list and self.recording_packing_time:
+            self._capabilities["Host"].add("pak_time")
 
         if self._email_settings and not self._is_hub:
             self._capabilities["Host"].add("email")
@@ -2378,7 +2396,7 @@ class Host:
                         {"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}},
-                        {"cmd": "GetRecV20", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetRecV20", "action": 1, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
@@ -2389,7 +2407,7 @@ class Host:
                         {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetPush", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}},
-                        {"cmd": "GetRec", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetRec", "action": 1, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}},
                     ]
@@ -3862,9 +3880,13 @@ class Host:
 
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
+                    if "range" in data:
+                        self._recording_range[channel] = data["range"]
 
                 elif data["cmd"] == "GetRecV20":
                     self._recording_settings[channel] = data["value"]
+                    if "range" in data:
+                        self._recording_range[channel] = data["range"]
 
                 elif data["cmd"] == "GetManualRec":
                     self._manual_record_settings[channel] = data["value"]
@@ -4610,6 +4632,21 @@ class Host:
             params["Rec"]["schedule"]["enable"] = on_off
             body = [{"cmd": "SetRec", "action": 0, "param": params}]
 
+        await self.send_setting(body)
+
+    async def set_recording_packing_time(self, value: str) -> None:
+        """Set the recording packing time."""
+        if not self.supported(None, "pak_time"):
+            raise NotSupportedError(f"set_recording_packing_time: pak time on {self.nvr_name} is not available")
+        if value not in self.recording_packing_time_list:
+            raise InvalidParameterError(f"set_recording_packing_time: value {value} not in {self.recording_packing_time_list}")
+
+        if self.api_version("GetRec") >= 1:
+            body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec": {"packTime": value}}}]
+            await self.send_setting(body)
+            return
+
+        body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": {"packTime": value}}}]
         await self.send_setting(body)
 
     async def set_manual_record(self, channel: int, enable: bool) -> None:
