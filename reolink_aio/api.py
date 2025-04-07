@@ -896,14 +896,14 @@ class Host:
         if not self._recording_settings:
             return ""
         channel = next(iter(self._recording_settings))
-        return self._recording_settings[channel]["Rec"]["packTime"]
+        return self._recording_settings[channel].get("Rec", {}).get("packTime", "")
 
     @property
     def recording_packing_time_list(self) -> list[str]:
         if not self._recording_range:
             return []
         channel = next(iter(self._recording_range))
-        return self._recording_range[channel]["Rec"]["packTime"]
+        return self._recording_range[channel].get("Rec", {}).get("packTime", [])
 
     def manual_record_enabled(self, channel: int) -> bool:
         if channel not in self._manual_record_settings:
