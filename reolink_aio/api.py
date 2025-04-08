@@ -3718,7 +3718,7 @@ class Host:
                 if data["cmd"] == "GetChnTypeInfo":
                     if data["value"]["typeInfo"] != "":
                         self._channel_models[channel] = data["value"]["typeInfo"]
-                    self._is_doorbell[channel] = "Doorbell" in self._channel_models[channel]
+                    self._is_doorbell[channel] = "Doorbell" in self._channel_models.get(channel, "")
                     if data["value"].get("firmVer", "") != "":
                         self._channel_sw_versions[channel] = data["value"]["firmVer"]
                         if self._channel_sw_versions[channel] is not None:
