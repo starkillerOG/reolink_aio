@@ -15,4 +15,5 @@ WAKING_COMMANDS = {
     "GetDingDongCfg",
     "DingDongOpt",
     "GetPerformance",
+    "296",
 }
