@@ -1456,10 +1456,18 @@ class Baichuan:
         return self._dev_info.get(channel, {}).get("itemNo")
 
     def mac_address(self, channel: int | None = None) -> str | None:
-        return self._network_info.get(channel, {}).get("mac")
+        mac = self._network_info.get(channel, {}).get("mac")
+        if channel is not None and mac == self.mac_address():
+            # MAC of channel equals MAC of host, host could not retrieve MAC of channel
+            return None
+        return mac
 
     def ip_address(self, channel: int | None = None) -> str:
-        return self._network_info.get(channel, {}).get("ip", "Unknown")
+        ip = self._network_info.get(channel, {}).get("ip", "Unknown")
+        if channel is not None and ip == self.ip_address():
+            # IP of channel equals IP of host, host could not retrieve IP of channel
+            return "Unknown"
+        return ip
 
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
