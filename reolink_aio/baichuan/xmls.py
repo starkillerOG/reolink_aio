@@ -147,3 +147,85 @@ SetScene = """
 <curSceneId>{scene_id}</curSceneId>
 </sceneModeCfg>
 </body>"""
+
+FileInfoListOpen = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<uid>{uid}</uid>
+<searchAITrack>1</searchAITrack>
+<channelId>{channel}</channelId>
+<logicChnBitmap>255</logicChnBitmap>
+<streamType>mainStream</streamType>
+<recordType>manual, sched, io, md, people, face, vehicle, dog_cat, visitor, other, package</recordType>
+<startTime>
+<year>{start_year}</year>
+<month>{start_month}</month>
+<day>{start_day}</day>
+<hour>{start_hour}</hour>
+<minute>{start_minute}</minute>
+<second>{start_second}</second>
+</startTime>
+<endTime>
+<year>{end_year}</year>
+<month>{end_month}</month>
+<day>{end_day}</day>
+<hour>{end_hour}</hour>
+<minute>{end_minute}</minute>
+<second>{end_second}</second>
+</endTime>
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+FileInfoList = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<channelId>{channel}</channelId>
+<uid>{uid}</uid>
+<searchAITrack>1</searchAITrack>
+<handle>{handle}</handle>
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+FindRecVideoOpen = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<findAlarmVideo version="1.1">
+<channelId>{channel}</channelId>
+<uid>{uid}</uid>
+<logicChnBitmap>255</logicChnBitmap>
+<streamType>0</streamType>
+<notSearchVideo>0</notSearchVideo>
+<startTime>
+<year>{start_year}</year>
+<month>{start_month}</month>
+<day>{start_day}</day>
+<hour>{start_hour}</hour>
+<minute>{start_minute}</minute>
+<second>{start_second}</second>
+</startTime>
+<endTime>
+<year>{end_year}</year>
+<month>{end_month}</month>
+<day>{end_day}</day>
+<hour>{end_hour}</hour>
+<minute>{end_minute}</minute>
+<second>{end_second}</second>
+</endTime>
+<alarmType>md, pir, io, people, face, vehicle, dog_cat, visitor, other, package</alarmType>
+</findAlarmVideo>
+</body>"""
+
+FindRecVideo = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<findAlarmVideo version="1.1">
+<channelId>{channel}</channelId>
+<fileHandle>{fileHandle}</fileHandle>
+</findAlarmVideo>
+</body>"""

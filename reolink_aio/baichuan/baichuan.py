@@ -1375,6 +1375,29 @@ class Baichuan:
 
         await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
 
+    async def search_vod_type(self, channel: int, start: datetime, end: datetime):
+        if self.http_api is None:
+            return
+        uid = self.http_api._channel_uids.get(channel, None)
+        if uid is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
+
+        xml = xmls.FindRecVideoOpen.format(channel=channel, uid=uid, start_year=start.year, start_month=start.month, start_day=start.day, start_hour=start.hour, start_minute=start.minute, start_second=start.second, end_year=end.year, end_month=end.month, end_day=end.day, end_hour=end.hour, end_minute=end.minute, end_second=end.second)
+        mess = await self.send(cmd_id=272, channel=channel, body=xml)
+        fileHandle = self._get_value_from_xml(mess, "fileHandle")
+
+        xml = xmls.FindRecVideo.format(channel=channel, fileHandle=fileHandle)
+        await self.send(cmd_id=273, channel=channel, body=xml)
+        await self.send(cmd_id=274, channel=channel, body=xml)
+
+        #xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, start_year=start.year, start_month=start.month, start_day=start.day, start_hour=start.hour, start_minute=start.minute, start_second=start.second, end_year=end.year, end_month=end.month, end_day=end.day, end_hour=end.hour, end_minute=end.minute, end_second=end.second)
+        #mess = await self.send(cmd_id=14, body=xml)
+        #handle = self._get_value_from_xml(mess, "handle")
+
+        #xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
+        #await self.send(cmd_id=15, body=xml_file_info)
+        #await self.send(cmd_id=16, body=xml_file_info)
+
     @property
     def events_active(self) -> bool:
         return self._events_active and time_now() - self._time_connection_lost > 120
