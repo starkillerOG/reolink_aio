@@ -2485,7 +2485,7 @@ class Host:
         for channel in self._channels:
             # fix for manual record firmware bug, it should be 0 or 1, other values are a bug and cause battery drain
             if self.supported(channel, "manual_record") and (val := self._manual_record_settings[channel]["Rec"]["enable"]) > 1:
-                _LOGGER.warning("Manual recording of Reolink %s has value %s which is a firmware bug, disabeling manual recording", self.camera_name(channel), val)
+                _LOGGER.warning("Manual recording of Reolink %s has value %s which is a firmware bug, disabling manual recording", self.camera_name(channel), val)
                 await self.set_manual_record(channel, False)
 
         if self.protocol == "rtsp" and not self.baichuan.privacy_mode():
