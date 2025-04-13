@@ -404,6 +404,7 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     # Mp4Record/2023-04-26/RecS02_DST20230426_145918_150032_2B14808_32F1DF.mp4
     # Mp4Record/2020-12-22/RecM01_20201222_075939_080140_6D28808_1A468F9.mp4
     # "/mnt/sda/<UID>-<NAME>/Mp4Record/2024-08-27/RecM02_DST20240827_090302_090334_0_800_800_033C820000_61B6F0.mp4"
+    # Home Hub Pro: <stream_type>-0-<time_of_recording>-00000-<UID>
     # https://github.com/sven337/ReolinkLinux/wiki/Figuring-out-the-file-names
 
     try:
