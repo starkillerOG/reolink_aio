@@ -1382,7 +1382,10 @@ class Baichuan:
             return vod_type_dict
         uid = self.http_api._channel_uids.get(channel, None)
         if uid is None:
-            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
+            if not self.http_api.is_nvr:
+                uid = self.http_api.uid
+            if uid is None:
+                raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
 
         if stream == "sub":
             stream_type = 1
