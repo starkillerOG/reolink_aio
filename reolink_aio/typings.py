@@ -303,6 +303,7 @@ class VOD_trigger(IntFlag):
     PACKAGE = auto()
     FACE = auto()
     IO = auto()
+    CRYING = auto()
 
 
 Parsed_VOD_file_name = NamedTuple(

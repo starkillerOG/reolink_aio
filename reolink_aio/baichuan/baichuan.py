@@ -1456,6 +1456,8 @@ class Baichuan:
                     vod_type_dict[start_time_file] |= VOD_trigger.DOORBELL
                 if "package" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.PACKAGE
+                if "cry" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.CRYING
 
             if start_time_event is None:
                 await self.send(cmd_id=274, channel=channel, body=xml)

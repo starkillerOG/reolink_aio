@@ -217,7 +217,7 @@ FindRecVideoOpen = """
 <minute>{end_minute}</minute>
 <second>{end_second}</second>
 </endTime>
-<alarmType>md, pir, io, people, face, vehicle, dog_cat, visitor, other, package</alarmType>
+<alarmType>md, pir, io, people, face, vehicle, dog_cat, visitor, other, package, cry</alarmType>
 </findAlarmVideo>
 </body>"""
 
