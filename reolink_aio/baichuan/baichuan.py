@@ -6,6 +6,7 @@ import logging
 import asyncio
 from inspect import getmembers
 from time import time as time_now
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, TypeVar, overload, Coroutine
 from collections.abc import Callable
 from xml.etree import ElementTree as XML
@@ -14,7 +15,7 @@ from Cryptodome.Cipher import AES
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
 from ..const import WAKING_COMMANDS
-from ..typings import cmd_list_type
+from ..typings import cmd_list_type, VOD_trigger
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -1375,28 +1376,127 @@ class Baichuan:
 
         await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
 
-    async def search_vod_type(self, channel: int, start: datetime, end: datetime):
+    async def search_vod_type(self, channel: int, start: datetime, end: datetime, stream: str | None = None) -> dict[str, VOD_trigger]:
+        vod_type_dict: dict[str, VOD_trigger] = {}
         if self.http_api is None:
-            return
+            return vod_type_dict
         uid = self.http_api._channel_uids.get(channel, None)
         if uid is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
 
-        xml = xmls.FindRecVideoOpen.format(channel=channel, uid=uid, start_year=start.year, start_month=start.month, start_day=start.day, start_hour=start.hour, start_minute=start.minute, start_second=start.second, end_year=end.year, end_month=end.month, end_day=end.day, end_hour=end.hour, end_minute=end.minute, end_second=end.second)
-        mess = await self.send(cmd_id=272, channel=channel, body=xml)
-        fileHandle = self._get_value_from_xml(mess, "fileHandle")
+        if stream == "sub":
+            stream_type = 1
+        else:
+            stream_type = 0
 
-        xml = xmls.FindRecVideo.format(channel=channel, fileHandle=fileHandle)
-        await self.send(cmd_id=273, channel=channel, body=xml)
-        await self.send(cmd_id=274, channel=channel, body=xml)
+        finished: int | None = 0
+        request_i = 0
+        while finished == 0:
+            request_i += 1
+            if request_i > 50:
+                _LOGGER.warning("Baichuan host %s: search_vod_type took more then 50 itterations, quitting", self._host)
+                break
+            xml = xmls.FindRecVideoOpen.format(
+                channel=channel,
+                uid=uid,
+                stream_type=stream_type,
+                start_year=start.year,
+                start_month=start.month,
+                start_day=start.day,
+                start_hour=start.hour,
+                start_minute=start.minute,
+                start_second=start.second,
+                end_year=end.year,
+                end_month=end.month,
+                end_day=end.day,
+                end_hour=end.hour,
+                end_minute=end.minute,
+                end_second=end.second,
+            )
+            mess = await self.send(cmd_id=272, channel=channel, body=xml)
+            fileHandle = self._get_value_from_xml(mess, "fileHandle")
 
-        #xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, start_year=start.year, start_month=start.month, start_day=start.day, start_hour=start.hour, start_minute=start.minute, start_second=start.second, end_year=end.year, end_month=end.month, end_day=end.day, end_hour=end.hour, end_minute=end.minute, end_second=end.second)
-        #mess = await self.send(cmd_id=14, body=xml)
-        #handle = self._get_value_from_xml(mess, "handle")
+            xml = xmls.FindRecVideo.format(channel=channel, fileHandle=fileHandle)
+            mess = await self.send(cmd_id=273, channel=channel, body=xml)
+            root = XML.fromstring(mess)
+            main = root.find("alarmVideoInfo")
+            if main is None:
+                await self.send(cmd_id=274, channel=channel, body=xml)
+                break
+            finished = self._get_value_from_xml_element(main, "bFinished", int)
+            vod_list = main.find("alarmVideoList")
+            if vod_list is None:
+                await self.send(cmd_id=274, channel=channel, body=xml)
+                break
+            start_time_event: XML.Element | None = None
+            for item in vod_list.findall(".//alarmVideo"):
+                file_name = self._get_value_from_xml_element(item, "fileName")
+                trigger = self._get_value_from_xml_element(item, "alarmType")
+                start_time_event = item.find("startTime")
+                if file_name is None or trigger is None:
+                    continue
+                start_time_file = file_name[2:]
+                vod_type_dict.setdefault(start_time_file, VOD_trigger.NONE)
+                if "md" in trigger or "pir" in trigger or "other" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.MOTION
+                if "io" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.IO
+                if "people" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.PERSON
+                if "face" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.FACE
+                if "vehicle" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.VEHICLE
+                if "dog_cat" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.ANIMAL
+                if "visitor" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.DOORBELL
+                if "package" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.PACKAGE
 
-        #xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
-        #await self.send(cmd_id=15, body=xml_file_info)
-        #await self.send(cmd_id=16, body=xml_file_info)
+            if start_time_event is None:
+                await self.send(cmd_id=274, channel=channel, body=xml)
+                break
+
+            if finished == 0:
+                year = self._get_value_from_xml_element(start_time_event, "year", int)
+                month = self._get_value_from_xml_element(start_time_event, "month", int)
+                day = self._get_value_from_xml_element(start_time_event, "day", int)
+                hour = self._get_value_from_xml_element(start_time_event, "hour", int)
+                minute = self._get_value_from_xml_element(start_time_event, "minute", int)
+                second = self._get_value_from_xml_element(start_time_event, "second", int)
+                if year is None or month is None or day is None or hour is None or minute is None or second is None:
+                    await self.send(cmd_id=274, channel=channel, body=xml)
+                    break
+                start = datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
+
+            await self.send(cmd_id=274, channel=channel, body=xml)
+
+        # xml = xmls.FileInfoListOpen.format(
+        #    channel=channel,
+        #    uid=uid,
+        #    stream_type=stream_type,
+        #    start_year=start.year,
+        #    start_month=start.month,
+        #    start_day=start.day,
+        #    start_hour=start.hour,
+        #    start_minute=start.minute,
+        #    start_second=start.second,
+        #    end_year=end.year,
+        #    end_month=end.month,
+        #    end_day=end.day,
+        #    end_hour=end.hour,
+        #    end_minute=end.minute,
+        #    end_second=end.second,
+        # )
+        # mess = await self.send(cmd_id=14, body=xml)
+        # handle = self._get_value_from_xml(mess, "handle")
+
+        # xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
+        # await self.send(cmd_id=15, body=xml_file_info)
+        # await self.send(cmd_id=16, body=xml_file_info)
+
+        return vod_type_dict
 
     @property
     def events_active(self) -> bool:

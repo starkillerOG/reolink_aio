@@ -301,6 +301,8 @@ class VOD_trigger(IntFlag):
     PERSON = auto()
     DOORBELL = auto()
     PACKAGE = auto()
+    FACE = auto()
+    IO = auto()
 
 
 Parsed_VOD_file_name = NamedTuple(
@@ -341,6 +343,7 @@ class VOD_file:
         # 'width': 0}
         self.data = data
         self.tzinfo = tzinfo
+        self.bc_triggers: None | VOD_trigger = None
         self.__parsed_name: Parsed_VOD_file_name | None = None
 
     def __repr__(self):
@@ -355,6 +358,12 @@ class VOD_file:
     def start_time(self) -> dtc.datetime:
         """Start time of the recording."""
         return reolink_time_to_datetime(self.data["StartTime"], self.tzinfo)
+
+    @property
+    def start_time_id(self) -> str:
+        """Start time identifier of the recording."""
+        time = self.data["StartTime"]
+        return f"{time['year']}{time['mon']:02}{time['day']:02}{time['hour']:02}{time['min']:02}{time['sec']:02}"
 
     @property
     def end_time(self) -> dtc.datetime:
@@ -387,6 +396,8 @@ class VOD_file:
     @property
     def triggers(self) -> VOD_trigger:
         """events that triggered the recording"""
+        if self.bc_triggers is not None:
+            return self.bc_triggers
         parsed = self._ensure_parsed_file_name()
         if parsed is None:
             return VOD_trigger.NONE

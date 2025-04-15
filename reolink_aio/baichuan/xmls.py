@@ -199,7 +199,7 @@ FindRecVideoOpen = """
 <channelId>{channel}</channelId>
 <uid>{uid}</uid>
 <logicChnBitmap>255</logicChnBitmap>
-<streamType>0</streamType>
+<streamType>{stream_type}</streamType>
 <notSearchVideo>0</notSearchVideo>
 <startTime>
 <year>{start_year}</year>

@@ -5379,6 +5379,15 @@ class Host:
             # When there are now recordings at all, their will be no "Status"
             _LOGGER.debug("Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
 
+        if not status_only and vod_files and self.is_nvr:
+            try:
+                trigger_dict = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream)
+            except ReolinkError as err:
+                _LOGGER.debug("Error while searching VOD type: %s", err)
+            else:
+                for file in vod_files:
+                    file.bc_triggers = trigger_dict.get(file.start_time_id)
+
         return statuses, vod_files
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
