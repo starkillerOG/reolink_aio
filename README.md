@@ -33,7 +33,7 @@ pip3 install reolink-aio
 ```
 
 or manually:
-````
+````bash
 git clone https://github.com/StarkillerOG/reolink_aio
 cd reolink_aio/
 pip3 install .
@@ -41,7 +41,7 @@ pip3 install .
 
 ### Usage
 
-````
+````python
 from reolink_aio.api import Host
 import asyncio
 
@@ -84,7 +84,7 @@ await host.logout()
 ### Example
 
 This is an example of the usage of the API. In this case we want to retrive and print the Mac Address of the NVR.
-````
+````python
 from reolink_aio.api import Host
 import asyncio
 
@@ -108,7 +108,7 @@ if __name__ == "__main__":
 This is an example of how to receive TCP push events.
 The callback will be called each time a push is received.
 The state variables of the Host class will automatically be updated when a push comes in.
-````
+````python
 from reolink_aio.api import Host
 import asyncio
 import logging
