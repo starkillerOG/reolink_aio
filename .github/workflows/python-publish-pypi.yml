@@ -7,7 +7,7 @@ on:
 jobs:
   verify:
     name: Verify Python build context
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
@@ -54,7 +54,7 @@ jobs:
   build:
     name: Build package
     needs: verify
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
     if: github.repository_owner == 'starkillerOG'
@@ -77,7 +77,7 @@ jobs:
   pypi-publish:
     name: Publish PyPi package
     needs: build
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     environment: PyPi publish
     permissions:
       id-token: write
