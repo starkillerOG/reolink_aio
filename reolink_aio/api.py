@@ -742,6 +742,10 @@ class Host:
         """Wether or not the camera is a doorbell"""
         return channel in self._is_doorbell and self._is_doorbell[channel]
 
+    def is_battery_doorbell(self, channel: int) -> bool:
+        """Whether or not the camera is a battery-powered doorbell"""
+        return self.is_doorbell(channel) and self.supported(channel, "battery")
+
     def motion_detected(self, channel: int) -> bool:
         """Return the motion detection state (polled)."""
         return channel in self._motion_detection_states and self._motion_detection_states[channel]
@@ -1848,6 +1852,9 @@ class Host:
 
             if self.backlight_state(channel) is not None:
                 self._capabilities[channel].add("backLight")
+
+            if self.is_battery_doorbell(channel):
+                self._capabilities[channel].add("existing_chime")  # internal use only
 
             # Baichuan capabilities
             if channel in self.baichuan.capabilities:

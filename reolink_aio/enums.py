@@ -138,3 +138,11 @@ class HubToneEnum(Enum):
     operetta = 7
     moonlight = 8
     waybackhome = 9
+
+class ExistingChimeTypeEnum(Enum):
+    """Existing chime type for battery-powered doorbell"""
+
+    none = "none"
+    mechanical = "machine"
+    digital1 = "negativeWave"
+    digital2 = "positiveWave"
