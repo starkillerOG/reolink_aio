@@ -20,7 +20,7 @@ import datetime as dtc
 from typing_extensions import SupportsIndex
 
 from aiohttp import StreamReader
-from .utils import reolink_time_to_datetime
+from .utils import reolink_time_to_datetime, to_reolink_time_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -363,13 +363,17 @@ class VOD_file:
     @property
     def start_time_id(self) -> str:
         """Start time identifier of the recording."""
-        time = self.data["StartTime"]
-        return f"{time['year']}{time['mon']:02}{time['day']:02}{time['hour']:02}{time['min']:02}{time['sec']:02}"
+        return to_reolink_time_id(self.data["StartTime"])
 
     @property
     def end_time(self) -> dtc.datetime:
         """End time of the recording."""
         return reolink_time_to_datetime(self.data["EndTime"], self.tzinfo)
+
+    @property
+    def end_time_id(self) -> str:
+        """End time identifier of the recording."""
+        return to_reolink_time_id(self.data["EndTime"])
 
     @property
     def playback_time(self) -> dtc.datetime:

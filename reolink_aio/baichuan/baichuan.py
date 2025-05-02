@@ -6,7 +6,7 @@ import logging
 import asyncio
 from inspect import getmembers
 from time import time as time_now
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, TypeVar, overload, Coroutine
 from collections.abc import Callable
 from xml.etree import ElementTree as XML
@@ -27,6 +27,7 @@ from ..exceptions import (
     CredentialsInvalidError,
 )
 from ..enums import BatteryEnum, DayNightEnum
+from ..utils import reolink_time_to_datetime, to_reolink_time_id
 
 from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
 
@@ -1376,7 +1377,20 @@ class Baichuan:
 
         await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
 
-    async def search_vod_type(self, channel: int, start: datetime, end: datetime, stream: str | None = None) -> dict[str, VOD_trigger]:
+    def _xml_time_to_datetime(self, xml_time: XML.Element | None) -> datetime | None:
+        if xml_time is None:
+            return None
+        year = self._get_value_from_xml_element(xml_time, "year", int)
+        month = self._get_value_from_xml_element(xml_time, "month", int)
+        day = self._get_value_from_xml_element(xml_time, "day", int)
+        hour = self._get_value_from_xml_element(xml_time, "hour", int)
+        minute = self._get_value_from_xml_element(xml_time, "minute", int)
+        second = self._get_value_from_xml_element(xml_time, "second", int)
+        if year is None or month is None or day is None or hour is None or minute is None or second is None:
+            return None
+        return datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
+
+    async def search_vod_type(self, channel: int, start: datetime, end: datetime, stream: str | None = None, split_time: timedelta | None = None) -> dict[str, VOD_trigger]:
         vod_type_dict: dict[str, VOD_trigger] = {}
         if self.http_api is None:
             return vod_type_dict
@@ -1439,6 +1453,13 @@ class Baichuan:
                 if file_name is None or trigger is None:
                     continue
                 start_time_file = file_name[2:]
+
+                if split_time:
+                    time_file = reolink_time_to_datetime(start_time_file)
+                    time_event = self._xml_time_to_datetime(start_time_event)
+                    if time_event is not None:
+                        start_time_file = to_reolink_time_id(time_file + int((time_event - time_file) / split_time) * split_time)
+
                 vod_type_dict.setdefault(start_time_file, VOD_trigger.NONE)
                 if "md" in trigger or "pir" in trigger or "other" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.MOTION
@@ -1459,21 +1480,12 @@ class Baichuan:
                 if "cry" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.CRYING
 
-            if start_time_event is None:
-                await self.send(cmd_id=274, channel=channel, body=xml)
-                break
-
             if finished == 0:
-                year = self._get_value_from_xml_element(start_time_event, "year", int)
-                month = self._get_value_from_xml_element(start_time_event, "month", int)
-                day = self._get_value_from_xml_element(start_time_event, "day", int)
-                hour = self._get_value_from_xml_element(start_time_event, "hour", int)
-                minute = self._get_value_from_xml_element(start_time_event, "minute", int)
-                second = self._get_value_from_xml_element(start_time_event, "second", int)
-                if year is None or month is None or day is None or hour is None or minute is None or second is None:
+                start_result = self._xml_time_to_datetime(start_time_event)
+                if start_result is None:
                     await self.send(cmd_id=274, channel=channel, body=xml)
                     break
-                start = datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
+                start = start_result
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 

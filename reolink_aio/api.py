@@ -3362,6 +3362,11 @@ class Host:
             mime = "video/mp4"
             credentials = f"&token={self._token}"
 
+        if request_type == VodRequestType.NVR_DOWNLOAD:
+            # prepare the file for downloading and overwrite the new filename
+            start_time, end_time = filename.split("_", 1)
+            filename = await self._generate_NVR_download_vod(start_time, end_time, channel, stream)
+
         if request_type == VodRequestType.RTMP:
             # RTMP port needs to be enabled for playback to work
             if self._rtmp_enabled is None:
@@ -3378,15 +3383,18 @@ class Host:
 
             # seek = start x seconds into the file
             url = f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=playback.bcs&channel={channel}&type={stream_type}&start={filename}&seek=0"
-        elif request_type in [VodRequestType.PLAYBACK, VodRequestType.DOWNLOAD]:
+        elif request_type in {VodRequestType.PLAYBACK, VodRequestType.DOWNLOAD, VodRequestType.NVR_DOWNLOAD}:
             start_time = ""
             time_start = ""
             match = re.match(r".*Rec(\w{3})(?:_|_DST)(\d{8})_(\d{6})_.*", filename)
             if match is not None:
                 time_start = f"{match.group(2)}{match.group(3)}"
                 start_time = f"&start={time_start}"
+            cmd = request_type.value
+            if request_type == VodRequestType.NVR_DOWNLOAD:
+                cmd = VodRequestType.DOWNLOAD.value
 
-            url = f"{self._url}?cmd={request_type.value}&source={filename.replace(' ', '%20')}&output=ha_playback_{time_start}.mp4{start_time}"
+            url = f"{self._url}?cmd={cmd}&source={filename.replace(' ', '%20')}&output=ha_playback_{time_start}.mp4{start_time}"
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
@@ -3394,10 +3402,9 @@ class Host:
 
     async def _generate_NVR_download_vod(
         self,
-        filename: str,
         start_time: str,
         end_time: str,
-        channel: str,
+        channel: int,
         stream: str,
     ) -> str:
         start = datetime_to_reolink_time(start_time)
@@ -3429,6 +3436,7 @@ class Host:
             raise ApiError(f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
 
         max_filesize = 0
+        filename = ""
         for file in json_data[0]["value"]["fileList"]:
             filesize = int(file["fileSize"])
             if filesize > max_filesize:
@@ -3445,7 +3453,7 @@ class Host:
         wanted_filename: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
-        channel: Optional[str] = None,
+        channel: Optional[int] = None,
         stream: Optional[str] = None,
     ) -> typings.VOD_download:
         if wanted_filename is None:
@@ -3457,7 +3465,7 @@ class Host:
             if start_time is None or end_time is None or channel is None or stream is None:
                 raise InvalidParameterError("download_vod: for a NVR 'start_time', 'end_time', 'channel' and 'stream' parameters are required")
 
-            filename = await self._generate_NVR_download_vod(filename, start_time, end_time, channel, stream)
+            filename = await self._generate_NVR_download_vod(start_time, end_time, channel, stream)
 
         param: dict[str, Any] = {"cmd": "Download", "source": filename, "output": wanted_filename}
         body = [{}]
@@ -5299,6 +5307,7 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
+        split_time: timedelta | None = None,
     ) -> tuple[list[typings.VOD_search_status], list[typings.VOD_file]]:
         """Send search VOD-files command."""
         if channel not in self._stream_channels:
@@ -5379,9 +5388,38 @@ class Host:
             # When there are now recordings at all, their will be no "Status"
             _LOGGER.debug("Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
 
+        if not self.is_nvr or self.is_hub:
+            split_time = None
+
+        if split_time:
+            # split the recoding files in smaller time chunks
+            split_vod_files = []
+            for file in vod_files:
+                split_start = reolink_time_to_datetime(file.data["StartTime"])
+                file_end = reolink_time_to_datetime(file.data["EndTime"])
+                while file_end - split_start > split_time + timedelta(minutes=1):
+                    data = file.data.copy()
+                    data["StartTime"] = datetime_to_reolink_time(split_start)
+                    data["EndTime"] = datetime_to_reolink_time(split_start + split_time)
+                    split_vod_files.append(typings.VOD_file(data, self.timezone()))
+                    split_start = split_start + split_time
+                if file_end - split_start > timedelta(seconds=0):
+                    if file_end - split_start > split_time:
+                        split_delta = (file_end - split_start) / 2
+                        data = file.data.copy()
+                        data["StartTime"] = datetime_to_reolink_time(split_start)
+                        data["EndTime"] = datetime_to_reolink_time(split_start + split_delta)
+                        split_vod_files.append(typings.VOD_file(data, self.timezone()))
+                        split_start = split_start + split_delta
+                    data = file.data.copy()
+                    data["StartTime"] = datetime_to_reolink_time(split_start)
+                    data["EndTime"] = datetime_to_reolink_time(file_end)
+                    split_vod_files.append(typings.VOD_file(data, self.timezone()))
+            vod_files = split_vod_files
+
         if not status_only and vod_files and self.is_nvr:
             try:
-                trigger_dict = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream)
+                trigger_dict = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream, split_time=split_time)
             except ReolinkError as err:
                 _LOGGER.debug("Error while searching VOD type: %s", err)
             else:
