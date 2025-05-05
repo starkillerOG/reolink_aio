@@ -1653,7 +1653,11 @@ class Baichuan:
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
 
-    def privacy_mode(self, channel: int = 0) -> bool | None:
+    def privacy_mode(self, channel: int | None = None) -> bool | None:
+        if channel is None:
+            if self.http_api and self.http_api.is_nvr:
+                return None
+            channel = 0
         return self._privacy_mode.get(channel)
 
     def day_night_state(self, channel: int) -> str | None:

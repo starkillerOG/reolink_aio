@@ -2488,12 +2488,13 @@ class Host:
                 _LOGGER.warning("Manual recording of Reolink %s has value %s which is a firmware bug, disabling manual recording", self.camera_name(channel), val)
                 await self.set_manual_record(channel, False)
 
-        if self.protocol == "rtsp" and not self.baichuan.privacy_mode():
+        if self.protocol == "rtsp":
             # Cache the RTSP urls
             for channel in self._stream_channels:
-                check = not self.supported(channel, "battery")
-                await self.get_rtsp_stream_source(channel, "sub", check)
-                await self.get_rtsp_stream_source(channel, "main", check)
+                if not self.baichuan.privacy_mode(channel):
+                    check = not self.supported(channel, "battery")
+                    await self.get_rtsp_stream_source(channel, "sub", check)
+                    await self.get_rtsp_stream_source(channel, "main", check)
 
         self._startup = False
 
