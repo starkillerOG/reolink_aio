@@ -5308,6 +5308,7 @@ class Host:
         status_only: bool = False,
         stream: Optional[str] = None,
         split_time: timedelta | None = None,
+        trigger: typings.VOD_trigger | None = None,
     ) -> tuple[list[typings.VOD_search_status], list[typings.VOD_file]]:
         """Send search VOD-files command."""
         if channel not in self._stream_channels:
@@ -5321,6 +5322,18 @@ class Host:
         if stream.startswith("autotrack_"):
             iLogicChannel = 1
             stream = stream.removeprefix("autotrack_")
+        if not self.is_nvr or self.is_hub:
+            split_time = None
+
+        trigger_dict: dict[str, typings.VOD_trigger] = {}
+        if not status_only and self.is_nvr:
+            try:
+                trigger_dict, trigger_vods = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream, split_time=split_time)
+            except ReolinkError as err:
+                _LOGGER.debug("Error while searching VOD type: %s", err)
+            else:
+                if trigger is not None:
+                    return [], trigger_vods[trigger]
 
         times = [(start, end)]
         if status_only:
@@ -5388,9 +5401,6 @@ class Host:
             # When there are now recordings at all, their will be no "Status"
             _LOGGER.debug("Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
 
-        if not self.is_nvr or self.is_hub:
-            split_time = None
-
         if split_time:
             # split the recoding files in smaller time chunks
             split_vod_files = []
@@ -5417,14 +5427,8 @@ class Host:
                     split_vod_files.append(typings.VOD_file(data, self.timezone()))
             vod_files = split_vod_files
 
-        if not status_only and vod_files and self.is_nvr:
-            try:
-                trigger_dict = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream, split_time=split_time)
-            except ReolinkError as err:
-                _LOGGER.debug("Error while searching VOD type: %s", err)
-            else:
-                for file in vod_files:
-                    file.bc_triggers = trigger_dict.get(file.start_time_id)
+        for file in vod_files:
+            file.bc_triggers = trigger_dict.get(file.start_time_id)
 
         return statuses, vod_files
 

@@ -15,7 +15,7 @@ from Cryptodome.Cipher import AES
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
 from ..const import WAKING_COMMANDS
-from ..typings import cmd_list_type, VOD_trigger
+from ..typings import cmd_list_type, VOD_trigger, VOD_file
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -27,7 +27,7 @@ from ..exceptions import (
     CredentialsInvalidError,
 )
 from ..enums import BatteryEnum, DayNightEnum
-from ..utils import reolink_time_to_datetime, to_reolink_time_id
+from ..utils import reolink_time_to_datetime, to_reolink_time_id, datetime_to_reolink_time
 
 from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
 
@@ -1390,10 +1390,15 @@ class Baichuan:
             return None
         return datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
 
-    async def search_vod_type(self, channel: int, start: datetime, end: datetime, stream: str | None = None, split_time: timedelta | None = None) -> dict[str, VOD_trigger]:
+    async def search_vod_type(
+        self, channel: int, start: datetime, end: datetime, stream: str | None = None, split_time: timedelta | None = None
+    ) -> tuple[dict[str, VOD_trigger], dict[VOD_trigger, list[VOD_file]]]:
         vod_type_dict: dict[str, VOD_trigger] = {}
+        vod_dict: dict[VOD_trigger, list[VOD_file]] = {}
+        for trig in VOD_trigger:
+            vod_dict[trig] = []
         if self.http_api is None:
-            return vod_type_dict
+            return vod_type_dict, vod_dict
         uid = self.http_api._channel_uids.get(channel, None)
         if uid is None:
             if not self.http_api.is_nvr:
@@ -1445,47 +1450,77 @@ class Baichuan:
             if vod_list is None:
                 await self.send(cmd_id=274, channel=channel, body=xml)
                 break
-            start_time_event: XML.Element | None = None
+
+            time_event: datetime | None = None
             for item in vod_list.findall(".//alarmVideo"):
                 file_name = self._get_value_from_xml_element(item, "fileName")
                 trigger = self._get_value_from_xml_element(item, "alarmType")
-                start_time_event = item.find("startTime")
                 if file_name is None or trigger is None:
                     continue
                 start_time_file = file_name[2:]
+                time_event = self._xml_time_to_datetime(item.find("startTime"))
+                end_time_event = self._xml_time_to_datetime(item.find("endTime"))
+                time_file = reolink_time_to_datetime(start_time_file)
+                if time_event is None or end_time_event is None:
+                    continue
+                data = {
+                    "type": stream,
+                    "StartTime": datetime_to_reolink_time(time_event),
+                    "EndTime": datetime_to_reolink_time(end_time_event),
+                    "PlaybackTime": datetime_to_reolink_time(time_file),
+                    "name": start_time_file,
+                    "size": 1,
+                }
+                vod_file = VOD_file(data)
+                vod_file.bc_triggers = VOD_trigger.NONE
 
                 if split_time:
-                    time_file = reolink_time_to_datetime(start_time_file)
-                    time_event = self._xml_time_to_datetime(start_time_event)
                     if time_event is not None:
                         start_time_file = to_reolink_time_id(time_file + int((time_event - time_file) / split_time) * split_time)
 
                 vod_type_dict.setdefault(start_time_file, VOD_trigger.NONE)
                 if "md" in trigger or "pir" in trigger or "other" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.MOTION
+                    vod_file.bc_triggers |= VOD_trigger.MOTION
+                    vod_dict[VOD_trigger.MOTION].append(vod_file)
                 if "io" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.IO
+                    vod_file.bc_triggers |= VOD_trigger.IO
+                    vod_dict[VOD_trigger.IO].append(vod_file)
                 if "people" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.PERSON
+                    vod_file.bc_triggers |= VOD_trigger.PERSON
+                    vod_dict[VOD_trigger.PERSON].append(vod_file)
                 if "face" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.FACE
+                    vod_file.bc_triggers |= VOD_trigger.FACE
+                    vod_dict[VOD_trigger.FACE].append(vod_file)
                 if "vehicle" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.VEHICLE
+                    vod_file.bc_triggers |= VOD_trigger.VEHICLE
+                    vod_dict[VOD_trigger.VEHICLE].append(vod_file)
                 if "dog_cat" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.ANIMAL
+                    vod_file.bc_triggers |= VOD_trigger.ANIMAL
+                    vod_dict[VOD_trigger.ANIMAL].append(vod_file)
                 if "visitor" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.DOORBELL
+                    vod_file.bc_triggers |= VOD_trigger.DOORBELL
+                    vod_dict[VOD_trigger.DOORBELL].append(vod_file)
                 if "package" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.PACKAGE
+                    vod_file.bc_triggers |= VOD_trigger.PACKAGE
+                    vod_dict[VOD_trigger.PACKAGE].append(vod_file)
                 if "cry" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.CRYING
+                    vod_file.bc_triggers |= VOD_trigger.CRYING
+                    vod_dict[VOD_trigger.CRYING].append(vod_file)
 
             if finished == 0:
-                start_result = self._xml_time_to_datetime(start_time_event)
-                if start_result is None:
+                if time_event is None:
                     await self.send(cmd_id=274, channel=channel, body=xml)
                     break
-                start = start_result
+                start = time_event
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
@@ -1513,7 +1548,7 @@ class Baichuan:
         # await self.send(cmd_id=15, body=xml_file_info)
         # await self.send(cmd_id=16, body=xml_file_info)
 
-        return vod_type_dict
+        return vod_type_dict, vod_dict
 
     @property
     def events_active(self) -> bool:
