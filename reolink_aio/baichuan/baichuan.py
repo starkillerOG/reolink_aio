@@ -688,12 +688,18 @@ class Baichuan:
             cmd_id_modified = self._get_value_from_xml_element(root, "cmdId", int)
 
         elif cmd_id == 623:  # Privacy mode
-            channel = 0
-            channels.add(channel)
-            state = self._get_value_from_xml_element(root, "sleep")
-            if state is not None:
-                self._privacy_mode[channel] = state == "1"
-                _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, self._privacy_mode[channel])
+            items = root.findall(".//status")
+            if not items:
+                items.append(root)
+            for item in items:
+                channel = self._get_channel_from_xml_element(item)
+                if channel is None:
+                    channel = 0
+                channels.add(channel)
+                state = self._get_value_from_xml_element(item, "sleep")
+                if state is not None:
+                    self._privacy_mode[channel] = state == "1"
+                    _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, self._privacy_mode[channel])
 
         # call the callbacks
         for cmd in cmd_ids:
@@ -936,9 +942,8 @@ class Baichuan:
         for channel in self.http_api._channels:
             self.capabilities.setdefault(channel, set())
 
-            if self.privacy_mode() is not None and self.api_version("remoteAbility", channel) > 0:
-                self.capabilities[channel].add("privacy_mode")
-                self.capabilities[None].add("privacy_mode")
+            if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
+                coroutines.append(("privacy_mode", channel, self.get_privacy_mode(channel)))  # capability added in get_privacy_mode
 
             if self.api_version("smartAI", channel) > 0:
                 coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))
@@ -1151,7 +1156,8 @@ class Baichuan:
         self.last_privacy_check = time_now()
 
         self.capabilities.setdefault(channel, set()).add("privacy_mode")
-        self.capabilities.setdefault(None, set()).add("privacy_mode")
+        if self.http_api is None or not self.http_api.is_nvr:
+            self.capabilities.setdefault(None, set()).add("privacy_mode")
 
         return value
 
