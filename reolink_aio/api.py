@@ -5326,7 +5326,7 @@ class Host:
             split_time = None
 
         trigger_dict: dict[str, typings.VOD_trigger] = {}
-        if not status_only and self.is_nvr:
+        if not status_only:
             try:
                 trigger_dict, trigger_vods = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream, split_time=split_time)
             except ReolinkError as err:
