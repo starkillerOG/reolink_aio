@@ -3115,6 +3115,15 @@ class Host:
         if stream is None:
             stream = "main"
 
+        if self.baichuan.privacy_mode(channel):
+            _LOGGER.debug(
+                "Host: %s:%s: can not get snapshot from channel %s while privacy mode is on",
+                self._host,
+                self._port,
+                channel,
+            )
+            return None
+
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
 
         if stream.startswith("autotrack_"):
@@ -5844,7 +5853,8 @@ class Host:
             raise err
         except InvalidContentTypeError as err:
             _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
-            await self.expire_session(unsubscribe=False)
+            if expected_response_type != "image/jpeg":
+                await self.expire_session(unsubscribe=False)
             raise err
         except Exception as err:
             _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())
