@@ -325,7 +325,9 @@ class Baichuan:
 
         # check if decryption suceeded
         if not rec_body.startswith("<?xml"):
-            if enc_type != EncType.BC:
+            if rec_enc_type == "00dd":
+                rec_body = enc_body.decode("utf8")
+            if not rec_body.startswith("<?xml") and enc_type != EncType.BC:
                 rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
             if not rec_body.startswith("<?xml"):
                 raise UnexpectedDataError(
