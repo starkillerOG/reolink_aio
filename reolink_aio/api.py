@@ -3746,7 +3746,10 @@ class Host:
                     if data["value"].get("firmVer", "") != "":
                         self._channel_sw_versions[channel] = data["value"]["firmVer"]
                         if self._channel_sw_versions[channel] is not None:
-                            self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
+                            try:
+                                self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
+                            except UnexpectedDataError as err:
+                                _LOGGER.debug("Reolink %s: %s", self.camera_name(channel), err)
                     if data["value"].get("boardInfo", "") != "":
                         self._channel_hw_version[channel] = data["value"]["boardInfo"]
 
