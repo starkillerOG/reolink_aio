@@ -1039,21 +1039,24 @@ class Baichuan:
                     abilities_dict[pretty_key][feature.tag] = value
         return abilities_dict
 
-    async def get_states(self, cmd_list: cmd_list_type = None, wake: bool = True) -> None:
+    async def get_states(self, cmd_list: cmd_list_type = None, wake: dict[int, bool] | None = None) -> None:
         """Update the state information of polling data"""
-        if cmd_list is None:
-            cmd_list = {}
         if self.http_api is None:
             return
+        if cmd_list is None:
+            cmd_list = {}
+        if wake is None:
+            wake = dict.fromkeys(self.http_api._channels, True)
 
         any_battery = any(self.http_api.supported(ch, "battery") for ch in self.http_api._channels)
+        all_wake = all(wake.values())
 
         def inc_host_cmd(cmd: str) -> bool:
-            return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
+            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd not in WAKING_COMMANDS)
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake or cmd not in WAKING_COMMANDS or self.http_api is None or not self.http_api.supported(channel, "battery")
+                wake[channel] or cmd not in WAKING_COMMANDS or self.http_api is None or not self.http_api.supported(channel, "battery")
             )
 
         coroutines: list[Coroutine] = []

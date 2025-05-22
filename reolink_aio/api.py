@@ -2058,7 +2058,7 @@ class Host:
 
         return
 
-    async def get_states(self, cmd_list: typings.cmd_list_type = None, wake: bool = True) -> None:
+    async def get_states(self, cmd_list: typings.cmd_list_type = None, wake: bool | dict = True) -> None:
         body = []
         channels = []
         chime_ids = []
@@ -2067,23 +2067,28 @@ class Host:
             #                       command       host  #  ch #  ch #
             cmd_list = {}
 
+        if isinstance(wake, bool):
+            wake = dict.fromkeys(self._channels, wake)
+
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
-        if any_battery and wake:
-            _LOGGER.debug("Host %s:%s: Waking the battery cameras for the get_states update", self._host, self._port)
+        all_wake = all(wake.values())
+        if any_battery and any(wake.values()):
+            wake_ch = [ch for ch in wake if wake[ch] and self.supported(ch, "battery")]
+            _LOGGER.debug("Host %s:%s: Waking battery camera channels %s for the get_states update", self._host, self._port, wake_ch)
 
         def inc_host_cmd(cmd: str) -> bool:
-            return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
+            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd not in WAKING_COMMANDS)
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
+                wake[channel] or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
             )
 
         def inc_wake(cmd: str, channel: int) -> bool:
-            return wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
+            return wake[channel] or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
 
         def inc_host_wake(cmd: str) -> bool:
-            return wake or not any_battery or cmd not in WAKING_COMMANDS
+            return all_wake or not any_battery or cmd not in WAKING_COMMANDS
 
         for channel in self._stream_channels:
             ch_body = []
