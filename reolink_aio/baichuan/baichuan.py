@@ -958,7 +958,7 @@ class Baichuan:
             if (self.api_version("newIspCfg", channel) >> 16) & 1:  # 17th bit (65536), shift 16
                 coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
 
-            if self.http_api.is_battery_doorbell(channel):
+            if self.http_api.is_doorbell(channel) and self.http_api.supported(channel, "battery"):
                 coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
@@ -979,7 +979,7 @@ class Baichuan:
                     raise result
 
                 if cmd_id == 483:  # existing chime
-                    self.capabilities[channel].add("existing_chime")
+                    self.capabilities[channel].add("hardwired_chime")
                 if cmd_id == 527:  # crossline detection
                     self.capabilities[channel].add("ai_crossline")
                     self._parse_xml(cmd_id, result)
@@ -1073,7 +1073,7 @@ class Baichuan:
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
 
-            if self.supported(channel, "existing_chime") and inc_cmd("483", channel):
+            if self.supported(channel, "hardwired_chime") and inc_cmd("483", channel):
                 coroutines.append(self.get_ding_dong_ctrl(channel))
 
         if coroutines:
