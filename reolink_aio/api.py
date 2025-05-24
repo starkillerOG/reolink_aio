@@ -2065,7 +2065,7 @@ class Host:
 
         return
 
-    async def get_states(self, cmd_list: typings.cmd_list_type = None, wake: bool = True) -> None:
+    async def get_states(self, cmd_list: typings.cmd_list_type = None, wake: bool | dict = True) -> None:
         body = []
         channels = []
         chime_ids = []
@@ -2074,23 +2074,28 @@ class Host:
             #                       command       host  #  ch #  ch #
             cmd_list = {}
 
+        if isinstance(wake, bool):
+            wake = dict.fromkeys(self._channels, wake)
+
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
-        if any_battery and wake:
-            _LOGGER.debug("Host %s:%s: Waking the battery cameras for the get_states update", self._host, self._port)
+        all_wake = all(wake.values())
+        if any_battery and any(wake.values()):
+            wake_ch = [ch for ch in wake if wake[ch] and self.supported(ch, "battery")]
+            _LOGGER.debug("Host %s:%s: Waking battery camera channels %s for the get_states update", self._host, self._port, wake_ch)
 
         def inc_host_cmd(cmd: str) -> bool:
-            return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
+            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd not in WAKING_COMMANDS)
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
+                wake[channel] or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
             )
 
         def inc_wake(cmd: str, channel: int) -> bool:
-            return wake or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
+            return wake[channel] or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
 
         def inc_host_wake(cmd: str) -> bool:
-            return wake or not any_battery or cmd not in WAKING_COMMANDS
+            return all_wake or not any_battery or cmd not in WAKING_COMMANDS
 
         for channel in self._stream_channels:
             ch_body = []
@@ -2495,12 +2500,13 @@ class Host:
                 _LOGGER.warning("Manual recording of Reolink %s has value %s which is a firmware bug, disabling manual recording", self.camera_name(channel), val)
                 await self.set_manual_record(channel, False)
 
-        if self.protocol == "rtsp" and not self.baichuan.privacy_mode():
+        if self.protocol == "rtsp":
             # Cache the RTSP urls
             for channel in self._stream_channels:
-                check = not self.supported(channel, "battery")
-                await self.get_rtsp_stream_source(channel, "sub", check)
-                await self.get_rtsp_stream_source(channel, "main", check)
+                if not self.baichuan.privacy_mode(channel):
+                    check = not self.supported(channel, "battery")
+                    await self.get_rtsp_stream_source(channel, "sub", check)
+                    await self.get_rtsp_stream_source(channel, "main", check)
 
         self._startup = False
 
@@ -3121,6 +3127,15 @@ class Host:
         if stream is None:
             stream = "main"
 
+        if self.baichuan.privacy_mode(channel):
+            _LOGGER.debug(
+                "Host: %s:%s: can not get snapshot from channel %s while privacy mode is on",
+                self._host,
+                self._port,
+                channel,
+            )
+            return None
+
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
 
         if stream.startswith("autotrack_"):
@@ -3369,6 +3384,11 @@ class Host:
             mime = "video/mp4"
             credentials = f"&token={self._token}"
 
+        if request_type == VodRequestType.NVR_DOWNLOAD:
+            # prepare the file for downloading and overwrite the new filename
+            start_time, end_time = filename.split("_", 1)
+            filename = await self._generate_NVR_download_vod(start_time, end_time, channel, stream)
+
         if request_type == VodRequestType.RTMP:
             # RTMP port needs to be enabled for playback to work
             if self._rtmp_enabled is None:
@@ -3385,15 +3405,18 @@ class Host:
 
             # seek = start x seconds into the file
             url = f"{http_s}://{self._host}:{self._port}/flv?port={self._rtmp_port}&app=bcs&stream=playback.bcs&channel={channel}&type={stream_type}&start={filename}&seek=0"
-        elif request_type in [VodRequestType.PLAYBACK, VodRequestType.DOWNLOAD]:
+        elif request_type in {VodRequestType.PLAYBACK, VodRequestType.DOWNLOAD, VodRequestType.NVR_DOWNLOAD}:
             start_time = ""
             time_start = ""
             match = re.match(r".*Rec(\w{3})(?:_|_DST)(\d{8})_(\d{6})_.*", filename)
             if match is not None:
                 time_start = f"{match.group(2)}{match.group(3)}"
                 start_time = f"&start={time_start}"
+            cmd = request_type.value
+            if request_type == VodRequestType.NVR_DOWNLOAD:
+                cmd = VodRequestType.DOWNLOAD.value
 
-            url = f"{self._url}?cmd={request_type.value}&source={filename.replace(' ', '%20')}&output=ha_playback_{time_start}.mp4{start_time}"
+            url = f"{self._url}?cmd={cmd}&source={filename.replace(' ', '%20')}&output=ha_playback_{time_start}.mp4{start_time}"
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
@@ -3401,10 +3424,9 @@ class Host:
 
     async def _generate_NVR_download_vod(
         self,
-        filename: str,
         start_time: str,
         end_time: str,
-        channel: str,
+        channel: int,
         stream: str,
     ) -> str:
         start = datetime_to_reolink_time(start_time)
@@ -3436,6 +3458,7 @@ class Host:
             raise ApiError(f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
 
         max_filesize = 0
+        filename = ""
         for file in json_data[0]["value"]["fileList"]:
             filesize = int(file["fileSize"])
             if filesize > max_filesize:
@@ -3452,7 +3475,7 @@ class Host:
         wanted_filename: Optional[str] = None,
         start_time: Optional[str] = None,
         end_time: Optional[str] = None,
-        channel: Optional[str] = None,
+        channel: Optional[int] = None,
         stream: Optional[str] = None,
     ) -> typings.VOD_download:
         if wanted_filename is None:
@@ -3464,7 +3487,7 @@ class Host:
             if start_time is None or end_time is None or channel is None or stream is None:
                 raise InvalidParameterError("download_vod: for a NVR 'start_time', 'end_time', 'channel' and 'stream' parameters are required")
 
-            filename = await self._generate_NVR_download_vod(filename, start_time, end_time, channel, stream)
+            filename = await self._generate_NVR_download_vod(start_time, end_time, channel, stream)
 
         param: dict[str, Any] = {"cmd": "Download", "source": filename, "output": wanted_filename}
         body = [{}]
@@ -3735,7 +3758,10 @@ class Host:
                     if data["value"].get("firmVer", "") != "":
                         self._channel_sw_versions[channel] = data["value"]["firmVer"]
                         if self._channel_sw_versions[channel] is not None:
-                            self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
+                            try:
+                                self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
+                            except UnexpectedDataError as err:
+                                _LOGGER.debug("Reolink %s: %s", self.camera_name(channel), err)
                     if data["value"].get("boardInfo", "") != "":
                         self._channel_hw_version[channel] = data["value"]["boardInfo"]
 
@@ -5306,6 +5332,8 @@ class Host:
         end: datetime,
         status_only: bool = False,
         stream: Optional[str] = None,
+        split_time: timedelta | None = None,
+        trigger: typings.VOD_trigger | None = None,
     ) -> tuple[list[typings.VOD_search_status], list[typings.VOD_file]]:
         """Send search VOD-files command."""
         if channel not in self._stream_channels:
@@ -5319,6 +5347,18 @@ class Host:
         if stream.startswith("autotrack_"):
             iLogicChannel = 1
             stream = stream.removeprefix("autotrack_")
+        if not self.is_nvr or self.is_hub:
+            split_time = None
+
+        trigger_dict: dict[str, typings.VOD_trigger] = {}
+        if not status_only:
+            try:
+                trigger_dict, trigger_vods = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream, split_time=split_time)
+            except ReolinkError as err:
+                _LOGGER.debug("Error while searching VOD type: %s", err)
+            else:
+                if trigger is not None:
+                    return [], trigger_vods[trigger]
 
         times = [(start, end)]
         if status_only:
@@ -5386,14 +5426,34 @@ class Host:
             # When there are now recordings at all, their will be no "Status"
             _LOGGER.debug("Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
 
-        if not status_only and vod_files and self.is_nvr:
-            try:
-                trigger_dict = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream)
-            except ReolinkError as err:
-                _LOGGER.debug("Error while searching VOD type: %s", err)
-            else:
-                for file in vod_files:
-                    file.bc_triggers = trigger_dict.get(file.start_time_id)
+        if split_time:
+            # split the recoding files in smaller time chunks
+            split_vod_files = []
+            for file in vod_files:
+                split_start = reolink_time_to_datetime(file.data["StartTime"])
+                file_end = reolink_time_to_datetime(file.data["EndTime"])
+                while file_end - split_start > split_time + timedelta(minutes=1):
+                    data = file.data.copy()
+                    data["StartTime"] = datetime_to_reolink_time(split_start)
+                    data["EndTime"] = datetime_to_reolink_time(split_start + split_time)
+                    split_vod_files.append(typings.VOD_file(data, self.timezone()))
+                    split_start = split_start + split_time
+                if file_end - split_start > timedelta(seconds=0):
+                    if file_end - split_start > split_time:
+                        split_delta = (file_end - split_start) / 2
+                        data = file.data.copy()
+                        data["StartTime"] = datetime_to_reolink_time(split_start)
+                        data["EndTime"] = datetime_to_reolink_time(split_start + split_delta)
+                        split_vod_files.append(typings.VOD_file(data, self.timezone()))
+                        split_start = split_start + split_delta
+                    data = file.data.copy()
+                    data["StartTime"] = datetime_to_reolink_time(split_start)
+                    data["EndTime"] = datetime_to_reolink_time(file_end)
+                    split_vod_files.append(typings.VOD_file(data, self.timezone()))
+            vod_files = split_vod_files
+
+        for file in vod_files:
+            file.bc_triggers = trigger_dict.get(file.start_time_id)
 
         return statuses, vod_files
 
@@ -5808,7 +5868,8 @@ class Host:
             raise err
         except InvalidContentTypeError as err:
             _LOGGER.debug("Host %s:%s: content type error: %s.", self._host, self._port, str(err))
-            await self.expire_session(unsubscribe=False)
+            if expected_response_type != "image/jpeg":
+                await self.expire_session(unsubscribe=False)
             raise err
         except Exception as err:
             _LOGGER.error('Host %s:%s: unknown exception "%s" occurred, traceback:\n%s\n', self._host, self._port, str(err), traceback.format_exc())

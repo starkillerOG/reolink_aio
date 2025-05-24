@@ -24,6 +24,7 @@ class VodRequestType(Enum):
     PLAYBACK = "Playback"
     FLV = "FLV"
     DOWNLOAD = "Download"
+    NVR_DOWNLOAD = "NvrDownload"
 
 
 class SpotlightModeEnum(Enum):

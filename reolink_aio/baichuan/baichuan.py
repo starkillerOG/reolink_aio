@@ -6,7 +6,7 @@ import logging
 import asyncio
 from inspect import getmembers
 from time import time as time_now
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, TypeVar, overload, Coroutine
 from collections.abc import Callable
 from xml.etree import ElementTree as XML
@@ -15,7 +15,7 @@ from Cryptodome.Cipher import AES
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
 from ..const import WAKING_COMMANDS
-from ..typings import cmd_list_type, VOD_trigger
+from ..typings import cmd_list_type, VOD_trigger, VOD_file
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -26,8 +26,9 @@ from ..exceptions import (
     ReolinkTimeoutError,
     CredentialsInvalidError,
 )
-from ..enums import BatteryEnum, DayNightEnum, ExistingChimeTypeEnum
 
+from ..enums import BatteryEnum, DayNightEnum, ExistingChimeTypeEnum
+from ..utils import reolink_time_to_datetime, to_reolink_time_id, datetime_to_reolink_time
 from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
 
 if TYPE_CHECKING:
@@ -325,7 +326,9 @@ class Baichuan:
 
         # check if decryption suceeded
         if not rec_body.startswith("<?xml"):
-            if enc_type != EncType.BC:
+            if rec_enc_type == "00dd":
+                rec_body = enc_body.decode("utf8")
+            if not rec_body.startswith("<?xml") and enc_type != EncType.BC:
                 rec_body = decrypt_baichuan(enc_body, rec_enc_offset)
             if not rec_body.startswith("<?xml"):
                 raise UnexpectedDataError(
@@ -688,12 +691,18 @@ class Baichuan:
             cmd_id_modified = self._get_value_from_xml_element(root, "cmdId", int)
 
         elif cmd_id == 623:  # Privacy mode
-            channel = 0
-            channels.add(channel)
-            state = self._get_value_from_xml_element(root, "sleep")
-            if state is not None:
-                self._privacy_mode[channel] = state == "1"
-                _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, self._privacy_mode[channel])
+            items = root.findall(".//status")
+            if not items:
+                items.append(root)
+            for item in items:
+                channel = self._get_channel_from_xml_element(item)
+                if channel is None:
+                    channel = 0
+                channels.add(channel)
+                state = self._get_value_from_xml_element(item, "sleep")
+                if state is not None:
+                    self._privacy_mode[channel] = state == "1"
+                    _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, self._privacy_mode[channel])
 
         # call the callbacks
         for cmd in cmd_ids:
@@ -936,9 +945,8 @@ class Baichuan:
         for channel in self.http_api._channels:
             self.capabilities.setdefault(channel, set())
 
-            if self.privacy_mode() is not None and self.api_version("remoteAbility", channel) > 0:
-                self.capabilities[channel].add("privacy_mode")
-                self.capabilities[None].add("privacy_mode")
+            if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
+                coroutines.append(("privacy_mode", channel, self.get_privacy_mode(channel)))  # capability added in get_privacy_mode
 
             if self.api_version("smartAI", channel) > 0:
                 coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))
@@ -1037,21 +1045,24 @@ class Baichuan:
                     abilities_dict[pretty_key][feature.tag] = value
         return abilities_dict
 
-    async def get_states(self, cmd_list: cmd_list_type = None, wake: bool = True) -> None:
+    async def get_states(self, cmd_list: cmd_list_type = None, wake: dict[int, bool] | None = None) -> None:
         """Update the state information of polling data"""
-        if cmd_list is None:
-            cmd_list = {}
         if self.http_api is None:
             return
+        if cmd_list is None:
+            cmd_list = {}
+        if wake is None:
+            wake = dict.fromkeys(self.http_api._channels, True)
 
         any_battery = any(self.http_api.supported(ch, "battery") for ch in self.http_api._channels)
+        all_wake = all(wake.values())
 
         def inc_host_cmd(cmd: str) -> bool:
-            return (cmd in cmd_list or not cmd_list) and (wake or not any_battery or cmd not in WAKING_COMMANDS)
+            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd not in WAKING_COMMANDS)
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake or cmd not in WAKING_COMMANDS or self.http_api is None or not self.http_api.supported(channel, "battery")
+                wake[channel] or cmd not in WAKING_COMMANDS or self.http_api is None or not self.http_api.supported(channel, "battery")
             )
 
         coroutines: list[Coroutine] = []
@@ -1159,7 +1170,8 @@ class Baichuan:
         self.last_privacy_check = time_now()
 
         self.capabilities.setdefault(channel, set()).add("privacy_mode")
-        self.capabilities.setdefault(None, set()).add("privacy_mode")
+        if self.http_api is None or not self.http_api.is_nvr:
+            self.capabilities.setdefault(None, set()).add("privacy_mode")
 
         return value
 
@@ -1408,10 +1420,28 @@ class Baichuan:
 
         await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
 
-    async def search_vod_type(self, channel: int, start: datetime, end: datetime, stream: str | None = None) -> dict[str, VOD_trigger]:
+    def _xml_time_to_datetime(self, xml_time: XML.Element | None) -> datetime | None:
+        if xml_time is None:
+            return None
+        year = self._get_value_from_xml_element(xml_time, "year", int)
+        month = self._get_value_from_xml_element(xml_time, "month", int)
+        day = self._get_value_from_xml_element(xml_time, "day", int)
+        hour = self._get_value_from_xml_element(xml_time, "hour", int)
+        minute = self._get_value_from_xml_element(xml_time, "minute", int)
+        second = self._get_value_from_xml_element(xml_time, "second", int)
+        if year is None or month is None or day is None or hour is None or minute is None or second is None:
+            return None
+        return datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
+
+    async def search_vod_type(
+        self, channel: int, start: datetime, end: datetime, stream: str | None = None, split_time: timedelta | None = None
+    ) -> tuple[dict[str, VOD_trigger], dict[VOD_trigger, list[VOD_file]]]:
         vod_type_dict: dict[str, VOD_trigger] = {}
+        vod_dict: dict[VOD_trigger, list[VOD_file]] = {}
+        for trig in VOD_trigger:
+            vod_dict[trig] = []
         if self.http_api is None:
-            return vod_type_dict
+            return vod_type_dict, vod_dict
         uid = self.http_api._channel_uids.get(channel, None)
         if uid is None:
             if not self.http_api.is_nvr:
@@ -1463,49 +1493,77 @@ class Baichuan:
             if vod_list is None:
                 await self.send(cmd_id=274, channel=channel, body=xml)
                 break
-            start_time_event: XML.Element | None = None
+
+            time_event: datetime | None = None
             for item in vod_list.findall(".//alarmVideo"):
                 file_name = self._get_value_from_xml_element(item, "fileName")
                 trigger = self._get_value_from_xml_element(item, "alarmType")
-                start_time_event = item.find("startTime")
                 if file_name is None or trigger is None:
                     continue
                 start_time_file = file_name[2:]
+                time_event = self._xml_time_to_datetime(item.find("startTime"))
+                end_time_event = self._xml_time_to_datetime(item.find("endTime"))
+                time_file = reolink_time_to_datetime(start_time_file)
+                if time_event is None or end_time_event is None:
+                    continue
+                data = {
+                    "type": stream,
+                    "StartTime": datetime_to_reolink_time(time_event),
+                    "EndTime": datetime_to_reolink_time(end_time_event),
+                    "PlaybackTime": datetime_to_reolink_time(time_file),
+                    "name": start_time_file,
+                    "size": 1,
+                }
+                vod_file = VOD_file(data)
+                vod_file.bc_triggers = VOD_trigger.NONE
+
+                if split_time:
+                    if time_event is not None:
+                        start_time_file = to_reolink_time_id(time_file + int((time_event - time_file) / split_time) * split_time)
+
                 vod_type_dict.setdefault(start_time_file, VOD_trigger.NONE)
                 if "md" in trigger or "pir" in trigger or "other" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.MOTION
+                    vod_file.bc_triggers |= VOD_trigger.MOTION
+                    vod_dict[VOD_trigger.MOTION].append(vod_file)
                 if "io" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.IO
+                    vod_file.bc_triggers |= VOD_trigger.IO
+                    vod_dict[VOD_trigger.IO].append(vod_file)
                 if "people" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.PERSON
+                    vod_file.bc_triggers |= VOD_trigger.PERSON
+                    vod_dict[VOD_trigger.PERSON].append(vod_file)
                 if "face" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.FACE
+                    vod_file.bc_triggers |= VOD_trigger.FACE
+                    vod_dict[VOD_trigger.FACE].append(vod_file)
                 if "vehicle" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.VEHICLE
+                    vod_file.bc_triggers |= VOD_trigger.VEHICLE
+                    vod_dict[VOD_trigger.VEHICLE].append(vod_file)
                 if "dog_cat" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.ANIMAL
+                    vod_file.bc_triggers |= VOD_trigger.ANIMAL
+                    vod_dict[VOD_trigger.ANIMAL].append(vod_file)
                 if "visitor" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.DOORBELL
+                    vod_file.bc_triggers |= VOD_trigger.DOORBELL
+                    vod_dict[VOD_trigger.DOORBELL].append(vod_file)
                 if "package" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.PACKAGE
+                    vod_file.bc_triggers |= VOD_trigger.PACKAGE
+                    vod_dict[VOD_trigger.PACKAGE].append(vod_file)
                 if "cry" in trigger:
                     vod_type_dict[start_time_file] |= VOD_trigger.CRYING
-
-            if start_time_event is None:
-                await self.send(cmd_id=274, channel=channel, body=xml)
-                break
+                    vod_file.bc_triggers |= VOD_trigger.CRYING
+                    vod_dict[VOD_trigger.CRYING].append(vod_file)
 
             if finished == 0:
-                year = self._get_value_from_xml_element(start_time_event, "year", int)
-                month = self._get_value_from_xml_element(start_time_event, "month", int)
-                day = self._get_value_from_xml_element(start_time_event, "day", int)
-                hour = self._get_value_from_xml_element(start_time_event, "hour", int)
-                minute = self._get_value_from_xml_element(start_time_event, "minute", int)
-                second = self._get_value_from_xml_element(start_time_event, "second", int)
-                if year is None or month is None or day is None or hour is None or minute is None or second is None:
+                if time_event is None:
                     await self.send(cmd_id=274, channel=channel, body=xml)
                     break
-                start = datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
+                start = time_event
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
@@ -1533,7 +1591,7 @@ class Baichuan:
         # await self.send(cmd_id=15, body=xml_file_info)
         # await self.send(cmd_id=16, body=xml_file_info)
 
-        return vod_type_dict
+        return vod_type_dict, vod_dict
 
     @property
     def events_active(self) -> bool:
@@ -1632,7 +1690,11 @@ class Baichuan:
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
 
-    def privacy_mode(self, channel: int = 0) -> bool | None:
+    def privacy_mode(self, channel: int | None = None) -> bool | None:
+        if channel is None:
+            if self.http_api and self.http_api.is_nvr:
+                return None
+            channel = 0
         return self._privacy_mode.get(channel)
 
     def day_night_state(self, channel: int) -> str | None:

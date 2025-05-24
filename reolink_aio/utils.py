@@ -10,7 +10,9 @@ if TYPE_CHECKING:
     from .typings import reolink_json
 
 
-def reolink_time_to_datetime(time: dict[str, int], tzinfo: Optional[_TzInfo] = None) -> datetime:
+def reolink_time_to_datetime(time: dict[str, int] | str, tzinfo: Optional[_TzInfo] = None) -> datetime:
+    if isinstance(time, str):
+        return datetime(year=int(time[0:4]), month=int(time[4:6]), day=int(time[6:8]), hour=int(time[8:10]), minute=int(time[10:12]), second=int(time[12:14]), tzinfo=tzinfo)
     return datetime(year=time["year"], month=time["mon"], day=time["day"], hour=time["hour"], minute=time["min"], second=time["sec"], tzinfo=tzinfo)
 
 
@@ -34,6 +36,12 @@ def datetime_to_reolink_time(time: datetime | str) -> dict[str, int]:
         "sec": time.second,
     }
     return t_dict
+
+
+def to_reolink_time_id(time: dict[str, int] | datetime) -> str:
+    if isinstance(time, dict):
+        return f"{time['year']}{time['mon']:02}{time['day']:02}{time['hour']:02}{time['min']:02}{time['sec']:02}"
+    return f"{time.year}{time.month:02}{time.day:02}{time.hour:02}{time.minute:02}{time.second:02}"
 
 
 def strip_model_str(string: str) -> str:
