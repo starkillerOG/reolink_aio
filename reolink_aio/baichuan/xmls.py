@@ -93,6 +93,28 @@ SetDingDongCfg_XML = """
 </body>
 """
 
+GetDingDongCtrl_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongCtrl version="1.1">
+<opt>machineStateGet</opt>
+</dingdongCtrl>
+</body>
+"""
+
+SetDingDongCtrl_XML = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongCtrl version="1.1">
+<opt>machineStateSet</opt>
+<type>{chime_type}</type>
+<bopen>{enabled}</bopen>
+<bsave>1</bsave>
+<time>0</time>
+</dingdongCtrl>
+</body>
+"""
+
 QuickReplyPlay_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
