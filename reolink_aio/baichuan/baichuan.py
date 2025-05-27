@@ -959,7 +959,9 @@ class Baichuan:
                 coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
 
             if self.http_api.is_doorbell(channel) and self.http_api.supported(channel, "battery"):
-                coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
+                self.capabilities[channel].add("hardwired_chime")
+                # cmd_id 483 makes the chime rattle a bit, just assume its supported
+                # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
@@ -1073,7 +1075,8 @@ class Baichuan:
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
 
-            if self.supported(channel, "hardwired_chime") and inc_cmd("483", channel):
+            if self.supported(channel, "hardwired_chime") and inc_cmd("483", channel) and cmd_list and channel not in self._hardwired_chime_settings:
+                # only get the state if not known yet, cmd_id 483 can make the hardwired chime rattle a bit
                 coroutines.append(self.get_ding_dong_ctrl(channel))
 
         if coroutines:
@@ -1282,7 +1285,7 @@ class Baichuan:
         await self.send(cmd_id=487, channel=channel, body=xml)
 
     async def get_ding_dong_ctrl(self, channel: int) -> None:
-        """Get the DingDongCtrl info"""
+        """Get the DingDongCtrl info, this can make the hardwired chime rattle a bit"""
         xml = xmls.GetDingDongCtrl_XML
         mess = await self.send(cmd_id=483, channel=channel, body=xml)
         self._parse_hardwired_chime(mess, channel)
