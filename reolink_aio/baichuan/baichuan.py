@@ -1742,7 +1742,7 @@ class Baichuan:
         return int(pos)
 
     def hardwired_chime_type(self, channel: int) -> str | None:
-        return self._hardwired_chime_settings.get(channel, {}).get("type")
+        return str(self._hardwired_chime_settings.get(channel, {}).get("type"))
 
     def hardwired_chime_enabled(self, channel: int) -> bool:
         if channel not in self._hardwired_chime_settings:
