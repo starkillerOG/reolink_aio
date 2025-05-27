@@ -140,8 +140,8 @@ class HubToneEnum(Enum):
     moonlight = 8
     waybackhome = 9
 
-class ExistingChimeTypeEnum(Enum):
-    """Existing chime type for battery-powered doorbell"""
+class HardwiredChimeTypeEnum(Enum):
+    """Hardwired chime type for battery-powered doorbell"""
 
     none = "none"
     mechanical = "machine"

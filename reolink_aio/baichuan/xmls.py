@@ -110,7 +110,7 @@ SetDingDongCtrl_XML = """
 <type>{chime_type}</type>
 <bopen>{enabled}</bopen>
 <bsave>1</bsave>
-<time>0</time>
+<time>{time}</time>
 </dingdongCtrl>
 </body>
 """
