@@ -26,7 +26,7 @@ from ..exceptions import (
     ReolinkTimeoutError,
     CredentialsInvalidError,
 )
-from ..enums import BatteryEnum, DayNightEnum
+from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum
 from ..utils import reolink_time_to_datetime, to_reolink_time_id, datetime_to_reolink_time
 
 from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
@@ -117,6 +117,7 @@ class Baichuan:
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
+        self._hardwired_chime_settings: dict[int, dict[str, str | int]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -957,6 +958,9 @@ class Baichuan:
             if (self.api_version("newIspCfg", channel) >> 16) & 1:  # 17th bit (65536), shift 16
                 coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
 
+            if self.http_api.is_doorbell(channel) and self.http_api.supported(channel, "battery"):
+                coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
+
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
 
@@ -974,6 +978,8 @@ class Baichuan:
                 if isinstance(result, BaseException):
                     raise result
 
+                if cmd_id == 483:  # hardwired chime
+                    self.capabilities[channel].add("hardwired_chime")
                 if cmd_id == 527:  # crossline detection
                     self.capabilities[channel].add("ai_crossline")
                     self._parse_xml(cmd_id, result)
@@ -1066,6 +1072,9 @@ class Baichuan:
         for channel in self.http_api._channels:
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
+
+            if self.supported(channel, "hardwired_chime") and inc_cmd("483", channel):
+                coroutines.append(self.get_ding_dong_ctrl(channel))
 
         if coroutines:
             results = await asyncio.gather(*coroutines, return_exceptions=True)
@@ -1271,6 +1280,32 @@ class Baichuan:
 
         xml = xmls.SetDingDongCfg_XML.format(chime_id=chime_id, event_type=event_type, state=state, tone_id=tone_id)
         await self.send(cmd_id=487, channel=channel, body=xml)
+
+    async def get_ding_dong_ctrl(self, channel: int) -> None:
+        """Get the DingDongCtrl info"""
+        xml = xmls.GetDingDongCtrl_XML
+        mess = await self.send(cmd_id=483, channel=channel, body=xml)
+        self._parse_hardwired_chime(mess, channel)
+
+    async def set_ding_dong_ctrl(self, channel: int, chime_type: str | None = None, enable: bool | None = None) -> None:
+        """Set the DingDongCtrl info"""
+        await self.get_ding_dong_ctrl(channel)
+
+        enabled = int(enable) if enable is not None else int(self.hardwired_chime_enabled(channel))
+        chime_type = chime_type if chime_type is not None else self.hardwired_chime_type(channel)
+        time = self._hardwired_chime_settings.get(channel, {}).get("time", 0)
+
+        hardwired_chime_type_list = [val.value for val in HardwiredChimeTypeEnum]
+        if chime_type not in hardwired_chime_type_list:
+            raise InvalidParameterError(f"Baichuan host {self._host}: set_ding_dong_ctrl type {chime_type} not in {hardwired_chime_type_list}")
+
+        xml = xmls.SetDingDongCtrl_XML.format(chime_type=chime_type, enabled=enabled, time=time)
+        mess = await self.send(cmd_id=483, channel=channel, body=xml)
+        self._parse_hardwired_chime(mess, channel)
+
+    def _parse_hardwired_chime(self, mess: str, channel: int) -> None:
+        """Parse hardwired chime response"""
+        self._hardwired_chime_settings[channel] = self._get_keys_from_xml(mess, {"type": ("type", str), "bopen": ("enable", int), "time": ("time", int)})
 
     @http_cmd("QuickReplyPlay")
     async def QuickReplyPlay(self, **kwargs) -> None:
@@ -1705,3 +1740,12 @@ class Baichuan:
         if pos is None:
             return None
         return int(pos)
+
+    def hardwired_chime_type(self, channel: int) -> str | None:
+        return str(self._hardwired_chime_settings.get(channel, {}).get("type"))
+
+    def hardwired_chime_enabled(self, channel: int) -> bool:
+        if channel not in self._hardwired_chime_settings:
+            return False
+
+        return self._hardwired_chime_settings[channel]["enable"] == 1
