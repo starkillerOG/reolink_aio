@@ -11,7 +11,7 @@ HERE = pathlib.Path(__file__).parent
 README = (HERE / "README.md").read_text()
 
 setup(name='reolink_aio',
-      version='0.13.3',
+      version='0.13.4',
       description='Reolink NVR/cameras API package',
       long_description=README,
       long_description_content_type="text/markdown",
