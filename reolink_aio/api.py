@@ -2068,7 +2068,7 @@ class Host:
             cmd_list = {}
 
         if isinstance(wake, bool):
-            wake = dict.fromkeys(self._channels, wake)
+            wake = dict.fromkeys(self._stream_channels, wake)
 
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
         all_wake = all(wake.values())
