@@ -247,11 +247,13 @@ class Baichuan:
             _LOGGER.debug("%s, trying again", str(err))
             retrying = True
         except asyncio.TimeoutError as err:
-            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}, mess_id {mess_id}") from err
+            ch_str = f", ch {channel}" if channel is not None else ""
+            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}{ch_str}") from err
         except (ConnectionResetError, OSError) as err:
+            ch_str = f", ch {channel}" if channel is not None else ""
             if retry <= 0 or cmd_id == 2:
-                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write of cmd_id {cmd_id}, mess_id {mess_id}: {str(err)}") from err
-            _LOGGER.debug("Baichuan host %s: Connection error during read/write of cmd_id %s, mess_id %s: %s, trying again", self._host, cmd_id, mess_id, str(err))
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write of cmd_id {cmd_id}{ch_str}: {str(err)}") from err
+            _LOGGER.debug("Baichuan host %s: Connection error during read/write of cmd_id %s%s: %s, trying again", self._host, cmd_id, ch_str, str(err))
             retrying = True
         finally:
             if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
@@ -269,9 +271,7 @@ class Baichuan:
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            ch_str = ""
-            if channel is not None:
-                ch_str = f" ch {channel}"
+            ch_str = f" ch {channel}" if channel is not None else ""
             if len(rec_body) > 0:
                 _LOGGER.debug("Baichuan host %s: received cmd_id %s%s:\n%s", self._host, cmd_id, ch_str, self._hide_password(rec_body))
             else:
