@@ -247,11 +247,11 @@ class Baichuan:
             _LOGGER.debug("%s, trying again", str(err))
             retrying = True
         except asyncio.TimeoutError as err:
-            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error") from err
+            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}, mess_id {mess_id}") from err
         except (ConnectionResetError, OSError) as err:
             if retry <= 0 or cmd_id == 2:
-                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write: {str(err)}") from err
-            _LOGGER.debug("Baichuan host %s: Connection error during read/write: %s, trying again", self._host, str(err))
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write of cmd_id {cmd_id}, mess_id {mess_id}: {str(err)}") from err
+            _LOGGER.debug("Baichuan host %s: Connection error during read/write of cmd_id %s, mess_id %s: %s, trying again", self._host, cmd_id, mess_id, str(err))
             retrying = True
         finally:
             if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
@@ -931,6 +931,7 @@ class Baichuan:
             for i, result in enumerate(results):
                 (cmd_id, _) = host_coroutines[i]
                 if isinstance(result, ReolinkError):
+                    _LOGGER.debug("%s, during getting of host capabilities", result)
                     continue
                 if isinstance(result, BaseException):
                     raise result
@@ -976,6 +977,7 @@ class Baichuan:
             for i, result in enumerate(results):
                 (cmd_id, channel, _) = coroutines[i]
                 if isinstance(result, ReolinkError):
+                    _LOGGER.debug("%s, during getting of channel capabilities", result)
                     continue
                 if isinstance(result, BaseException):
                     raise result
@@ -1084,6 +1086,7 @@ class Baichuan:
             for result in results:
                 if isinstance(result, ReolinkError):
                     _LOGGER.debug(result)
+                    continue
                 if isinstance(result, BaseException):
                     raise result
 
