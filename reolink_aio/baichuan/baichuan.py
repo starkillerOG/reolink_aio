@@ -39,7 +39,7 @@ _LOGGER = logging.getLogger(__name__)
 RETRY_ATTEMPTS = 3
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
-TIMEOUT = 15  # seconds
+TIMEOUT = 30  # seconds
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 SMART_AI = {
