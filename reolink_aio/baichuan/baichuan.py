@@ -1075,7 +1075,7 @@ class Baichuan:
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
 
-            if self.supported(channel, "hardwired_chime") and inc_cmd("483", channel) and cmd_list and channel not in self._hardwired_chime_settings:
+            if self.supported(channel, "hardwired_chime") and channel in cmd_list.get("483", []) and channel not in self._hardwired_chime_settings:
                 # only get the state if not known yet, cmd_id 483 can make the hardwired chime rattle a bit
                 coroutines.append(self.get_ding_dong_ctrl(channel))
 
