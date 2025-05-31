@@ -3105,8 +3105,9 @@ class Host:
             json_data = await self.send(body, expected_response_type="json")
 
             if json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200:
-                rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
-                detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
+                err_mess: dict = json_data[0]["error"]
+                rspCode = json_data[0].get("value", err_mess)["rspCode"]
+                detail = json_data[0].get("value", err_mess).get("detail", "")
                 raise ApiError(f"Reboot: API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}", rspCode=rspCode)
         except ReolinkError as err:
             _LOGGER.debug("Error trying to reboot %s over HTTP(s): %s, trying baichuan reboot instead", err, self.nvr_name)
@@ -5472,8 +5473,9 @@ class Host:
         try:
             if (json_data[0]["code"] != 0 or json_data[0].get("value", {}).get("rspCode", -1) != 200) and not json_data[0].get("Baichuan_fallback_succes", False):
                 _LOGGER.debug("ApiError for command '%s', response: %s", command, json_data)
-                rspCode = json_data[0].get("value", json_data[0]["error"])["rspCode"]
-                detail = json_data[0].get("value", json_data[0]["error"]).get("detail", "")
+                err_mess: dict = json_data[0]["error"]
+                rspCode = json_data[0].get("value", err_mess)["rspCode"]
+                detail = json_data[0].get("value", err_mess).get("detail", "")
                 raise ApiError(f"cmd '{command}': API returned error code {json_data[0]['code']}, response code {rspCode}/{detail}", rspCode=rspCode)
         except KeyError as err:
             raise UnexpectedDataError(f"Host {self._host}:{self._port}: received an unexpected response from command '{command}': {json_data}") from err
