@@ -688,7 +688,6 @@ class Baichuan:
             for scene_id in root.findall(".//id"):
                 if scene_id.text is not None:
                     self._scenes[int(scene_id.text)] = "Unknown"
-            cmd_id_modified = self._get_value_from_xml_element(root, "cmdId", int)
 
         elif cmd_id == 623:  # Privacy mode
             items = root.findall(".//status")
