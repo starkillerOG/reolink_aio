@@ -248,12 +248,17 @@ class Baichuan:
             retrying = True
         except asyncio.TimeoutError as err:
             ch_str = f", ch {channel}" if channel is not None else ""
-            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}{ch_str}") from err
+            err_str = f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}{ch_str}"
+            if retry <= 0 or cmd_id == 2:
+                raise ReolinkTimeoutError(err_str) from err
+            _LOGGER.debug("%s, trying again", err_str)
+            retrying = True
         except (ConnectionResetError, OSError) as err:
             ch_str = f", ch {channel}" if channel is not None else ""
+            err_str = f"Baichuan host {self._host}: Connection error during read/write of cmd_id {cmd_id}{ch_str}: {str(err)}"
             if retry <= 0 or cmd_id == 2:
-                raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error during read/write of cmd_id {cmd_id}{ch_str}: {str(err)}") from err
-            _LOGGER.debug("Baichuan host %s: Connection error during read/write of cmd_id %s%s: %s, trying again", self._host, cmd_id, ch_str, str(err))
+                raise ReolinkConnectionError(err_str) from err
+            _LOGGER.debug("%s, trying again", err_str)
             retrying = True
         finally:
             if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
