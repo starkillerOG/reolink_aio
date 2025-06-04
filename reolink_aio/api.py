@@ -2445,28 +2445,28 @@ class Host:
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
 
-        if not body:
+        if body:
+            try:
+                json_data = await self.send(body, expected_response_type="json")
+            except InvalidContentTypeError as err:
+                raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
+            except NoDataError as err:
+                raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
+            except LoginPrivacyModeError:
+                if "channel" not in self._host_data_raw:
+                    raise
+                json_data = self._host_data_raw["channel"]
+            else:
+                self._host_data_raw["channel"] = json_data
+
+            self.map_channels_json_response(json_data, channels)
+        else:
+            json_data = []
             _LOGGER.debug(
                 "Host %s:%s: get_host_data, no channels connected so skipping channel specific requests.",
                 self._host,
                 self._port,
             )
-            return
-
-        try:
-            json_data = await self.send(body, expected_response_type="json")
-        except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
-        except NoDataError as err:
-            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
-        except LoginPrivacyModeError:
-            if "channel" not in self._host_data_raw:
-                raise
-            json_data = self._host_data_raw["channel"]
-        else:
-            self._host_data_raw["channel"] = json_data
-
-        self.map_channels_json_response(json_data, channels)
 
         # Baichuan capabilities
         await self.baichuan.get_host_data()
