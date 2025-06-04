@@ -128,6 +128,7 @@ class Host:
         rtmp_auth_method: str = DEFAULT_RTMP_AUTH_METHOD,
         aiohttp_get_session_callback=None,
         bc_port: int = DEFAULT_BC_PORT,
+        bc_only: bool = False
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -170,6 +171,7 @@ class Host:
         ##############################################################################
         # Baichuan protocol (port 9000)
         self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, http_api=self)
+        self.baichuan_only: bool = bc_only
         self.baichuan_cmds: set[str] = set()
 
         ##############################################################################
@@ -1229,6 +1231,9 @@ class Host:
             raise LoginPrivacyModeError(f"Could not login because privacy mode is turned on for host {self._host}, Baichuan login successfull, HTTP(s) login failed")
 
     async def login(self) -> None:
+        if self.baichuan_only:
+            return
+
         if self._port is None or self._use_https is None:
             await self._login_try_ports()
             return  # succes
@@ -1332,6 +1337,15 @@ class Host:
             return
         except LoginError:
             pass
+
+        # check if HTTP(s) API is supported
+        try:
+            await self.baichuan.get_host_data()
+        except ReolinkError as exc:
+            _LOGGER.debug("%s, can not check if HTTP api is supported", exc)
+        if self.baichuan_only:
+            _LOGGER.debug("Reolink host %s: HTTP(s) API not supported, only using Baichuan", self._host)
+            return
 
         # see which ports are enabled using baichuan protocol on port 9000
         try:
@@ -5629,6 +5643,9 @@ class Host:
         """Generic send method."""
         retry = retry - 1
 
+        if self.baichuan_only:
+            return await self._baichuan_alternative(body, expected_response_type)
+
         cmds = [cmd.get("cmd", "") for cmd in body]
         baichuan_idxs: dict[int, str] = {}
         if expected_response_type in ["image/jpeg", "application/octet-stream"]:
@@ -5968,6 +5985,40 @@ class Host:
             retry_data = await self.send(retry_cmd, param, "json", retry)
             for idx, retry_resp in enumerate(retry_data):
                 json_data[retry_idxs[idx]] = retry_resp
+        return json_data
+
+    async def _baichuan_alternative(
+        self,
+        body: typings.reolink_json,
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"],
+    ) -> typings.reolink_json:
+        """Send commands using Baichuan if HTTP(s) API not supported."""        
+        if expected_response_type != "json":
+            raise NotSupportedError(f"Host {self._host} only supports Baichuan, response type {expected_response_type} not supported")
+
+        coroutines = []
+        json_data = []
+        for idx, cmd_data in enumerate(body):
+            cmd = cmd_data.get("cmd", "")
+            json_data.append({"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
+            if cmd in self.baichuan.cmd_funcs:
+                func = self.baichuan.cmd_funcs[cmd]
+                args = cmd_data.get("param", {})
+                coroutines.append((idx, cmd, func(**args)))
+            else:
+                _LOGGER.debug("Host %s: cmd %s not supported by Baichuan, no HTTP(s) API", self._host, cmd)
+
+        if coroutines:
+            results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
+            for i, result in enumerate(results):
+                (idx, cmd, _) = coroutines[i]
+                if isinstance(result, ReolinkError):
+                    _LOGGER.debug("Baichuan failed for %s: %s", cmd, str(result))
+                    continue
+                if isinstance(result, BaseException):
+                    raise result
+                json_data[idx]["Baichuan_fallback_succes"] = True
+
         return json_data
 
     @overload

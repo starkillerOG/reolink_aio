@@ -923,6 +923,10 @@ class Baichuan:
                     support.remove(item)
                 self._abilities[None] = support
 
+            # check if HTTP(s) API is supported
+            if self.api_version("netPort", no_key_return=55) <= 1:
+                self.http_api.baichuan_only = True
+
         # Host capabilities
         self.capabilities.setdefault(None, set())
         host_coroutines: list[tuple[Any, Coroutine]] = []
