@@ -1402,14 +1402,6 @@ class Host:
         except ReolinkError:
             pass
 
-        # update info such that minimum firmware can be assest
-        self._nvr_model = self.baichuan.model()
-        self._nvr_hw_version = self.baichuan.hardware_version()
-        self._nvr_item_number = self.baichuan.item_number()
-        self._nvr_sw_version = self.baichuan.sw_version()
-        if self.baichuan.sw_version() is not None:
-            self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version())
-
         # retry login now that the port is open, this will also logout the baichuan session
         try:
             await self.login()

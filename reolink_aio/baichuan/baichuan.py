@@ -16,6 +16,7 @@ from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
 from ..const import WAKING_COMMANDS
 from ..typings import cmd_list_type, VOD_trigger, VOD_file
+from ..software_version import SoftwareVersion
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -856,6 +857,16 @@ class Baichuan:
         if privacy_mode is not None:
             self._privacy_mode[0] = privacy_mode == "1"
 
+        # is_nvr / is_hub
+        root = XML.fromstring(mess)
+        if (dev_info := root.find(".//DeviceInfo")) is not None:
+            dev_type = dev_info.find("type").text
+            dev_type_info = dev_info.find("typeInfo").text
+            if not self.http_api._is_nvr:
+                self.http_api._is_nvr = dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
+            if not self.http_api._is_hub:
+                self.http_api._is_hub = dev_type  == "homehub" or dev_type_info == "HOMEHUB"
+
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
         if self._subscribed:
@@ -1130,13 +1141,32 @@ class Baichuan:
 
         await self.send(cmd_id=36, body=xml)
 
+    @http_cmd("GetDevInfo")
     async def get_info(self, channel: int | None = None) -> dict[str, str]:
         """Get the device info of the host or a channel"""
         if channel is None:
             mess = await self.send(cmd_id=80)
         else:
             mess = await self.send(cmd_id=318, channel=channel)
-        self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
+        self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo", "serialNumber", "name"])
+
+        if channel is None:
+            # see login for is_nvr/is_hub
+            dev_info = self._dev_info[channel]
+            if "serialNumber" in dev_info:
+                self.http_api._nvr_serial = dev_info["serialNumber"]
+            if "name" in dev_info:
+                self.http_api._nvr_name = dev_info["name"]
+            if "type" in dev_info:
+                self.http_api._nvr_model = dev_info["type"]
+            if "itemNo" in dev_info:
+                self.http_api._nvr_item_number = dev_info["itemNo"]
+            if "hardwareVersion" in dev_info:
+                self.http_api._nvr_hw_version = dev_info["hardwareVersion"]
+            if "firmwareVersion" in dev_info:
+                self.http_api._nvr_sw_version = dev_info["firmwareVersion"]
+                self.http_api._nvr_sw_version_object = SoftwareVersion(self.http_api._nvr_sw_version)
+
         return self._dev_info[channel]
 
     async def get_network_info(self, channel: int | None = None) -> dict[str, str]:
