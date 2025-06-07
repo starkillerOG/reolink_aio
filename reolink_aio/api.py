@@ -1313,6 +1313,8 @@ class Host:
             self._login_mutex.release()
 
     async def _login_try_ports(self) -> None:
+        if self.baichuan_only:
+            return
         original_port = self._port
         original_https = self._use_https
 
@@ -1341,6 +1343,7 @@ class Host:
         except ReolinkError as exc:
             _LOGGER.debug("%s, can not check if HTTP api is supported", exc)
         if self.baichuan_only:
+            self._port = None
             _LOGGER.debug("Reolink host %s: HTTP(s) API not supported, only using Baichuan", self._host)
             return
 
