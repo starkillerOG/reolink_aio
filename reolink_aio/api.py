@@ -521,6 +521,8 @@ class Host:
 
     @property
     def session_active(self) -> bool:
+        if self.baichuan_only:
+            return True
         if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
             return True
         return False
