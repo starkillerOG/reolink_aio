@@ -1169,6 +1169,15 @@ class Baichuan:
 
         return self._dev_info[channel]
 
+    @http_cmd("GetP2p")
+    async def get_uid(self) -> None:
+        """Get the UID of the host"""
+        root = await self.send(cmd_id=114)
+        mess = XML.fromstring(root)
+        value = self._get_value_from_xml_element(mess, "uid")
+        if value is not None:
+            self.http_api._nvr_uid = value
+
     @http_cmd("GetLocalLink")
     async def get_network_info(self, channel: int | None = None, **kwargs) -> dict[str, str]:
         """Get the network info including MAC of the host or a channel"""
