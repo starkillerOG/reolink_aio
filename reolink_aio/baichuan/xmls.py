@@ -251,3 +251,9 @@ FindRecVideo = """
 <fileHandle>{fileHandle}</fileHandle>
 </findAlarmVideo>
 </body>"""
+
+UserList = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<userName>{username}</userName>
+</Extension>"""

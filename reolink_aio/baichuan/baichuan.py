@@ -1178,6 +1178,11 @@ class Baichuan:
         if value is not None:
             self.http_api._nvr_uid = value
 
+    async def get_channel_uids(self) -> None:
+        """Get a channel list containing the UIDs"""
+        # the NVR sends a message with cmd_id 145 when connecting, but it seems to not allow requesting that id.
+        await self.send(cmd_id=145)
+
     @http_cmd("GetLocalLink")
     async def get_network_info(self, channel: int | None = None, **kwargs) -> dict[str, str]:
         """Get the network info including MAC of the host or a channel"""
@@ -1197,10 +1202,21 @@ class Baichuan:
 
         return self._network_info[channel]
 
-    async def get_channel_uids(self) -> None:
-        """Get a channel list containing the UIDs"""
-        # the NVR sends a message with cmd_id 145 when connecting, but it seems to not allow requesting that id.
-        await self.send(cmd_id=145)
+    @http_cmd("GetUser")
+    async def GetUser(self) -> None:
+        """Get the user list"""
+        xml = xmls.UserList.format(username=self._username)
+        root = await self.send(cmd_id=58, extension=xml)
+        mess = XML.fromstring(root)
+        self.http_api._users = []
+        for user in mess.findall(".//User"):
+            values = self._get_keys_from_xml(user, ["userName", "userLevel"])
+            
+            if values.get("userLevel") == "1":
+                values["level"] = "admin"
+            else:
+                values["level"] = "guest"
+            self.http_api._users.append(values)
 
     async def get_wifi_signal(self) -> None:
         """Get the wifi signal of the host"""
