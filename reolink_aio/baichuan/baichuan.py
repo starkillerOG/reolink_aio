@@ -1169,13 +1169,23 @@ class Baichuan:
 
         return self._dev_info[channel]
 
-    async def get_network_info(self, channel: int | None = None) -> dict[str, str]:
+    @http_cmd("GetLocalLink")
+    async def get_network_info(self, channel: int | None = None, **kwargs) -> dict[str, str]:
         """Get the network info including MAC of the host or a channel"""
         if channel is None:
             mess = await self.send(cmd_id=76)
+            mess_link = await self.send(cmd_id=93)
         else:
             mess = await self.send(cmd_id=76, channel=channel)
         self._network_info[channel] = self._get_keys_from_xml(mess, ["ip", "mac"])
+
+        if channel is None:
+            link_dict = self._get_keys_from_xml(mess_link, ["type"])
+            if (link := link_dict.get("type")) is not None:
+                self.http_api._local_link.setdefault("LocalLink", {})["activeLink"] = link
+            if (mac := self.mac_address()) is not None:
+                self.http_api._mac_address = mac
+
         return self._network_info[channel]
 
     async def get_channel_uids(self) -> None:

@@ -239,7 +239,7 @@ class Host:
         ##############################################################################
         # Saved info response-blocks
         self._hdd_info: list[dict] = []
-        self._local_link: Optional[dict] = None
+        self._local_link: dict = {}
         self._wifi_signal: Optional[int] = None
         self._performance: dict = {}
         self._state_light: dict = {}
@@ -377,10 +377,7 @@ class Host:
     @property
     def wifi_connection(self) -> bool:
         """LAN or Wifi"""
-        if self._local_link is None:
-            return False
-
-        return self._local_link["LocalLink"]["activeLink"] != "LAN"
+        return self._local_link.get("LocalLink", {}).get("activeLink", "LAN") != "LAN"
 
     @property
     def wifi_signal(self) -> Optional[int]:
