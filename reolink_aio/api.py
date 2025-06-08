@@ -2501,7 +2501,7 @@ class Host:
                 _LOGGER.warning("Manual recording of Reolink %s has value %s which is a firmware bug, disabling manual recording", self.camera_name(channel), val)
                 await self.set_manual_record(channel, False)
 
-        if self.protocol == "rtsp":
+        if self.protocol == "rtsp" and not self.baichuan_only:
             # Cache the RTSP urls
             for channel in self._stream_channels:
                 if not self.baichuan.privacy_mode(channel):
@@ -3519,7 +3519,7 @@ class Host:
         for data in json_data:
             try:
                 if data["code"] == 1:  # Error, like "ability error"
-                    if not data.get("Baichuan_fallback_succes"):
+                    if not data.get("Baichuan_fallback_succes") and not self.baichuan_only:
                         _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
@@ -3748,8 +3748,8 @@ class Host:
         response_channel = channel
         for data in json_data:
             try:
-                if data["code"] == 1:  # -->Error, like "ability error"
-                    if not data.get("Baichuan_fallback_succes"):
+                if data["code"] == 1:  # Error, like "ability error"
+                    if not data.get("Baichuan_fallback_succes") and not self.baichuan_only:
                         _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
