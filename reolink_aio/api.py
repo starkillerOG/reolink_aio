@@ -444,7 +444,7 @@ class Host:
 
     @property
     def hardware_version(self) -> str:
-        return self._hw_version.get(None, UNKNOWN)
+        return self.camera_hardware_version(None)
 
     @property
     def manufacturer(self) -> str:
@@ -663,22 +663,22 @@ class Host:
         return self._channel_online[channel]
 
     def camera_model(self, channel: int | None) -> str:
-        if not self.is_nvr and channel not in self._model and channel in self._stream_channels and channel not in [0, None]:
+        if channel not in [0, None] and not self.is_nvr and channel not in self._model and channel in self._stream_channels:
             return self.camera_model(0)  # Dual lens cameras
+        if channel is not None and not self.is_nvr and channel not in self._model:
+            return self._model.get(None, UNKNOWN)
         return self._model.get(channel, UNKNOWN)
 
     def camera_hardware_version(self, channel: int | None) -> str:
-        if channel is None:
-            return self.hardware_version
-        if not self.is_nvr and channel not in self._hw_version and channel in self._stream_channels and channel != 0:
+        if channel not in [0, None] and not self.is_nvr and channel not in self._hw_version and channel in self._stream_channels:
             return self.camera_hardware_version(0)  # Dual lens cameras
-        if channel not in self._hw_version:
-            if not self.is_nvr:
-                return self.hardware_version
-            return UNKNOWN
-        return self._hw_version[channel]
+        if channel is not None and not self.is_nvr and channel not in self._hw_version:
+            return self._hw_version.get(None, UNKNOWN)
+        return self._hw_version.get(channel, UNKNOWN)
 
     def camera_sw_version(self, channel: int | None) -> str:
+        if channel is not None and not self.is_nvr and channel not in self._sw_version:
+            return self._sw_version.get(None, UNKNOWN)
         return self._sw_version.get(channel, UNKNOWN)
 
     def camera_sw_version_object(self, channel: int | None) -> SoftwareVersion:
