@@ -18,3 +18,5 @@ WAKING_COMMANDS = {
     "296",
     "483",
 }
+
+UNKNOWN = "Unknown"

@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 
 from .exceptions import UnexpectedDataError
+from .const import UNKNOWN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -160,11 +161,11 @@ class SoftwareVersion:
 
         if version_string is None:
             self.is_unknown = True
-            self.version_string = "unknown"
+            self.version_string = UNKNOWN
             return
 
         self.version_string = version_string.lower()
-        if self.version_string == "unknown":
+        if self.version_string == UNKNOWN:
             self.is_unknown = True
             return
 

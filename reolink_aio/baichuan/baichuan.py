@@ -14,7 +14,7 @@ from Cryptodome.Cipher import AES
 
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
-from ..const import WAKING_COMMANDS
+from ..const import WAKING_COMMANDS, UNKNOWN
 from ..typings import cmd_list_type, VOD_trigger, VOD_file
 from ..software_version import SoftwareVersion
 from ..exceptions import (
@@ -694,7 +694,7 @@ class Baichuan:
         elif cmd_id == 603:  # sceneListID
             for scene_id in root.findall(".//id"):
                 if scene_id.text is not None:
-                    self._scenes[int(scene_id.text)] = "Unknown"
+                    self._scenes[int(scene_id.text)] = UNKNOWN
 
         elif cmd_id == 623:  # Privacy mode
             items = root.findall(".//status")
@@ -869,11 +869,11 @@ class Baichuan:
             if "sleep" in data:
                 self._privacy_mode[0] = data["sleep"] == "1"
             # channels
-            if "channelNum" in data and self.http_api._nvr_num_channels == 0 and not self.http_api._is_nvr:
+            if "channelNum" in data and self.http_api._num_channels == 0 and not self.http_api._is_nvr:
                 self.http_api._channels.clear()
-                self.http_api._nvr_num_channels = data["channelNum"]
-                if self.http_api._nvr_num_channels > 0:
-                    for ch in range(self.http_api._nvr_num_channels):
+                self.http_api._num_channels = data["channelNum"]
+                if self.http_api._num_channels > 0:
+                    for ch in range(self.http_api._num_channels):
                         self.http_api._channels.append(ch)
 
     async def logout(self) -> None:
@@ -999,7 +999,7 @@ class Baichuan:
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
             # Fallback for missing information
-            if self.http_api.camera_hardware_version(channel) == "Unknown":
+            if self.http_api.camera_hardware_version(channel) == UNKNOWN:
                 coroutines.append(("ch_info", channel, self.get_info(channel)))
 
         for scene_id in self._scenes:
@@ -1157,25 +1157,23 @@ class Baichuan:
         self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo", "serialNumber", "name"])
         dev_info = self._dev_info[channel]
 
-        if "serialNumber" in dev_info:
-            self.http_api._serial[channel] = dev_info["serialNumber"]
+        # see login for is_nvr/is_hub
         if "name" in dev_info:
             self.http_api._name[channel] = dev_info["name"]
-        if channel is None:
-            # see login for is_nvr/is_hub
-
-            if "type" in dev_info:
-                self.http_api._nvr_model = dev_info["type"]
-            if "itemNo" in dev_info:
-                self.http_api._nvr_item_number = dev_info["itemNo"]
-            if "hardwareVersion" in dev_info:
-                self.http_api._nvr_hw_version = dev_info["hardwareVersion"]
-            if "firmwareVersion" in dev_info:
-                self.http_api._nvr_sw_version = dev_info["firmwareVersion"]
-                self.http_api._nvr_sw_version_object = SoftwareVersion(self.http_api._nvr_sw_version)
-        else:
-            if "hardwareVersion" in dev_info:
-                self.http_api._channel_hw_version[channel] = dev_info["hardwareVersion"]
+        if "type" in dev_info:
+            self.http_api._model[channel] = dev_info["type"]
+        if "hardwareVersion" in dev_info:
+            self.http_api._hw_version[channel] = dev_info["hardwareVersion"]
+        if "itemNo" in dev_info:
+            self.http_api._item_number[channel] = dev_info["itemNo"]
+        if "serialNumber" in dev_info:
+            self.http_api._serial[channel] = dev_info["serialNumber"]
+        if dev_info.get("firmwareVersion") not in ["", None]:
+            self.http_api._sw_version[channel] = dev_info["firmwareVersion"]
+            try:
+                self.http_api._sw_version_object[channel] = SoftwareVersion(self.http_api._sw_version[channel])
+            except UnexpectedDataError as err:
+                _LOGGER.debug("Reolink %s: %s", self.http_api.camera_name(channel), err)
 
         return self._dev_info[channel]
 
@@ -1186,7 +1184,7 @@ class Baichuan:
         mess = XML.fromstring(root)
         value = self._get_value_from_xml_element(mess, "uid")
         if value is not None:
-            self.http_api._nvr_uid = value
+            self.http_api._uid[None] = value
 
     async def get_channel_uids(self) -> None:
         """Get a channel list containing the UIDs"""
@@ -1534,12 +1532,10 @@ class Baichuan:
             vod_dict[trig] = []
         if self.http_api is None:
             return vod_type_dict, vod_dict
-        uid = self.http_api._channel_uids.get(channel, None)
-        if uid is None:
-            if not self.http_api.is_nvr:
-                uid = self.http_api.uid
-            if uid is None:
-                raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+        if uid == UNKNOWN:
+            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
 
         if stream == "sub":
             stream_type = 1
@@ -1754,13 +1750,13 @@ class Baichuan:
 
     @property
     def active_scene(self) -> str:
-        return self._scenes.get(self._active_scene, "Unknown")
+        return self._scenes.get(self._active_scene, UNKNOWN)
 
     def model(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("type")
 
     def hardware_version(self, channel: int | None = None) -> str:
-        return self._dev_info.get(channel, {}).get("hardwareVersion", "Unknown")
+        return self._dev_info.get(channel, {}).get("hardwareVersion", UNKNOWN)
 
     def item_number(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("itemNo")
@@ -1773,10 +1769,10 @@ class Baichuan:
         return mac
 
     def ip_address(self, channel: int | None = None) -> str:
-        ip = self._network_info.get(channel, {}).get("ip", "Unknown")
+        ip = self._network_info.get(channel, {}).get("ip", UNKNOWN)
         if channel is not None and ip == self.ip_address():
             # IP of channel equals IP of host, host could not retrieve IP of channel
-            return "Unknown"
+            return UNKNOWN
         return ip
 
     def sw_version(self, channel: int | None = None) -> str | None:
@@ -1804,7 +1800,7 @@ class Baichuan:
         return list(AI_DETECTS.intersection(smart_ai))
 
     def smart_ai_name(self, channel: int, smart_type: str, location: int) -> str:
-        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", "Unknown")
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", UNKNOWN)
 
     def smart_ai_index(self, channel: int, smart_type: str, location: int) -> int:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("index", 0)

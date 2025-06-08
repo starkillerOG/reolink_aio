@@ -28,7 +28,7 @@ import aiohttp
 
 from . import templates, typings
 from .baichuan import Baichuan, PortType, DEFAULT_BC_PORT
-from .const import WAKING_COMMANDS
+from .const import WAKING_COMMANDS, UNKNOWN
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
@@ -178,18 +178,18 @@ class Host:
         # NVR (host-level) attributes
         self._is_nvr: bool = False
         self._is_hub: bool = False
-        self._nvr_uid: Optional[str] = None
-        self._nvr_model: Optional[str] = None
-        self._nvr_item_number: Optional[str] = None
-        self._nvr_num_channels: int = 0
-        self._nvr_hw_version: Optional[str] = None
-        self._nvr_sw_version: Optional[str] = None
-        self._nvr_sw_version_object: Optional[SoftwareVersion] = None
+        self._num_channels: int = 0
 
         ##############################################################################
         # Combined attributes
-        self._serial: dict[int | None, str] = {}
         self._name: dict[int | None, str] = {}
+        self._model: dict[int | None, str] = {}
+        self._hw_version: dict[int | None, str] = {}
+        self._item_number: dict[int | None, str] = {}
+        self._uid: dict[int | None, str] = {}
+        self._serial: dict[int | None, str] = {}
+        self._sw_version: dict[int | None, str] = {}
+        self._sw_version_object: dict[int | None, SoftwareVersion] = {}
         self._sw_hardware_id: dict[int | None, int] = {}
         self._sw_model_id: dict[int | None, int] = {}
         self._last_sw_id_check: float = 0
@@ -206,12 +206,7 @@ class Host:
         self._GetChannelStatus_has_name: bool = False
         self._channels: list[int] = []
         self._stream_channels: list[int] = []
-        self._channel_uids: dict[int, str] = {}
-        self._channel_models: dict[int, str] = {}
         self._channel_online: dict[int, bool] = {}
-        self._channel_hw_version: dict[int, str] = {}
-        self._channel_sw_versions: dict[int, str] = {}
-        self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
         self._is_doorbell: dict[int, bool] = {}
         self._GetDingDong_present: dict[int, bool] = {}
 
@@ -368,9 +363,7 @@ class Host:
 
     @property
     def uid(self) -> str:
-        if self._nvr_uid is None:
-            return "Unknown"
-        return self._nvr_uid
+        return self._uid.get(None, UNKNOWN)
 
     @property
     def wifi_connection(self) -> bool:
@@ -420,21 +413,16 @@ class Host:
 
     @property
     def sw_version(self) -> str:
-        if self._nvr_sw_version is None:
-            return "Unknown"
-        return self._nvr_sw_version
+        return self.camera_sw_version(None)
 
     @property
     def sw_version_object(self) -> SoftwareVersion:
-        if self._nvr_sw_version_object is None:
-            return SoftwareVersion(None)
-
-        return self._nvr_sw_version_object
+        return self.camera_sw_version_object(None)
 
     @property
     def sw_version_required(self) -> SoftwareVersion:
         """Return the minimum required firmware version for proper operation of this library"""
-        if self._nvr_model is None or self._nvr_hw_version is None:
+        if self.model == UNKNOWN or self.hardware_version == UNKNOWN:
             return SoftwareVersion(None)
 
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version))
@@ -442,26 +430,21 @@ class Host:
     @property
     def sw_version_update_required(self) -> bool:
         """Check if a firmware version update is required for proper operation of this library"""
-        if self._nvr_sw_version_object is None:
+        if self._sw_version_object.get(None) is None:
             return False
 
-        return not self._nvr_sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
+        return not self.sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
 
     @property
     def model(self) -> str:
-        if self._nvr_model is None:
-            return "Unknown"
-        return self._nvr_model
+        return self.camera_model(None)
 
-    @property
-    def item_number(self) -> str | None:
-        return self._nvr_item_number
+    def item_number(self, channel: int | None = None) -> str | None:
+        return self._item_number.get(channel)
 
     @property
     def hardware_version(self) -> str:
-        if self._nvr_hw_version is None:
-            return "Unknown"
-        return self._nvr_hw_version
+        return self._hw_version.get(None, UNKNOWN)
 
     @property
     def manufacturer(self) -> str:
@@ -470,7 +453,7 @@ class Host:
     @property
     def num_channels(self) -> int:
         """Return the total number of channels in the NVR (should be 1 for a standalone camera, maybe 2 for DUO cameras)."""
-        return self._nvr_num_channels
+        return self._num_channels
 
     @property
     def num_cameras(self) -> int:
@@ -530,13 +513,13 @@ class Host:
     def user_level(self) -> str:
         """Check if the user has admin authorisation."""
         if self._users is None or len(self._users) < 1:
-            return "unknown"
+            return UNKNOWN
 
         for user in self._users:
             if user["userName"] == self._username:
                 return user["level"]
 
-        return "unknown"
+        return UNKNOWN
 
     @property
     def is_admin(self) -> bool:
@@ -582,7 +565,7 @@ class Host:
     def hdd_type(self, index) -> str:
         """Return the storage type, 'SD', 'HDD' or 'unknown'."""
         if index >= len(self._hdd_info):
-            return "unknown"
+            return UNKNOWN
 
         hdd_type = self._hdd_info[index].get("storageType", 2)
         if hdd_type == 1:
@@ -590,7 +573,7 @@ class Host:
         if hdd_type == 2:
             return "SD"
 
-        return "unknown"
+        return UNKNOWN
 
     def hdd_available(self, index) -> bool:
         if index >= len(self._hdd_info):
@@ -640,8 +623,8 @@ class Host:
             redacted = redacted.replace(self._enc_password, "<password>")
         if self._token:
             redacted = redacted.replace(self._token, "<token>")
-        if self._nvr_uid:
-            redacted = redacted.replace(self._nvr_uid, "<uid>")
+        for uid in self._uid.values():
+            redacted = redacted.replace(uid, "<uid>")
         return redacted
 
     ##############################################################################
@@ -651,24 +634,22 @@ class Host:
         if not self.is_nvr and channel not in self._name and channel in self._stream_channels and channel != 0:
             return self.camera_name(0)  # Dual lens cameras
         if channel is None and not self._is_nvr and self._name.get(channel, "") == "" and len(self._channels) > 0:
-            return self._name.get(self._channels[0], "Unknown")
+            return self._name.get(self._channels[0], UNKNOWN)
         if channel is not None and not self.is_nvr and self._name.get(channel, "") == "":
             return self.camera_name(None)
-        return self._name.get(channel, "Unknown")
+        return self._name.get(channel, UNKNOWN)
 
     def camera_uid(self, channel: int | None) -> str:
-        if channel is None:
-            return self.uid
-        if not self.is_nvr and channel not in self._channel_uids and channel in self._stream_channels and channel != 0 and self.camera_uid(0) != "Unknown":
+        if channel not in [0, None] and not self.is_nvr and channel not in self._uid and self.camera_uid(0) != UNKNOWN and channel in self._stream_channels:
             return f"{self.camera_uid(0)}_{channel}"  # Dual lens cameras
-        if channel not in self._channel_uids:
-            return "Unknown"
-        return self._channel_uids[channel]
+        return self._uid.get(channel, UNKNOWN)
 
     def channel_for_uid(self, uid: str) -> int:
         """Returns the channel belonging to a UID"""
         channel = -1
-        for ch, ch_uid in self._channel_uids.items():
+        for ch, ch_uid in self._uid.items():
+            if ch is None:
+                continue
             if ch_uid.startswith(uid):
                 channel = ch
                 break
@@ -682,42 +663,30 @@ class Host:
         return self._channel_online[channel]
 
     def camera_model(self, channel: int | None) -> str:
-        if channel is None:
-            return self.model
-        if not self.is_nvr and channel not in self._channel_models and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._model and channel in self._stream_channels and channel not in [0, None]:
             return self.camera_model(0)  # Dual lens cameras
-        if channel not in self._channel_models:
-            return "Unknown"
-        return self._channel_models[channel]
+        return self._model.get(channel, UNKNOWN)
 
     def camera_hardware_version(self, channel: int | None) -> str:
         if channel is None:
             return self.hardware_version
-        if not self.is_nvr and channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._hw_version and channel in self._stream_channels and channel != 0:
             return self.camera_hardware_version(0)  # Dual lens cameras
-        if channel not in self._channel_hw_version:
+        if channel not in self._hw_version:
             if not self.is_nvr:
                 return self.hardware_version
-            return "Unknown"
-        return self._channel_hw_version[channel]
+            return UNKNOWN
+        return self._hw_version[channel]
 
     def camera_sw_version(self, channel: int | None) -> str:
-        if not self.is_nvr or channel is None:
-            return self.sw_version
-        if channel not in self._channel_sw_versions:
-            return "Unknown"
-        return self._channel_sw_versions[channel]
+        return self._sw_version.get(channel, UNKNOWN)
 
     def camera_sw_version_object(self, channel: int | None) -> SoftwareVersion:
-        if not self.is_nvr or channel is None:
-            return self.sw_version_object
-        if channel not in self._channel_sw_version_objects:
-            return SoftwareVersion(None)
-        return self._channel_sw_version_objects[channel]
+        return self._sw_version_object.get(channel, SoftwareVersion(None))
 
     def camera_sw_version_required(self, channel: int | None) -> SoftwareVersion:
         """Return the minimum required firmware version for a connected IPC camera for proper operation of this library"""
-        if self.camera_model(channel) == "Unknown" or self.camera_hardware_version(channel) == "Unknown":
+        if self.camera_model(channel) == UNKNOWN or self.camera_hardware_version(channel) == UNKNOWN:
             return SoftwareVersion(None)
 
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.camera_model(channel), {}).get(self.camera_hardware_version(channel)))
@@ -1585,7 +1554,7 @@ class Host:
         if self.api_version("rtmp") > 0 and self._rtmp_port is not None:
             self._capabilities["Host"].add("RTMP")
 
-        if self._nvr_uid is not None:
+        if self.uid != UNKNOWN:
             self._capabilities["Host"].add("UID")
 
         if self.sw_version_object.date > datetime(year=2021, month=6, day=1):
@@ -1650,7 +1619,7 @@ class Host:
         for channel in self._channels:
             self._capabilities.setdefault(channel, set())
 
-            if self.camera_uid(channel) != "Unknown":
+            if self.camera_uid(channel) != UNKNOWN:
                 self._capabilities[channel].add("UID")
 
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
@@ -1671,7 +1640,7 @@ class Host:
                 self._ai_detection_support[channel]["cry"] = True
                 self._ai_detection_states[channel]["cry"] = False
 
-            if self.is_nvr and self.camera_hardware_version(channel) != "Unknown" and self.camera_model(channel) != "Unknown":
+            if self.is_nvr and self.camera_hardware_version(channel) != UNKNOWN and self.camera_model(channel) != UNKNOWN:
                 self._capabilities[channel].add("firmware")
                 if self.api_version("upgrade") >= 2:
                     self._capabilities[channel].add("update")
@@ -2331,7 +2300,7 @@ class Host:
 
         if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
             self._stream_channels = [0, 1]
-            self._nvr_num_channels = 1
+            self._num_channels = 1
             self._channels = [0]
         else:
             self._stream_channels = self._channels
@@ -3497,12 +3466,14 @@ class Host:
     def ensure_channel_uid_unique(self) -> None:
         """Make sure the channel UIDs are all unique."""
         rev_channel_uids: dict[str, set[int]] = {}
-        for key, value in self._channel_uids.items():
+        for key, value in self._uid.items():
+            if key is None:
+                continue
             rev_channel_uids.setdefault(value, set()).add(key)
         duplicate_uids = [values for key, values in rev_channel_uids.items() if len(values) > 1]
         for duplicate in duplicate_uids:
             for ch in duplicate:
-                self._channel_uids[ch] = f"{self._channel_uids[ch]}_{ch}"
+                self._uid[ch] = f"{self._uid[ch]}_{ch}"
 
     def map_host_json_response(self, json_data: typings.reolink_json) -> None:
         """Map the JSON objects to internal cache-objects."""
@@ -3516,16 +3487,15 @@ class Host:
                 if data["cmd"] == "GetChannelstatus":
                     cur_status = data["value"]["status"]
 
-                    if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
+                    if not self._GetChannelStatus_present and (self._num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
                         self._is_doorbell.clear()
 
-                        self._nvr_num_channels = data["value"]["count"]
-                        if self._nvr_num_channels > 0:
+                        self._num_channels = data["value"]["count"]
+                        if self._num_channels > 0:
                             # Not all Reolink devices respond with "name" attribute.
                             if "name" in cur_status[0]:
                                 self._GetChannelStatus_has_name = True
-                                self._channel_names.clear()
                             else:
                                 self._GetChannelStatus_has_name = False
 
@@ -3534,17 +3504,15 @@ class Host:
                                     cur_channel = ch_info["channel"]
 
                                     if "typeInfo" in ch_info:  # Not all Reolink devices respond with "typeInfo" attribute.
-                                        self._channel_models[cur_channel] = ch_info["typeInfo"]
-                                        self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
+                                        self._model[cur_channel] = ch_info["typeInfo"]
+                                        self._is_doorbell[cur_channel] = "Doorbell" in self._model[cur_channel]
 
                                     if "uid" in ch_info and ch_info["uid"] != "":
-                                        self._channel_uids[cur_channel] = ch_info["uid"]
+                                        self._uid[cur_channel] = ch_info["uid"]
 
                                     self._channels.append(cur_channel)
 
                             self.ensure_channel_uid_unique()
-                        else:
-                            self._channel_names.clear()
 
                     for ch_info in cur_status:
                         cur_channel = ch_info["channel"]
@@ -3552,7 +3520,7 @@ class Host:
                         self._channel_online[cur_channel] = online
                         if online:
                             if "name" in ch_info and ch_info["name"] not in ["0", "1"]:
-                                self._channel_names[cur_channel] = ch_info["name"]
+                                self._name[cur_channel] = ch_info["name"]
                             if "sleep" in ch_info:
                                 self._sleep[cur_channel] = ch_info["sleep"] == 1
 
@@ -3561,12 +3529,12 @@ class Host:
 
                     if not self._startup:
                         # check for new devices
-                        if data["value"]["count"] != self._nvr_num_channels:
+                        if data["value"]["count"] != self._num_channels:
                             _LOGGER.info(
                                 "New Reolink device discovered connected to %s, number of channels now %s and was %s",
                                 self.nvr_name,
                                 data["value"]["count"],
-                                self._nvr_num_channels,
+                                self._num_channels,
                             )
                             self._new_devices = True
                         for ch_info in cur_status:
@@ -3623,18 +3591,18 @@ class Host:
                     self._is_hub = dev_info.get("exactType", "IPC") == "HOMEHUB" or dev_info.get("type", "IPC") == "HOMEHUB"
                     self._serial[None] = dev_info["serial"]
                     self._name[None] = dev_info["name"]
-                    self._nvr_model = dev_info["model"]
-                    self._nvr_item_number = dev_info.get("itemNo")
-                    self._nvr_hw_version = dev_info["hardVer"]
-                    self._nvr_sw_version = dev_info["firmVer"]
-                    if self._nvr_sw_version is not None:
-                        self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
+                    self._model[None] = dev_info["model"]
+                    self._item_number[None] = dev_info.get("itemNo")
+                    self._hw_version[None] = dev_info["hardVer"]
+                    self._sw_version[None] = dev_info["firmVer"]
+                    if self._sw_version[None] is not None:
+                        self._sw_version_object[None] = SoftwareVersion(self._sw_version[None])
 
                     # In case the "GetChannelStatus" command not supported by the device.
-                    if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
+                    if not self._GetChannelStatus_present and self._num_channels == 0:
                         self._channels.clear()
 
-                        self._nvr_num_channels = dev_info["channelNum"]
+                        self._num_channels = dev_info["channelNum"]
 
                         if self._is_nvr:
                             _LOGGER.warning(
@@ -3642,15 +3610,15 @@ class Host:
                                 "Probably you need to update your firmware.\n"
                                 "No way to recognize active channels, all %s channels will be considered 'active' as a result",
                                 self.nvr_name,
-                                self._nvr_num_channels,
+                                self._num_channels,
                             )
 
-                        if self._nvr_num_channels > 0:
-                            for ch in range(self._nvr_num_channels):
+                        if self._num_channels > 0:
+                            for ch in range(self._num_channels):
                                 self._channels.append(ch)
-                                if ch not in self._channel_models and self._nvr_model is not None:
-                                    self._channel_models[ch] = self._nvr_model
-                                    self._is_doorbell[ch] = "Doorbell" in self._nvr_model
+                                if ch not in self._model and self.model != UNKNOWN:
+                                    self._model[ch] = self.model
+                                    self._is_doorbell[ch] = "Doorbell" in self.model
 
                 elif data["cmd"] == "GetHddInfo":
                     self._hdd_info = data["value"]["HddInfo"]
@@ -3682,7 +3650,7 @@ class Host:
                         self.baichuan.port = net_port["mediaPort"]
 
                 elif data["cmd"] == "GetP2p":
-                    self._nvr_uid = data["value"]["P2p"]["uid"]
+                    self._uid[None] = data["value"]["P2p"]["uid"]
 
                 elif data["cmd"] == "GetUser":
                     self._users = data["value"]["User"]
@@ -3745,17 +3713,17 @@ class Host:
 
                 if data["cmd"] == "GetChnTypeInfo":
                     if data["value"]["typeInfo"] != "":
-                        self._channel_models[channel] = data["value"]["typeInfo"]
-                    self._is_doorbell[channel] = "Doorbell" in self._channel_models.get(channel, "")
+                        self._model[channel] = data["value"]["typeInfo"]
+                    self._is_doorbell[channel] = "Doorbell" in self._model.get(channel, "")
                     if data["value"].get("firmVer", "") != "":
-                        self._channel_sw_versions[channel] = data["value"]["firmVer"]
-                        if self._channel_sw_versions[channel] is not None:
+                        self._sw_version[channel] = data["value"]["firmVer"]
+                        if self._sw_version[channel] is not None:
                             try:
-                                self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
+                                self._sw_version_object[channel] = SoftwareVersion(self._sw_version[channel])
                             except UnexpectedDataError as err:
                                 _LOGGER.debug("Reolink %s: %s", self.camera_name(channel), err)
                     if data["value"].get("boardInfo", "") != "":
-                        self._channel_hw_version[channel] = data["value"]["boardInfo"]
+                        self._hw_version[channel] = data["value"]["boardInfo"]
 
                 if data["cmd"] == "GetEvents":
                     response_channel = data["value"]["channel"]
@@ -3842,7 +3810,7 @@ class Host:
                     response_channel = data["value"]["Osd"]["channel"]
                     self._osd_settings[channel] = data["value"]
                     if not self._GetChannelStatus_present or not self._GetChannelStatus_has_name:
-                        self._channel_names[channel] = data["value"]["Osd"]["osdChannel"]["name"]
+                        self._name[channel] = data["value"]["Osd"]["osdChannel"]["name"]
 
                 elif data["cmd"] == "GetFtp":
                     self._ftp_settings[channel] = data["value"]
