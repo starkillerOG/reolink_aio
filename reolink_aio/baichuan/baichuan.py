@@ -993,6 +993,8 @@ class Baichuan:
                 self.capabilities[channel].add("hardwired_chime")
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
+            if self.http_api.baichuan_only and (self.api_version("ledCtrl", channel) >> 1) & 1 and (self.api_version("ledCtrl", channel) >> 2) & 1:  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
+                self.capabilities[channel].add("floodLight")
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
