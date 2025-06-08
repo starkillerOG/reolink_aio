@@ -657,8 +657,8 @@ class Baichuan:
                         continue
                     channels.add(channel)
                     state = self._get_value_from_xml_element(event, "status", int)
-                    if state is not None and channel in self.http_api._whiteled_settings:
-                        self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = state
+                    if state is not None:
+                        self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 527:  # crossline detection
