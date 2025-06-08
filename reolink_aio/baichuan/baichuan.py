@@ -99,8 +99,9 @@ class Baichuan:
 
         # http_cmd functions, set by the http_cmd decorator
         self.cmd_funcs: dict[str, Callable] = {}
-        for _name, func in getmembers(self, lambda o: hasattr(o, "http_cmd")):
-            self.cmd_funcs[func.http_cmd] = func
+        for _name, func in getmembers(self, lambda o: hasattr(o, "http_cmds")):
+            for http_cmd in func.http_cmds:
+                self.cmd_funcs[http_cmd] = func
 
         # supported
         self.capabilities: dict[int | None, set[str]] = {}

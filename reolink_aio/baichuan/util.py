@@ -63,9 +63,12 @@ def md5_str_modern(string: str) -> str:
 
 
 # Decorators
-def http_cmd(cmd: str) -> Callable:
+def http_cmd(cmd: str | list) -> Callable:
     def decorator_http_cmd(func):
-        func.http_cmd = cmd
+        if isinstance(cmd, list):
+            func.http_cmds = cmd
+        else:
+            func.http_cmds = [cmd]
         return func
 
     return decorator_http_cmd
