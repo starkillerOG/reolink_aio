@@ -1710,7 +1710,7 @@ class Host:
                 self._capabilities[channel].add("siren")
                 self._capabilities[channel].add("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
 
-            if self.audio_record(channel) is not None:
+            if self._enc_settings.get(channel, {}).get("Enc", {}).get("audio") is not None:
                 self._capabilities[channel].add("audio")
 
             ptz_ver = self.api_version("ptzType", channel)
@@ -2431,7 +2431,7 @@ class Host:
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
             for x in json_data:
-                if x["cmd"] == cmd:
+                if x["cmd"] == cmd and x.get("Baichuan_fallback_succes", True):
                     return 1
             return 0
 
