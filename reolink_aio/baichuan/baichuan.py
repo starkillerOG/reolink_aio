@@ -852,20 +852,28 @@ class Baichuan:
                 raise
             self._logged_in = True
 
-        # privacy mode
-        privacy_mode = self._get_value_from_xml(mess, "sleep")
-        if privacy_mode is not None:
-            self._privacy_mode[0] = privacy_mode == "1"
-
-        # is_nvr / is_hub
+        # parse response
         root = XML.fromstring(mess)
         if (dev_info := root.find(".//DeviceInfo")) is not None:
+            # is_nvr / is_hub
             dev_type = dev_info.find("type").text
             dev_type_info = dev_info.find("typeInfo").text
             if not self.http_api._is_nvr:
                 self.http_api._is_nvr = dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
             if not self.http_api._is_hub:
                 self.http_api._is_hub = dev_type  == "homehub" or dev_type_info == "HOMEHUB"
+
+            data = self._get_keys_from_xml(dev_info, {"sleep": ("sleep", str), "channelNum": ("channelNum", int)})
+            # privacy mode
+            if "sleep" in data:
+                self._privacy_mode[0] = data["sleep"] == "1"
+            # channels
+            if "channelNum" in data and self.http_api._nvr_num_channels == 0 and not self.http_api._is_nvr:
+                self.http_api._channels.clear()
+                self.http_api._nvr_num_channels = data["channelNum"]
+                if self.http_api._nvr_num_channels > 0:
+                    for ch in range(self.http_api._nvr_num_channels):
+                        self.http_api._channels.append(ch)
 
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
@@ -940,6 +948,8 @@ class Baichuan:
 
         # Host capabilities
         self.capabilities.setdefault(None, set())
+        if self.api_version("reboot") > 0:
+            self.capabilities[None].add("reboot")
         host_coroutines: list[tuple[Any, Coroutine]] = []
         host_coroutines.append(("network_info", self.get_network_info()))
         if self.api_version("sceneModeCfg") > 0:
