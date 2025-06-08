@@ -178,8 +178,6 @@ class Host:
         # NVR (host-level) attributes
         self._is_nvr: bool = False
         self._is_hub: bool = False
-        self._nvr_name: str = ""
-        self._nvr_serial: Optional[str] = None
         self._nvr_uid: Optional[str] = None
         self._nvr_model: Optional[str] = None
         self._nvr_item_number: Optional[str] = None
@@ -190,6 +188,8 @@ class Host:
 
         ##############################################################################
         # Combined attributes
+        self._serial: dict[int | None, str] = {}
+        self._name: dict[int | None, str] = {}
         self._sw_hardware_id: dict[int | None, int] = {}
         self._sw_model_id: dict[int | None, int] = {}
         self._last_sw_id_check: float = 0
@@ -206,7 +206,6 @@ class Host:
         self._GetChannelStatus_has_name: bool = False
         self._channels: list[int] = []
         self._stream_channels: list[int] = []
-        self._channel_names: dict[int, str] = {}
         self._channel_uids: dict[int, str] = {}
         self._channel_models: dict[int, str] = {}
         self._channel_online: dict[int, bool] = {}
@@ -364,9 +363,8 @@ class Host:
             raise NoDataError("Mac address not yet retrieved")
         return self._mac_address
 
-    @property
-    def serial(self) -> Optional[str]:
-        return self._nvr_serial
+    def serial(self, channel: int | None = None) -> str | None:
+        return self._serial.get(channel)
 
     @property
     def uid(self) -> str:
@@ -418,12 +416,7 @@ class Host:
 
     @property
     def nvr_name(self) -> str:
-        if not self._is_nvr and self._nvr_name == "":
-            if len(self._channels) > 0 and self._channels[0] in self._channel_names:
-                return self._channel_names[self._channels[0]]
-
-            return "Unknown"
-        return self._nvr_name
+        return self.camera_name(None)
 
     @property
     def sw_version(self) -> str:
@@ -655,16 +648,13 @@ class Host:
     # Channel-level getters/setters
 
     def camera_name(self, channel: int | None) -> str:
-        if channel is None:
-            return self.nvr_name
-
-        if not self.is_nvr and channel not in self._channel_names and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._name and channel in self._stream_channels and channel != 0:
             return self.camera_name(0)  # Dual lens cameras
-        if channel not in self._channel_names:
-            if not self.is_nvr:
-                return self.nvr_name
-            return "Unknown"
-        return self._channel_names[channel]
+        if channel is None and not self._is_nvr and self._name.get(channel, "") == "" and len(self._channels) > 0:
+            return self._name.get(self._channels[0], "Unknown")
+        if channel is not None and not self.is_nvr and self._name.get(channel, "") == "":
+            return self.camera_name(None)
+        return self._name.get(channel, "Unknown")
 
     def camera_uid(self, channel: int | None) -> str:
         if channel is None:
@@ -3631,8 +3621,8 @@ class Host:
                     self._is_nvr = dev_info.get("exactType", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
                     self._is_nvr = self._is_nvr or dev_info.get("type", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
                     self._is_hub = dev_info.get("exactType", "IPC") == "HOMEHUB" or dev_info.get("type", "IPC") == "HOMEHUB"
-                    self._nvr_serial = dev_info["serial"]
-                    self._nvr_name = dev_info["name"]
+                    self._serial[None] = dev_info["serial"]
+                    self._name[None] = dev_info["name"]
                     self._nvr_model = dev_info["model"]
                     self._nvr_item_number = dev_info.get("itemNo")
                     self._nvr_hw_version = dev_info["hardVer"]
@@ -3651,7 +3641,7 @@ class Host:
                                 "Your %s NVR doesn't support the 'Getchannelstatus' command. "
                                 "Probably you need to update your firmware.\n"
                                 "No way to recognize active channels, all %s channels will be considered 'active' as a result",
-                                self._nvr_name,
+                                self.nvr_name,
                                 self._nvr_num_channels,
                             )
 

@@ -998,6 +998,9 @@ class Baichuan:
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
+            # Fallback for missing information
+            if self.http_api.camera_hardware_version(channel) == "Unknown":
+                coroutines.append(("ch_info", channel, self.get_info(channel)))
 
         for scene_id in self._scenes:
             if scene_id < 0:
@@ -1035,16 +1038,6 @@ class Baichuan:
                     self.capabilities[channel].add("day_night_state")
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
-
-        # Fallback for missing information
-        for channel in self.http_api._channels:
-            if self.http_api.camera_hardware_version(channel) == "Unknown":
-                try:
-                    await self.get_info(channel)
-                except ReolinkError:
-                    pass
-                else:
-                    self.http_api._channel_hw_version[channel] = self.hardware_version(channel)
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
@@ -1154,7 +1147,7 @@ class Baichuan:
 
         await self.send(cmd_id=36, body=xml)
 
-    @http_cmd("GetDevInfo")
+    @http_cmd(["GetDevInfo", "GetChnTypeInfo"])
     async def get_info(self, channel: int | None = None) -> dict[str, str]:
         """Get the device info of the host or a channel"""
         if channel is None:
@@ -1162,14 +1155,15 @@ class Baichuan:
         else:
             mess = await self.send(cmd_id=318, channel=channel)
         self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo", "serialNumber", "name"])
+        dev_info = self._dev_info[channel]
 
+        if "serialNumber" in dev_info:
+            self.http_api._serial[channel] = dev_info["serialNumber"]
+        if "name" in dev_info:
+            self.http_api._name[channel] = dev_info["name"]
         if channel is None:
             # see login for is_nvr/is_hub
-            dev_info = self._dev_info[channel]
-            if "serialNumber" in dev_info:
-                self.http_api._nvr_serial = dev_info["serialNumber"]
-            if "name" in dev_info:
-                self.http_api._nvr_name = dev_info["name"]
+
             if "type" in dev_info:
                 self.http_api._nvr_model = dev_info["type"]
             if "itemNo" in dev_info:
@@ -1179,6 +1173,9 @@ class Baichuan:
             if "firmwareVersion" in dev_info:
                 self.http_api._nvr_sw_version = dev_info["firmwareVersion"]
                 self.http_api._nvr_sw_version_object = SoftwareVersion(self.http_api._nvr_sw_version)
+        else:
+            if "hardwareVersion" in dev_info:
+                self.http_api._channel_hw_version[channel] = dev_info["hardwareVersion"]
 
         return self._dev_info[channel]
 
