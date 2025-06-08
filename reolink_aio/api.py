@@ -1615,6 +1615,10 @@ class Host:
             if self.api_version("recReplay", channel) > 0:
                 self._capabilities[channel].add("replay")
 
+            if not self.baichuan_only:
+                self._capabilities[channel].add("stream")
+                self._capabilities[channel].add("snapshot")
+
         # Channel capabilities
         for channel in self._channels:
             self._capabilities.setdefault(channel, set())
