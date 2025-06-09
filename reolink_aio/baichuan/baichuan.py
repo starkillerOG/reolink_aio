@@ -1304,14 +1304,19 @@ class Baichuan:
             mess = await self.send(cmd_id=289, channel=channel)
             xml_body = XML.fromstring(mess)
             xml_element = xml_body.find(".//FloodlightTask")
+            if xml_element is None:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: set_floodlight: could not find FloodlightTask")
             if brightness is not None:
                 xml_brightness = xml_element.find("brightness_cur")
-                xml_brightness.text = str(brightness)
+                if xml_brightness is not None:
+                    xml_brightness.text = str(brightness)
             if mode is not None:
                 xml_mode = xml_element.find("alarmMode")
-                xml_mode.text = str(mode)
+                if xml_mode is not None:
+                    xml_mode.text = str(mode)
                 xml_enable = xml_element.find("enable")
-                xml_enable.text = str(mode)
+                if xml_enable is not None:
+                    xml_enable.text = str(mode)
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
             mess = await self.send(cmd_id=290, channel=channel, body=xml)

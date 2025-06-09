@@ -237,7 +237,7 @@ class Host:
         self._wifi_signal: Optional[int] = None
         self._performance: dict = {}
         self._state_light: dict = {}
-        self._users: Optional[dict] = None
+        self._users: list[dict[str, str]] = []
 
         ##############################################################################
         # Saved settings response-blocks
@@ -512,7 +512,7 @@ class Host:
     @property
     def user_level(self) -> str:
         """Check if the user has admin authorisation."""
-        if self._users is None or len(self._users) < 1:
+        if len(self._users) < 1:
             return UNKNOWN
 
         for user in self._users:
