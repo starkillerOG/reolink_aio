@@ -1724,6 +1724,10 @@ class Baichuan:
         return self._events_active and time_now() - self._time_connection_lost > 120
 
     @property
+    def session_active(self) -> bool:
+        return self._logged_in or (self._protocol is not None and time_now() - self._protocol.time_recv < 60)
+
+    @property
     def http_port(self) -> int | None:
         return self._ports.get("http", {}).get("port")
 

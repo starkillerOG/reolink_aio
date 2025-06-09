@@ -498,7 +498,7 @@ class Host:
     @property
     def session_active(self) -> bool:
         if self.baichuan_only:
-            return True
+            return self.baichuan.session_active
         if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
             return True
         return False
@@ -2080,7 +2080,7 @@ class Host:
             if self.api_version("GetEvents") >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
-                if self.supported(channel, "motion_detection")
+                if self.supported(channel, "motion_detection"):
                     ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
                 if self.ai_supported(channel):
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
