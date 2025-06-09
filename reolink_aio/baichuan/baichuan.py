@@ -62,8 +62,8 @@ class Baichuan:
         host: str,
         username: str,
         password: str,
+        http_api: Host,
         port: int = DEFAULT_BC_PORT,
-        http_api: Host | None = None,
     ) -> None:
         self.http_api = http_api
 
@@ -388,7 +388,7 @@ class Baichuan:
                 self._time_connection_lost = now
                 _LOGGER.debug("Baichuan host %s: disconnected while event subscription was not active", self._host)
                 return
-            if self.http_api is not None and self.http_api._updating:
+            if self.http_api._updating:
                 _LOGGER.debug("Baichuan host %s: lost event subscription during firmware reboot", self._host)
                 return
             if self._protocol is not None:
@@ -437,7 +437,7 @@ class Baichuan:
 
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
         channel = self._get_value_from_xml_element(xml_element, key, int)
-        if self.http_api is not None and channel not in self.http_api._channels:
+        if channel not in self.http_api._channels:
             return None
         return channel
 
@@ -484,9 +484,6 @@ class Baichuan:
 
     def _parse_xml(self, cmd_id: int, xml: str) -> None:
         """parce received xml"""
-        if self.http_api is None:
-            return
-
         root = XML.fromstring(xml)
 
         state: Any
@@ -757,7 +754,7 @@ class Baichuan:
 
             index_dict[f"{location}_{smart_ai['index']}"] = self.smart_ai_type_list(channel, smart_type, location)
 
-        if self.http_api is not None and not self.http_api._startup and index_dict != original_index_dict:
+        if not self.http_api._startup and index_dict != original_index_dict:
             _LOGGER.info(
                 "New Reolink %s smart detection zone discovered for %s",
                 smart_type,
@@ -865,12 +862,15 @@ class Baichuan:
         root = XML.fromstring(mess)
         if (dev_info := root.find(".//DeviceInfo")) is not None:
             # is_nvr / is_hub
-            dev_type = dev_info.find("type").text
-            dev_type_info = dev_info.find("typeInfo").text
-            if not self.http_api._is_nvr:
-                self.http_api._is_nvr = dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
-            if not self.http_api._is_hub:
-                self.http_api._is_hub = dev_type == "homehub" or dev_type_info == "HOMEHUB"
+            dev_type_ob = dev_info.find("type")
+            dev_type_info_ob = dev_info.find("typeInfo")
+            if dev_type_ob is not None and dev_type_info_ob is not None:
+                dev_type = dev_type_ob.text
+                dev_type_info = dev_type_info_ob.text
+                if not self.http_api._is_nvr:
+                    self.http_api._is_nvr = dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
+                if not self.http_api._is_hub:
+                    self.http_api._is_hub = dev_type == "homehub" or dev_type_info == "HOMEHUB"
 
             data = self._get_keys_from_xml(dev_info, {"sleep": ("sleep", str), "channelNum": ("channelNum", int)})
             # privacy mode
@@ -933,9 +933,6 @@ class Baichuan:
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
-        if self.http_api is None:
-            return
-
         # Get Baichaun capabilities
         try:
             mess = await self.send(cmd_id=199)
@@ -1086,8 +1083,6 @@ class Baichuan:
 
     async def get_states(self, cmd_list: cmd_list_type = None, wake: dict[int, bool] | None = None) -> None:
         """Update the state information of polling data"""
-        if self.http_api is None:
-            return
         if cmd_list is None:
             cmd_list = {}
         if wake is None:
@@ -1101,7 +1096,7 @@ class Baichuan:
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake[channel] or cmd not in WAKING_COMMANDS or self.http_api is None or not self.http_api.supported(channel, "battery")
+                wake[channel] or cmd not in WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
             )
 
         coroutines: list[Coroutine] = []
@@ -1267,7 +1262,7 @@ class Baichuan:
         self.last_privacy_check = time_now()
 
         self.capabilities.setdefault(channel, set()).add("privacy_mode")
-        if self.http_api is None or not self.http_api.is_nvr:
+        if not self.http_api.is_nvr:
             self.capabilities.setdefault(None, set()).add("privacy_mode")
 
         return value
@@ -1325,8 +1320,6 @@ class Baichuan:
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
         """Get the DingDongList info"""
         retry = retry - 1
-        if self.http_api is None:
-            return
 
         mess = await self.send(cmd_id=484, channel=channel)
         root = XML.fromstring(mess)
@@ -1350,8 +1343,6 @@ class Baichuan:
     @http_cmd("DingDongOpt")
     async def get_DingDongOpt(self, channel: int = -1, chime_id: int = -1, **kwargs) -> None:
         """Get the DingDongOpt info"""
-        if self.http_api is None:
-            return
         dingdong = kwargs.get("DingDong", {})
         if ch := dingdong.get("channel"):
             channel = ch
@@ -1384,9 +1375,6 @@ class Baichuan:
     @http_cmd("GetDingDongCfg")
     async def GetDingDongCfg(self, channel: int, **_kwargs) -> None:
         """Get the GetDingDongCfg info"""
-        if self.http_api is None:
-            return
-
         mess = await self.send(cmd_id=486, channel=channel)
         root = XML.fromstring(mess)
 
@@ -1577,8 +1565,6 @@ class Baichuan:
         vod_dict: dict[VOD_trigger, list[VOD_file]] = {}
         for trig in VOD_trigger:
             vod_dict[trig] = []
-        if self.http_api is None:
-            return vod_type_dict, vod_dict
         uid = self.http_api.camera_uid(channel)
         uid = uid.split("_")[0]
         if uid == UNKNOWN:
