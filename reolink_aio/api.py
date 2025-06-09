@@ -891,6 +891,9 @@ class Host:
 
     def whiteled_mode_list(self, channel: int) -> list[str]:
         mode_values = [SpotlightModeEnum.off]
+        if self.baichuan_only:
+            # should be improved by understanding the flags in "ledCtrl" from cmd_id 199
+            mode_values.extend([SpotlightModeEnum.auto, SpotlightModeEnum.onatnight, SpotlightModeEnum.autoadaptive])
         if self.api_version("supportFLIntelligent", channel) > 0:
             mode_values.extend([SpotlightModeEnum.auto])
         if self.api_version("supportFLSchedule", channel) > 0:

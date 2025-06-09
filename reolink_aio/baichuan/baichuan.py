@@ -654,7 +654,7 @@ class Baichuan:
             if channel is None:
                 return
             channels.add(channel)
-            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int)})
+            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int), "alarmMode": ("mode", int)})
             self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {}).update(values)
 
         elif cmd_id == 291:  # Floodlight
@@ -1289,17 +1289,27 @@ class Baichuan:
         self._parse_xml(289, mess)
 
     @http_cmd("SetWhiteLed")
-    async def set_floodlight(self, channel: int = 0, state: bool | None = None, **kwargs) -> None:
+    async def set_floodlight(self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | str | None = None, **kwargs) -> None:
         """Control the floodlight"""
         if data := kwargs.get("WhiteLed"):
             channel = data["channel"]
             state = data.get("state", state)
+            brightness = data.get("bright", brightness)
+
+        if state is None and brightness is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
 
         if state is not None:
             xml = xmls.SetWhiteLed.format(channel=channel, state=state)
             await self.send(cmd_id=288, channel=channel, body=xml)
-        else:
-            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
+        if brightness is not None:
+            mess = await self.send(cmd_id=289, channel=channel)
+            xml_body = XML.fromstring(mess)
+            xml_brightness = xml_body.find(".//brightness_cur")
+            xml_brightness.text = str(brightness)
+            xml = XML.tostring(xml_body, encoding="unicode")
+            xml = xmls.XML_HEADER + xml
+            mess = await self.send(cmd_id=290, channel=channel, body=xml)
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
