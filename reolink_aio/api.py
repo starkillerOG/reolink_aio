@@ -128,7 +128,7 @@ class Host:
         rtmp_auth_method: str = DEFAULT_RTMP_AUTH_METHOD,
         aiohttp_get_session_callback=None,
         bc_port: int = DEFAULT_BC_PORT,
-        bc_only: bool = False
+        bc_only: bool = False,
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -422,7 +422,7 @@ class Host:
     @property
     def sw_version_required(self) -> SoftwareVersion:
         """Return the minimum required firmware version for proper operation of this library"""
-        if self.model == UNKNOWN or self.hardware_version == UNKNOWN:
+        if UNKNOWN in (self.model, self.hardware_version):
             return SoftwareVersion(None)
 
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version))
@@ -5951,7 +5951,7 @@ class Host:
         body: typings.reolink_json,
         expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"],
     ) -> typings.reolink_json:
-        """Send commands using Baichuan if HTTP(s) API not supported."""        
+        """Send commands using Baichuan if HTTP(s) API not supported."""
         if expected_response_type != "json":
             raise NotSupportedError(f"Host {self._host} only supports Baichuan, response type {expected_response_type} not supported")
 
@@ -5965,7 +5965,9 @@ class Host:
                 args = cmd_data.get("param", {})
                 coroutines.append((idx, cmd, func(**args)))
             else:
-                json_data.append({"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": f"cmd {cmd} not supported by Baichuan, no HTTP(s) API", "rspCode": -9996}})
+                json_data.append(
+                    {"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": f"cmd {cmd} not supported by Baichuan, no HTTP(s) API", "rspCode": -9996}}
+                )
                 _LOGGER.debug("Host %s: cmd %s not supported by Baichuan, no HTTP(s) API", self._host, cmd)
 
         if coroutines:

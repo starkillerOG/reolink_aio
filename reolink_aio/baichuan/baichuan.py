@@ -100,8 +100,8 @@ class Baichuan:
         # http_cmd functions, set by the http_cmd decorator
         self.cmd_funcs: dict[str, Callable] = {}
         for _name, func in getmembers(self, lambda o: hasattr(o, "http_cmds")):
-            for http_cmd in func.http_cmds:
-                self.cmd_funcs[http_cmd] = func
+            for cmd in func.http_cmds:
+                self.cmd_funcs[cmd] = func
 
         # supported
         self.capabilities: dict[int | None, set[str]] = {}
@@ -870,7 +870,7 @@ class Baichuan:
             if not self.http_api._is_nvr:
                 self.http_api._is_nvr = dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
             if not self.http_api._is_hub:
-                self.http_api._is_hub = dev_type  == "homehub" or dev_type_info == "HOMEHUB"
+                self.http_api._is_hub = dev_type == "homehub" or dev_type_info == "HOMEHUB"
 
             data = self._get_keys_from_xml(dev_info, {"sleep": ("sleep", str), "channelNum": ("channelNum", int)})
             # privacy mode
@@ -1001,7 +1001,9 @@ class Baichuan:
                 self.capabilities[channel].add("hardwired_chime")
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
-            if self.http_api.baichuan_only and (self.api_version("ledCtrl", channel) >> 1) & 1 and (self.api_version("ledCtrl", channel) >> 2) & 1:  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
+            if (
+                self.http_api.baichuan_only and (self.api_version("ledCtrl", channel) >> 1) & 1 and (self.api_version("ledCtrl", channel) >> 2) & 1
+            ):  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
                 self.capabilities[channel].add("floodLight")
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
@@ -1200,7 +1202,7 @@ class Baichuan:
         await self.send(cmd_id=145)
 
     @http_cmd("GetLocalLink")
-    async def get_network_info(self, channel: int | None = None, **kwargs) -> dict[str, str]:
+    async def get_network_info(self, channel: int | None = None, **_kwargs) -> dict[str, str]:
         """Get the network info including MAC of the host or a channel"""
         if channel is None:
             mess = await self.send(cmd_id=76)
@@ -1227,7 +1229,7 @@ class Baichuan:
         self.http_api._users = []
         for user in mess.findall(".//User"):
             values = self._get_keys_from_xml(user, ["userName", "userLevel"])
-            
+
             if values.get("userLevel") == "1":
                 values["level"] = "admin"
             else:
@@ -1283,7 +1285,7 @@ class Baichuan:
         await self.send(cmd_id=23)
 
     @http_cmd("GetWhiteLed")
-    async def get_floodlight(self, channel: int, **kwargs) -> None:
+    async def get_floodlight(self, channel: int, **_kwargs) -> None:
         """Get the floodlight state"""
         mess = await self.send(cmd_id=289, channel=channel)
         self._parse_xml(289, mess)
