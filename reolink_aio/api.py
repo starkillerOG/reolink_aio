@@ -2080,7 +2080,8 @@ class Host:
             if self.api_version("GetEvents") >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
+                if self.supported(channel, "motion_detection")
+                    ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
                 if self.ai_supported(channel):
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
 
