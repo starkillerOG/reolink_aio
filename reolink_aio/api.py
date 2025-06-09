@@ -28,7 +28,7 @@ import aiohttp
 
 from . import templates, typings
 from .baichuan import Baichuan, PortType, DEFAULT_BC_PORT
-from .const import WAKING_COMMANDS
+from .const import WAKING_COMMANDS, UNKNOWN
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
@@ -128,6 +128,7 @@ class Host:
         rtmp_auth_method: str = DEFAULT_RTMP_AUTH_METHOD,
         aiohttp_get_session_callback=None,
         bc_port: int = DEFAULT_BC_PORT,
+        bc_only: bool = False,
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -170,24 +171,25 @@ class Host:
         ##############################################################################
         # Baichuan protocol (port 9000)
         self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, http_api=self)
+        self.baichuan_only: bool = bc_only
         self.baichuan_cmds: set[str] = set()
 
         ##############################################################################
         # NVR (host-level) attributes
         self._is_nvr: bool = False
         self._is_hub: bool = False
-        self._nvr_name: str = ""
-        self._nvr_serial: Optional[str] = None
-        self._nvr_uid: Optional[str] = None
-        self._nvr_model: Optional[str] = None
-        self._nvr_item_number: Optional[str] = None
-        self._nvr_num_channels: int = 0
-        self._nvr_hw_version: Optional[str] = None
-        self._nvr_sw_version: Optional[str] = None
-        self._nvr_sw_version_object: Optional[SoftwareVersion] = None
+        self._num_channels: int = 0
 
         ##############################################################################
         # Combined attributes
+        self._name: dict[int | None, str] = {}
+        self._model: dict[int | None, str] = {}
+        self._hw_version: dict[int | None, str] = {}
+        self._item_number: dict[int | None, str] = {}
+        self._uid: dict[int | None, str] = {}
+        self._serial: dict[int | None, str] = {}
+        self._sw_version: dict[int | None, str] = {}
+        self._sw_version_object: dict[int | None, SoftwareVersion] = {}
         self._sw_hardware_id: dict[int | None, int] = {}
         self._sw_model_id: dict[int | None, int] = {}
         self._last_sw_id_check: float = 0
@@ -204,13 +206,7 @@ class Host:
         self._GetChannelStatus_has_name: bool = False
         self._channels: list[int] = []
         self._stream_channels: list[int] = []
-        self._channel_names: dict[int, str] = {}
-        self._channel_uids: dict[int, str] = {}
-        self._channel_models: dict[int, str] = {}
         self._channel_online: dict[int, bool] = {}
-        self._channel_hw_version: dict[int, str] = {}
-        self._channel_sw_versions: dict[int, str] = {}
-        self._channel_sw_version_objects: dict[int, SoftwareVersion] = {}
         self._is_doorbell: dict[int, bool] = {}
         self._GetDingDong_present: dict[int, bool] = {}
 
@@ -237,11 +233,11 @@ class Host:
         ##############################################################################
         # Saved info response-blocks
         self._hdd_info: list[dict] = []
-        self._local_link: Optional[dict] = None
+        self._local_link: dict = {}
         self._wifi_signal: Optional[int] = None
         self._performance: dict = {}
         self._state_light: dict = {}
-        self._users: Optional[dict] = None
+        self._users: list[dict[str, str]] = []
 
         ##############################################################################
         # Saved settings response-blocks
@@ -362,23 +358,17 @@ class Host:
             raise NoDataError("Mac address not yet retrieved")
         return self._mac_address
 
-    @property
-    def serial(self) -> Optional[str]:
-        return self._nvr_serial
+    def serial(self, channel: int | None = None) -> str | None:
+        return self._serial.get(channel)
 
     @property
     def uid(self) -> str:
-        if self._nvr_uid is None:
-            return "Unknown"
-        return self._nvr_uid
+        return self._uid.get(None, UNKNOWN)
 
     @property
     def wifi_connection(self) -> bool:
         """LAN or Wifi"""
-        if self._local_link is None:
-            return False
-
-        return self._local_link["LocalLink"]["activeLink"] != "LAN"
+        return self._local_link.get("LocalLink", {}).get("activeLink", "LAN") != "LAN"
 
     @property
     def wifi_signal(self) -> Optional[int]:
@@ -419,30 +409,20 @@ class Host:
 
     @property
     def nvr_name(self) -> str:
-        if not self._is_nvr and self._nvr_name == "":
-            if len(self._channels) > 0 and self._channels[0] in self._channel_names:
-                return self._channel_names[self._channels[0]]
-
-            return "Unknown"
-        return self._nvr_name
+        return self.camera_name(None)
 
     @property
     def sw_version(self) -> str:
-        if self._nvr_sw_version is None:
-            return "Unknown"
-        return self._nvr_sw_version
+        return self.camera_sw_version(None)
 
     @property
     def sw_version_object(self) -> SoftwareVersion:
-        if self._nvr_sw_version_object is None:
-            return SoftwareVersion(None)
-
-        return self._nvr_sw_version_object
+        return self.camera_sw_version_object(None)
 
     @property
     def sw_version_required(self) -> SoftwareVersion:
         """Return the minimum required firmware version for proper operation of this library"""
-        if self._nvr_model is None or self._nvr_hw_version is None:
+        if UNKNOWN in (self.model, self.hardware_version):
             return SoftwareVersion(None)
 
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.model, {}).get(self.hardware_version))
@@ -450,26 +430,21 @@ class Host:
     @property
     def sw_version_update_required(self) -> bool:
         """Check if a firmware version update is required for proper operation of this library"""
-        if self._nvr_sw_version_object is None:
+        if self._sw_version_object.get(None) is None:
             return False
 
-        return not self._nvr_sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
+        return not self.sw_version_object >= self.sw_version_required  # pylint: disable=unneeded-not
 
     @property
     def model(self) -> str:
-        if self._nvr_model is None:
-            return "Unknown"
-        return self._nvr_model
+        return self.camera_model(None)
 
-    @property
-    def item_number(self) -> str | None:
-        return self._nvr_item_number
+    def item_number(self, channel: int | None = None) -> str | None:
+        return self._item_number.get(channel)
 
     @property
     def hardware_version(self) -> str:
-        if self._nvr_hw_version is None:
-            return "Unknown"
-        return self._nvr_hw_version
+        return self.camera_hardware_version(None)
 
     @property
     def manufacturer(self) -> str:
@@ -478,7 +453,7 @@ class Host:
     @property
     def num_channels(self) -> int:
         """Return the total number of channels in the NVR (should be 1 for a standalone camera, maybe 2 for DUO cameras)."""
-        return self._nvr_num_channels
+        return self._num_channels
 
     @property
     def num_cameras(self) -> int:
@@ -522,6 +497,8 @@ class Host:
 
     @property
     def session_active(self) -> bool:
+        if self.baichuan_only:
+            return self.baichuan.session_active
         if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
             return True
         return False
@@ -535,14 +512,14 @@ class Host:
     @property
     def user_level(self) -> str:
         """Check if the user has admin authorisation."""
-        if self._users is None or len(self._users) < 1:
-            return "unknown"
+        if len(self._users) < 1:
+            return UNKNOWN
 
         for user in self._users:
             if user["userName"] == self._username:
                 return user["level"]
 
-        return "unknown"
+        return UNKNOWN
 
     @property
     def is_admin(self) -> bool:
@@ -588,7 +565,7 @@ class Host:
     def hdd_type(self, index) -> str:
         """Return the storage type, 'SD', 'HDD' or 'unknown'."""
         if index >= len(self._hdd_info):
-            return "unknown"
+            return UNKNOWN
 
         hdd_type = self._hdd_info[index].get("storageType", 2)
         if hdd_type == 1:
@@ -596,7 +573,7 @@ class Host:
         if hdd_type == 2:
             return "SD"
 
-        return "unknown"
+        return UNKNOWN
 
     def hdd_available(self, index) -> bool:
         if index >= len(self._hdd_info):
@@ -646,38 +623,33 @@ class Host:
             redacted = redacted.replace(self._enc_password, "<password>")
         if self._token:
             redacted = redacted.replace(self._token, "<token>")
-        if self._nvr_uid:
-            redacted = redacted.replace(self._nvr_uid, "<uid>")
+        for uid in self._uid.values():
+            redacted = redacted.replace(uid, "<uid>")
         return redacted
 
     ##############################################################################
     # Channel-level getters/setters
 
     def camera_name(self, channel: int | None) -> str:
-        if channel is None:
-            return self.nvr_name
-
-        if not self.is_nvr and channel not in self._channel_names and channel in self._stream_channels and channel != 0:
+        if not self.is_nvr and channel not in self._name and channel in self._stream_channels and channel != 0:
             return self.camera_name(0)  # Dual lens cameras
-        if channel not in self._channel_names:
-            if not self.is_nvr:
-                return self.nvr_name
-            return "Unknown"
-        return self._channel_names[channel]
+        if channel is None and not self._is_nvr and self._name.get(channel, "") == "" and len(self._channels) > 0:
+            return self._name.get(self._channels[0], UNKNOWN)
+        if channel is not None and not self.is_nvr and self._name.get(channel, "") == "":
+            return self.camera_name(None)
+        return self._name.get(channel, UNKNOWN)
 
     def camera_uid(self, channel: int | None) -> str:
-        if channel is None:
-            return self.uid
-        if not self.is_nvr and channel not in self._channel_uids and channel in self._stream_channels and channel != 0 and self.camera_uid(0) != "Unknown":
+        if channel not in [0, None] and not self.is_nvr and channel not in self._uid and self.camera_uid(0) != UNKNOWN and channel in self._stream_channels:
             return f"{self.camera_uid(0)}_{channel}"  # Dual lens cameras
-        if channel not in self._channel_uids:
-            return "Unknown"
-        return self._channel_uids[channel]
+        return self._uid.get(channel, UNKNOWN)
 
     def channel_for_uid(self, uid: str) -> int:
         """Returns the channel belonging to a UID"""
         channel = -1
-        for ch, ch_uid in self._channel_uids.items():
+        for ch, ch_uid in self._uid.items():
+            if ch is None:
+                continue
             if ch_uid.startswith(uid):
                 channel = ch
                 break
@@ -691,42 +663,30 @@ class Host:
         return self._channel_online[channel]
 
     def camera_model(self, channel: int | None) -> str:
-        if channel is None:
-            return self.model
-        if not self.is_nvr and channel not in self._channel_models and channel in self._stream_channels and channel != 0:
+        if channel not in [0, None] and not self.is_nvr and channel not in self._model and channel in self._stream_channels:
             return self.camera_model(0)  # Dual lens cameras
-        if channel not in self._channel_models:
-            return "Unknown"
-        return self._channel_models[channel]
+        if channel is not None and not self.is_nvr and channel not in self._model:
+            return self._model.get(None, UNKNOWN)
+        return self._model.get(channel, UNKNOWN)
 
     def camera_hardware_version(self, channel: int | None) -> str:
-        if channel is None:
-            return self.hardware_version
-        if not self.is_nvr and channel not in self._channel_hw_version and channel in self._stream_channels and channel != 0:
+        if channel not in [0, None] and not self.is_nvr and channel not in self._hw_version and channel in self._stream_channels:
             return self.camera_hardware_version(0)  # Dual lens cameras
-        if channel not in self._channel_hw_version:
-            if not self.is_nvr:
-                return self.hardware_version
-            return "Unknown"
-        return self._channel_hw_version[channel]
+        if channel is not None and not self.is_nvr and channel not in self._hw_version:
+            return self._hw_version.get(None, UNKNOWN)
+        return self._hw_version.get(channel, UNKNOWN)
 
     def camera_sw_version(self, channel: int | None) -> str:
-        if not self.is_nvr or channel is None:
-            return self.sw_version
-        if channel not in self._channel_sw_versions:
-            return "Unknown"
-        return self._channel_sw_versions[channel]
+        if channel is not None and not self.is_nvr and channel not in self._sw_version:
+            return self._sw_version.get(None, UNKNOWN)
+        return self._sw_version.get(channel, UNKNOWN)
 
     def camera_sw_version_object(self, channel: int | None) -> SoftwareVersion:
-        if not self.is_nvr or channel is None:
-            return self.sw_version_object
-        if channel not in self._channel_sw_version_objects:
-            return SoftwareVersion(None)
-        return self._channel_sw_version_objects[channel]
+        return self._sw_version_object.get(channel, SoftwareVersion(None))
 
     def camera_sw_version_required(self, channel: int | None) -> SoftwareVersion:
         """Return the minimum required firmware version for a connected IPC camera for proper operation of this library"""
-        if self.camera_model(channel) == "Unknown" or self.camera_hardware_version(channel) == "Unknown":
+        if self.camera_model(channel) == UNKNOWN or self.camera_hardware_version(channel) == UNKNOWN:
             return SoftwareVersion(None)
 
         return SoftwareVersion(MINIMUM_FIRMWARE.get(self.camera_model(channel), {}).get(self.camera_hardware_version(channel)))
@@ -931,6 +891,9 @@ class Host:
 
     def whiteled_mode_list(self, channel: int) -> list[str]:
         mode_values = [SpotlightModeEnum.off]
+        if self.baichuan_only:
+            # should be improved by understanding the flags in "ledCtrl" from cmd_id 199
+            mode_values.extend([SpotlightModeEnum.auto, SpotlightModeEnum.onatnight, SpotlightModeEnum.autoadaptive])
         if self.api_version("supportFLIntelligent", channel) > 0:
             mode_values.extend([SpotlightModeEnum.auto])
         if self.api_version("supportFLSchedule", channel) > 0:
@@ -1229,6 +1192,9 @@ class Host:
             raise LoginPrivacyModeError(f"Could not login because privacy mode is turned on for host {self._host}, Baichuan login successfull, HTTP(s) login failed")
 
     async def login(self) -> None:
+        if self.baichuan_only:
+            return
+
         if self._port is None or self._use_https is None:
             await self._login_try_ports()
             return  # succes
@@ -1311,6 +1277,8 @@ class Host:
             self._login_mutex.release()
 
     async def _login_try_ports(self) -> None:
+        if self.baichuan_only:
+            return
         original_port = self._port
         original_https = self._use_https
 
@@ -1332,6 +1300,16 @@ class Host:
             return
         except LoginError:
             pass
+
+        # check if HTTP(s) API is supported
+        try:
+            await self.baichuan.get_host_data()
+        except ReolinkError as exc:
+            _LOGGER.debug("%s, can not check if HTTP api is supported", exc)
+        if self.baichuan_only:
+            self._port = None
+            _LOGGER.debug("Reolink host %s: HTTP(s) API not supported, only using Baichuan", self._host)
+            return
 
         # see which ports are enabled using baichuan protocol on port 9000
         try:
@@ -1387,14 +1365,6 @@ class Host:
             await self.baichuan.get_info()
         except ReolinkError:
             pass
-
-        # update info such that minimum firmware can be assest
-        self._nvr_model = self.baichuan.model()
-        self._nvr_hw_version = self.baichuan.hardware_version()
-        self._nvr_item_number = self.baichuan.item_number()
-        self._nvr_sw_version = self.baichuan.sw_version()
-        if self.baichuan.sw_version() is not None:
-            self._nvr_sw_version_object = SoftwareVersion(self.baichuan.sw_version())
 
         # retry login now that the port is open, this will also logout the baichuan session
         try:
@@ -1587,7 +1557,7 @@ class Host:
         if self.api_version("rtmp") > 0 and self._rtmp_port is not None:
             self._capabilities["Host"].add("RTMP")
 
-        if self._nvr_uid is not None:
+        if self.uid != UNKNOWN:
             self._capabilities["Host"].add("UID")
 
         if self.sw_version_object.date > datetime(year=2021, month=6, day=1):
@@ -1648,11 +1618,15 @@ class Host:
             if self.api_version("recReplay", channel) > 0:
                 self._capabilities[channel].add("replay")
 
+            if not self.baichuan_only:
+                self._capabilities[channel].add("stream")
+                self._capabilities[channel].add("snapshot")
+
         # Channel capabilities
         for channel in self._channels:
             self._capabilities.setdefault(channel, set())
 
-            if self.camera_uid(channel) != "Unknown":
+            if self.camera_uid(channel) != UNKNOWN:
                 self._capabilities[channel].add("UID")
 
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
@@ -1673,7 +1647,7 @@ class Host:
                 self._ai_detection_support[channel]["cry"] = True
                 self._ai_detection_states[channel]["cry"] = False
 
-            if self.is_nvr and self.camera_hardware_version(channel) != "Unknown" and self.camera_model(channel) != "Unknown":
+            if self.is_nvr and self.camera_hardware_version(channel) != UNKNOWN and self.camera_model(channel) != UNKNOWN:
                 self._capabilities[channel].add("firmware")
                 if self.api_version("upgrade") >= 2:
                     self._capabilities[channel].add("update")
@@ -1739,7 +1713,7 @@ class Host:
                 self._capabilities[channel].add("siren")
                 self._capabilities[channel].add("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
 
-            if self.audio_record(channel) is not None:
+            if self._enc_settings.get(channel, {}).get("Enc", {}).get("audio") is not None:
                 self._capabilities[channel].add("audio")
 
             ptz_ver = self.api_version("ptzType", channel)
@@ -2106,7 +2080,8 @@ class Host:
             if self.api_version("GetEvents") >= 1:
                 ch_body.append({"cmd": "GetEvents", "action": 0, "param": {"channel": channel}})
             else:
-                ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
+                if self.supported(channel, "motion_detection"):
+                    ch_body.append({"cmd": "GetMdState", "action": 0, "param": {"channel": channel}})
                 if self.ai_supported(channel):
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
 
@@ -2333,7 +2308,7 @@ class Host:
 
         if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
             self._stream_channels = [0, 1]
-            self._nvr_num_channels = 1
+            self._num_channels = 1
             self._channels = [0]
         else:
             self._stream_channels = self._channels
@@ -2431,28 +2406,28 @@ class Host:
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
 
-        if not body:
+        if body:
+            try:
+                json_data = await self.send(body, expected_response_type="json")
+            except InvalidContentTypeError as err:
+                raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
+            except NoDataError as err:
+                raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
+            except LoginPrivacyModeError:
+                if "channel" not in self._host_data_raw:
+                    raise
+                json_data = self._host_data_raw["channel"]
+            else:
+                self._host_data_raw["channel"] = json_data
+
+            self.map_channels_json_response(json_data, channels)
+        else:
+            json_data = []
             _LOGGER.debug(
                 "Host %s:%s: get_host_data, no channels connected so skipping channel specific requests.",
                 self._host,
                 self._port,
             )
-            return
-
-        try:
-            json_data = await self.send(body, expected_response_type="json")
-        except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(f"Channel-settings: {str(err)}") from err
-        except NoDataError as err:
-            raise NoDataError(f"Host: {self._host}:{self._port}: returned no data when obtaining initial channel-settings") from err
-        except LoginPrivacyModeError:
-            if "channel" not in self._host_data_raw:
-                raise
-            json_data = self._host_data_raw["channel"]
-        else:
-            self._host_data_raw["channel"] = json_data
-
-        self.map_channels_json_response(json_data, channels)
 
         # Baichuan capabilities
         await self.baichuan.get_host_data()
@@ -2460,7 +2435,7 @@ class Host:
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
             for x in json_data:
-                if x["cmd"] == cmd:
+                if x["cmd"] == cmd and x.get("Baichuan_fallback_succes", True):
                     return 1
             return 0
 
@@ -2493,7 +2468,7 @@ class Host:
                 _LOGGER.warning("Manual recording of Reolink %s has value %s which is a firmware bug, disabling manual recording", self.camera_name(channel), val)
                 await self.set_manual_record(channel, False)
 
-        if self.protocol == "rtsp":
+        if self.protocol == "rtsp" and not self.baichuan_only:
             # Cache the RTSP urls
             for channel in self._stream_channels:
                 if not self.baichuan.privacy_mode(channel):
@@ -3499,35 +3474,36 @@ class Host:
     def ensure_channel_uid_unique(self) -> None:
         """Make sure the channel UIDs are all unique."""
         rev_channel_uids: dict[str, set[int]] = {}
-        for key, value in self._channel_uids.items():
+        for key, value in self._uid.items():
+            if key is None:
+                continue
             rev_channel_uids.setdefault(value, set()).add(key)
         duplicate_uids = [values for key, values in rev_channel_uids.items() if len(values) > 1]
         for duplicate in duplicate_uids:
             for ch in duplicate:
-                self._channel_uids[ch] = f"{self._channel_uids[ch]}_{ch}"
+                self._uid[ch] = f"{self._uid[ch]}_{ch}"
 
     def map_host_json_response(self, json_data: typings.reolink_json) -> None:
         """Map the JSON objects to internal cache-objects."""
         for data in json_data:
             try:
                 if data["code"] == 1:  # Error, like "ability error"
-                    if not data.get("Baichuan_fallback_succes"):
+                    if not data.get("Baichuan_fallback_succes") and not self.baichuan_only:
                         _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
                 if data["cmd"] == "GetChannelstatus":
                     cur_status = data["value"]["status"]
 
-                    if not self._GetChannelStatus_present and (self._nvr_num_channels == 0 or len(self._channels) == 0):
+                    if not self._GetChannelStatus_present and (self._num_channels == 0 or len(self._channels) == 0):
                         self._channels.clear()
                         self._is_doorbell.clear()
 
-                        self._nvr_num_channels = data["value"]["count"]
-                        if self._nvr_num_channels > 0:
+                        self._num_channels = data["value"]["count"]
+                        if self._num_channels > 0:
                             # Not all Reolink devices respond with "name" attribute.
                             if "name" in cur_status[0]:
                                 self._GetChannelStatus_has_name = True
-                                self._channel_names.clear()
                             else:
                                 self._GetChannelStatus_has_name = False
 
@@ -3536,17 +3512,15 @@ class Host:
                                     cur_channel = ch_info["channel"]
 
                                     if "typeInfo" in ch_info:  # Not all Reolink devices respond with "typeInfo" attribute.
-                                        self._channel_models[cur_channel] = ch_info["typeInfo"]
-                                        self._is_doorbell[cur_channel] = "Doorbell" in self._channel_models[cur_channel]
+                                        self._model[cur_channel] = ch_info["typeInfo"]
+                                        self._is_doorbell[cur_channel] = "Doorbell" in self._model[cur_channel]
 
                                     if "uid" in ch_info and ch_info["uid"] != "":
-                                        self._channel_uids[cur_channel] = ch_info["uid"]
+                                        self._uid[cur_channel] = ch_info["uid"]
 
                                     self._channels.append(cur_channel)
 
                             self.ensure_channel_uid_unique()
-                        else:
-                            self._channel_names.clear()
 
                     for ch_info in cur_status:
                         cur_channel = ch_info["channel"]
@@ -3554,7 +3528,7 @@ class Host:
                         self._channel_online[cur_channel] = online
                         if online:
                             if "name" in ch_info and ch_info["name"] not in ["0", "1"]:
-                                self._channel_names[cur_channel] = ch_info["name"]
+                                self._name[cur_channel] = ch_info["name"]
                             if "sleep" in ch_info:
                                 self._sleep[cur_channel] = ch_info["sleep"] == 1
 
@@ -3563,12 +3537,12 @@ class Host:
 
                     if not self._startup:
                         # check for new devices
-                        if data["value"]["count"] != self._nvr_num_channels:
+                        if data["value"]["count"] != self._num_channels:
                             _LOGGER.info(
                                 "New Reolink device discovered connected to %s, number of channels now %s and was %s",
                                 self.nvr_name,
                                 data["value"]["count"],
-                                self._nvr_num_channels,
+                                self._num_channels,
                             )
                             self._new_devices = True
                         for ch_info in cur_status:
@@ -3623,36 +3597,36 @@ class Host:
                     self._is_nvr = dev_info.get("exactType", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
                     self._is_nvr = self._is_nvr or dev_info.get("type", "IPC") in ["NVR", "WIFI_NVR", "HOMEHUB"]
                     self._is_hub = dev_info.get("exactType", "IPC") == "HOMEHUB" or dev_info.get("type", "IPC") == "HOMEHUB"
-                    self._nvr_serial = dev_info["serial"]
-                    self._nvr_name = dev_info["name"]
-                    self._nvr_model = dev_info["model"]
-                    self._nvr_item_number = dev_info.get("itemNo")
-                    self._nvr_hw_version = dev_info["hardVer"]
-                    self._nvr_sw_version = dev_info["firmVer"]
-                    if self._nvr_sw_version is not None:
-                        self._nvr_sw_version_object = SoftwareVersion(self._nvr_sw_version)
+                    self._serial[None] = dev_info["serial"]
+                    self._name[None] = dev_info["name"]
+                    self._model[None] = dev_info["model"]
+                    self._item_number[None] = dev_info.get("itemNo")
+                    self._hw_version[None] = dev_info["hardVer"]
+                    self._sw_version[None] = dev_info["firmVer"]
+                    if self._sw_version[None] is not None:
+                        self._sw_version_object[None] = SoftwareVersion(self._sw_version[None])
 
                     # In case the "GetChannelStatus" command not supported by the device.
-                    if not self._GetChannelStatus_present and self._nvr_num_channels == 0:
+                    if not self._GetChannelStatus_present and self._num_channels == 0:
                         self._channels.clear()
 
-                        self._nvr_num_channels = dev_info["channelNum"]
+                        self._num_channels = dev_info["channelNum"]
 
                         if self._is_nvr:
                             _LOGGER.warning(
                                 "Your %s NVR doesn't support the 'Getchannelstatus' command. "
                                 "Probably you need to update your firmware.\n"
                                 "No way to recognize active channels, all %s channels will be considered 'active' as a result",
-                                self._nvr_name,
-                                self._nvr_num_channels,
+                                self.nvr_name,
+                                self._num_channels,
                             )
 
-                        if self._nvr_num_channels > 0:
-                            for ch in range(self._nvr_num_channels):
+                        if self._num_channels > 0:
+                            for ch in range(self._num_channels):
                                 self._channels.append(ch)
-                                if ch not in self._channel_models and self._nvr_model is not None:
-                                    self._channel_models[ch] = self._nvr_model
-                                    self._is_doorbell[ch] = "Doorbell" in self._nvr_model
+                                if ch not in self._model and self.model != UNKNOWN:
+                                    self._model[ch] = self.model
+                                    self._is_doorbell[ch] = "Doorbell" in self.model
 
                 elif data["cmd"] == "GetHddInfo":
                     self._hdd_info = data["value"]["HddInfo"]
@@ -3684,7 +3658,7 @@ class Host:
                         self.baichuan.port = net_port["mediaPort"]
 
                 elif data["cmd"] == "GetP2p":
-                    self._nvr_uid = data["value"]["P2p"]["uid"]
+                    self._uid[None] = data["value"]["P2p"]["uid"]
 
                 elif data["cmd"] == "GetUser":
                     self._users = data["value"]["User"]
@@ -3740,24 +3714,24 @@ class Host:
         response_channel = channel
         for data in json_data:
             try:
-                if data["code"] == 1:  # -->Error, like "ability error"
-                    if not data.get("Baichuan_fallback_succes"):
+                if data["code"] == 1:  # Error, like "ability error"
+                    if not data.get("Baichuan_fallback_succes") and not self.baichuan_only:
                         _LOGGER.debug("Host %s:%s received response error code: %s", self._host, self._port, data)
                     continue
 
                 if data["cmd"] == "GetChnTypeInfo":
                     if data["value"]["typeInfo"] != "":
-                        self._channel_models[channel] = data["value"]["typeInfo"]
-                    self._is_doorbell[channel] = "Doorbell" in self._channel_models.get(channel, "")
+                        self._model[channel] = data["value"]["typeInfo"]
+                    self._is_doorbell[channel] = "Doorbell" in self._model.get(channel, "")
                     if data["value"].get("firmVer", "") != "":
-                        self._channel_sw_versions[channel] = data["value"]["firmVer"]
-                        if self._channel_sw_versions[channel] is not None:
+                        self._sw_version[channel] = data["value"]["firmVer"]
+                        if self._sw_version[channel] is not None:
                             try:
-                                self._channel_sw_version_objects[channel] = SoftwareVersion(self._channel_sw_versions[channel])
+                                self._sw_version_object[channel] = SoftwareVersion(self._sw_version[channel])
                             except UnexpectedDataError as err:
                                 _LOGGER.debug("Reolink %s: %s", self.camera_name(channel), err)
                     if data["value"].get("boardInfo", "") != "":
-                        self._channel_hw_version[channel] = data["value"]["boardInfo"]
+                        self._hw_version[channel] = data["value"]["boardInfo"]
 
                 if data["cmd"] == "GetEvents":
                     response_channel = data["value"]["channel"]
@@ -3844,7 +3818,7 @@ class Host:
                     response_channel = data["value"]["Osd"]["channel"]
                     self._osd_settings[channel] = data["value"]
                     if not self._GetChannelStatus_present or not self._GetChannelStatus_has_name:
-                        self._channel_names[channel] = data["value"]["Osd"]["osdChannel"]["name"]
+                        self._name[channel] = data["value"]["Osd"]["osdChannel"]["name"]
 
                 elif data["cmd"] == "GetFtp":
                     self._ftp_settings[channel] = data["value"]
@@ -5629,6 +5603,9 @@ class Host:
         """Generic send method."""
         retry = retry - 1
 
+        if self.baichuan_only:
+            return await self._baichuan_alternative(body, expected_response_type)
+
         cmds = [cmd.get("cmd", "") for cmd in body]
         baichuan_idxs: dict[int, str] = {}
         if expected_response_type in ["image/jpeg", "application/octet-stream"]:
@@ -5968,6 +5945,46 @@ class Host:
             retry_data = await self.send(retry_cmd, param, "json", retry)
             for idx, retry_resp in enumerate(retry_data):
                 json_data[retry_idxs[idx]] = retry_resp
+        return json_data
+
+    async def _baichuan_alternative(
+        self,
+        body: typings.reolink_json,
+        expected_response_type: Literal["json", "image/jpeg", "text/html", "application/octet-stream"],
+    ) -> typings.reolink_json:
+        """Send commands using Baichuan if HTTP(s) API not supported."""
+        if expected_response_type != "json":
+            raise NotSupportedError(f"Host {self._host} only supports Baichuan, response type {expected_response_type} not supported")
+
+        coroutines = []
+        json_data = []
+        for idx, cmd_data in enumerate(body):
+            cmd = cmd_data.get("cmd", "")
+            if cmd in self.baichuan.cmd_funcs:
+                json_data.append({"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": "used baichuan only", "rspCode": -9997}})
+                func = self.baichuan.cmd_funcs[cmd]
+                args = cmd_data.get("param", {})
+                coroutines.append((idx, cmd, func(**args)))
+            else:
+                json_data.append(
+                    {"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": f"cmd {cmd} not supported by Baichuan, no HTTP(s) API", "rspCode": -9996}}
+                )
+                _LOGGER.debug("Host %s: cmd %s not supported by Baichuan, no HTTP(s) API", self._host, cmd)
+
+        if coroutines:
+            results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
+            for i, result in enumerate(results):
+                (idx, cmd, _) = coroutines[i]
+                if isinstance(result, ReolinkError):
+                    json_data[idx]["error"]["detail"] = str(result)
+                    if isinstance(result, ApiError):
+                        json_data[idx]["error"]["rspCode"] = result.rspCode
+                    _LOGGER.debug("Baichuan failed for %s: %s", cmd, str(result))
+                    continue
+                if isinstance(result, BaseException):
+                    raise result
+                json_data[idx]["Baichuan_fallback_succes"] = True
+
         return json_data
 
     @overload

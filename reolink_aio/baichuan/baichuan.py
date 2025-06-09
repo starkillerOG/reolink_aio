@@ -14,8 +14,9 @@ from Cryptodome.Cipher import AES
 
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
-from ..const import WAKING_COMMANDS
+from ..const import WAKING_COMMANDS, UNKNOWN
 from ..typings import cmd_list_type, VOD_trigger, VOD_file
+from ..software_version import SoftwareVersion
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -61,8 +62,8 @@ class Baichuan:
         host: str,
         username: str,
         password: str,
+        http_api: Host,
         port: int = DEFAULT_BC_PORT,
-        http_api: Host | None = None,
     ) -> None:
         self.http_api = http_api
 
@@ -98,8 +99,9 @@ class Baichuan:
 
         # http_cmd functions, set by the http_cmd decorator
         self.cmd_funcs: dict[str, Callable] = {}
-        for _name, func in getmembers(self, lambda o: hasattr(o, "http_cmd")):
-            self.cmd_funcs[func.http_cmd] = func
+        for _name, func in getmembers(self, lambda o: hasattr(o, "http_cmds")):
+            for cmd in func.http_cmds:
+                self.cmd_funcs[cmd] = func
 
         # supported
         self.capabilities: dict[int | None, set[str]] = {}
@@ -386,7 +388,7 @@ class Baichuan:
                 self._time_connection_lost = now
                 _LOGGER.debug("Baichuan host %s: disconnected while event subscription was not active", self._host)
                 return
-            if self.http_api is not None and self.http_api._updating:
+            if self.http_api._updating:
                 _LOGGER.debug("Baichuan host %s: lost event subscription during firmware reboot", self._host)
                 return
             if self._protocol is not None:
@@ -435,7 +437,7 @@ class Baichuan:
 
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
         channel = self._get_value_from_xml_element(xml_element, key, int)
-        if self.http_api is not None and channel not in self.http_api._channels:
+        if channel not in self.http_api._channels:
             return None
         return channel
 
@@ -482,9 +484,6 @@ class Baichuan:
 
     def _parse_xml(self, cmd_id: int, xml: str) -> None:
         """parce received xml"""
-        if self.http_api is None:
-            return
-
         root = XML.fromstring(xml)
 
         state: Any
@@ -647,6 +646,14 @@ class Baichuan:
                 self.http_api._battery.setdefault(channel, {}).update(data)
                 _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
 
+        elif cmd_id in [289, 438]:  # Floodlight
+            channel = self._get_channel_from_xml_element(root, "channel")
+            if channel is None:
+                return
+            channels.add(channel)
+            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int), "alarmMode": ("mode", int)})
+            self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {}).update(values)
+
         elif cmd_id == 291:  # Floodlight
             for event_list in root:
                 for event in event_list:
@@ -655,8 +662,8 @@ class Baichuan:
                         continue
                     channels.add(channel)
                     state = self._get_value_from_xml_element(event, "status", int)
-                    if state is not None and channel in self.http_api._whiteled_settings:
-                        self.http_api._whiteled_settings[channel]["WhiteLed"]["state"] = state
+                    if state is not None:
+                        self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 527:  # crossline detection
@@ -692,7 +699,7 @@ class Baichuan:
         elif cmd_id == 603:  # sceneListID
             for scene_id in root.findall(".//id"):
                 if scene_id.text is not None:
-                    self._scenes[int(scene_id.text)] = "Unknown"
+                    self._scenes[int(scene_id.text)] = UNKNOWN
 
         elif cmd_id == 623:  # Privacy mode
             items = root.findall(".//status")
@@ -747,7 +754,7 @@ class Baichuan:
 
             index_dict[f"{location}_{smart_ai['index']}"] = self.smart_ai_type_list(channel, smart_type, location)
 
-        if self.http_api is not None and not self.http_api._startup and index_dict != original_index_dict:
+        if not self.http_api._startup and index_dict != original_index_dict:
             _LOGGER.info(
                 "New Reolink %s smart detection zone discovered for %s",
                 smart_type,
@@ -851,10 +858,31 @@ class Baichuan:
                 raise
             self._logged_in = True
 
-        # privacy mode
-        privacy_mode = self._get_value_from_xml(mess, "sleep")
-        if privacy_mode is not None:
-            self._privacy_mode[0] = privacy_mode == "1"
+        # parse response
+        root = XML.fromstring(mess)
+        if (dev_info := root.find(".//DeviceInfo")) is not None:
+            # is_nvr / is_hub
+            dev_type_ob = dev_info.find("type")
+            dev_type_info_ob = dev_info.find("typeInfo")
+            if dev_type_ob is not None and dev_type_info_ob is not None:
+                dev_type = dev_type_ob.text
+                dev_type_info = dev_type_info_ob.text
+                if not self.http_api._is_nvr:
+                    self.http_api._is_nvr = dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
+                if not self.http_api._is_hub:
+                    self.http_api._is_hub = dev_type == "homehub" or dev_type_info == "HOMEHUB"
+
+            data = self._get_keys_from_xml(dev_info, {"sleep": ("sleep", str), "channelNum": ("channelNum", int)})
+            # privacy mode
+            if "sleep" in data:
+                self._privacy_mode[0] = data["sleep"] == "1"
+            # channels
+            if "channelNum" in data and self.http_api._num_channels == 0 and not self.http_api._is_nvr:
+                self.http_api._channels.clear()
+                self.http_api._num_channels = data["channelNum"]
+                if self.http_api._num_channels > 0:
+                    for ch in range(self.http_api._num_channels):
+                        self.http_api._channels.append(ch)
 
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
@@ -905,9 +933,6 @@ class Baichuan:
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
-        if self.http_api is None:
-            return
-
         # Get Baichaun capabilities
         try:
             mess = await self.send(cmd_id=199)
@@ -923,8 +948,14 @@ class Baichuan:
                     support.remove(item)
                 self._abilities[None] = support
 
+            # check if HTTP(s) API is supported
+            if self.api_version("netPort", no_key_return=55) <= 1:
+                self.http_api.baichuan_only = True
+
         # Host capabilities
         self.capabilities.setdefault(None, set())
+        if self.api_version("reboot") > 0:
+            self.capabilities[None].add("reboot")
         host_coroutines: list[tuple[Any, Coroutine]] = []
         host_coroutines.append(("network_info", self.get_network_info()))
         if self.api_version("sceneModeCfg") > 0:
@@ -967,9 +998,16 @@ class Baichuan:
                 self.capabilities[channel].add("hardwired_chime")
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
+            if (
+                self.http_api.baichuan_only and (self.api_version("ledCtrl", channel) >> 1) & 1 and (self.api_version("ledCtrl", channel) >> 2) & 1
+            ):  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
+                self.capabilities[channel].add("floodLight")
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
+            # Fallback for missing information
+            if self.http_api.camera_hardware_version(channel) == UNKNOWN:
+                coroutines.append(("ch_info", channel, self.get_info(channel)))
 
         for scene_id in self._scenes:
             if scene_id < 0:
@@ -1008,16 +1046,6 @@ class Baichuan:
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
 
-        # Fallback for missing information
-        for channel in self.http_api._channels:
-            if self.http_api.camera_hardware_version(channel) == "Unknown":
-                try:
-                    await self.get_info(channel)
-                except ReolinkError:
-                    pass
-                else:
-                    self.http_api._channel_hw_version[channel] = self.hardware_version(channel)
-
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
         if channel not in self.capabilities:
@@ -1055,8 +1083,6 @@ class Baichuan:
 
     async def get_states(self, cmd_list: cmd_list_type = None, wake: dict[int, bool] | None = None) -> None:
         """Update the state information of polling data"""
-        if self.http_api is None:
-            return
         if cmd_list is None:
             cmd_list = {}
         if wake is None:
@@ -1070,7 +1096,7 @@ class Baichuan:
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake[channel] or cmd not in WAKING_COMMANDS or self.http_api is None or not self.http_api.supported(channel, "battery")
+                wake[channel] or cmd not in WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
             )
 
         coroutines: list[Coroutine] = []
@@ -1126,28 +1152,84 @@ class Baichuan:
 
         await self.send(cmd_id=36, body=xml)
 
+    @http_cmd(["GetDevInfo", "GetChnTypeInfo"])
     async def get_info(self, channel: int | None = None) -> dict[str, str]:
         """Get the device info of the host or a channel"""
         if channel is None:
             mess = await self.send(cmd_id=80)
         else:
             mess = await self.send(cmd_id=318, channel=channel)
-        self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo"])
+        self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo", "serialNumber", "name"])
+        dev_info = self._dev_info[channel]
+
+        # see login for is_nvr/is_hub
+        if "name" in dev_info:
+            self.http_api._name[channel] = dev_info["name"]
+        if "type" in dev_info:
+            self.http_api._model[channel] = dev_info["type"]
+        if "hardwareVersion" in dev_info:
+            self.http_api._hw_version[channel] = dev_info["hardwareVersion"]
+        if "itemNo" in dev_info:
+            self.http_api._item_number[channel] = dev_info["itemNo"]
+        if "serialNumber" in dev_info:
+            self.http_api._serial[channel] = dev_info["serialNumber"]
+        if dev_info.get("firmwareVersion") not in ["", None]:
+            self.http_api._sw_version[channel] = dev_info["firmwareVersion"]
+            try:
+                self.http_api._sw_version_object[channel] = SoftwareVersion(self.http_api._sw_version[channel])
+            except UnexpectedDataError as err:
+                _LOGGER.debug("Reolink %s: %s", self.http_api.camera_name(channel), err)
+
         return self._dev_info[channel]
 
-    async def get_network_info(self, channel: int | None = None) -> dict[str, str]:
-        """Get the network info including MAC of the host or a channel"""
-        if channel is None:
-            mess = await self.send(cmd_id=76)
-        else:
-            mess = await self.send(cmd_id=76, channel=channel)
-        self._network_info[channel] = self._get_keys_from_xml(mess, ["ip", "mac"])
-        return self._network_info[channel]
+    @http_cmd("GetP2p")
+    async def get_uid(self) -> None:
+        """Get the UID of the host"""
+        root = await self.send(cmd_id=114)
+        mess = XML.fromstring(root)
+        value = self._get_value_from_xml_element(mess, "uid")
+        if value is not None:
+            self.http_api._uid[None] = value
 
     async def get_channel_uids(self) -> None:
         """Get a channel list containing the UIDs"""
         # the NVR sends a message with cmd_id 145 when connecting, but it seems to not allow requesting that id.
         await self.send(cmd_id=145)
+
+    @http_cmd("GetLocalLink")
+    async def get_network_info(self, channel: int | None = None, **_kwargs) -> dict[str, str]:
+        """Get the network info including MAC of the host or a channel"""
+        if channel is None:
+            mess = await self.send(cmd_id=76)
+            mess_link = await self.send(cmd_id=93)
+        else:
+            mess = await self.send(cmd_id=76, channel=channel)
+        self._network_info[channel] = self._get_keys_from_xml(mess, ["ip", "mac"])
+
+        if channel is None:
+            link_dict = self._get_keys_from_xml(mess_link, ["type"])
+            if (link := link_dict.get("type")) is not None:
+                self.http_api._local_link.setdefault("LocalLink", {})["activeLink"] = link
+            if (mac := self.mac_address()) is not None:
+                self.http_api._mac_address = mac
+
+        return self._network_info[channel]
+
+    @http_cmd("GetUser")
+    async def GetUser(self) -> None:
+        """Get the user list"""
+        xml = xmls.UserList.format(username=self._username)
+        root = await self.send(cmd_id=58, extension=xml)
+        mess = XML.fromstring(root)
+        self.http_api._users = []
+        for user in mess.findall(".//User"):
+            values = self._get_keys_from_xml(user, ["userName", "userLevel"])
+
+            if values.get("userLevel") == "1":
+                values["level"] = "admin"
+            else:
+                values["level"] = "guest"
+            self.http_api._users.append(values)
 
     async def get_wifi_signal(self) -> None:
         """Get the wifi signal of the host"""
@@ -1180,7 +1262,7 @@ class Baichuan:
         self.last_privacy_check = time_now()
 
         self.capabilities.setdefault(channel, set()).add("privacy_mode")
-        if self.http_api is None or not self.http_api.is_nvr:
+        if not self.http_api.is_nvr:
             self.capabilities.setdefault(None, set()).add("privacy_mode")
 
         return value
@@ -1197,12 +1279,52 @@ class Baichuan:
         """Reboot the host device"""
         await self.send(cmd_id=23)
 
+    @http_cmd("GetWhiteLed")
+    async def get_floodlight(self, channel: int, **_kwargs) -> None:
+        """Get the floodlight state"""
+        mess = await self.send(cmd_id=289, channel=channel)
+        self._parse_xml(289, mess)
+
+    @http_cmd("SetWhiteLed")
+    async def set_floodlight(self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | None = None, **kwargs) -> None:
+        """Control the floodlight"""
+        if data := kwargs.get("WhiteLed"):
+            channel = data["channel"]
+            state = data.get("state", state)
+            brightness = data.get("bright", brightness)
+            mode = data.get("mode", mode)
+
+        if state is None and brightness is None and mode is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
+
+        if state is not None:
+            xml = xmls.SetWhiteLed.format(channel=channel, state=state)
+            await self.send(cmd_id=288, channel=channel, body=xml)
+        if brightness is not None or mode is not None:
+            mess = await self.send(cmd_id=289, channel=channel)
+            xml_body = XML.fromstring(mess)
+            xml_element = xml_body.find(".//FloodlightTask")
+            if xml_element is None:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: set_floodlight: could not find FloodlightTask")
+            if brightness is not None:
+                xml_brightness = xml_element.find("brightness_cur")
+                if xml_brightness is not None:
+                    xml_brightness.text = str(brightness)
+            if mode is not None:
+                xml_mode = xml_element.find("alarmMode")
+                if xml_mode is not None:
+                    xml_mode.text = str(mode)
+                xml_enable = xml_element.find("enable")
+                if xml_enable is not None:
+                    xml_enable.text = str(mode)
+            xml = XML.tostring(xml_body, encoding="unicode")
+            xml = xmls.XML_HEADER + xml
+            mess = await self.send(cmd_id=290, channel=channel, body=xml)
+
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
         """Get the DingDongList info"""
         retry = retry - 1
-        if self.http_api is None:
-            return
 
         mess = await self.send(cmd_id=484, channel=channel)
         root = XML.fromstring(mess)
@@ -1226,8 +1348,6 @@ class Baichuan:
     @http_cmd("DingDongOpt")
     async def get_DingDongOpt(self, channel: int = -1, chime_id: int = -1, **kwargs) -> None:
         """Get the DingDongOpt info"""
-        if self.http_api is None:
-            return
         dingdong = kwargs.get("DingDong", {})
         if ch := dingdong.get("channel"):
             channel = ch
@@ -1260,9 +1380,6 @@ class Baichuan:
     @http_cmd("GetDingDongCfg")
     async def GetDingDongCfg(self, channel: int, **_kwargs) -> None:
         """Get the GetDingDongCfg info"""
-        if self.http_api is None:
-            return
-
         mess = await self.send(cmd_id=486, channel=channel)
         root = XML.fromstring(mess)
 
@@ -1453,14 +1570,10 @@ class Baichuan:
         vod_dict: dict[VOD_trigger, list[VOD_file]] = {}
         for trig in VOD_trigger:
             vod_dict[trig] = []
-        if self.http_api is None:
-            return vod_type_dict, vod_dict
-        uid = self.http_api._channel_uids.get(channel, None)
-        if uid is None:
-            if not self.http_api.is_nvr:
-                uid = self.http_api.uid
-            if uid is None:
-                raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+        if uid == UNKNOWN:
+            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
 
         if stream == "sub":
             stream_type = 1
@@ -1611,6 +1724,10 @@ class Baichuan:
         return self._events_active and time_now() - self._time_connection_lost > 120
 
     @property
+    def session_active(self) -> bool:
+        return self._logged_in or (self._protocol is not None and time_now() - self._protocol.time_recv < 60)
+
+    @property
     def http_port(self) -> int | None:
         return self._ports.get("http", {}).get("port")
 
@@ -1675,13 +1792,13 @@ class Baichuan:
 
     @property
     def active_scene(self) -> str:
-        return self._scenes.get(self._active_scene, "Unknown")
+        return self._scenes.get(self._active_scene, UNKNOWN)
 
     def model(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("type")
 
     def hardware_version(self, channel: int | None = None) -> str:
-        return self._dev_info.get(channel, {}).get("hardwareVersion", "Unknown")
+        return self._dev_info.get(channel, {}).get("hardwareVersion", UNKNOWN)
 
     def item_number(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("itemNo")
@@ -1694,10 +1811,10 @@ class Baichuan:
         return mac
 
     def ip_address(self, channel: int | None = None) -> str:
-        ip = self._network_info.get(channel, {}).get("ip", "Unknown")
+        ip = self._network_info.get(channel, {}).get("ip", UNKNOWN)
         if channel is not None and ip == self.ip_address():
             # IP of channel equals IP of host, host could not retrieve IP of channel
-            return "Unknown"
+            return UNKNOWN
         return ip
 
     def sw_version(self, channel: int | None = None) -> str | None:
@@ -1725,7 +1842,7 @@ class Baichuan:
         return list(AI_DETECTS.intersection(smart_ai))
 
     def smart_ai_name(self, channel: int, smart_type: str, location: int) -> str:
-        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", "Unknown")
+        return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("name", UNKNOWN)
 
     def smart_ai_index(self, channel: int, smart_type: str, location: int) -> int:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get("index", 0)
