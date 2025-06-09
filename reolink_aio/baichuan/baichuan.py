@@ -1274,6 +1274,17 @@ class Baichuan:
         """Reboot the host device"""
         await self.send(cmd_id=23)
 
+    @http_cmd("SetWhiteLed")
+    async def set_floodlight(self, channel: int = 0, state: bool | None = None, **kwargs) -> None:
+        """Control the floodlight"""
+        if data := kwargs.get("WhiteLed"):
+            channel = data["channel"]
+            state = data.get("state", state)
+
+        if state is not None:
+            xml = xmls.SetWhiteLed.format(channel=channel, state=state)
+            await self.send(cmd_id=288, channel=channel, body=xml)
+
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
         """Get the DingDongList info"""
