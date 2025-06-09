@@ -649,6 +649,14 @@ class Baichuan:
                 self.http_api._battery.setdefault(channel, {}).update(data)
                 _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
 
+        elif cmd_id in [289, 438]:  # Floodlight
+            channel = self._get_channel_from_xml_element(root, "channel")
+            if channel is None:
+                return
+            channels.add(channel)
+            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int)})
+            self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {}).update(values)
+
         elif cmd_id == 291:  # Floodlight
             for event_list in root:
                 for event in event_list:
@@ -1274,6 +1282,12 @@ class Baichuan:
         """Reboot the host device"""
         await self.send(cmd_id=23)
 
+    @http_cmd("GetWhiteLed")
+    async def get_floodlight(self, channel: int, **kwargs) -> None:
+        """Get the floodlight state"""
+        mess = await self.send(cmd_id=289, channel=channel)
+        self._parse_xml(289, mess)
+
     @http_cmd("SetWhiteLed")
     async def set_floodlight(self, channel: int = 0, state: bool | None = None, **kwargs) -> None:
         """Control the floodlight"""
@@ -1284,6 +1298,8 @@ class Baichuan:
         if state is not None:
             xml = xmls.SetWhiteLed.format(channel=channel, state=state)
             await self.send(cmd_id=288, channel=channel, body=xml)
+        else:
+            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
