@@ -1289,24 +1289,32 @@ class Baichuan:
         self._parse_xml(289, mess)
 
     @http_cmd("SetWhiteLed")
-    async def set_floodlight(self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | str | None = None, **kwargs) -> None:
+    async def set_floodlight(self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | None = None, **kwargs) -> None:
         """Control the floodlight"""
         if data := kwargs.get("WhiteLed"):
             channel = data["channel"]
             state = data.get("state", state)
             brightness = data.get("bright", brightness)
+            mode = data.get("mode", mode)
 
-        if state is None and brightness is None:
+        if state is None and brightness is None and mode is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
 
         if state is not None:
             xml = xmls.SetWhiteLed.format(channel=channel, state=state)
             await self.send(cmd_id=288, channel=channel, body=xml)
-        if brightness is not None:
+        if brightness is not None or mode is not None:
             mess = await self.send(cmd_id=289, channel=channel)
             xml_body = XML.fromstring(mess)
-            xml_brightness = xml_body.find(".//brightness_cur")
-            xml_brightness.text = str(brightness)
+            xml_element = xml_body.find(".//FloodlightTask")
+            if brightness is not None:
+                xml_brightness = xml_element.find("brightness_cur")
+                xml_brightness.text = str(brightness)
+            if mode is not None:
+                xml_mode = xml_element.find("alarmMode")
+                xml_mode.text = str(mode)
+                xml_enable = xml_element.find("enable")
+                xml_enable.text = str(mode)
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
             mess = await self.send(cmd_id=290, channel=channel, body=xml)
