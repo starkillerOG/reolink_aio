@@ -5956,12 +5956,13 @@ class Host:
         json_data = []
         for idx, cmd_data in enumerate(body):
             cmd = cmd_data.get("cmd", "")
-            json_data.append({"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
             if cmd in self.baichuan.cmd_funcs:
+                json_data.append({"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": "used baichuan only", "rspCode": -9997}})
                 func = self.baichuan.cmd_funcs[cmd]
                 args = cmd_data.get("param", {})
                 coroutines.append((idx, cmd, func(**args)))
             else:
+                json_data.append({"cmd": cmd, "Baichuan_fallback_succes": False, "code": 1, "error": {"detail": f"cmd {cmd} not supported by Baichuan, no HTTP(s) API", "rspCode": -9996}})
                 _LOGGER.debug("Host %s: cmd %s not supported by Baichuan, no HTTP(s) API", self._host, cmd)
 
         if coroutines:
@@ -5969,6 +5970,9 @@ class Host:
             for i, result in enumerate(results):
                 (idx, cmd, _) = coroutines[i]
                 if isinstance(result, ReolinkError):
+                    json_data[idx]["error"]["detail"] = str(result)
+                    if isinstance(result, ApiError):
+                        json_data[idx]["error"]["rspCode"] = result.rspCode
                     _LOGGER.debug("Baichuan failed for %s: %s", cmd, str(result))
                     continue
                 if isinstance(result, BaseException):
