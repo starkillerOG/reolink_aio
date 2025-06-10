@@ -27,7 +27,7 @@ from ..exceptions import (
     ReolinkTimeoutError,
     CredentialsInvalidError,
 )
-from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum
+from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum, SpotlightModeEnum
 from ..utils import reolink_time_to_datetime, to_reolink_time_id, datetime_to_reolink_time
 
 from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
@@ -652,6 +652,9 @@ class Baichuan:
                 return
             channels.add(channel)
             values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int), "alarmMode": ("mode", int)})
+            if values.get("mode") == 4 and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
+                # Floodlight: the schedule_plus has the same number 4 as autoadaptive, so switch it around
+                values["mode"] = 3
             self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {}).update(values)
 
         elif cmd_id == 291:  # Floodlight
@@ -998,10 +1001,13 @@ class Baichuan:
                 self.capabilities[channel].add("hardwired_chime")
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
-            if (
-                self.http_api.baichuan_only and (self.api_version("ledCtrl", channel) >> 1) & 1 and (self.api_version("ledCtrl", channel) >> 2) & 1
-            ):  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
+            if (self.api_version("ledCtrl", channel) >> 0) & 1:  # 1th bit (1), shift 0
+                self.capabilities[channel].add("status_led")  # internal use only
+                self.capabilities[channel].add("power_led")
+            if (self.api_version("ledCtrl", channel) >> 1) & 1 and (self.api_version("ledCtrl", channel) >> 2) & 1:  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
                 self.capabilities[channel].add("floodLight")
+            if (self.api_version("ledCtrl", channel) >> 12) & 1:  # 13 th bit (4096) shift 12
+                self.capabilities[channel].add("ir_brightness")
 
             coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
@@ -1056,7 +1062,7 @@ class Baichuan:
     def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
         if channel not in self._abilities:
-            return 0
+            return no_key_return
 
         value = self._get_value_from_xml_element(self._abilities[channel], capability, int)
         if value is None:
@@ -1296,6 +1302,10 @@ class Baichuan:
 
         if state is None and brightness is None and mode is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
+
+        if mode == SpotlightModeEnum.schedule.value and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
+            # Floodlight: the schedule_plus has the same number 4 as autoadaptive, so switch it around
+            mode = 4
 
         if state is not None:
             xml = xmls.SetWhiteLed.format(channel=channel, state=state)
