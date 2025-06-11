@@ -1260,12 +1260,12 @@ class Baichuan:
         data = self._get_keys_from_xml(mess, ["cryDetectAbility", "cryDetectLevel"])
         if (cry_sensitivity := data.get("cryDetectLevel")) is not None:
             self._cry_sensitivity[channel] = cry_sensitivity
-        return data.get("cryDetectAbility") == "1" # supported or not
+        return data.get("cryDetectAbility") == "1"  # supported or not
 
     async def set_cry_detection(self, channel: int, sensitivity: int) -> None:
         mess = await self.send(cmd_id=299, channel=channel)
         xml_body = XML.fromstring(mess)
-        
+
         if (xml_cry_sensitivity := xml_body.find(".//cryDetectLevel")) is not None:
             xml_cry_sensitivity.text = str(sensitivity)
 
@@ -1358,7 +1358,9 @@ class Baichuan:
     async def get_status_led(self, channel: int, **_kwargs) -> None:
         """Get the status led and IR light status"""
         mess = await self.send(cmd_id=208, channel=channel)
-        data = self._get_keys_from_xml(mess, {"IRLedBrightness": ("ir_brightness", int), "state": ("ir_state", str), "lightState": ("state", str), "doorbellLightState": ("eDoorbellLightState", str)})
+        data = self._get_keys_from_xml(
+            mess, {"IRLedBrightness": ("ir_brightness", int), "state": ("ir_state", str), "lightState": ("state", str), "doorbellLightState": ("eDoorbellLightState", str)}
+        )
 
         if (val := data.get("state")) is not None:
             if val == "open":
@@ -1385,17 +1387,17 @@ class Baichuan:
         status_led = power_led.get("state")
         doorbell_led = power_led.get("eDoorbellLightState")
         ir_led = ir_lights.get("state")
-        
+
         mess = await self.send(cmd_id=208, channel=channel)
         xml_body = XML.fromstring(mess)
-        
+
         if status_led is not None and (xml_status_led := xml_body.find(".//lightState")) is not None:
-            xml_status_led.text = "open" if status_led=="On" else "close"
+            xml_status_led.text = "open" if status_led == "On" else "close"
         if doorbell_led is not None and (xml_doorbell_led := xml_body.find(".//doorbellLightState")) is not None:
             doorbell_led = doorbell_led[0].lower() + doorbell_led[1:]
-            if doorbell_led=="on":
+            if doorbell_led == "on":
                 doorbell_led = "open"
-            if doorbell_led=="off":
+            if doorbell_led == "off":
                 doorbell_led = "close"
             xml_doorbell_led.text = doorbell_led
         if ir_led is not None and (xml_ir_led := xml_body.find(".//state")) is not None:

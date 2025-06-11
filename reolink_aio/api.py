@@ -780,7 +780,7 @@ class Host:
             mode_values.append(StatusLedEnum.stayoff)
         mode_values.extend([StatusLedEnum.auto, StatusLedEnum.alwaysonatnight])
         ledCtrl = self.baichuan.api_version("ledCtrl", channel)
-        if self.api_version("supportDoorbellLightKeepOn", channel) > 0 or (ledCtrl >> 15) & 1: # 16th bit (32768), shift 15:
+        if self.api_version("supportDoorbellLightKeepOn", channel) > 0 or (ledCtrl >> 15) & 1:  # 16th bit (32768), shift 15:
             options = self._status_led_range.get(channel, {}).get("PowerLed", {}).get("eDoorbellLightState", [])
             if "KeepOn" in options or (ledCtrl >> 15) & 1:
                 mode_values.append(StatusLedEnum.alwayson)
