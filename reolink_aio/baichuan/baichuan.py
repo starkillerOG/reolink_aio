@@ -1329,7 +1329,50 @@ class Baichuan:
                     xml_enable.text = str(mode)
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
-            mess = await self.send(cmd_id=290, channel=channel, body=xml)
+            await self.send(cmd_id=290, channel=channel, body=xml)
+
+    @http_cmd(["GetPowerLed", "GetIrLights"])
+    async def get_status_led(self, channel: int, **_kwargs) -> None:
+        """Get the status led and IR light status"""
+        mess = await self.send(cmd_id=208, channel=channel)
+        data = self._get_keys_from_xml(mess, {"IRLedBrightness": ("ir_brightness", int), "state": ("ir_state", str), "lightState": ("state", str), "doorbellLightState": ("eDoorbellLightState", str)})
+
+        if (val := data.get("state")) is not None:
+            if val == "open":
+                data["state"] = "On"
+            else:
+                data["state"] = "Off"
+
+        self.http_api._status_led_settings.setdefault(channel, {}).setdefault("PowerLed", {}).update(data)
+        if "ir_state" in data:
+            self.http_api._ir_settings.setdefault(channel, {}).setdefault("IrLights", {})["state"] = data["ir_state"].capitalize()
+
+    @http_cmd("SetPowerLed")
+    async def set_status_led(self, **kwargs) -> None:
+        """Get the status led and IR light status"""
+        power_led = kwargs.get("PowerLed", {})
+        channel = power_led.get("channel")
+        if channel is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for set_status_led")
+        status_led = power_led.get("state")
+        doorbell_led = power_led.get("eDoorbellLightState")
+        
+        mess = await self.send(cmd_id=208, channel=channel)
+        xml_body = XML.fromstring(mess)
+        
+        if status_led is not None and (xml_status_led := xml_body.find(".//lightState")) is not None:
+            xml_status_led.text = "open" if status_led=="On" else "close"
+        if doorbell_led is not None and (xml_doorbell_led := xml_body.find(".//doorbellLightState")) is not None:
+            doorbell_led = doorbell_led[0].lower() + doorbell_led[1:]
+            if doorbell_led=="on":
+                doorbell_led = "open"
+            if doorbell_led=="off":
+                doorbell_led = "close"
+            xml_doorbell_led.text = doorbell_led
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=209, channel=channel, body=xml)
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
