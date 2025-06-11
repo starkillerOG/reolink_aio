@@ -506,14 +506,14 @@ class Baichuan:
                         "sharpen": ("sharpen", int),
                     },
                 )
-                self.http_api._image_settings[channel]["Image"].update(data)
+                self.http_api._image_settings.setdefault(channel, {}).setdefault("Image", {}).update(data)
 
             if (DayNight := root.find(".//DayNight")) is not None:
                 value = self._get_value_from_xml_element(DayNight, "mode")
                 if value is not None:
                     value = value.replace("And", "&")
                     value = value[0].upper() + value[1:]
-                    self.http_api._isp_settings[channel]["Isp"]["dayNight"] = DayNightEnum(value).value
+                    self.http_api._isp_settings.setdefault(channel, {}).setdefault("Isp", {})["dayNight"] = DayNightEnum(value).value
 
         elif cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
             for event_list in root:
@@ -1347,15 +1347,17 @@ class Baichuan:
         if "ir_state" in data:
             self.http_api._ir_settings.setdefault(channel, {}).setdefault("IrLights", {})["state"] = data["ir_state"].capitalize()
 
-    @http_cmd("SetPowerLed")
+    @http_cmd(["SetPowerLed", "SetIrLights"])
     async def set_status_led(self, **kwargs) -> None:
         """Get the status led and IR light status"""
         power_led = kwargs.get("PowerLed", {})
-        channel = power_led.get("channel")
+        ir_lights = kwargs.get("IrLights", {})
+        channel = power_led.get("channel", ir_lights.get("channel"))
         if channel is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for set_status_led")
         status_led = power_led.get("state")
         doorbell_led = power_led.get("eDoorbellLightState")
+        ir_led = ir_lights.get("state")
         
         mess = await self.send(cmd_id=208, channel=channel)
         xml_body = XML.fromstring(mess)
@@ -1369,6 +1371,10 @@ class Baichuan:
             if doorbell_led=="off":
                 doorbell_led = "close"
             xml_doorbell_led.text = doorbell_led
+        if ir_led is not None and (xml_ir_led := xml_body.find(".//state")) is not None:
+            if ir_led == "Off":
+                ir_led = "close"
+            xml_ir_led.text = ir_led.lower()
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
