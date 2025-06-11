@@ -2087,7 +2087,7 @@ class Host:
                 if self.ai_supported(channel):
                     ch_body.append({"cmd": "GetAiState", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ir_lights") and inc_cmd("GetIrLights", channel):
+            if self.supported(channel, "ir_lights") and inc_cmd("GetIrLights", channel) and not inc_cmd("208", channel):
                 ch_body.append({"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "floodLight") and inc_cmd("GetWhiteLed", channel):
@@ -2099,7 +2099,7 @@ class Host:
             if self.supported(channel, "PIR") and inc_cmd("GetPirInfo", channel):
                 ch_body.append({"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "status_led") and inc_cmd("GetPowerLed", channel):
+            if self.supported(channel, "status_led") and inc_cmd("GetPowerLed", channel) and not inc_cmd("208", channel):
                 ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "zoom") and inc_cmd("GetZoomFocus", channel):

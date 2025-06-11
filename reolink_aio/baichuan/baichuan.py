@@ -120,6 +120,7 @@ class Baichuan:
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
         self._hardwired_chime_settings: dict[int, dict[str, str | int]] = {}
+        self._ir_brightness: dict[int, int] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -1117,6 +1118,9 @@ class Baichuan:
                 # only get the state if not known yet, cmd_id 483 can make the hardwired chime rattle a bit
                 coroutines.append(self.get_ding_dong_ctrl(channel))
 
+            if self.supported(channel, "ir_brightness") and inc_cmd("208", channel):
+                coroutines.append(self.get_status_led(channel))
+
         if coroutines:
             results = await asyncio.gather(*coroutines, return_exceptions=True)
             for result in results:
@@ -1343,16 +1347,20 @@ class Baichuan:
             else:
                 data["state"] = "Off"
 
+        if (ir_brightness := data.get("ir_brightness")) is not None:
+            self._ir_brightness[channel] = ir_brightness
+
         self.http_api._status_led_settings.setdefault(channel, {}).setdefault("PowerLed", {}).update(data)
         if "ir_state" in data:
             self.http_api._ir_settings.setdefault(channel, {}).setdefault("IrLights", {})["state"] = data["ir_state"].capitalize()
 
     @http_cmd(["SetPowerLed", "SetIrLights"])
-    async def set_status_led(self, **kwargs) -> None:
+    async def set_status_led(self, channel: int | None = None, ir_brightness: int | None = None, **kwargs) -> None:
         """Get the status led and IR light status"""
         power_led = kwargs.get("PowerLed", {})
         ir_lights = kwargs.get("IrLights", {})
-        channel = power_led.get("channel", ir_lights.get("channel"))
+        if channel is None:
+            channel = power_led.get("channel", ir_lights.get("channel"))
         if channel is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for set_status_led")
         status_led = power_led.get("state")
@@ -1375,10 +1383,16 @@ class Baichuan:
             if ir_led == "Off":
                 ir_led = "close"
             xml_ir_led.text = ir_led.lower()
+        if ir_brightness is not None and (xml_ir_bright := xml_body.find(".//IRLedBrightness")) is not None:
+            xml_ir_bright.text = str(ir_brightness)
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=209, channel=channel, body=xml)
+
+        if ir_brightness is not None:
+            # Request the new value
+            await self.get_status_led(channel)
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
@@ -1889,6 +1903,9 @@ class Baichuan:
     def day_night_state(self, channel: int) -> str | None:
         """known values: day, night, led_day"""
         return self._day_night_state.get(channel)
+
+    def ir_brightness(self, channel: int) -> int | None:
+        return self._ir_brightness.get(channel)
 
     def smart_type_list(self, channel: int) -> list[str]:
         return list(self._ai_detect.get(channel, {}).keys())
