@@ -121,6 +121,7 @@ class Baichuan:
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
         self._hardwired_chime_settings: dict[int, dict[str, str | int]] = {}
         self._ir_brightness: dict[int, int] = {}
+        self._cry_sensitivity: dict[int, int] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -1010,7 +1011,7 @@ class Baichuan:
             if (self.api_version("ledCtrl", channel) >> 12) & 1:  # 13 th bit (4096) shift 12
                 self.capabilities[channel].add("ir_brightness")
 
-            coroutines.append(("cry", channel, self.get_cry_detection_supported(channel)))
+            coroutines.append(("cry", channel, self.get_cry_detection(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
             # Fallback for missing information
             if self.http_api.camera_hardware_version(channel) == UNKNOWN:
@@ -1120,6 +1121,9 @@ class Baichuan:
 
             if self.supported(channel, "ir_brightness") and inc_cmd("208", channel):
                 coroutines.append(self.get_status_led(channel))
+
+            if self.supported(channel, "ai_cry") and inc_cmd("299", channel):
+                coroutines.append(self.get_cry_detection(channel))
 
         if coroutines:
             results = await asyncio.gather(*coroutines, return_exceptions=True)
@@ -1250,10 +1254,25 @@ class Baichuan:
         mess = await self.send(cmd_id=433, channel=channel)
         self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
 
-    async def get_cry_detection_supported(self, channel: int) -> bool:
-        """Check if cry detection is supported"""
+    async def get_cry_detection(self, channel: int) -> bool:
+        """Check if cry detection is supported and get the sensitivity level"""
         mess = await self.send(cmd_id=299, channel=channel)
-        return self._get_value_from_xml(mess, "cryDetectAbility") == "1"
+        data = self._get_keys_from_xml(mess, ["cryDetectAbility", "cryDetectLevel"])
+        if (cry_sensitivity := data.get("cryDetectLevel")) is not None:
+            self._cry_sensitivity[channel] = cry_sensitivity
+        return data.get("cryDetectAbility") == "1" # supported or not
+
+    async def set_cry_detection(self, channel: int, sensitivity: int) -> None:
+        mess = await self.send(cmd_id=299, channel=channel)
+        xml_body = XML.fromstring(mess)
+        
+        if (xml_cry_sensitivity := xml_body.find(".//cryDetectLevel")) is not None:
+            xml_cry_sensitivity.text = str(sensitivity)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=300, channel=channel, body=xml)
+        await self.get_cry_detection(channel)
 
     async def get_day_night_state(self, channel: int) -> None:
         """Get the day night state"""
@@ -1906,6 +1925,9 @@ class Baichuan:
 
     def ir_brightness(self, channel: int) -> int | None:
         return self._ir_brightness.get(channel)
+
+    def cry_sensitivity(self, channel: int) -> int | None:
+        return self._cry_sensitivity.get(channel)
 
     def smart_type_list(self, channel: int) -> list[str]:
         return list(self._ai_detect.get(channel, {}).keys())
