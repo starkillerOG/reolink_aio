@@ -69,6 +69,10 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             if self._data:
                 # was waiting on more data so append
                 self._data = self._data + data
+            elif len(data) < 4 and bytes.fromhex(HEADER_MAGIC).startswith(data):
+                self._data = data
+                _LOGGER.debug("Baichuan host %s: received start of magic header but less then 4 bytes, waiting for the rest", self._host)
+                return
             else:
                 self._set_error(f"with invalid magic header: {data[0:4].hex()}", UnexpectedDataError)
                 return
@@ -93,6 +97,11 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
 
     def parse_data(self) -> None:
         """Parse received data"""
+        if len(self._data) < 20:
+            # do not clear self._data, wait for the rest of the data
+            _LOGGER.debug("Baichuan host %s: received start of header but less then 20 bytes, waiting for the rest", self._host)
+            return
+
         rec_cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
         rec_len_body = int.from_bytes(self._data[8:12], byteorder="little")
         rec_mess_id = int.from_bytes(self._data[12:16], byteorder="little")  # mess_id = enc_offset: 0/251 = push, 250 = host, 1-100 = channel
@@ -104,6 +113,10 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             len_header = 20
         elif mess_class in ["1464", "0000"]:  # modern 24 byte header
             len_header = 24
+            if len(self._data) < 24:
+                # do not clear self._data, wait for the rest of the data
+                _LOGGER.debug("Baichuan host %s: received start of modern header with message class %s but less then 24 bytes, waiting for the rest", self._host, mess_class)
+                return
             rec_payload_offset = int.from_bytes(self._data[20:24], byteorder="little")
             if rec_payload_offset != 0:
                 self._set_error("with a non-zero payload offset, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
@@ -172,6 +185,11 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             if self._data:
                 if self._data[0:4].hex() == HEADER_MAGIC:
                     self.parse_data()
+                elif len(self._data) < 4 and bytes.fromhex(HEADER_MAGIC).startswith(self._data):
+                    # do not clear self._data, wait for the rest of the data
+                    _LOGGER.debug(
+                        "Baichuan host %s: received start of magic header but less then 4 bytes, during parsing of multiple messages, waiting for the rest", self._host
+                    )
                 else:
                     _LOGGER.debug("Baichuan host %s: got invalid magic header '%s' during parsing of multiple messages, dropping", self._host, self._data[0:4].hex())
                     self._data = b""
