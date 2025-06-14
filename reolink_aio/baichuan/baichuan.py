@@ -971,7 +971,7 @@ class Baichuan:
             for i, result in enumerate(results):
                 (cmd_id, _) = host_coroutines[i]
                 if isinstance(result, ReolinkError):
-                    _LOGGER.debug("%s, during getting of host capabilities", result)
+                    _LOGGER.debug("%s, during getting of host capabilities cmd_id %s", result, cmd_id)
                     continue
                 if isinstance(result, BaseException):
                     raise result
@@ -1027,7 +1027,7 @@ class Baichuan:
             for i, result in enumerate(results):
                 (cmd_id, channel, _) = coroutines[i]
                 if isinstance(result, ReolinkError):
-                    _LOGGER.debug("%s, during getting of channel capabilities", result)
+                    _LOGGER.debug("%s, during getting of channel capabilities cmd_id %s", result, cmd_id)
                     continue
                 if isinstance(result, BaseException):
                     raise result
