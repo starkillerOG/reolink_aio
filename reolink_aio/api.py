@@ -275,6 +275,7 @@ class Host:
         self._sleep: dict[int, bool] = {}
         self._battery: dict[int, dict] = {}
         self._pir: dict[int, dict] = {}
+        self._privacy_mask: dict[int, dict] = {}
         self._recording_settings: dict[int, dict] = {}
         self._recording_range: dict[int, dict] = {}
         self._manual_record_settings: dict[int, dict] = {}
@@ -880,6 +881,9 @@ class Host:
             return False
 
         return self._buzzer_settings[channel]["Buzzer"]["scheduleEnable"] == 1
+
+    def privacy_mask_enabled(self, channel: int) -> bool:
+        return self._privacy_mask.get(channel, {}).get("enable") == 1
 
     def whiteled_state(self, channel: int) -> bool:
         return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
@@ -1663,6 +1667,9 @@ class Host:
             if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
                 self._capabilities[channel].add("push")
 
+            if self.api_version("mask", channel) > 0 and self._privacy_mask.get(channel, {}).get("area"):
+                self._capabilities[channel].add("privacy_mask")
+
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
                 self._capabilities[channel].add("recording")
 
@@ -1895,6 +1902,8 @@ class Host:
                 ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPirInfo" and self.supported(channel, "PIR"):
                 ch_body = [{"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetMask" and self.supported(channel, "privacy_mask"):
+                ch_body = [{"cmd": "GetMask", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWebHook" and self.supported(channel, "webhook"):
                 ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset" and self.supported(channel, "ptz_presets"):
@@ -2098,6 +2107,9 @@ class Host:
 
             if self.supported(channel, "PIR") and inc_cmd("GetPirInfo", channel):
                 ch_body.append({"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}})
+
+            if self.supported(channel, "privacy_mask") and inc_cmd("GetMask", channel):
+                ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "status_led") and inc_cmd("GetPowerLed", channel) and not inc_cmd("208", channel):
                 ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
@@ -2369,6 +2381,8 @@ class Host:
                 ch_body.append({"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}})
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
+            if self.api_version("mask", channel) > 0:
+                ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("supportBuzzer") > 0:
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
@@ -3887,6 +3901,9 @@ class Host:
                 elif data["cmd"] == "GetPirInfo":
                     self._pir[channel] = data["value"]["pirInfo"]
 
+                elif data["cmd"] == "GetMask":
+                    self._privacy_mask[channel] = data["value"]["Mask"]
+
                 elif data["cmd"] == "GetRec":
                     self._recording_settings[channel] = data["value"]
                     if "range" in data:
@@ -4687,6 +4704,15 @@ class Host:
             raise InvalidParameterError(f"set_recording: no camera connected to channel '{channel}'")
 
         body = [{"cmd": "SetBuzzerAlarmV20", "action": 0, "param": {"Buzzer": {"scheduleEnable": on_off, "schedule": {"channel": channel}}}}]
+        await self.send_setting(body)
+
+    async def set_privacy_mask(self, channel: int, enable: bool) -> None:
+        """Turn the privacy mask on/off"""
+        if not self.supported(channel, "privacy_mask"):
+            raise NotSupportedError(f"set_privacy_mask: privacy mask on camera {self.camera_name(channel)} is not available")
+
+        on_off = 1 if enable else 0
+        body = [{"cmd": "SetMask", "action": 0, "param": {"Mask": {"channel": channel, "enable": on_off}}}]
         await self.send_setting(body)
 
     async def set_audio(self, channel: int, enable: bool) -> None:
