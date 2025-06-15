@@ -3123,9 +3123,10 @@ class Host:
 
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
 
-        if stream.startswith("autotrack_"):
+        if stream.startswith("autotrack_") or stream.startswith("telephoto_"):
             param["iLogicChannel"] = 1
             stream = stream.removeprefix("autotrack_")
+            stream = stream.removeprefix("telephoto_")
 
         if stream.startswith("snapshots_"):
             stream = stream.removeprefix("snapshots_")
@@ -3324,11 +3325,11 @@ class Host:
         if stream is None:
             stream = self._stream
 
-        if stream not in ["main", "sub", "ext", "autotrack_sub", "telephoto_sub"]:
+        if stream not in ["main", "sub", "ext", "autotrack_sub", "autotrack_main", "telephoto_sub", "telephoto_main"]:
             return None
         if self.protocol == "rtmp":
             return self.get_rtmp_stream_source(channel, stream)
-        if self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub"]:
+        if self.protocol == "flv" or stream in ["autotrack_sub", "autotrack_main", "telephoto_sub", "telephoto_main"]:
             return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtsp":
             return await self.get_rtsp_stream_source(channel, stream, check)
@@ -5337,12 +5338,9 @@ class Host:
         if start > end:
             raise InvalidParameterError(f"Request VOD files: start date '{start}' needs to be before end date '{end}'")
 
-        iLogicChannel = 0
         if stream is None:
             stream = self._stream
-        if stream.startswith("autotrack_"):
-            iLogicChannel = 1
-            stream = stream.removeprefix("autotrack_")
+
         if not self.is_nvr or self.is_hub:
             split_time = None
 
@@ -5355,6 +5353,12 @@ class Host:
             else:
                 if trigger is not None:
                     return [], trigger_vods[trigger]
+
+        iLogicChannel = 0
+        if stream.startswith("autotrack_") or stream.startswith("telephoto_"):
+            iLogicChannel = 1
+            stream = stream.removeprefix("autotrack_")
+            stream = stream.removeprefix("telephoto_")
 
         times = [(start, end)]
         if status_only:

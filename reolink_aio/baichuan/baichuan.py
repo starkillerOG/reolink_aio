@@ -1671,6 +1671,10 @@ class Baichuan:
 
         if stream == "sub":
             stream_type = 1
+        elif stream in {"autotrack_sub", "telephoto_sub"}:
+            stream_type = 3
+        elif stream in {"autotrack_main", "telephoto_main"}:
+            stream_type = 2
         else:
             stream_type = 0
 
