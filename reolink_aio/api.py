@@ -3358,6 +3358,10 @@ class Host:
 
         if stream == "sub":
             stream_type = 1
+        elif stream in {"autotrack_sub", "telephoto_sub"}:
+            stream_type = 3
+        elif stream in {"autotrack_main", "telephoto_main"}:
+            stream_type = 2
         else:
             stream_type = 0
 
@@ -3417,6 +3421,12 @@ class Host:
     ) -> str:
         start = datetime_to_reolink_time(start_time)
         end = datetime_to_reolink_time(end_time)
+        iLogicChannel = 0
+        if stream.startswith("autotrack_") or stream.startswith("telephoto_"):
+            iLogicChannel = 1
+            stream = stream.removeprefix("autotrack_")
+            stream = stream.removeprefix("telephoto_")
+
         body = [
             {
                 "cmd": "NvrDownload",
@@ -3424,7 +3434,7 @@ class Host:
                 "param": {
                     "NvrDownload": {
                         "channel": channel,
-                        "iLogicChannel": 0,
+                        "iLogicChannel": iLogicChannel,
                         "streamType": stream,
                         "StartTime": start,
                         "EndTime": end,
