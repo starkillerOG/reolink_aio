@@ -1443,9 +1443,9 @@ class Baichuan:
     async def get_DingDongOpt(self, channel: int = -1, chime_id: int = -1, **kwargs) -> None:
         """Get the DingDongOpt info"""
         dingdong = kwargs.get("DingDong", {})
-        if ch := dingdong.get("channel"):
+        if (ch := dingdong.get("channel")) is not None:
             channel = ch
-        if ring_id := dingdong.get("id"):
+        if (ring_id := dingdong.get("id")) is not None:
             chime_id = ring_id
         option = dingdong.get("option", 2)
 
