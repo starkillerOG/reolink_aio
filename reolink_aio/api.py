@@ -2491,6 +2491,8 @@ class Host:
                     check = not self.supported(channel, "battery")
                     await self.get_rtsp_stream_source(channel, "sub", check)
                     await self.get_rtsp_stream_source(channel, "main", check)
+                    if self.supported(channel, "autotrack_stream"):
+                        await self.get_rtsp_stream_source(channel, "autotrack_main", check)
 
         self._startup = False
 
@@ -3239,6 +3241,9 @@ class Host:
         if stream is None:
             stream = self._stream
 
+        if stream in ["autotrack_main", "telephoto_main"]:
+            stream = "autotrack"
+
         if channel in self._rtsp_verified and stream in self._rtsp_verified[channel]:
             return self._rtsp_verified[channel][stream]
 
@@ -3255,6 +3260,15 @@ class Host:
                 return self._rtsp_subStream[channel]
             if await self._check_rtsp_url(self._rtsp_subStream[channel], channel, stream):
                 return self._rtsp_subStream[channel]
+
+        channel_str = f"{channel + 1:02d}"
+
+        if stream == "autotrack":
+            url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/Preview_{channel_str}_{stream}"
+            if not check:
+                return url
+            if await self._check_rtsp_url(url, channel, stream):
+                return url
 
         if not self._enc_settings:
             try:
@@ -3290,8 +3304,6 @@ class Host:
                 self._enc_settings,
             )
             encoding = "h264"
-
-        channel_str = f"{channel + 1:02d}"
 
         # RTSP needs encoded password
         url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/{encoding}Preview_{channel_str}_{stream}"
@@ -3329,7 +3341,7 @@ class Host:
             return None
         if self.protocol == "rtmp":
             return self.get_rtmp_stream_source(channel, stream)
-        if self.protocol == "flv" or stream in ["autotrack_sub", "autotrack_main", "telephoto_sub", "telephoto_main"]:
+        if self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub"]:
             return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtsp":
             return await self.get_rtsp_stream_source(channel, stream, check)
