@@ -1705,6 +1705,9 @@ class Host:
                 if self.api_version("supportVisitorLoudspeaker", channel) > 0:
                     self._capabilities[channel].add("doorbell_button_sound")
 
+            if self.api_version("talk", channel) > 0:
+                self._capabilities[channel].add("two_way_audio")
+
             if self.api_version("GetDeviceAudioCfg") > 0:
                 self._capabilities[channel].add("hub_audio")
 
