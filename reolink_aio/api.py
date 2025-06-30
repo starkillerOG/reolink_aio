@@ -2488,11 +2488,10 @@ class Host:
             # Cache the RTSP urls
             for channel in self._stream_channels:
                 if not self.baichuan.privacy_mode(channel):
-                    check = not self.supported(channel, "battery")
-                    await self.get_rtsp_stream_source(channel, "sub", check)
-                    await self.get_rtsp_stream_source(channel, "main", check)
+                    await self.get_rtsp_stream_source(channel, "sub")
+                    await self.get_rtsp_stream_source(channel, "main")
                     if self.supported(channel, "autotrack_stream"):
-                        await self.get_rtsp_stream_source(channel, "autotrack_main", check)
+                        await self.get_rtsp_stream_source(channel, "autotrack_main")
 
         self._startup = False
 
@@ -3237,6 +3236,8 @@ class Host:
     async def get_rtsp_stream_source(self, channel: int, stream: Optional[str] = None, check: bool = True) -> Optional[str]:
         if channel not in self._stream_channels:
             return None
+        if self.supported(channel, "battery"):
+            check = False
 
         if stream is None:
             stream = self._stream
