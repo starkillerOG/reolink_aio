@@ -205,6 +205,7 @@ class Host:
         self._GetChannelStatus_present: bool = False
         self._GetChannelStatus_has_name: bool = False
         self._channels: list[int] = []
+        self._other_brand_channels: list[int] = []
         self._stream_channels: list[int] = []
         self._channel_online: dict[int, bool] = {}
         self._is_doorbell: dict[int, bool] = {}
@@ -2315,11 +2316,13 @@ class Host:
                 try:
                     json_data = await self.send(body, expected_response_type="json")
                 except ReolinkError as err:
+                    self._other_brand_channels.append(channel)
                     self._channels.remove(channel)
                     _LOGGER.debug("Reolink camera on channel %s, called 'NVT' with error received getting its model, removing this channel, err: %s", channel, str(err))
                 else:
                     self.map_channel_json_response(json_data, channel)
                     if self.camera_model(channel) == "IPC":
+                        self._other_brand_channels.append(channel)
                         self._channels.remove(channel)
                         _LOGGER.debug("Reolink camera on channel %s, called 'NVT' or 'IPCAM' with model 'IPC', removing this invalid channel", channel)
 
@@ -3591,6 +3594,8 @@ class Host:
                         for ch_info in cur_status:
                             if ch_info["online"] == 1:
                                 cur_channel = ch_info["channel"]
+                                if cur_channel in self._other_brand_channels:
+                                    continue
                                 if cur_channel not in self._channels:
                                     _LOGGER.info(
                                         "New Reolink device discovered connected to %s, new channel %s",
@@ -3599,7 +3604,7 @@ class Host:
                                     )
                                     self._new_devices = True
                                     break
-                                if "uid" in ch_info:
+                                if "uid" in ch_info and ch_info["uid"] != "":
                                     if not self.camera_uid(cur_channel).startswith(ch_info["uid"]):
                                         _LOGGER.info(
                                             "New Reolink device discovered connected to %s, new UID %s",
