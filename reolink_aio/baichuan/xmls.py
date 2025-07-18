@@ -267,3 +267,11 @@ SetWhiteLed = """
 <duration>180</duration>
 </FloodlightManual>
 </body>"""
+
+WifiSSID = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<Wifi version="1.1">
+<scanAp>0</scanAp>
+</Wifi>
+</body>"""

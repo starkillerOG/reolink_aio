@@ -1110,8 +1110,13 @@ class Baichuan:
         coroutines: list[Coroutine] = []
         if self.supported(None, "scenes") and inc_host_cmd("GetScene"):
             coroutines.append(self.get_scene())
+        if self.http_api.supported(None, "wifi") and self.http_api.wifi_connection and inc_host_cmd("115"):
+            coroutines.append(self.get_wifi_signal())
 
         for channel in self.http_api._channels:
+            if self.http_api.supported(channel, "wifi") and inc_cmd("115", channel):
+                coroutines.append(self.get_wifi_signal(channel))
+
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
 
@@ -1245,9 +1250,19 @@ class Baichuan:
                 values["level"] = "guest"
             self.http_api._users.append(values)
 
-    async def get_wifi_signal(self) -> None:
+    async def get_wifi_ssid(self, channel: int) -> None:
+        """Get the wifi ssid and link type"""
+        mess = await self.send(cmd_id=116, channel=channel, body=xmls.WifiSSID)
+        root = XML.fromstring(mess)
+        value = self._get_value_from_xml_element(root, "ssid", str)
+
+    async def get_wifi_signal(self, channel: int | None = None) -> None:
         """Get the wifi signal of the host"""
-        await self.send(cmd_id=115)
+        mess = await self.send(cmd_id=115, channel=channel)
+        root = XML.fromstring(mess)
+        value = self._get_value_from_xml_element(root, "signal")
+        if value is not None:
+            self.http_api._wifi_signal[channel] = int(value)
 
     async def get_ptz_position(self, channel: int) -> None:
         """Get the wifi signal of the host"""

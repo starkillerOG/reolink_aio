@@ -235,7 +235,7 @@ class Host:
         # Saved info response-blocks
         self._hdd_info: list[dict] = []
         self._local_link: dict = {}
-        self._wifi_signal: Optional[int] = None
+        self._wifi_signal: dict = {}
         self._performance: dict = {}
         self._state_light: dict = {}
         self._users: list[dict[str, str]] = []
@@ -372,10 +372,9 @@ class Host:
         """LAN or Wifi"""
         return self._local_link.get("LocalLink", {}).get("activeLink", "LAN") != "LAN"
 
-    @property
-    def wifi_signal(self) -> Optional[int]:
-        """wifi_signal 0-4"""
-        return self._wifi_signal
+    def wifi_signal(self, channel: int | None = None) -> int | None:
+        """wifi_signal in dBm"""
+        return self._wifi_signal.get(channel)
 
     @property
     def cpu_usage(self) -> Optional[int]:
@@ -1659,6 +1658,9 @@ class Host:
                 if self.api_version("upgrade") >= 2:
                     self._capabilities[channel].add("update")
 
+            if self.is_nvr and self.api_version("supportWiFi", channel) > 0:
+                self._capabilities[channel].add("wifi")
+
             if self.api_version("supportWebhook", channel) > 0:
                 self._capabilities[channel].add("webhook")
 
@@ -2221,8 +2223,6 @@ class Host:
 
         # host states
         host_body = []
-        if self.supported(None, "wifi") and self.wifi_connection and inc_host_cmd("GetWifiSignal"):
-            host_body.append({"cmd": "GetWifiSignal", "action": 0, "param": {}})
         if self.supported(None, "state_light") and inc_host_cmd("GetStateLight"):
             host_body.append({"cmd": "GetStateLight", "action": 0, "param": {}})
         if self.supported(None, "hdd") and inc_host_cmd("GetHddInfo"):
@@ -3684,7 +3684,7 @@ class Host:
                     self._mac_address = data["value"]["LocalLink"]["mac"]
 
                 elif data["cmd"] == "GetWifiSignal":
-                    self._wifi_signal = data["value"]["wifiSignal"]
+                    self._wifi_signal[None] = -85 + 10*data["value"]["wifiSignal"]
 
                 elif data["cmd"] == "GetPerformance":
                     self._performance = data["value"]["Performance"]
