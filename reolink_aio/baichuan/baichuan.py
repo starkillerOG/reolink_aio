@@ -1800,6 +1800,26 @@ class Baichuan:
                     vod_type_dict[start_time_file] |= VOD_trigger.CRYING
                     vod_file.bc_triggers |= VOD_trigger.CRYING
                     vod_dict[VOD_trigger.CRYING].append(vod_file)
+                if "crossline" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.CROSSLINE
+                    vod_file.bc_triggers |= VOD_trigger.CROSSLINE
+                    vod_dict[VOD_trigger.CROSSLINE].append(vod_file)
+                if "intrusion" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.INTRUSION
+                    vod_file.bc_triggers |= VOD_trigger.INTRUSION
+                    vod_dict[VOD_trigger.INTRUSION].append(vod_file)
+                if "loitering" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.LINGER
+                    vod_file.bc_triggers |= VOD_trigger.LINGER
+                    vod_dict[VOD_trigger.LINGER].append(vod_file)
+                if "legacy" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.FORGOTTEN_ITEM
+                    vod_file.bc_triggers |= VOD_trigger.FORGOTTEN_ITEM
+                    vod_dict[VOD_trigger.FORGOTTEN_ITEM].append(vod_file)
+                if "loss" in trigger:
+                    vod_type_dict[start_time_file] |= VOD_trigger.TAKEN_ITEM
+                    vod_file.bc_triggers |= VOD_trigger.TAKEN_ITEM
+                    vod_dict[VOD_trigger.TAKEN_ITEM].append(vod_file)
 
             if finished == 0:
                 if time_event is None:

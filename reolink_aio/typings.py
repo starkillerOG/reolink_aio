@@ -304,6 +304,11 @@ class VOD_trigger(IntFlag):
     FACE = auto()
     IO = auto()
     CRYING = auto()
+    CROSSLINE = auto()
+    INTRUSION = auto()
+    LINGER = auto()
+    FORGOTTEN_ITEM = auto()
+    TAKEN_ITEM = auto()
 
 
 Parsed_VOD_file_name = NamedTuple(
