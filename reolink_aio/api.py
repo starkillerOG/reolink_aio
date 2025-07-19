@@ -643,6 +643,8 @@ class Host:
     def camera_uid(self, channel: int | None) -> str:
         if channel not in [0, None] and not self.is_nvr and channel not in self._uid and self.camera_uid(0) != UNKNOWN and channel in self._stream_channels:
             return f"{self.camera_uid(0)}_{channel}"  # Dual lens cameras
+        if channel == 0 and not self.is_nvr and channel not in self._uid:
+            return self.uid
         return self._uid.get(channel, UNKNOWN)
 
     def channel_for_uid(self, uid: str) -> int:
@@ -3684,7 +3686,7 @@ class Host:
                     self._mac_address = data["value"]["LocalLink"]["mac"]
 
                 elif data["cmd"] == "GetWifiSignal":
-                    self._wifi_signal[None] = -85 + 10*data["value"]["wifiSignal"]
+                    self._wifi_signal[None] = -85 + 10 * data["value"]["wifiSignal"]
 
                 elif data["cmd"] == "GetPerformance":
                     self._performance = data["value"]["Performance"]
