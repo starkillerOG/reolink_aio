@@ -671,6 +671,9 @@ class Baichuan:
                         self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
+        elif cmd_id == 464:  # network link type
+            self._get_value_from_xml_element(root, "net_type")
+
         elif cmd_id == 527:  # crossline detection
             self._parse_smart_ai_settings(root, channels, "crossline")
         elif cmd_id == 529:  # intrusion detection
@@ -1254,7 +1257,7 @@ class Baichuan:
         """Get the wifi ssid and link type"""
         mess = await self.send(cmd_id=116, channel=channel, body=xmls.WifiSSID)
         root = XML.fromstring(mess)
-        value = self._get_value_from_xml_element(root, "ssid", str)
+        self._get_value_from_xml_element(root, "ssid", str)
 
     async def get_wifi_signal(self, channel: int | None = None) -> None:
         """Get the wifi signal of the host"""
