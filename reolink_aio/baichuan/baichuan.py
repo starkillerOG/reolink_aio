@@ -671,7 +671,7 @@ class Baichuan:
                         self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
-        elif cmd_id == 464:  # network link type
+        elif cmd_id == 464:  # network link type wire/wifi
             self._get_value_from_xml_element(root, "net_type")
 
         elif cmd_id == 527:  # crossline detection
@@ -1013,6 +1013,9 @@ class Baichuan:
                 self.capabilities[channel].add("floodLight")
             if (self.api_version("ledCtrl", channel) >> 12) & 1:  # 13 th bit (4096) shift 12
                 self.capabilities[channel].add("ir_brightness")
+
+            if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
+                self.capabilities[channel].add("pre_record")
 
             coroutines.append(("cry", channel, self.get_cry_detection(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
