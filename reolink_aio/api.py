@@ -869,6 +869,16 @@ class Host:
         channel = next(iter(self._recording_range))
         return self._recording_range[channel].get("Rec", {}).get("packTime", [])
 
+    def post_recording_time(self, channel: int) -> str:
+        if channel not in self._recording_settings:
+            return ""
+        return self._recording_settings[channel].get("Rec", {}).get("postRec", "")
+
+    def post_recording_time_list(self, channel: int) -> list[str]:
+        if channel not in self._recording_range:
+            return []
+        return self._recording_range[channel].get("Rec", {}).get("postRec", [])
+
     def manual_record_enabled(self, channel: int) -> bool:
         if channel not in self._manual_record_settings:
             return False
@@ -1677,6 +1687,9 @@ class Host:
 
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
                 self._capabilities[channel].add("recording")
+
+            if self.post_recording_time_list(channel) and self.post_recording_time(channel):
+                self._capabilities[channel].add("post_rec_time")
 
             if channel in self._manual_record_settings and "enable" in self._recording_settings[channel]["Rec"]:
                 self._capabilities[channel].add("manual_record")
@@ -4707,6 +4720,23 @@ class Host:
             return
 
         body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": {"packTime": value}}}]
+        await self.send_setting(body)
+
+    async def set_post_recording_time(self, channel: int, value: str) -> None:
+        """Set the post recording time."""
+        if not self.supported(channel, "post_rec_time"):
+            raise NotSupportedError(f"set_post_recording_time: post recording time on {self.camera_name(channel)} is not available")
+        if value not in self.post_recording_time_list(channel):
+            raise InvalidParameterError(f"set_post_recording_time: value {value} not in {self.post_recording_time_list(channel)}")
+
+        params = self._recording_settings[channel]
+        params["Rec"]["postRec"] = value
+        if self.api_version("GetRec") >= 1:
+            body = [{"cmd": "SetRecV20", "action": 0, "param": params}]
+            await self.send_setting(body)
+            return
+
+        body = [{"cmd": "SetRec", "action": 0, "param": params}]
         await self.send_setting(body)
 
     async def set_manual_record(self, channel: int, enable: bool) -> None:
