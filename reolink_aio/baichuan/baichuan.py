@@ -1050,8 +1050,8 @@ class Baichuan:
                     raise result
 
                 if cmd_id == 10:  # two way audio
-                    mess = XML.fromstring(result)
-                    for audio in mess.findall(".//audioStreamMode"):
+                    root = XML.fromstring(result)
+                    for audio in root.findall(".//audioStreamMode"):
                         if audio.text == "mixAudioStream":
                             self.capabilities[channel].add("two_way_audio")
                 if cmd_id == 483:  # hardwired chime
@@ -1323,7 +1323,10 @@ class Baichuan:
     async def get_pre_recording(self, channel: int) -> None:
         """Get the pre recording settings"""
         mess = await self.send(cmd_id=594, channel=channel)
-        self._pre_record_state[channel] = self._get_keys_from_xml(mess, {"enable": ("enabled", int), "value": ("batteryStop", int), "preTime": ("preTime", int), "fps": ("fps", int), "usePlanList": ("schedule", int)})
+        self._pre_record_state[channel] = self._get_keys_from_xml(
+            mess,
+            {"enable": ("enabled", int), "value": ("batteryStop", int), "preTime": ("preTime", int), "fps": ("fps", int), "usePlanList": ("schedule", int)},
+        )
 
     async def set_pre_recording(self, channel: int, enabled: bool | None = None, time: int | None = None, fps: int | None = None, battery_stop: int | None = None) -> None:
         """Set the pre recording settings"""
