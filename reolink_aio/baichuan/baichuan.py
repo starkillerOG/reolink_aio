@@ -996,6 +996,9 @@ class Baichuan:
         for channel in self.http_api._channels:
             self.capabilities.setdefault(channel, set())
 
+            if self.http_api.api_version("talk", channel) > 0:
+                coroutines.append((10, channel, self.send(cmd_id=10, channel=channel)))
+
             if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
                 coroutines.append(("privacy_mode", channel, self.get_privacy_mode(channel)))  # capability added in get_privacy_mode
 
@@ -1045,6 +1048,11 @@ class Baichuan:
                 if isinstance(result, BaseException):
                     raise result
 
+                if cmd_id == 10:  # two way audio
+                    mess = XML.fromstring(result)
+                    for audio in mess.findall(".//audioStreamMode"):
+                        if audio.text == "mixAudioStream":
+                            self.capabilities[channel].add("two_way_audio")
                 if cmd_id == 483:  # hardwired chime
                     self.capabilities[channel].add("hardwired_chime")
                 if cmd_id == 527:  # crossline detection
