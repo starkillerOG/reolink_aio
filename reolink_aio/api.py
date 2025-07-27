@@ -3285,7 +3285,7 @@ class Host:
 
         channel_str = f"{channel + 1:02d}"
 
-        if stream == "autotrack":
+        if stream == "autotrack" or self.baichuan_only:
             url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/Preview_{channel_str}_{stream}"
             if not check:
                 return url
@@ -3361,11 +3361,11 @@ class Host:
 
         if stream not in ["main", "sub", "ext", "autotrack_sub", "autotrack_main", "telephoto_sub", "telephoto_main"]:
             return None
-        if self.protocol == "rtmp":
+        if self.protocol == "rtmp" and not self.baichuan_only:
             return self.get_rtmp_stream_source(channel, stream)
-        if self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub"]:
+        if (self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub"]) and not self.baichuan_only:
             return self.get_flv_stream_source(channel, stream)
-        if self.protocol == "rtsp":
+        if self.protocol == "rtsp" or self.baichuan_only:
             return await self.get_rtsp_stream_source(channel, stream, check)
         return None
 

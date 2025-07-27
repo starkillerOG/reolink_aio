@@ -984,7 +984,14 @@ class Baichuan:
                     self._scenes[-1] = "off"
                     self._parse_xml(cmd_id, result)
 
-        # Channel Capabilities
+        # Stream capabilities
+        for channel in self.http_api._stream_channels:
+            self.capabilities.setdefault(channel, set())
+
+            if self.api_version("rtsp") > 0:
+                self.capabilities[channel].add("stream")
+
+        # Channel capabilities
         coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._channels:
             self.capabilities.setdefault(channel, set())
