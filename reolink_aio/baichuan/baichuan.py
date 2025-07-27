@@ -122,6 +122,7 @@ class Baichuan:
         self._hardwired_chime_settings: dict[int, dict[str, str | int]] = {}
         self._ir_brightness: dict[int, int] = {}
         self._cry_sensitivity: dict[int, int] = {}
+        self._pre_record_state: dict[int, dict] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -1151,6 +1152,9 @@ class Baichuan:
             if self.supported(channel, "ai_cry") and inc_cmd("299", channel):
                 coroutines.append(self.get_cry_detection(channel))
 
+            if self.supported(channel, "pre_record") and inc_cmd("594", channel):
+                coroutines.append(self.get_pre_recording(channel))
+
         if coroutines:
             results = await asyncio.gather(*coroutines, return_exceptions=True)
             for result in results:
@@ -1315,6 +1319,36 @@ class Baichuan:
         mess = await self.send(cmd_id=296, channel=channel)
         data = self._get_keys_from_xml(mess, ["stat"])
         self._day_night_state[channel] = data["stat"]
+
+    async def get_pre_recording(self, channel: int) -> None:
+        """Get the pre recording settings"""
+        mess = await self.send(cmd_id=594, channel=channel)
+        self._pre_record_state[channel] = self._get_keys_from_xml(mess, {"enable": ("enabled", int), "value": ("batteryStop", int), "preTime": ("preTime", int), "fps": ("fps", int), "usePlanList": ("schedule", int)})
+
+    async def set_pre_recording(self, channel: int, enabled: bool | None = None, time: int | None = None, fps: int | None = None, battery_stop: int | None = None) -> None:
+        """Set the pre recording settings"""
+        await self.get_pre_recording(channel)
+        data = self._pre_record_state[channel]
+
+        enable_str = data["enabled"]
+        if enabled is not None:
+            enable_str = "1" if enabled else "0"
+        if time is None:
+            time = data["preTime"]
+        if fps is None:
+            fps = data["fps"]
+        if battery_stop is None:
+            battery_stop = data["batteryStop"]
+
+        xml = xmls.PreRecord.format(
+            enable=enable_str,
+            batteryStop=battery_stop,
+            preTime=time,
+            fps=fps,
+            schedule=data["schedule"],
+        )
+        await self.send(cmd_id=595, channel=channel, body=xml)
+        await self.get_pre_recording(channel)
 
     async def get_privacy_mode(self, channel: int = 0) -> bool | None:
         """Get the privacy mode state"""
@@ -1980,6 +2014,18 @@ class Baichuan:
                 return None
             channel = 0
         return self._privacy_mode.get(channel)
+
+    def pre_record_enabled(self, channel: int) -> bool:
+        return self._pre_record_state.get(channel, {}).get("enabled") == 1
+
+    def pre_record_time(self, channel: int) -> int | None:
+        return self._pre_record_state.get(channel, {}).get("preTime")
+
+    def pre_record_fps(self, channel: int) -> int | None:
+        return self._pre_record_state.get(channel, {}).get("fps")
+
+    def pre_record_battery_stop(self, channel: int) -> int | None:
+        return self._pre_record_state.get(channel, {}).get("batteryStop")
 
     def day_night_state(self, channel: int) -> str | None:
         """known values: day, night, led_day"""

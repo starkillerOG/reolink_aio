@@ -275,3 +275,15 @@ WifiSSID = """
 <scanAp>0</scanAp>
 </Wifi>
 </body>"""
+
+PreRecord = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<longRunModeCfg version="1.1">
+<enable>{enable}</enable>
+<value>{batteryStop}</value>
+<preTime>{preTime}</preTime>
+<usePlanList>{schedule}</usePlanList>
+<fps>{fps}</fps>
+</longRunModeCfg>
+</body>"""
