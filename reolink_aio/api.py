@@ -1712,9 +1712,7 @@ class Host:
                 self._capabilities[channel].add("status_led")  # internal use only
                 self._capabilities[channel].add("doorbell_led")
 
-            if self.api_version("GetWhiteLed") > 0 and (
-                self.api_version("floodLight", channel) > 0 or self.api_version("supportFLswitch", channel) > 0 or self.api_version("supportFLBrightness", channel) > 0
-            ):
+            if self.api_version("GetWhiteLed") > 0 and (self.api_version("floodLight", channel) > 0 or self.api_version("supportFLswitch", channel) > 0):
                 # floodlight == spotlight == WhiteLed
                 self._capabilities[channel].add("floodLight")
 
