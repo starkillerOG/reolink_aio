@@ -28,7 +28,7 @@ import aiohttp
 
 from . import templates, typings
 from .baichuan import Baichuan, PortType, DEFAULT_BC_PORT
-from .const import WAKING_COMMANDS, UNKNOWN
+from .const import NONE_WAKING_COMMANDS, UNKNOWN
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
@@ -2077,19 +2077,17 @@ class Host:
             wake_ch = [ch for ch in wake if wake[ch] and self.supported(ch, "battery")]
             _LOGGER.debug("Host %s:%s: Waking battery camera channels %s for the get_states update", self._host, self._port, wake_ch)
 
-        def inc_host_cmd(cmd: str) -> bool:
-            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd not in WAKING_COMMANDS)
-
-        def inc_cmd(cmd: str, channel: int) -> bool:
-            return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake[channel] or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
-            )
-
         def inc_wake(cmd: str, channel: int) -> bool:
-            return wake[channel] or cmd not in WAKING_COMMANDS or not self.supported(channel, "battery")
+            return wake[channel] or cmd in NONE_WAKING_COMMANDS or not self.supported(channel, "battery")
 
         def inc_host_wake(cmd: str) -> bool:
-            return all_wake or not any_battery or cmd not in WAKING_COMMANDS
+            return all_wake or not any_battery or cmd in NONE_WAKING_COMMANDS
+
+        def inc_host_cmd(cmd: str) -> bool:
+            return (cmd in cmd_list or not cmd_list) and inc_host_wake(cmd)
+
+        def inc_cmd(cmd: str, channel: int) -> bool:
+            return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and inc_wake(cmd, channel)
 
         for channel in self._stream_channels:
             ch_body = []

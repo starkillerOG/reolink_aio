@@ -14,7 +14,7 @@ from Cryptodome.Cipher import AES
 
 from . import xmls
 from .tcp_protocol import BaichuanTcpClientProtocol
-from ..const import WAKING_COMMANDS, UNKNOWN
+from ..const import NONE_WAKING_COMMANDS, UNKNOWN
 from ..typings import cmd_list_type, VOD_trigger, VOD_file
 from ..software_version import SoftwareVersion
 from ..exceptions import (
@@ -1122,11 +1122,11 @@ class Baichuan:
         all_wake = all(wake.values())
 
         def inc_host_cmd(cmd: str) -> bool:
-            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd not in WAKING_COMMANDS)
+            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd in NONE_WAKING_COMMANDS)
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake[channel] or cmd not in WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
+                wake[channel] or cmd in NONE_WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
             )
 
         coroutines: list[Coroutine] = []
