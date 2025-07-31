@@ -116,6 +116,7 @@ class Baichuan:
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
         self._network_info: dict[int | None, dict[str, str]] = {}
+        self._wifi_connection: dict[int, bool] = {}
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
@@ -1132,7 +1133,7 @@ class Baichuan:
         coroutines: list[Coroutine] = []
         if self.supported(None, "scenes") and inc_host_cmd("GetScene"):
             coroutines.append(self.get_scene())
-        if self.http_api.supported(None, "wifi") and self.http_api.wifi_connection and inc_host_cmd("115"):
+        if self.http_api.supported(None, "wifi") and self.http_api.wifi_connection() and inc_host_cmd("115"):
             coroutines.append(self.get_wifi_signal())
 
         for channel in self.http_api._channels:
@@ -1248,6 +1249,11 @@ class Baichuan:
             mess_link = await self.send(cmd_id=93)
         else:
             mess = await self.send(cmd_id=76, channel=channel)
+            if (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
+                try:
+                    await self.get_wifi_signal(channel)
+                except ReolinkError as err:
+                    _LOGGER.debug(err)
         self._network_info[channel] = self._get_keys_from_xml(mess, ["ip", "mac"])
 
         if channel is None:
@@ -1256,6 +1262,13 @@ class Baichuan:
                 self.http_api._local_link.setdefault("LocalLink", {})["activeLink"] = link
             if (mac := self.mac_address()) is not None:
                 self.http_api._mac_address = mac
+        else:
+            signal = self.http_api.wifi_signal(channel)
+            if signal is not None:
+                if signal == 100:
+                    self._wifi_connection[channel] = False
+                else:
+                    self._wifi_connection[channel] = True
 
         return self._network_info[channel]
 
@@ -2007,6 +2020,9 @@ class Baichuan:
             # IP of channel equals IP of host, host could not retrieve IP of channel
             return UNKNOWN
         return ip
+
+    def wifi_connection(self, channel: int) -> bool:
+        return self._wifi_connection.get(channel, True)
 
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")

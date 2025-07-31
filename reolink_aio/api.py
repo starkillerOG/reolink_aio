@@ -367,9 +367,10 @@ class Host:
     def uid(self) -> str:
         return self._uid.get(None, UNKNOWN)
 
-    @property
-    def wifi_connection(self) -> bool:
+    def wifi_connection(self, channel: int | None = None) -> bool:
         """LAN or Wifi"""
+        if channel is not None:
+            return self.baichuan.wifi_connection(channel)
         return self._local_link.get("LocalLink", {}).get("activeLink", "LAN") != "LAN"
 
     def wifi_signal(self, channel: int | None = None) -> int | None:
@@ -1670,7 +1671,7 @@ class Host:
                 if self.api_version("upgrade") >= 2:
                     self._capabilities[channel].add("update")
 
-            if self.is_nvr and self.api_version("supportWiFi", channel) > 0:
+            if self.is_nvr and self.wifi_connection(channel) and (self.api_version("supportWiFi", channel) > 0 or self._is_hub):
                 self._capabilities[channel].add("wifi")
 
             if self.api_version("supportWebhook", channel) > 0:
