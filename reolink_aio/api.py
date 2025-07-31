@@ -2746,15 +2746,13 @@ class Host:
                         self._sw_hardware_id[ch] = device["id"]
                         self._sw_model_id[ch] = device["dlProduct"]["id"]
 
+        sw_model_id = self._sw_model_id.get(channel, 0)
+        sw_hardware_id = self._sw_hardware_id.get(channel, 0)
+        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={sw_model_id}&hardwareVersion={sw_hardware_id}&lang=en"
+        json_data = await self.send_reolink_com(request_URL)
+
         if channel not in self._sw_hardware_id or channel not in self._sw_model_id:
             raise UnexpectedDataError(f"Could not find model '{ch_mod}' hardware '{ch_hw}' in list from reolink.com")
-
-        if f"{ch_mod}-{ch_hw}" in self._latest_sw_model_version and now - self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"].last_check < 300:
-            # this hardware-model was checked less than 5 min ago, return previous result
-            return self._latest_sw_model_version[f"{ch_mod}-{ch_hw}"]
-
-        request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={self._sw_model_id[channel]}&hardwareVersion={self._sw_hardware_id[channel]}&lang=en"
-        json_data = await self.send_reolink_com(request_URL)
 
         ch_hw_match = strip_model_str(ch_hw)
         ch_mod_match = strip_model_str(ch_mod)
