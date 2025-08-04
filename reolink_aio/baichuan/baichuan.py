@@ -1029,6 +1029,11 @@ class Baichuan:
             if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
                 self.capabilities[channel].add("pre_record")
 
+            if (self.api_version("audioVersion", channel) >> 2) & 1 and (self.api_version("audioVersion", channel) >> 4) & 1:  # 3 th bit (4) shift 2 and 5 th bit (16) shift 4
+                self.capabilities[channel].add("siren_play")
+                #self.capabilities[channel].add("siren")
+                #self.capabilities[channel].add("audio")
+
             coroutines.append(("cry", channel, self.get_cry_detection(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
             # Fallback for missing information
