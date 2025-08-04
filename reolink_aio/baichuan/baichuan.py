@@ -1518,7 +1518,7 @@ class Baichuan:
         try:
             await self.send(cmd_id=263, channel=channel, body=xml)
         except ReolinkError:
-            if alarm_mode != "manul":
+            if alarm_mode != "manul" or kwargs.get("manual_switch") != 1:
                 raise
             _LOGGER.debug("Baichaun host {self._host}: AudioAlarmPlay failed to play manual, using times 2 instead")
             xml = xmls.SirenTimes.format(channel=channel, times=2)
