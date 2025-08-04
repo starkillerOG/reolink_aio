@@ -2749,6 +2749,8 @@ class Host:
 
         sw_model_id = self._sw_model_id.get(channel, 0)
         sw_hardware_id = self._sw_hardware_id.get(channel, 0)
+        if sw_model_id == 0 and sw_hardware_id == 0 and not self.supported(channel, "battery"):
+            sw_hardware_id = 1
         request_URL = f"https://reolink.com/wp-json/reo-v2/download/firmware/?dlProductId={sw_model_id}&hardwareVersion={sw_hardware_id}&lang=en"
         json_data = await self.send_reolink_com(request_URL)
 
