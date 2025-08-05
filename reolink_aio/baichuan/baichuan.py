@@ -1032,8 +1032,8 @@ class Baichuan:
             if (self.api_version("audioVersion", channel) >> 2) & 1 and (self.api_version("audioVersion", channel) >> 4) & 1:  # 3 th bit (4) shift 2 and 5 th bit (16) shift 4
                 self.capabilities[channel].add("siren_play")
                 self.capabilities[channel].add("volume")
-                #self.capabilities[channel].add("siren")
-                #self.capabilities[channel].add("audio")
+                # self.capabilities[channel].add("siren")
+                # self.capabilities[channel].add("audio")
 
             coroutines.append(("cry", channel, self.get_cry_detection(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
@@ -1255,7 +1255,7 @@ class Baichuan:
             mess_link = await self.send(cmd_id=93)
         else:
             mess = await self.send(cmd_id=76, channel=channel)
-            if (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
+            if self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub:
                 try:
                     await self.get_wifi_signal(channel)
                 except ReolinkError as err:
@@ -1512,9 +1512,9 @@ class Baichuan:
         """Sound the siren"""
         if alarm_mode == "times":
             xml = xmls.SirenTimes.format(channel=channel, times=kwargs.get("times", 1))
-        else: # "manul"
+        else:  # "manul"
             xml = xmls.SirenManual.format(channel=channel, enable=kwargs.get("manual_switch", 1))
-        
+
         try:
             await self.send(cmd_id=263, channel=channel, body=xml)
         except ReolinkError:
@@ -1525,12 +1525,12 @@ class Baichuan:
             await self.send(cmd_id=263, channel=channel, body=xml)
 
     @http_cmd("GetAudioCfg")
-    async def GetAudioCfg(self, channel: int, **kwargs) -> None:
+    async def GetAudioCfg(self, channel: int, **_kwargs) -> None:
         """Get the audio settings"""
         mess = await self.send(cmd_id=264, channel=channel)
         root = XML.fromstring(mess)
         data = self._get_keys_from_xml(root, {"volume": ("volume", int)})
-        
+
         self.http_api._audio_settings.setdefault(channel, {}).setdefault("AudioCfg", {}).update(data)
 
     @http_cmd("SetAudioCfg")
