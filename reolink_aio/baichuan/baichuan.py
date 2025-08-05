@@ -1031,6 +1031,7 @@ class Baichuan:
 
             if (self.api_version("audioVersion", channel) >> 2) & 1 and (self.api_version("audioVersion", channel) >> 4) & 1:  # 3 th bit (4) shift 2 and 5 th bit (16) shift 4
                 self.capabilities[channel].add("siren_play")
+                self.capabilities[channel].add("volume")
                 #self.capabilities[channel].add("siren")
                 #self.capabilities[channel].add("audio")
 
@@ -1509,7 +1510,6 @@ class Baichuan:
     @http_cmd("AudioAlarmPlay")
     async def AudioAlarmPlay(self, channel: int, alarm_mode: str, **kwargs) -> None:
         """Sound the siren"""
-        
         if alarm_mode == "times":
             xml = xmls.SirenTimes.format(channel=channel, times=kwargs.get("times", 1))
         else: # "manul"
@@ -1523,6 +1523,33 @@ class Baichuan:
             _LOGGER.debug("Baichaun host {self._host}: AudioAlarmPlay failed to play manual, using times 2 instead")
             xml = xmls.SirenTimes.format(channel=channel, times=2)
             await self.send(cmd_id=263, channel=channel, body=xml)
+
+    @http_cmd("GetAudioCfg")
+    async def GetAudioCfg(self, channel: int, **kwargs) -> None:
+        """Get the audio settings"""
+        mess = await self.send(cmd_id=264, channel=channel)
+        root = XML.fromstring(mess)
+        data = self._get_keys_from_xml(root, {"volume": ("volume", int)})
+        
+        self.http_api._audio_settings.setdefault(channel, {}).setdefault("AudioCfg", {}).update(data)
+
+    @http_cmd("SetAudioCfg")
+    async def SetAudioCfg(self, **kwargs) -> None:
+        """Set the audio settings"""
+        param = kwargs["AudioCfg"]
+        channel = param["channel"]
+
+        mess = await self.send(cmd_id=264, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (volume := param.get("volume")) is not None and (xml_volume := xml_body.find(".//volume")) is not None:
+            xml_volume.text = str(volume)
+        if (visitorLoudspeaker := param.get("visitorLoudspeaker")) is not None and (xml_visitorLoudspeaker := xml_body.find(".//visitorLoudspeaker")) is not None:
+            xml_visitorLoudspeaker.text = str(visitorLoudspeaker)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=265, channel=channel, body=xml)
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
