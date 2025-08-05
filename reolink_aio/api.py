@@ -899,7 +899,7 @@ class Host:
         return self._privacy_mask.get(channel, {}).get("enable") == 1
 
     def whiteled_state(self, channel: int) -> bool:
-        return channel in self._whiteled_settings and self._whiteled_settings[channel]["WhiteLed"]["state"] == 1
+        return self._whiteled_settings.get(channel, {}).get("WhiteLed", {}).get("state", 0) == 1
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
         if channel not in self._whiteled_settings:
