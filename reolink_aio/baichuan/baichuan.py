@@ -112,6 +112,7 @@ class Baichuan:
         self._scenes: dict[int, str] = {}
         self._active_scene: int = -1
         self._day_night_state: dict[int, str] = {}
+        self._dev_type: str = ""
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -875,12 +876,13 @@ class Baichuan:
             dev_type_ob = dev_info.find("type")
             dev_type_info_ob = dev_info.find("typeInfo")
             if dev_type_ob is not None and dev_type_info_ob is not None:
-                dev_type = dev_type_ob.text
+                if dev_type_ob.text is not None:
+                    self._dev_type = dev_type_ob.text
                 dev_type_info = dev_type_info_ob.text
                 if not self.http_api._is_nvr:
-                    self.http_api._is_nvr = dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
+                    self.http_api._is_nvr = self._dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
                 if not self.http_api._is_hub:
-                    self.http_api._is_hub = dev_type == "homehub" or dev_type_info == "HOMEHUB"
+                    self.http_api._is_hub = self._dev_type == "homehub" or dev_type_info == "HOMEHUB"
 
             data = self._get_keys_from_xml(dev_info, {"sleep": ("sleep", str), "channelNum": ("channelNum", int)})
             # privacy mode
@@ -1035,6 +1037,9 @@ class Baichuan:
                 # self.capabilities[channel].add("siren")
             if (audioVersion >> 4) & 1:  # 5 th bit (16) shift 4
                 self.capabilities[channel].add("volume")
+
+            if self._dev_type == "light":
+                self.capabilities[channel].add("PIR")
 
             coroutines.append(("cry", channel, self.get_cry_detection(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
@@ -1700,6 +1705,34 @@ class Baichuan:
             await self.set_port_enabled(PortType.rtmp, enable_rtmp == 1)
         if enable_rtsp is not None:
             await self.set_port_enabled(PortType.rtsp, enable_rtsp == 1)
+
+    @http_cmd("GetPirInfo")
+    async def GetPirInfo(self, channel: int, **_kwargs) -> None:
+        """Get the Pir settings"""
+        mess = await self.send(cmd_id=212, channel=channel)
+        root = XML.fromstring(mess)
+        data = self._get_keys_from_xml(root, {"enable": ("enable", int), "sensiValue": ("sensitive", int), "reduceFalseAlarm": ("reduceAlarm", int)})
+        self.http_api._pir.setdefault(channel, {}).update(data)
+
+    @http_cmd("SetPirInfo")
+    async def SetPirInfo(self, **kwargs) -> None:
+        """Set the Pir settings"""
+        param = kwargs["pirInfo"]
+        channel = param["channel"]
+
+        mess = await self.send(cmd_id=212, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (enable := param.get("enable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+        if (sens := param.get("sensitive")) is not None and (xml_sens := xml_body.find(".//sensiValue")) is not None:
+            xml_sens.text = str(sens)
+        if (reduce_alarm := param.get("reduceAlarm")) is not None and (xml_reduce_alarm := xml_body.find(".//reduceFalseAlarm")) is not None:
+            xml_reduce_alarm.text = str(reduce_alarm)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=213, channel=channel, body=xml)
 
     async def get_scene_info(self, scene_id: int) -> None:
         """Get the name of a scene"""
