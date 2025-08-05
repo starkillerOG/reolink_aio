@@ -972,6 +972,8 @@ class Baichuan:
         host_coroutines.append(("network_info", self.get_network_info()))
         if self.api_version("sceneModeCfg") > 0:
             host_coroutines.append((603, self.send(cmd_id=603)))
+        if self.api_version("wifi") > 0:
+            self.capabilities[None].add("wifi")
 
         if host_coroutines:
             results = await asyncio.gather(*[cor[1] for cor in host_coroutines], return_exceptions=True)
