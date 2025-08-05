@@ -1764,6 +1764,36 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=216, channel=channel, body=xml)
 
+    @http_cmd(["GetPush", "GetPushV20"])
+    async def GetPush(self, channel: int, **_kwargs) -> None:
+        """Get the push settings"""
+        mess = await self.send(cmd_id=219, channel=channel)
+        root = XML.fromstring(mess)
+        data = self._get_keys_from_xml(root, {"enable": ("enable", int)})
+        data["scheduleEnable"] = data["enable"]
+        data["schedule"] = {"enable": data["enable"]}
+        self.http_api._push_settings.setdefault(channel, {}).setdefault("Push", {}).update(data)
+
+    @http_cmd(["SetPush", "SetPushV20"])
+    async def SetPush(self, **kwargs) -> None:
+        """Get the push settings"""
+        param = kwargs["Push"]
+        channel = param.get("schedule", {}).get("channel")
+
+        mess = await self.send(cmd_id=219, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (enable := param.get("enable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+        if (enable := param.get("schedule", {}).get("enable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+        if (enable := param.get("scheduleEnable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=218, channel=channel, body=xml)
+
     async def get_scene_info(self, scene_id: int) -> None:
         """Get the name of a scene"""
         xml = xmls.GetSceneInfo.format(scene_id=scene_id)
