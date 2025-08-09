@@ -1619,6 +1619,7 @@ class Host:
 
         if self.api_version("GetDeviceAudioCfg") > 0:
             self._capabilities["Host"].add("hub_audio")
+            self._capabilities["Host"].add("siren_play")
 
         if self.hdd_info:
             self._capabilities["Host"].add("hdd")
@@ -5100,8 +5101,8 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_siren(self, channel: int, enable: bool = True, duration: int | None = 2) -> None:
-        if channel not in self._channels:
+    async def set_siren(self, channel: int | None = None, enable: bool = True, duration: int | None = 2) -> None:
+        if channel not in self._channels and channel is not None:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
         if duration is not None and not isinstance(duration, int):
             raise InvalidParameterError(f"set_siren: duration '{duration}' is not integer")
@@ -5113,20 +5114,23 @@ class Host:
                 params = {
                     "alarm_mode": "times",
                     "times": duration,
-                    "channel": channel,
                 }
             else:
                 params = {
                     "alarm_mode": "manul",
                     "manual_switch": 1,
-                    "channel": channel,
                 }
         else:
             params = {
                 "alarm_mode": "manul",
                 "manual_switch": 0,
-                "channel": channel,
             }
+
+        if channel is not None:
+            params["channel"] = channel
+        else:
+            await self.baichuan.AudioAlarmPlay(**params)
+            return
 
         body = [
             {

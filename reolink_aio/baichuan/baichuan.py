@@ -1516,12 +1516,16 @@ class Baichuan:
             await self.get_status_led(channel)
 
     @http_cmd("AudioAlarmPlay")
-    async def AudioAlarmPlay(self, channel: int, alarm_mode: str, **kwargs) -> None:
+    async def AudioAlarmPlay(self, channel: int | None = None, alarm_mode: str = "times", **kwargs) -> None:
         """Sound the siren"""
-        if alarm_mode == "times":
+        if channel is not None and alarm_mode == "times":
             xml = xmls.SirenTimes.format(channel=channel, times=kwargs.get("times", 1))
-        else:  # "manul"
+        elif channel is not None:  # "manul"
             xml = xmls.SirenManual.format(channel=channel, enable=kwargs.get("manual_switch", 1))
+        elif alarm_mode == "times":
+            xml = xmls.SirenHubTimes.format(times=kwargs.get("times", 1))
+        else:  # "manul"
+            xml = xmls.SirenHubManual.format(enable=kwargs.get("manual_switch", 1))
 
         try:
             await self.send(cmd_id=263, channel=channel, body=xml)
@@ -1529,7 +1533,10 @@ class Baichuan:
             if alarm_mode != "manul" or kwargs.get("manual_switch") != 1:
                 raise
             _LOGGER.debug("Baichaun host {self._host}: AudioAlarmPlay failed to play manual, using times 2 instead")
-            xml = xmls.SirenTimes.format(channel=channel, times=2)
+            if channel is None:
+                xml = xmls.SirenHubTimes.format(times=2)
+            else:
+                xml = xmls.SirenTimes.format(channel=channel, times=2)
             await self.send(cmd_id=263, channel=channel, body=xml)
 
     @http_cmd("GetAudioCfg")

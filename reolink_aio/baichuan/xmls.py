@@ -311,3 +311,25 @@ SirenTimes = """
 <onOff>1</onOff>
 </audioPlayInfo>
 </body>"""
+
+SirenHubManual = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<audioPlayInfo version="1.1">
+<playMode>2</playMode>
+<playDuration>10</playDuration>
+<playTimes>1</playTimes>
+<onOff>{enable}</onOff>
+</audioPlayInfo>
+</body>"""
+
+SirenHubTimes = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<audioPlayInfo version="1.1">
+<playMode>0</playMode>
+<playDuration>10</playDuration>
+<playTimes>{times}</playTimes>
+<onOff>1</onOff>
+</audioPlayInfo>
+</body>"""
