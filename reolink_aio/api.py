@@ -4102,7 +4102,13 @@ class Host:
             await self.get_state("GetNetPort")
 
         if self._netport_settings is None:
-            raise NotSupportedError(f"set_net_port: failed to retrieve current NetPort settings from {self._host}:{self._port}")
+            if enable_onvif is not None:
+                await self.baichuan.set_port_enabled(PortType.onvif, enable_onvif)
+            if enable_rtmp is not None:
+                await self.baichuan.set_port_enabled(PortType.rtmp, enable_rtmp)
+            if enable_rtsp is not None:
+                await self.baichuan.set_port_enabled(PortType.rtsp, enable_rtsp)
+            return
 
         body: typings.reolink_json = [{"cmd": "SetNetPort", "param": self._netport_settings}]
 

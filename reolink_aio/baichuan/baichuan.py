@@ -1179,7 +1179,8 @@ class Baichuan:
                 if isinstance(result, BaseException):
                     raise result
 
-    async def get_ports(self) -> dict[str, dict[str, int | bool]]:
+    @http_cmd("GetNetPort")
+    async def get_ports(self, **_kwargs) -> dict[str, dict[str, int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
         mess = await self.send(cmd_id=37)
 
@@ -1198,10 +1199,35 @@ class Baichuan:
             _LOGGER.warning("Baichuan host %s: baichuan port changed from %s to %s", self._host, self.port, bc_port)
             self.port = bc_port
 
+        if self.rtsp_port is not None:
+            self.http_api._rtsp_port = self.rtsp_port
+        if self.rtmp_port is not None:
+            self.http_api._rtmp_port = self.rtmp_port
+        if self.onvif_port is not None:
+            self.http_api._onvif_port = self.onvif_port
+            self.http_api._subscribe_url = f"http://{self.http_api._host}:{self.onvif_port}/onvif/event_service"
+        if self.rtsp_enabled is not None:
+            self.http_api._rtsp_enabled = self.rtsp_enabled
+        if self.rtmp_enabled is not None:
+            self.http_api._rtmp_enabled = self.rtmp_enabled
+        if self.onvif_enabled is not None:
+            self.http_api._onvif_enabled = self.onvif_enabled
+
         return self._ports
 
-    async def set_port_enabled(self, port: PortType, enable: bool) -> None:
+    @http_cmd("SetNetPort")
+    async def set_port_enabled(self, port: PortType | None = None, enable: bool | None = None, **kwargs) -> None:
         """set the HTTP(S)/RTSP/RTMP/ONVIF port"""
+        if port is None or enable is None:
+            net = kwargs.get("NetPort", {})
+            if (val := net.get("onvifEnable")) is not None:
+                await self.set_port_enabled(PortType.onvif, val == 1)
+            if (val := net.get("rtmpEnable")) is not None:
+                await self.set_port_enabled(PortType.rtmp, val == 1)
+            if (val := net.get("rtspEnable")) is not None:
+                await self.set_port_enabled(PortType.rtsp, val == 1)
+            return
+
         xml_body = XML.Element("body")
         main = XML.SubElement(xml_body, port.value.capitalize() + "Port", version="1.1")
         sub = XML.SubElement(main, "enable")
