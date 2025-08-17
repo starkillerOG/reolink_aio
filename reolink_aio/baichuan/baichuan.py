@@ -703,8 +703,8 @@ class Baichuan:
                     continue
                 channels.add(channel)
                 state = self._get_value_from_xml_element(item, "stat", int)
-                if state is not None and channel in self.http_api._whiteled_settings:
-                    self.http_api._manual_record_settings[channel]["Rec"]["enable"] = state
+                if state is not None:
+                    self.http_api._manual_record_settings.setdefault(channel, {}).setdefault("Rec", {})["enable"] = state
                     _LOGGER.debug("Reolink %s TCP event channel %s, Manual record: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 603:  # sceneListID
