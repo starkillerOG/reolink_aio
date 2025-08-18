@@ -24,8 +24,8 @@ from zipfile import ZipFile
 import aiohttp
 from aiortsp.rtsp.connection import RTSPConnection  # type: ignore
 from aiortsp.rtsp.errors import RTSPError  # type: ignore
-from orjson import JSONDecodeError
-from orjson import dumps as json_dumps
+from orjson import JSONDecodeError  # pylint: disable=no-name-in-module
+from orjson import dumps as json_dumps  # pylint: disable=no-name-in-module
 from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 from . import templates, typings
