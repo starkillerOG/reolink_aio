@@ -1,8 +1,9 @@
 """Reolink Baichuan constants and utility functions"""
 
+from collections.abc import Callable
 from enum import Enum
 from hashlib import md5
-from collections.abc import Callable
+
 from ..exceptions import InvalidParameterError
 
 DEFAULT_BC_PORT = 9000

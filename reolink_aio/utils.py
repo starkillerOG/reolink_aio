@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, tzinfo as _TzInfo
-from typing import Optional, TYPE_CHECKING
+from datetime import datetime
+from datetime import tzinfo as _TzInfo
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from .typings import reolink_json

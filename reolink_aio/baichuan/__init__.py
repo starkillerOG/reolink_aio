@@ -1,3 +1,3 @@
 """Reolink Baichuan API."""
 
-from .baichuan import Baichuan, PortType, DEFAULT_BC_PORT
+from .baichuan import DEFAULT_BC_PORT, Baichuan, PortType

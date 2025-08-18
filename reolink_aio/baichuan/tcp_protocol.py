@@ -1,17 +1,16 @@
 """TCP protocol and transport for the Reolink Baichuan API"""
 
-import logging
 import asyncio
-
-from time import time as time_now
+import logging
 from collections.abc import Callable
+from time import time as time_now
 
 from ..exceptions import (
     ApiError,
-    UnexpectedDataError,
-    ReolinkConnectionError,
     InvalidContentTypeError,
+    ReolinkConnectionError,
     ReolinkError,
+    UnexpectedDataError,
 )
 from .util import HEADER_MAGIC
 

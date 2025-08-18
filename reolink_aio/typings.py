@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dtc
 import logging
 from enum import IntFlag, auto
 from typing import (
@@ -16,10 +17,10 @@ from typing import (
     Optional,
     TypedDict,
 )
-import datetime as dtc
-from typing_extensions import SupportsIndex
 
 from aiohttp import StreamReader
+from typing_extensions import SupportsIndex
+
 from .utils import reolink_time_to_datetime, to_reolink_time_id
 
 _LOGGER = logging.getLogger(__name__)

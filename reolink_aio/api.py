@@ -6,43 +6,45 @@ import asyncio
 import base64
 import hashlib
 import logging
+import re
 import ssl
 import traceback
-import re
-from uuid import uuid4
 from datetime import datetime, timedelta, tzinfo
-from time import time as time_now
+from io import BytesIO
+from math import ceil
 from os.path import basename
+from statistics import mean
+from time import time as time_now
 from typing import Any, Literal, Optional, overload
 from urllib import parse
+from uuid import uuid4
 from xml.etree import ElementTree as XML
-from io import BytesIO
 from zipfile import ZipFile
-from statistics import mean
-from math import ceil
 
-from orjson import JSONDecodeError, loads as json_loads, dumps as json_dumps  # pylint: disable=no-name-in-module
+import aiohttp
 from aiortsp.rtsp.connection import RTSPConnection  # type: ignore
 from aiortsp.rtsp.errors import RTSPError  # type: ignore
-import aiohttp
+from orjson import JSONDecodeError
+from orjson import dumps as json_dumps
+from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 from . import templates, typings
-from .baichuan import Baichuan, PortType, DEFAULT_BC_PORT
+from .baichuan import DEFAULT_BC_PORT, Baichuan, PortType
 from .const import NONE_WAKING_COMMANDS, UNKNOWN
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
-    DayNightEnum,
-    StatusLedEnum,
-    SpotlightModeEnum,
-    PtzEnum,
-    GuardEnum,
-    TrackMethodEnum,
-    SubType,
-    VodRequestType,
-    HDREnum,
     ChimeToneEnum,
+    DayNightEnum,
+    GuardEnum,
+    HDREnum,
     HubToneEnum,
+    PtzEnum,
+    SpotlightModeEnum,
+    StatusLedEnum,
+    SubType,
+    TrackMethodEnum,
+    VodRequestType,
 )
 from .exceptions import (
     ApiError,
@@ -54,14 +56,19 @@ from .exceptions import (
     LoginPrivacyModeError,
     NoDataError,
     NotSupportedError,
+    ReolinkConnectionError,
     ReolinkError,
+    ReolinkTimeoutError,
     SubscriptionError,
     UnexpectedDataError,
-    ReolinkConnectionError,
-    ReolinkTimeoutError,
 )
-from .software_version import SoftwareVersion, NewSoftwareVersion, MINIMUM_FIRMWARE
-from .utils import datetime_to_reolink_time, reolink_time_to_datetime, strip_model_str, search_channel
+from .software_version import MINIMUM_FIRMWARE, NewSoftwareVersion, SoftwareVersion
+from .utils import (
+    datetime_to_reolink_time,
+    reolink_time_to_datetime,
+    search_channel,
+    strip_model_str,
+)
 
 MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"

@@ -6,8 +6,8 @@ import logging
 import re
 from datetime import datetime
 
-from .exceptions import UnexpectedDataError
 from .const import UNKNOWN
+from .exceptions import UnexpectedDataError
 
 _LOGGER = logging.getLogger(__name__)
 

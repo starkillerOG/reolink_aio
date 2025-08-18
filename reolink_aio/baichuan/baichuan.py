@@ -2,35 +2,49 @@
 
 from __future__ import annotations
 
-import logging
 import asyncio
+import logging
+from collections.abc import Callable
+from datetime import datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, TypeVar, overload, Coroutine
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Coroutine, TypeVar, overload
 from xml.etree import ElementTree as XML
+
 from Cryptodome.Cipher import AES
 
-from . import xmls
-from .tcp_protocol import BaichuanTcpClientProtocol
 from ..const import NONE_WAKING_COMMANDS, UNKNOWN
-from ..typings import cmd_list_type, VOD_trigger, VOD_file
-from ..software_version import SoftwareVersion
+from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum, SpotlightModeEnum
 from ..exceptions import (
     ApiError,
+    CredentialsInvalidError,
     InvalidContentTypeError,
     InvalidParameterError,
-    ReolinkError,
-    UnexpectedDataError,
     ReolinkConnectionError,
+    ReolinkError,
     ReolinkTimeoutError,
-    CredentialsInvalidError,
+    UnexpectedDataError,
 )
-from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum, SpotlightModeEnum
-from ..utils import reolink_time_to_datetime, to_reolink_time_id, datetime_to_reolink_time
-
-from .util import DEFAULT_BC_PORT, HEADER_MAGIC, AES_IV, EncType, PortType, decrypt_baichuan, encrypt_baichuan, md5_str_modern, http_cmd
+from ..software_version import SoftwareVersion
+from ..typings import VOD_file, VOD_trigger, cmd_list_type
+from ..utils import (
+    datetime_to_reolink_time,
+    reolink_time_to_datetime,
+    to_reolink_time_id,
+)
+from . import xmls
+from .tcp_protocol import BaichuanTcpClientProtocol
+from .util import (
+    AES_IV,
+    DEFAULT_BC_PORT,
+    HEADER_MAGIC,
+    EncType,
+    PortType,
+    decrypt_baichuan,
+    encrypt_baichuan,
+    http_cmd,
+    md5_str_modern,
+)
 
 if TYPE_CHECKING:
     from ..api import Host
