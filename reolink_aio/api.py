@@ -2070,10 +2070,7 @@ class Host:
 
             if channels:
                 self.map_channels_json_response(json_data, channels, chime_ids)
-            elif any(chime_id != -1 for chime_id in chime_ids):
-                for data, chime_id in zip(json_data, chime_ids):
-                    self.map_chime_json_response(data, chime_id=chime_id)
-            else:
+            elif not chime_ids:
                 self.map_host_json_response(json_data)
 
         return

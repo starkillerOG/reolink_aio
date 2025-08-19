@@ -988,6 +988,8 @@ class Baichuan:
             host_coroutines.append((603, self.send(cmd_id=603)))
         if self.api_version("wifi") > 0:
             self.capabilities[None].add("wifi")
+        if self.http_api.is_hub and self.api_version("doorbellVersion") > 0:
+            host_coroutines.append(("dingdonglist", self.GetDingDongList()))
 
         if host_coroutines:
             results = await asyncio.gather(*[cor[1] for cor in host_coroutines], return_exceptions=True)
@@ -1003,6 +1005,9 @@ class Baichuan:
                     self.capabilities[None].add("scenes")
                     self._scenes[-1] = "off"
                     self._parse_xml(cmd_id, result)
+                elif cmd_id == "dingdonglist":
+                    if self.http_api._GetDingDong_present.get(None):
+                        self.capabilities[None].add("chime")
 
         # Stream capabilities
         for channel in self.http_api._stream_channels:
@@ -1150,8 +1155,8 @@ class Baichuan:
         any_battery = any(self.http_api.supported(ch, "battery") for ch in self.http_api._channels)
         all_wake = all(wake.values())
 
-        def inc_host_cmd(cmd: str) -> bool:
-            return (cmd in cmd_list or not cmd_list) and (all_wake or not any_battery or cmd in NONE_WAKING_COMMANDS)
+        def inc_host_cmd(cmd: str, no_wake_check=False) -> bool:
+            return (cmd in cmd_list or not cmd_list) and (no_wake_check or (all_wake or not any_battery or cmd in NONE_WAKING_COMMANDS))
 
         def inc_cmd(cmd: str, channel: int) -> bool:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
@@ -1159,11 +1164,18 @@ class Baichuan:
             )
 
         coroutines: list[Coroutine] = []
+        # host
         if self.supported(None, "scenes") and inc_host_cmd("GetScene"):
             coroutines.append(self.get_scene())
         if self.http_api.supported(None, "wifi") and self.http_api.wifi_connection() and inc_host_cmd("115"):
             coroutines.append(self.get_wifi_signal())
+        if self.supported(None, "chime"):  # always include to discover new chimes and update "online" status, not waking
+            coroutines.append(self.GetDingDongList())
+        if self.supported(None, "chime") and inc_host_cmd("GetDingDongCfg", no_wake_check=True):
+            # None waking for Hub connected
+            coroutines.append(self.GetDingDongCfg())
 
+        # channels
         for channel in self.http_api._channels:
             if self.http_api.supported(channel, "wifi") and inc_cmd("115", channel):
                 coroutines.append(self.get_wifi_signal(channel))
@@ -1183,6 +1195,15 @@ class Baichuan:
 
             if self.supported(channel, "pre_record") and inc_cmd("594", channel):
                 coroutines.append(self.get_pre_recording(channel))
+
+        # chimes
+        for chime_id, chime in self.http_api._chime_list.items():
+            if chime.channel is not None:
+                # only chimes connected to the Hub need to be updated here
+                continue
+            if inc_host_cmd("DingDongOpt", no_wake_check=True) and chime.online:
+                # None waking for Hub connected
+                coroutines.append(self.get_DingDongOpt(chime_id=chime_id))
 
         if coroutines:
             results = await asyncio.gather(*coroutines, return_exceptions=True)
