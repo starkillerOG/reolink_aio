@@ -1607,7 +1607,7 @@ class Baichuan:
         await self.send(cmd_id=265, channel=channel, body=xml)
 
     @http_cmd("GetDingDongList")
-    async def GetDingDongList(self, channel: int, retry: int = 3, **_kwargs) -> None:
+    async def GetDingDongList(self, channel: int | None = None, retry: int = 3, **_kwargs) -> None:
         """Get the DingDongList info"""
         retry = retry - 1
 
@@ -1625,13 +1625,18 @@ class Baichuan:
 
         chime_list = []
         for chime in root.findall(".//dingdongDeviceInfo"):
-            data = self._get_keys_from_xml(chime, {"id": ("deviceId", int), "name": ("deviceName", str), "netstate": ("netState", int), "netState": ("netState", int)})
+            data = self._get_keys_from_xml(
+                chime, {"id": ("deviceId", int), "name": ("deviceName", str), "netstate": ("netState", int), "netState": ("netState", int), "deviceType": ("deviceType", str)}
+            )
+            if data.get("deviceType", "chine") == "BatteryDB":  # Reolink made a spelling mistake: chine instead of chime
+                # Skip the battery doorbell
+                continue
             chime_list.append(data)
-        json_data = [{"cmd": "GetDingDongList", "code": 0, "value": {"DingDongList": {"pairedlist": chime_list}}}]
-        self.http_api.map_channel_json_response(json_data, channel)
+        json_data = {"cmd": "GetDingDongList", "code": 0, "value": {"DingDongList": {"pairedlist": chime_list}}}
+        self.http_api.map_chime_json_response(json_data, channel)
 
     @http_cmd("DingDongOpt")
-    async def get_DingDongOpt(self, channel: int = -1, chime_id: int = -1, **kwargs) -> None:
+    async def get_DingDongOpt(self, channel: int | None = None, chime_id: int = -1, **kwargs) -> None:
         """Get the DingDongOpt info"""
         dingdong = kwargs.get("DingDong", {})
         if (ch := dingdong.get("channel")) is not None:
@@ -1659,25 +1664,28 @@ class Baichuan:
         if option == 2:
             root = XML.fromstring(mess)
             data = self._get_keys_from_xml(root, {"name": ("name", str), "volLevel": ("volLevel", int), "ledState": ("ledState", int)})
-            json_data = [{"cmd": "DingDongOpt", "code": 0, "value": {"DingDong": data}}]
-            self.http_api.map_channel_json_response(json_data, channel, chime_id)
+            json_data = {"cmd": "DingDongOpt", "code": 0, "value": {"DingDong": data}}
+            self.http_api.map_chime_json_response(json_data, channel, chime_id)
 
     @http_cmd("GetDingDongCfg")
-    async def GetDingDongCfg(self, channel: int, **_kwargs) -> None:
+    async def GetDingDongCfg(self, channel: int | None = None, **_kwargs) -> None:
         """Get the GetDingDongCfg info"""
         mess = await self.send(cmd_id=486, channel=channel)
         root = XML.fromstring(mess)
 
         chime_list = []
         for chime in root.findall(".//deviceCfg"):
-            data: dict[str, Any] = self._get_keys_from_xml(chime, {"id": ("ringId", int)})
+            data: dict[str, Any] = self._get_keys_from_xml(chime, {"id": ("ringId", int), "version": ("version", str)})
+            if channel is None and data.get("ringId") not in self.http_api._chime_list:
+                # do not process Battery Doorbell, use GetDingDongList to get the list of chimes
+                continue
             data["type"] = {}
             for ringtone in chime.findall(".//alarminCfg"):
                 tone_type = self._get_value_from_xml_element(ringtone, "type")
                 data["type"][tone_type] = self._get_keys_from_xml(ringtone, {"valid": ("switch", int), "musicId": ("musicId", int)})
             chime_list.append(data)
-        json_data = [{"cmd": "GetDingDongCfg", "code": 0, "value": {"DingDongCfg": {"pairedlist": chime_list}}}]
-        self.http_api.map_channel_json_response(json_data, channel)
+        json_data = {"cmd": "GetDingDongCfg", "code": 0, "value": {"DingDongCfg": {"pairedlist": chime_list}}}
+        self.http_api.map_chime_json_response(json_data, channel)
 
     @http_cmd("SetDingDongCfg")
     async def SetDingDongCfg(self, **kwargs) -> None:

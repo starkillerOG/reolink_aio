@@ -216,7 +216,7 @@ class Host:
         self._stream_channels: list[int] = []
         self._channel_online: dict[int, bool] = {}
         self._is_doorbell: dict[int, bool] = {}
-        self._GetDingDong_present: dict[int, bool] = {}
+        self._GetDingDong_present: dict[int | None, bool] = {}
 
         ##############################################################################
         # API-versions and capabilities
@@ -1953,9 +1953,9 @@ class Host:
                 ch_body = [{"cmd": "GetDeviceAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioFileList" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAudioFileList", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetDingDongList" and self.supported(channel, "chime"):
+            elif cmd == "GetDingDongList" and self.supported(channel, "chime") and ch is not None:
                 ch_body = [{"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetDingDongCfg" and self.supported(channel, "chime"):
+            elif cmd == "GetDingDongCfg" and self.supported(channel, "chime") and ch is not None:
                 ch_body = [{"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAutoReply" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
@@ -2021,8 +2021,11 @@ class Host:
                 chime_ch = chime.channel
                 if ch is not None and chime_ch != ch:
                     continue
-                body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
-                channels.append(chime_ch)
+                param = {"option": 2, "id": chime_id}
+                if chime_ch is not None:
+                    param["channel"] = chime_ch
+                    channels.append(chime_ch)
+                body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": param}})
                 chime_ids.append(chime_id)
 
         if not channels:
@@ -2052,6 +2055,10 @@ class Host:
                 body = [{"cmd": "GetPushCfg", "action": 0, "param": {}}]
             elif cmd == "GetAbility":
                 body = [{"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}}]
+            elif cmd == "GetDingDongList" and self.supported(None, "chime"):
+                body = [{"cmd": "GetDingDongList", "action": 0, "param": {}}]
+            elif cmd == "GetDingDongCfg" and self.supported(None, "chime"):
+                body = [{"cmd": "GetDingDongCfg", "action": 0, "param": {}}]
 
         if body:
             try:
@@ -2063,6 +2070,9 @@ class Host:
 
             if channels:
                 self.map_channels_json_response(json_data, channels, chime_ids)
+            elif any(chime_id != -1 for chime_id in chime_ids):
+                for data, chime_id in zip(json_data, chime_ids):
+                    self.map_chime_json_response(data, chime_id=chime_id)
             else:
                 self.map_host_json_response(json_data)
 
@@ -2233,7 +2243,7 @@ class Host:
         # chime states
         for chime_id, chime in self._chime_list.items():
             chime_ch = chime.channel
-            if inc_cmd("DingDongOpt", chime_ch) and chime.online:
+            if chime_ch is not None and inc_cmd("DingDongOpt", chime_ch) and chime.online:
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": chime_ch, "option": 2, "id": chime_id}}})
                 channels.append(chime_ch)
                 chime_ids.append(chime_id)
@@ -3754,7 +3764,7 @@ class Host:
                 )
                 continue
 
-    def map_channels_json_response(self, json_data, channels: list[int], chime_ids: list[int] | None = None) -> None:
+    def map_channels_json_response(self, json_data: typings.reolink_json, channels: list[int], chime_ids: list[int] | None = None) -> None:
         if len(json_data) != len(channels):
             raise UnexpectedDataError(
                 f"Host {self._host}:{self._port} error mapping response to channels, received {len(json_data)} responses while requesting {len(channels)} responses",
@@ -3774,7 +3784,7 @@ class Host:
 
             self.map_channel_json_response([data], channel, chime_id)
 
-    def map_channel_json_response(self, json_data, channel: int, chime_id: int = -1) -> None:
+    def map_channel_json_response(self, json_data: typings.reolink_json, channel: int, chime_id: int = -1) -> None:
         """Map the JSON objects to internal cache-objects."""
         response_channel = channel
         for data in json_data:
@@ -4013,66 +4023,8 @@ class Host:
                 elif data["cmd"] == "GetAudioFileList":
                     self._audio_file_list[channel] = data["value"]
 
-                elif data["cmd"] == "GetDingDongList":
-                    self._GetDingDong_present[channel] = True
-                    id_list = []
-                    for dev in data["value"]["DingDongList"].get("pairedlist", {}):
-                        chime_id = dev["deviceId"]
-                        id_list.append(chime_id)
-                        if chime_id not in self._chime_list:
-                            self._chime_list[chime_id] = Chime(
-                                host=self,
-                                dev_id=chime_id,
-                                channel=channel,
-                            )
-                            if not self._startup:
-                                _LOGGER.info(
-                                    "New Reolink chime discovered connected to %s, new chime ID %s",
-                                    self.nvr_name,
-                                    chime_id,
-                                )
-                                self._new_devices = True
-                        chime = self._chime_list[chime_id]
-                        if dev.get("deviceName"):
-                            chime.name = dev["deviceName"]
-                        chime.connect_state = dev["netState"]
-
-                    for dev_id, chime in self._chime_list.items():
-                        if chime.channel == channel and dev_id not in id_list:
-                            chime.connect_state = -1
-
-                elif data["cmd"] == "GetDingDongCfg":
-                    self._GetDingDong_present[channel] = True
-                    for dev in data["value"]["DingDongCfg"]["pairedlist"]:
-                        chime_id = dev["ringId"]
-                        if chime_id < 0:
-                            continue
-                        if chime_id not in self._chime_list:
-                            self._chime_list[chime_id] = Chime(
-                                host=self,
-                                dev_id=chime_id,
-                                channel=channel,
-                            )
-                            if not self._startup:
-                                _LOGGER.info(
-                                    "New Reolink chime discovered connected to %s, new chime ID %s",
-                                    self.nvr_name,
-                                    chime_id,
-                                )
-                                self._new_devices = True
-                        chime = self._chime_list[chime_id]
-                        if "ringName" in dev:
-                            chime.name = dev["ringName"]
-                        chime.event_info = dev["type"]
-
-                elif data["cmd"] == "DingDongOpt":
-                    if chime_id not in self._chime_list:
-                        continue
-                    chime = self._chime_list[chime_id]
-                    value = data["value"]["DingDong"]
-                    chime.name = value["name"]
-                    chime.led_state = value["ledState"] == 1
-                    chime.volume = value["volLevel"]
+                elif data["cmd"] in {"GetDingDongList", "GetDingDongCfg", "DingDongOpt"}:
+                    self.map_chime_json_response(data, channel, chime_id)
 
                 elif data["cmd"] == "GetAutoReply":
                     self._auto_reply_settings[channel] = data["value"]
@@ -4097,6 +4049,72 @@ class Host:
                 continue
             if response_channel != channel:
                 _LOGGER.error("Host %s:%s: command %s response channel %s does not equal requested channel %s", self._host, self._port, data["cmd"], response_channel, channel)
+
+    def map_chime_json_response(self, data: dict[str, Any], channel: int | None = None, chime_id: int = -1) -> None:
+        """Map the JSON objects to internal cache-objects for the chime."""
+        if data["cmd"] == "GetDingDongList":
+            self._GetDingDong_present[channel] = True
+            id_list = []
+            for dev in data["value"]["DingDongList"].get("pairedlist", {}):
+                chime_id = dev["deviceId"]
+                id_list.append(chime_id)
+                if chime_id not in self._chime_list:
+                    self._chime_list[chime_id] = Chime(
+                        host=self,
+                        dev_id=chime_id,
+                        channel=channel,
+                    )
+                    if not self._startup:
+                        _LOGGER.info(
+                            "New Reolink chime discovered connected to %s, new chime ID %s",
+                            self.nvr_name,
+                            chime_id,
+                        )
+                        self._new_devices = True
+                chime = self._chime_list[chime_id]
+                if dev.get("deviceName"):
+                    chime.name = dev["deviceName"]
+                chime.connect_state = dev["netState"]
+
+            for dev_id, chime in self._chime_list.items():
+                if chime.channel == channel and dev_id not in id_list:
+                    chime.connect_state = -1
+
+        elif data["cmd"] == "GetDingDongCfg":
+            self._GetDingDong_present[channel] = True
+            for dev in data["value"]["DingDongCfg"]["pairedlist"]:
+                chime_id = dev["ringId"]
+                if chime_id < 0:
+                    return
+                if chime_id not in self._chime_list:
+                    self._chime_list[chime_id] = Chime(
+                        host=self,
+                        dev_id=chime_id,
+                        channel=channel,
+                    )
+                    if not self._startup:
+                        _LOGGER.info(
+                            "New Reolink chime discovered connected to %s, new chime ID %s",
+                            self.nvr_name,
+                            chime_id,
+                        )
+                        self._new_devices = True
+                chime = self._chime_list[chime_id]
+                if "ringName" in dev:
+                    chime.name = dev["ringName"]
+                if "version" in dev:
+                    chime.sw_version = dev["version"]
+                if "type" in dev:
+                    chime.event_info = dev["type"]
+
+        elif data["cmd"] == "DingDongOpt":
+            if chime_id not in self._chime_list:
+                return
+            chime = self._chime_list[chime_id]
+            value = data["value"]["DingDong"]
+            chime.name = value["name"]
+            chime.led_state = value["ledState"] == 1
+            chime.volume = value["volLevel"]
 
     async def set_net_port(
         self,
@@ -6763,7 +6781,7 @@ class Host:
 class Chime:
     """Reolink chime class."""
 
-    def __init__(self, host: Host, dev_id: int, channel: int) -> None:
+    def __init__(self, host: Host, dev_id: int, channel: int | None) -> None:
         self.host = host
         self.dev_id = dev_id
         self.channel = channel
@@ -6772,8 +6790,11 @@ class Chime:
         self.led_state: bool | None = None
         self.connect_state: int | None = None
         self.event_info: dict[str, dict[str, int]] | None = None
+        self.sw_version: str | None = None
 
     def __repr__(self) -> str:
+        if self.channel is None:
+            return f"<Chime name: {self.name}, id: {self.dev_id}, volume: {self.volume}, online: {self.online}>"
         return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}, online: {self.online}>"
 
     @property
@@ -6804,7 +6825,11 @@ class Chime:
         if tone_id not in tone_id_list:
             raise InvalidParameterError(f"play_chime: tone_id {tone_id} not in {tone_id_list}")
 
-        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": self.channel, "id": self.dev_id, "option": 4, "musicId": tone_id}}}]
+        param = {"id": self.dev_id, "option": 4, "musicId": tone_id}
+        if self.channel is not None:
+            param["channel"] = self.channel
+
+        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": param}}]
         await self.host.send_setting(body)
 
     async def set_option(self, volume: int | None = None, led: bool | None = None) -> None:
@@ -6819,11 +6844,15 @@ class Chime:
             led = self.led_state
         led_state = 1 if led else 0
 
+        param = {"id": self.dev_id, "option": 3, "name": self.name, "volLevel": volume, "ledState": led_state}
+        if self.channel is not None:
+            param["channel"] = self.channel
+
         body = [
             {
                 "cmd": "DingDongOpt",
                 "action": 0,
-                "param": {"DingDong": {"channel": self.channel, "id": self.dev_id, "option": 3, "name": self.name, "volLevel": volume, "ledState": led_state}},
+                "param": {"DingDong": param},
             }
         ]
         await self.host.send_setting(body, getcmd="DingDongOpt")
@@ -6844,17 +6873,25 @@ class Chime:
                 tone_id = current_tone_id
             state = 0
 
+        param = {"ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}
+        if self.channel is not None:
+            param["channel"] = self.channel
+
         body = [
             {
                 "cmd": "SetDingDongCfg",
                 "action": 0,
-                "param": {"DingDongCfg": {"channel": self.channel, "ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}},
+                "param": {"DingDongCfg": param},
             }
         ]
         await self.host.send_setting(body)
 
     async def remove(self) -> None:
-        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": {"channel": self.channel, "id": self.dev_id, "option": 1}}}]
+        param = {"id": self.dev_id, "option": 1}
+        if self.channel is not None:
+            param["channel"] = self.channel
+
+        body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": param}}]
         try:
             await self.host.send_setting(body)
         except ReolinkError as err:
