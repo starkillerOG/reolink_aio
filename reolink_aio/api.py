@@ -1890,7 +1890,7 @@ class Host:
     async def get_state(self, cmd: str, ch: int | None = None) -> None:
         stream_channels = [ch] if ch is not None else self._stream_channels
         request_channels = [ch] if ch is not None else self._channels
-        parse = True
+        map_res = True
 
         body = []
         channels = []
@@ -2024,7 +2024,7 @@ class Host:
                     continue
                 param = {"option": 2, "id": chime_id}
                 if chime_ch is None:
-                    parse = False
+                    map_res = False
                 else:
                     param["channel"] = chime_ch
                     channels.append(chime_ch)
@@ -2060,10 +2060,10 @@ class Host:
                 body = [{"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}}]
             elif cmd == "GetDingDongList" and self.supported(None, "chime"):
                 body = [{"cmd": "GetDingDongList", "action": 0, "param": {}}]
-                parse = False
+                map_res = False
             elif cmd == "GetDingDongCfg" and self.supported(None, "chime"):
                 body = [{"cmd": "GetDingDongCfg", "action": 0, "param": {}}]
-                parse = False
+                map_res = False
 
         if body:
             try:
@@ -2073,9 +2073,9 @@ class Host:
             except NoDataError as err:
                 raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'") from err
 
-            if channels and parse:
+            if channels and map_res:
                 self.map_channels_json_response(json_data, channels, chime_ids)
-            elif parse:
+            elif map_res:
                 self.map_host_json_response(json_data)
 
         return
@@ -6789,6 +6789,7 @@ class Chime:
         self.channel = channel
         self.name: str = "Chime"
         self.volume: int | None = None
+        self.silent_time: int = 0
         self.led_state: bool | None = None
         self.connect_state: int | None = None
         self.event_info: dict[str, dict[str, int]] | None = None
@@ -6796,8 +6797,8 @@ class Chime:
 
     def __repr__(self) -> str:
         if self.channel is None:
-            return f"<Chime name: {self.name}, id: {self.dev_id}, volume: {self.volume}, online: {self.online}>"
-        return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}, online: {self.online}>"
+            return f"<Chime name: {self.name}, id: {self.dev_id}, volume: {self.volume}, online: {self.online}, silent: {self.silent_time} s>"
+        return f"<Chime name: {self.name}, id: {self.dev_id}, ch: {self.channel}, volume: {self.volume}, online: {self.online}, silent: {self.silent_time} s>"
 
     @property
     def chime_event_types(self) -> list[str]:
@@ -6833,6 +6834,12 @@ class Chime:
 
         body = [{"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": param}}]
         await self.host.send_setting(body)
+
+    async def set_silent_time(self, time: int) -> None:
+        if time < 0 or time > 43200:
+            raise InvalidParameterError(f"set_silent_time: value {time} not in 0-43200")
+
+        await self.host.baichuan.set_ding_dong_silent(chime_id=self.dev_id, time=time, channel=self.channel)
 
     async def set_option(self, volume: int | None = None, led: bool | None = None) -> None:
         if self.volume is None or self.led_state is None:

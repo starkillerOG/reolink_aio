@@ -93,6 +93,26 @@ SetDingDongCfg_XML = """
 </body>
 """
 
+DingDongSilent = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongSilentMode version="1.1">
+<id>{chime_id}</id>
+</dingdongSilentMode>
+</body>
+"""
+
+SetDingDongSilent = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<dingdongSilentMode version="1.1">
+<id>{chime_id}</id>
+<time>{time}</time>
+<type>63</type>
+</dingdongSilentMode>
+</body>
+"""
+
 GetDingDongCtrl_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>

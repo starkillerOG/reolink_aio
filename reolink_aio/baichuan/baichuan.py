@@ -1163,6 +1163,11 @@ class Baichuan:
                 wake[channel] or cmd in NONE_WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
             )
 
+        def inc_ch_wake_cmd(cmd: str, channel: int | None = None):
+            if channel is None:
+                return inc_host_cmd(cmd, no_wake_check=True)
+            return inc_cmd(cmd, channel)
+
         coroutines: list[Coroutine] = []
         # host
         if self.supported(None, "scenes") and inc_host_cmd("GetScene"):
@@ -1198,10 +1203,13 @@ class Baichuan:
 
         # chimes
         for chime_id, chime in self.http_api._chime_list.items():
-            if chime.channel is not None:
-                # only chimes connected to the Hub need to be updated here
+            if not chime.online:
                 continue
-            if inc_host_cmd("DingDongOpt", no_wake_check=True) and chime.online:
+
+            if inc_ch_wake_cmd("609", chime.channel):
+                coroutines.append(self.get_ding_dong_silent(channel=chime.channel, chime_id=chime_id))
+
+            if inc_host_cmd("DingDongOpt", no_wake_check=True) and chime.channel is not None:
                 # None waking for Hub connected
                 coroutines.append(self.get_DingDongOpt(chime_id=chime_id))
 
@@ -1721,6 +1729,35 @@ class Baichuan:
 
         xml = xmls.SetDingDongCfg_XML.format(chime_id=chime_id, event_type=event_type, state=state, tone_id=tone_id)
         await self.send(cmd_id=487, channel=channel, body=xml)
+
+    async def get_ding_dong_silent(self, chime_id: int, channel: int | None = None) -> None:
+        """Get the Silent mode state for a Reolink chime"""
+        if chime_id not in self.http_api._chime_list:
+            raise InvalidParameterError(
+                f"Baichuan host {self._host}: get_ding_dong_silent chime_id {chime_id} not in connected chimes {list(self.http_api._chime_list.values())}"
+            )
+
+        xml = xmls.DingDongSilent.format(chime_id=chime_id)
+        mess = await self.send(cmd_id=609, channel=channel, body=xml)
+
+        data: dict[str, Any] = self._get_keys_from_xml(mess, {"id": ("ringId", int), "time": ("silent", int)})
+        if data.get("ringId") != chime_id:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: get_ding_dong_silent requested chime_id {chime_id} but received {data.get('ringId')}")
+
+        chime = self.http_api._chime_list[chime_id]
+        chime.silent_time = data.get("silent", 0)
+
+    async def set_ding_dong_silent(self, chime_id: int, time: int, channel: int | None = None) -> None:
+        """Get the Silent mode state for a Reolink chime"""
+        if chime_id not in self.http_api._chime_list:
+            raise InvalidParameterError(
+                f"Baichuan host {self._host}: set_ding_dong_silent chime_id {chime_id} not in connected chimes {list(self.http_api._chime_list.values())}"
+            )
+
+        xml = xmls.SetDingDongSilent.format(chime_id=chime_id, time=time)
+        await self.send(cmd_id=610, channel=channel, body=xml)
+
+        await self.get_ding_dong_silent(chime_id, channel)
 
     async def get_ding_dong_ctrl(self, channel: int) -> None:
         """Get the DingDongCtrl info, this can make the hardwired chime rattle a bit"""
