@@ -1890,6 +1890,7 @@ class Host:
     async def get_state(self, cmd: str, ch: int | None = None) -> None:
         stream_channels = [ch] if ch is not None else self._stream_channels
         request_channels = [ch] if ch is not None else self._channels
+        parse = True
 
         body = []
         channels = []
@@ -2019,10 +2020,12 @@ class Host:
                 if not chime.online:
                     continue
                 chime_ch = chime.channel
-                if ch is not None and chime_ch != ch:
+                if chime_ch != ch:
                     continue
                 param = {"option": 2, "id": chime_id}
-                if chime_ch is not None:
+                if chime_ch is None:
+                    parse = False
+                else:
                     param["channel"] = chime_ch
                     channels.append(chime_ch)
                 body.append({"cmd": "DingDongOpt", "action": 0, "param": {"DingDong": param}})
@@ -2057,8 +2060,10 @@ class Host:
                 body = [{"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}}]
             elif cmd == "GetDingDongList" and self.supported(None, "chime"):
                 body = [{"cmd": "GetDingDongList", "action": 0, "param": {}}]
+                parse = False
             elif cmd == "GetDingDongCfg" and self.supported(None, "chime"):
                 body = [{"cmd": "GetDingDongCfg", "action": 0, "param": {}}]
+                parse = False
 
         if body:
             try:
@@ -2068,9 +2073,9 @@ class Host:
             except NoDataError as err:
                 raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining get_state response for cmd '{body[0]['cmd']}'") from err
 
-            if channels:
+            if channels and parse:
                 self.map_channels_json_response(json_data, channels, chime_ids)
-            elif not chime_ids:
+            elif parse:
                 self.map_host_json_response(json_data)
 
         return
