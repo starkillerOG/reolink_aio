@@ -1027,12 +1027,16 @@ class Baichuan:
             if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
                 coroutines.append(("privacy_mode", channel, self.get_privacy_mode(channel)))  # capability added in get_privacy_mode
 
-            if self.api_version("smartAI", channel) > 0:
-                coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))
-                coroutines.append((529, channel, self.send(cmd_id=529, channel=channel)))
-                coroutines.append((531, channel, self.send(cmd_id=531, channel=channel)))
-                coroutines.append((549, channel, self.send(cmd_id=549, channel=channel)))
-                coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))
+            if (self.api_version("smartAI", channel) >> 1) & 1:  # 2th bit (2), shift 1
+                coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))  # crossline
+            if (self.api_version("smartAI", channel) >> 2) & 1:  # 3th bit (4), shift 2
+                coroutines.append((529, channel, self.send(cmd_id=529, channel=channel)))  # intrusion
+            if (self.api_version("smartAI", channel) >> 3) & 1:  # 4th bit (8), shift 3
+                coroutines.append((531, channel, self.send(cmd_id=531, channel=channel)))  # loitering/linger
+            if (self.api_version("smartAI", channel) >> 4) & 1:  # 5th bit (16), shift 4
+                coroutines.append((549, channel, self.send(cmd_id=549, channel=channel)))  # legacy/forgotten item
+            if (self.api_version("smartAI", channel) >> 5) & 1:  # 6th bit (32), shift 5
+                coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))  # loss/taken item
 
             if (self.api_version("newIspCfg", channel) >> 16) & 1:  # 17th bit (65536), shift 16
                 coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
