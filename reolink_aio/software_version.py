@@ -207,6 +207,8 @@ class SoftwareVersion:
             try:
                 if len(date) == 8:
                     self.date = datetime.strptime(date, "%y%m%d%M")
+                elif len(date) == 9:
+                    self.date = datetime.strptime(date[:8], "%y%m%d%M")
                 elif len(date) == 10:
                     self.date = datetime.strptime(date, "%y%m%d%M%S")
                 else:
