@@ -210,11 +210,11 @@ class SoftwareVersion:
                 elif len(date) == 9:
                     self.date = datetime.strptime(date[:8], "%y%m%d%M")
                 elif len(date) == 10:
-                    self.date = datetime.strptime(date, "%y%m%d%M%S")
+                    self.date = datetime.strptime(date, "%y%m%d%M%f")
                 else:
                     _LOGGER.warning("Reolink software version string '%s' has unknown date length format '%s'", version_string, date)
             except ValueError:
-                pass
+                _LOGGER.warning("Reolink software version string '%s' has unknown date format '%s'", version_string, date)
 
     def __repr__(self) -> str:
         return f"<SoftwareVersion: {self.version_string}>"
