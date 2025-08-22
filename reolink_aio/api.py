@@ -36,6 +36,7 @@ from .enums import (
     BinningModeEnum,
     ChimeToneEnum,
     DayNightEnum,
+    EncodingEnum,
     GuardEnum,
     HDREnum,
     HubToneEnum,
@@ -1837,6 +1838,8 @@ class Host:
                 self._capabilities[channel].add("frame_rate")
             if self.bit_rate(channel) is not None:
                 self._capabilities[channel].add("bit_rate")
+            if self.api_version("supportEncoderSelect", channel) > 0:
+                self._capabilities[channel].add("encoding")
 
             if self.api_version("supportIspBinningModeCfg", channel) > 0:
                 self._capabilities[channel].add("binning_mode")
@@ -3235,6 +3238,9 @@ class Host:
             except ReolinkError:
                 pass
 
+        return self.encoding(channel, stream)
+
+    def encoding(self, channel: int, stream: str = "main") -> str:
         encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is not None:
             return encoding
@@ -4844,6 +4850,23 @@ class Host:
 
         body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
         body[0]["param"]["Enc"][f"{stream}Stream"]["frameRate"] = value
+
+        await self.send_setting(body)
+
+    async def set_encoding(self, channel: int, value: str, stream: str | None = None) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_encoding: no camera connected to channel '{channel}'")
+        await self.get_state(cmd="GetEnc", ch=channel)
+        if channel not in self._enc_settings:
+            raise NotSupportedError(f"set_encoding: Encoding on camera {self.camera_name(channel)} is not available")
+        val_list = [val.value for val in EncodingEnum]
+        if value not in val_list:
+            raise InvalidParameterError(f"set_encoding: value {value} not in {val_list}")
+        if stream is None:
+            stream = "main"
+
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body[0]["param"]["Enc"][f"{stream}Stream"]["vType"] = value
 
         await self.send_setting(body)
 

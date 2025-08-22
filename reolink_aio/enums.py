@@ -27,6 +27,13 @@ class VodRequestType(Enum):
     NVR_DOWNLOAD = "NvrDownload"
 
 
+class EncodingEnum(Enum):
+    """Options for encoding of the streams"""
+
+    h264 = "h264"
+    h265 = "h265"
+
+
 class SpotlightModeEnum(Enum):
     """Options for the spotlight mode"""
 
