@@ -1963,7 +1963,8 @@ class Host:
             elif cmd == "GetDingDongList" and self.supported(channel, "chime") and ch is not None:
                 ch_body = [{"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetDingDongCfg" and self.supported(channel, "chime") and ch is not None:
-                ch_body = [{"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}}]
+                await self.baichuan.GetDingDongCfg(channel)
+                continue
             elif cmd == "GetAutoReply" and self.supported(channel, "quick_reply"):
                 ch_body = [{"cmd": "GetAutoReply", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetManualRec" and self.supported(channel, "manual_record"):
@@ -2068,8 +2069,7 @@ class Host:
                 body = [{"cmd": "GetDingDongList", "action": 0, "param": {}}]
                 map_res = False
             elif cmd == "GetDingDongCfg" and self.supported(None, "chime"):
-                body = [{"cmd": "GetDingDongCfg", "action": 0, "param": {}}]
-                map_res = False
+                await self.baichuan.GetDingDongCfg()
 
         if body:
             try:
@@ -2181,8 +2181,6 @@ class Host:
 
             if self.supported(channel, "chime") and inc_wake("GetDingDongList", channel):  # always include to discover new chimes and update "online" status
                 ch_body.append({"cmd": "GetDingDongList", "action": 0, "param": {"channel": channel}})
-            if self.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
-                ch_body.append({"cmd": "GetDingDongCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "manual_record") and inc_cmd("GetManualRec", channel):
                 ch_body.append({"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}})
