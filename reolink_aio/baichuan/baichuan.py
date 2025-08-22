@@ -1091,7 +1091,7 @@ class Baichuan:
             if (audioVersion >> 2) & 1:  # 3 th bit (4) shift 2
                 self.capabilities[channel].add("siren_play")
                 # self.capabilities[channel].add("siren")
-            if (audioVersion >> 4) & 1:  # 5 th bit (16) shift 4
+            if (audioVersion >> 4) & 1 or (audioVersion >> 9) & 1:  # 5 & 10 th bit (16 & 512) shift 4 & 9
                 coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
 
             if self._dev_type == "light":
