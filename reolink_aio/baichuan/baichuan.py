@@ -1092,7 +1092,7 @@ class Baichuan:
                 self.capabilities[channel].add("siren_play")
                 # self.capabilities[channel].add("siren")
             if (audioVersion >> 4) & 1:  # 5 th bit (16) shift 4
-                self.capabilities[channel].add("volume")
+                coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
 
             if self._dev_type == "light":
                 self.capabilities[channel].add("PIR")
@@ -1143,6 +1143,14 @@ class Baichuan:
                     self.capabilities[channel].add("day_night_state")
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
+                elif cmd_id == "GetAudioCfg":
+                    self.capabilities[channel].add("volume")
+                    if self.api_version("doorbellVersion", channel) > 0 and "visitorLoudspeaker" in self.http_api._audio_settings.get(channel, {}):
+                        self.capabilities[channel].add("doorbell_button_sound")
+                    if self.http_api.volume_speek(channel) is not None:
+                        self.capabilities[channel].add("volume_speek")
+                    if self.http_api.volume_doorbell(channel) is not None:
+                        self.capabilities[channel].add("volume_doorbell")
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
@@ -1234,6 +1242,9 @@ class Baichuan:
 
             if self.supported(channel, "pre_record") and inc_cmd("594", channel):
                 coroutines.append(self.get_pre_recording(channel))
+
+            if self.supported(channel, "volume") and inc_cmd("GetAudioCfg", channel):
+                coroutines.append(self.GetAudioCfg(channel))
 
         # chimes
         for chime_id, chime in self.http_api._chime_list.items():
@@ -1647,9 +1658,17 @@ class Baichuan:
         """Get the audio settings"""
         mess = await self.send(cmd_id=264, channel=channel)
         root = XML.fromstring(mess)
-        data = self._get_keys_from_xml(root, {"volume": ("volume", int)})
+        data = self._get_keys_from_xml(
+            root,
+            {
+                "volume": ("volume", int),
+                "talkAndReplyVolume": ("talkAndReplyVolume", int),
+                "visitorVolume": ("visitorVolume", int),
+                "visitorLoudspeaker": ("visitorLoudspeaker", int),
+            },
+        )
 
-        self.http_api._audio_settings.setdefault(channel, {}).setdefault("AudioCfg", {}).update(data)
+        self.http_api._audio_settings.setdefault(channel, {}).update(data)
 
     @http_cmd("SetAudioCfg")
     async def SetAudioCfg(self, **kwargs) -> None:
@@ -1664,6 +1683,10 @@ class Baichuan:
             xml_volume.text = str(volume)
         if (visitorLoudspeaker := param.get("visitorLoudspeaker")) is not None and (xml_visitorLoudspeaker := xml_body.find(".//visitorLoudspeaker")) is not None:
             xml_visitorLoudspeaker.text = str(visitorLoudspeaker)
+        if (talkAndReplyVolume := param.get("talkAndReplyVolume")) is not None and (xml_talkAndReplyVolume := xml_body.find(".//talkAndReplyVolume")) is not None:
+            xml_talkAndReplyVolume.text = str(talkAndReplyVolume)
+        if (visitorVolume := param.get("visitorVolume")) is not None and (xml_visitorVolume := xml_body.find(".//visitorVolume")) is not None:
+            xml_visitorVolume.text = str(visitorVolume)
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml

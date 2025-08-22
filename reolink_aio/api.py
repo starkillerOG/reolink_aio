@@ -1086,13 +1086,25 @@ class Host:
         if channel not in self._audio_settings:
             return 100
 
-        return self._audio_settings[channel]["AudioCfg"]["volume"]
+        return self._audio_settings[channel]["volume"]
+
+    def volume_speek(self, channel: int) -> int | None:
+        if channel not in self._audio_settings:
+            return None
+
+        return self._audio_settings[channel].get("talkAndReplyVolume")
+
+    def volume_doorbell(self, channel: int) -> int | None:
+        if channel not in self._audio_settings:
+            return None
+
+        return self._audio_settings[channel].get("visitorVolume")
 
     def doorbell_button_sound(self, channel: int) -> bool:
         if channel not in self._audio_settings:
             return False
 
-        return self._audio_settings[channel]["AudioCfg"].get("visitorLoudspeaker") == 1
+        return self._audio_settings[channel].get("visitorLoudspeaker") == 1
 
     def hub_alarm_tone_id(self, channel: int) -> int:
         """Ringtone id played by the hub for a alarm event"""
@@ -1723,11 +1735,6 @@ class Host:
                 # floodlight == spotlight == WhiteLed
                 self._capabilities[channel].add("floodLight")
 
-            if self.api_version("GetAudioCfg") > 0:
-                self._capabilities[channel].add("volume")
-                if self.api_version("supportVisitorLoudspeaker", channel) > 0:
-                    self._capabilities[channel].add("doorbell_button_sound")
-
             if self.api_version("GetDeviceAudioCfg") > 0:
                 self._capabilities[channel].add("hub_audio")
 
@@ -1947,7 +1954,8 @@ class Host:
             elif cmd == "GetPtzTraceSection" and self.supported(channel, "auto_track_limit"):
                 ch_body = [{"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": {"channel": channel}}}]
             elif cmd == "GetAudioCfg" and self.supported(channel, "volume"):
-                ch_body = [{"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}}]
+                await self.baichuan.GetAudioCfg(channel)
+                continue
             elif cmd == "GetDeviceAudioCfg" and self.supported(channel, "hub_audio"):
                 ch_body = [{"cmd": "GetDeviceAudioCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetAudioFileList" and self.supported(channel, "quick_reply"):
@@ -2164,9 +2172,6 @@ class Host:
 
             if self.supported(channel, "auto_track_limit") and inc_cmd("GetPtzTraceSection", channel):
                 ch_body.append({"cmd": "GetPtzTraceSection", "action": 0, "param": {"PtzTraceSection": {"channel": channel}}})
-
-            if self.supported(channel, "volume") and inc_cmd("GetAudioCfg", channel):
-                ch_body.append({"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "hub_audio") and inc_cmd("GetDeviceAudioCfg", channel):
                 ch_body.append({"cmd": "GetDeviceAudioCfg", "action": 0, "param": {"channel": channel}})
@@ -2388,7 +2393,6 @@ class Host:
                 [
                     {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
                     {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
-                    {"cmd": "GetAudioCfg", "action": 0, "param": {"channel": channel}},
                     {"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}},
                 ]
             )
@@ -2490,7 +2494,6 @@ class Host:
 
         self._api_version["GetEvents"] = check_command_exists("GetEvents")
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
-        self._api_version["GetAudioCfg"] = check_command_exists("GetAudioCfg")
         self._api_version["GetDeviceAudioCfg"] = check_command_exists("GetDeviceAudioCfg")
         self._api_version["GetPtzGuard"] = check_command_exists("GetPtzGuard")
         self._api_version["GetPtzCurPos"] = check_command_exists("GetPtzCurPos")
@@ -4009,7 +4012,8 @@ class Host:
                     self._auto_track_limits[channel] = data["value"]
 
                 elif data["cmd"] == "GetAudioCfg":
-                    self._audio_settings[channel] = data["value"]
+                    value = data["value"]["AudioCfg"]
+                    self._audio_settings.setdefault(channel, {}).update(value)
 
                 elif data["cmd"] == "GetDeviceAudioCfg":
                     self._hub_audio_settings[channel] = data["value"]
@@ -4987,7 +4991,9 @@ class Host:
         await self.set_spotlight_lighting_schedule(channel, 0, 0, 0, 0)
         await self.set_whiteled(channel, enable, 100, 1)
 
-    async def set_volume(self, channel: int, volume: int | None = None, doorbell_button_sound: bool | None = None) -> None:
+    async def set_volume(
+        self, channel: int, volume: int | None = None, volume_speek: int | None = None, volume_doorbell: int | None = None, doorbell_button_sound: bool | None = None
+    ) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_volume: no camera connected to channel '{channel}'")
         if volume is not None:
@@ -4997,6 +5003,20 @@ class Host:
                 raise InvalidParameterError(f"set_volume: volume {volume} not integer")
             if volume < 0 or volume > 100:
                 raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
+        if volume_speek is not None:
+            if not self.supported(channel, "volume_speek"):
+                raise NotSupportedError(f"set_volume: Volume speek control on camera {self.camera_name(channel)} is not available")
+            if not isinstance(volume_speek, int):
+                raise InvalidParameterError(f"set_volume: volume_speek {volume_speek} not integer")
+            if volume_speek < 0 or volume_speek > 100:
+                raise InvalidParameterError(f"set_volume: volume_speek {volume_speek} not in range 0...100")
+        if volume_doorbell is not None:
+            if not self.supported(channel, "volume_doorbell"):
+                raise NotSupportedError(f"set_volume: Volume doorbell control on camera {self.camera_name(channel)} is not available")
+            if not isinstance(volume_doorbell, int):
+                raise InvalidParameterError(f"set_volume: volume_doorbell {volume_doorbell} not integer")
+            if volume_doorbell < 0 or volume_doorbell > 100:
+                raise InvalidParameterError(f"set_volume: volume_doorbell {volume_doorbell} not in range 0...100")
         if doorbell_button_sound is not None:
             if not self.supported(channel, "doorbell_button_sound"):
                 raise NotSupportedError(f"set_volume: Doorbell button sound control on camera {self.camera_name(channel)} is not available")
@@ -5006,11 +5026,16 @@ class Host:
         params = {"channel": channel}
         if volume is not None:
             params["volume"] = volume
+        if volume_speek is not None:
+            params["talkAndReplyVolume"] = volume_speek
+        if volume_doorbell is not None:
+            params["visitorVolume"] = volume_doorbell
         if doorbell_button_sound is not None:
             params["visitorLoudspeaker"] = 1 if doorbell_button_sound else 0
 
         body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
-        await self.send_setting(body)
+        await self.baichuan.SetAudioCfg(**body[0]["param"])
+        await self.baichuan.GetAudioCfg(channel)
 
     async def set_hub_audio(
         self,
