@@ -1041,16 +1041,47 @@ class Baichuan:
             if (self.api_version("newIspCfg", channel) >> 16) & 1:  # 17th bit (65536), shift 16
                 coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
 
+            if self.api_version("motion", channel, no_key_return=1) > 0:
+                self.capabilities[channel].add("motion_detection")
+                self.http_api._motion_detection_states.setdefault(channel, False)
+
+            aiVersion = self.api_version("aitype", channel)
+            if (aiVersion >> 1) & 1:  # 2th bit (2), shift 1
+                self.http_api._ai_detection_support.setdefault(channel, {})["people"] = True
+                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("people", False)
+            if (aiVersion >> 2) & 1:  # 3th bit (4), shift 2
+                self.http_api._ai_detection_support.setdefault(channel, {})["vehicle"] = True
+                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("vehicle", False)
+            if (aiVersion >> 3) & 1:  # 4th bit (8), shift 3
+                self.http_api._ai_detection_support.setdefault(channel, {})["face"] = True
+                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("face", False)
+            if (aiVersion >> 4) & 1:  # 5th bit (16), shift 4
+                self.http_api._ai_detection_support.setdefault(channel, {})["dog_cat"] = True
+                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("dog_cat", False)
+            if (aiVersion >> 6) & 1:  # 7th bit (64), shift 6
+                self.capabilities[channel].add("motion_detection")  # other detection (PIR)
+                self.http_api._motion_detection_states.setdefault(channel, False)
+            if (aiVersion >> 17) & 1:  # 18th bit (131072), shift 17
+                self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
+                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
+            if (aiVersion >> 22) & 1:  # 23th bit (4194304), shift 22
+                coroutines.append(("cry", channel, self.get_cry_detection(channel)))
+
+            if self.http_api.api_version("doorbellVersion", channel) > 0:
+                self.http_api._is_doorbell[channel] = True
+                self.http_api._visitor_states.setdefault(channel, False)
             if self.http_api.is_doorbell(channel) and self.http_api.supported(channel, "battery"):
                 self.capabilities[channel].add("hardwired_chime")
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
-            if (self.api_version("ledCtrl", channel) >> 0) & 1:  # 1th bit (1), shift 0
+
+            ledVersion = self.api_version("ledCtrl", channel)
+            if (ledVersion >> 0) & 1:  # 1th bit (1), shift 0
                 self.capabilities[channel].add("status_led")  # internal use only
                 self.capabilities[channel].add("power_led")
-            if (self.api_version("ledCtrl", channel) >> 1) & 1 and (self.api_version("ledCtrl", channel) >> 2) & 1:  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
+            if (ledVersion >> 1) & 1 and (ledVersion >> 2) & 1:  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
                 self.capabilities[channel].add("floodLight")
-            if (self.api_version("ledCtrl", channel) >> 12) & 1:  # 13 th bit (4096) shift 12
+            if (ledVersion >> 12) & 1:  # 13 th bit (4096) shift 12
                 self.capabilities[channel].add("ir_brightness")
 
             if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
@@ -1066,7 +1097,6 @@ class Baichuan:
             if self._dev_type == "light":
                 self.capabilities[channel].add("PIR")
 
-            coroutines.append(("cry", channel, self.get_cry_detection(channel)))
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
             # Fallback for missing information
             if self.http_api.camera_hardware_version(channel) == UNKNOWN:

@@ -1669,10 +1669,8 @@ class Host:
                 continue
 
             if self.baichuan.supported(channel, "ai_cry"):
-                self._ai_detection_support.setdefault(channel, {})
-                self._ai_detection_states.setdefault(channel, {})
-                self._ai_detection_support[channel]["cry"] = True
-                self._ai_detection_states[channel]["cry"] = False
+                self._ai_detection_support.setdefault(channel, {})["cry"] = True
+                self._ai_detection_states.setdefault(channel, {})["cry"] = False
 
             if self.is_nvr and self.camera_hardware_version(channel) != UNKNOWN and self.camera_model(channel) != UNKNOWN:
                 self._capabilities[channel].add("firmware")
