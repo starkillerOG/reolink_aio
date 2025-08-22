@@ -1695,6 +1695,23 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=265, channel=channel, body=xml)
 
+    async def SetEnc(self, channel: int, stream: str, encoding: str | None = None, **_kwargs) -> None:
+        """Set the encoding of a stream"""
+        mess = await self.send(cmd_id=56, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        xml_stream = xml_body.find(f".//{stream}Stream")
+        if xml_stream is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: SetEnc could not find stream {stream} in XML")
+
+        encoding_int = 1 if encoding == "h265" else 0
+        if encoding is not None and (xml_encoding := xml_stream.find(".//videoEncType")) is not None:
+            xml_encoding.text = str(encoding_int)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=57, channel=channel, body=xml)
+
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int | None = None, retry: int = 3, **_kwargs) -> None:
         """Get the DingDongList info"""

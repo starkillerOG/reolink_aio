@@ -4865,10 +4865,7 @@ class Host:
         if stream is None:
             stream = "main"
 
-        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
-        body[0]["param"]["Enc"][f"{stream}Stream"]["vType"] = value
-
-        await self.send_setting(body)
+        await self.baichuan.SetEnc(channel=channel, stream=stream, encoding=value)
 
     async def set_ir_lights(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:
