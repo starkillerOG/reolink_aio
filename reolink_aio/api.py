@@ -6914,7 +6914,8 @@ class Chime:
                 "param": {"DingDongCfg": param},
             }
         ]
-        await self.host.send_setting(body)
+        await self.host.baichuan.SetDingDongCfg(**body[0]["param"])
+        await self.host.baichuan.GetDingDongCfg(self.channel)
 
     async def remove(self) -> None:
         param = {"id": self.dev_id, "option": 1}

@@ -1230,7 +1230,7 @@ class Baichuan:
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
 
-            if self.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
+            if self.http_api.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
                 coroutines.append(self.GetDingDongCfg(channel))
 
             if self.supported(channel, "hardwired_chime") and channel in cmd_list.get("483", []) and channel not in self._hardwired_chime_settings:
@@ -1770,7 +1770,7 @@ class Baichuan:
                 continue
             data["type"] = {}
             for ringtone in chime.findall(".//alarminCfg"):
-                tone_type = self._get_value_from_xml_element(ringtone, "type")
+                tone_type = self._get_value_from_xml_element(ringtone, "type").lower()
                 data["type"][tone_type] = self._get_keys_from_xml(ringtone, {"valid": ("switch", int), "musicId": ("musicId", int)})
             chime_list.append(data)
         json_data = {"cmd": "GetDingDongCfg", "code": 0, "value": {"DingDongCfg": {"pairedlist": chime_list}}}
