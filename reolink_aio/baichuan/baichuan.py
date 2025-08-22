@@ -1770,8 +1770,10 @@ class Baichuan:
                 continue
             data["type"] = {}
             for ringtone in chime.findall(".//alarminCfg"):
-                tone_type = self._get_value_from_xml_element(ringtone, "type").lower()
-                data["type"][tone_type] = self._get_keys_from_xml(ringtone, {"valid": ("switch", int), "musicId": ("musicId", int)})
+                tone_type = self._get_value_from_xml_element(ringtone, "type")
+                if tone_type is None:
+                    continue
+                data["type"][tone_type.lower()] = self._get_keys_from_xml(ringtone, {"valid": ("switch", int), "musicId": ("musicId", int)})
             chime_list.append(data)
         json_data = {"cmd": "GetDingDongCfg", "code": 0, "value": {"DingDongCfg": {"pairedlist": chime_list}}}
         self.http_api.map_chime_json_response(json_data, channel)
