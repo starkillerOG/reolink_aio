@@ -1089,7 +1089,7 @@ class Host:
 
         return self._audio_settings[channel]["volume"]
 
-    def volume_speek(self, channel: int) -> int | None:
+    def volume_speak(self, channel: int) -> int | None:
         if channel not in self._audio_settings:
             return None
 
@@ -5010,7 +5010,7 @@ class Host:
         await self.set_whiteled(channel, enable, 100, 1)
 
     async def set_volume(
-        self, channel: int, volume: int | None = None, volume_speek: int | None = None, volume_doorbell: int | None = None, doorbell_button_sound: bool | None = None
+        self, channel: int, volume: int | None = None, volume_speak: int | None = None, volume_doorbell: int | None = None, doorbell_button_sound: bool | None = None
     ) -> None:
         if channel not in self._channels:
             raise InvalidParameterError(f"set_volume: no camera connected to channel '{channel}'")
@@ -5021,13 +5021,13 @@ class Host:
                 raise InvalidParameterError(f"set_volume: volume {volume} not integer")
             if volume < 0 or volume > 100:
                 raise InvalidParameterError(f"set_volume: volume {volume} not in range 0...100")
-        if volume_speek is not None:
-            if not self.supported(channel, "volume_speek"):
-                raise NotSupportedError(f"set_volume: Volume speek control on camera {self.camera_name(channel)} is not available")
-            if not isinstance(volume_speek, int):
-                raise InvalidParameterError(f"set_volume: volume_speek {volume_speek} not integer")
-            if volume_speek < 0 or volume_speek > 100:
-                raise InvalidParameterError(f"set_volume: volume_speek {volume_speek} not in range 0...100")
+        if volume_speak is not None:
+            if not self.supported(channel, "volume_speak"):
+                raise NotSupportedError(f"set_volume: Volume speak control on camera {self.camera_name(channel)} is not available")
+            if not isinstance(volume_speak, int):
+                raise InvalidParameterError(f"set_volume: volume_speak {volume_speak} not integer")
+            if volume_speak < 0 or volume_speak > 100:
+                raise InvalidParameterError(f"set_volume: volume_speak {volume_speak} not in range 0...100")
         if volume_doorbell is not None:
             if not self.supported(channel, "volume_doorbell"):
                 raise NotSupportedError(f"set_volume: Volume doorbell control on camera {self.camera_name(channel)} is not available")
@@ -5044,8 +5044,8 @@ class Host:
         params = {"channel": channel}
         if volume is not None:
             params["volume"] = volume
-        if volume_speek is not None:
-            params["talkAndReplyVolume"] = volume_speek
+        if volume_speak is not None:
+            params["talkAndReplyVolume"] = volume_speak
         if volume_doorbell is not None:
             params["visitorVolume"] = volume_doorbell
         if doorbell_button_sound is not None:

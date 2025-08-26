@@ -1147,8 +1147,8 @@ class Baichuan:
                     self.capabilities[channel].add("volume")
                     if self.api_version("doorbellVersion", channel) > 0 and "visitorLoudspeaker" in self.http_api._audio_settings.get(channel, {}):
                         self.capabilities[channel].add("doorbell_button_sound")
-                    if self.http_api.volume_speek(channel) is not None:
-                        self.capabilities[channel].add("volume_speek")
+                    if self.http_api.volume_speak(channel) is not None:
+                        self.capabilities[channel].add("volume_speak")
                     if self.http_api.volume_doorbell(channel) is not None:
                         self.capabilities[channel].add("volume_doorbell")
 
