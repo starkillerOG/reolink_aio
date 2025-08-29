@@ -599,9 +599,12 @@ class Baichuan:
                                     while index_bit >= loop_bit:
                                         location = loop_bit.bit_length() - 1
                                         detected = index_bit & loop_bit > 0
-                                        self._ai_detect[channel][smart_type][location]["state"] = detected
-                                        if sub_list is None and detected:
+                                        smart_ai_dict = self._ai_detect[channel][smart_type][location]
+                                        smart_ai_dict["state"] = detected
+                                        if not sub_list and detected:
                                             _LOGGER.debug("Reolink %s TCP event channel %s, %s location %s detected", self.http_api.nvr_name, channel, smart_type, location)
+                                            for ai_type in AI_DETECTS.intersection(smart_ai_dict):
+                                                smart_ai_dict[ai_type] = True
                                         loop_bit <<= 1
                                 for sub in sub_list:
                                     location_ob = sub.find("index")
