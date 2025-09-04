@@ -214,7 +214,12 @@ class SoftwareVersion:
                 else:
                     _LOGGER.warning("Reolink software version string '%s' has unknown date length format '%s'", version_string, date)
             except ValueError:
-                _LOGGER.warning("Reolink software version string '%s' has unknown date format '%s'", version_string, date)
+                try:
+                    self.date = datetime.strptime(date[:6], "%y%m%d")
+                except ValueError:
+                    _LOGGER.warning("Reolink software version string '%s' has unknown date format '%s'", version_string, date)
+                else:
+                    _LOGGER.debug("Reolink software version string '%s' has incompatible date format '%s', only using year-month-day", version_string, date)
 
     def __repr__(self) -> str:
         return f"<SoftwareVersion: {self.version_string}>"
