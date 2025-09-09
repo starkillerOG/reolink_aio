@@ -921,14 +921,16 @@ class Host:
         if (ledCtrl >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
             # on Floodlight: the schedule_plus has the same number 4 as autoadaptive
             mode_values.extend([SpotlightModeEnum.schedule])
-        if self.api_version("supportFLIntelligent", channel) > 0 or not (ledCtrl >> 6) & 1:  # 7th bit (64), shift 6
+        if not (ledCtrl >> 6) & 1 or (self.api_version("supportFLIntelligent", channel) > 0 and ledCtrl == 0):  # 7th bit (64), shift 6
             mode_values.extend([SpotlightModeEnum.auto])
         if self.api_version("supportFLSchedule", channel) > 0 or (ledCtrl >> 5) & 1:  # 6th bit (32), shift 5
             mode_values.extend([SpotlightModeEnum.schedule])
         if self.api_version("supportFLKeepOn", channel) > 0 or (ledCtrl >> 4) & 1:  # 5th bit (16), shift 4
             mode_values.extend([SpotlightModeEnum.onatnight])
         if self.api_version("supportLightAutoBrightness", channel) > 0 or (ledCtrl >> 14) & 1:  # 15th bit (16384), shift 14
-            mode_values.extend([SpotlightModeEnum.adaptive, SpotlightModeEnum.autoadaptive])
+            mode_values.extend([SpotlightModeEnum.adaptive])
+            if not (ledCtrl >> 6) & 1:  # 7th bit (64), shift 6
+                mode_values.extend([SpotlightModeEnum.autoadaptive])
         return [val.name for val in mode_values]
 
     def whiteled_brightness(self, channel: int) -> Optional[int]:
