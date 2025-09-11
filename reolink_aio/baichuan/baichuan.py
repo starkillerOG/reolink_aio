@@ -508,7 +508,7 @@ class Baichuan:
         state: Any
         channels: set[int | None] = {None}
         cmd_ids: set[int | None] = {None, cmd_id}
-        if cmd_id == 26:
+        if cmd_id in {26, 78}:
             channel = self._get_channel_from_xml_element(root)
             if channel is None:
                 return
