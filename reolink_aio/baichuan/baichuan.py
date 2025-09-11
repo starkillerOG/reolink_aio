@@ -693,6 +693,8 @@ class Baichuan:
 
         elif cmd_id == 464:  # network link type wire/wifi
             self._get_value_from_xml_element(root, "net_type")
+            if (signal := self._get_value_from_xml_element(root, "signal")) is not None:
+                self.http_api._wifi_signal[None] = int(signal)
 
         elif cmd_id == 527:  # crossline detection
             self._parse_smart_ai_settings(root, channels, "crossline")
