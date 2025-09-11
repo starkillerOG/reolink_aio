@@ -30,7 +30,7 @@ from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 from . import templates, typings
 from .baichuan import DEFAULT_BC_PORT, Baichuan, PortType
-from .const import NONE_WAKING_COMMANDS, UNKNOWN
+from .const import MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
@@ -907,13 +907,13 @@ class Host:
         return self._privacy_mask.get(channel, {}).get("enable") == 1
 
     def whiteled_state(self, channel: int) -> bool:
-        return self._whiteled_settings.get(channel, {}).get("WhiteLed", {}).get("state", 0) == 1
+        return self._whiteled_settings.get(channel, {}).get("state", 0) == 1
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
         if channel not in self._whiteled_settings:
             return None
 
-        return self._whiteled_settings[channel]["WhiteLed"].get("mode")
+        return self._whiteled_settings[channel].get("mode")
 
     def whiteled_mode_list(self, channel: int) -> list[str]:
         mode_values = [SpotlightModeEnum.off]
@@ -937,12 +937,18 @@ class Host:
         if channel not in self._whiteled_settings:
             return None
 
-        return self._whiteled_settings[channel]["WhiteLed"].get("bright")
+        return self._whiteled_settings[channel].get("bright")
+
+    def whiteled_color_temperature(self, channel: int) -> Optional[int]:
+        temp = self._whiteled_settings.get(channel, {}).get("ColorTemp")
+        if temp is None:
+            return None
+        return round(MAX_COLOR_TEMP - (MAX_COLOR_TEMP - MIN_COLOR_TEMP) * temp / 100)
 
     def whiteled_schedule(self, channel: int) -> Optional[dict]:
         """Return the spotlight state."""
         if channel in self._whiteled_settings:
-            return self._whiteled_settings[channel]["WhiteLed"]["LightingSchedule"]
+            return self._whiteled_settings[channel]["LightingSchedule"]
 
         return None
 
@@ -2145,7 +2151,7 @@ class Host:
             if self.supported(channel, "ir_lights") and inc_cmd("GetIrLights", channel) and not inc_cmd("208", channel):
                 ch_body.append({"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "floodLight") and inc_cmd("GetWhiteLed", channel):
+            if self.supported(channel, "floodLight") and not self.supported(channel, "color_temp") and inc_cmd("GetWhiteLed", channel):
                 ch_body.append({"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "battery") and inc_cmd("GetBatteryInfo", channel):
@@ -3960,8 +3966,9 @@ class Host:
                         self._status_led_range[channel] = data["range"]
 
                 elif data["cmd"] == "GetWhiteLed":
-                    response_channel = data["value"]["WhiteLed"]["channel"]
-                    self._whiteled_settings[channel] = data["value"]
+                    value = data["value"]["WhiteLed"]
+                    response_channel = value["channel"]
+                    self._whiteled_settings.setdefault(channel, {}).update(value)
 
                 elif data["cmd"] == "GetBatteryInfo":
                     self._battery[channel] = data["value"]["Battery"]

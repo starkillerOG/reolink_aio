@@ -13,7 +13,7 @@ from xml.etree import ElementTree as XML
 
 from Cryptodome.Cipher import AES
 
-from ..const import NONE_WAKING_COMMANDS, UNKNOWN
+from ..const import MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
 from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum, SpotlightModeEnum
 from ..exceptions import (
     ApiError,
@@ -673,11 +673,11 @@ class Baichuan:
             if channel is None:
                 return
             channels.add(channel)
-            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int), "alarmMode": ("mode", int)})
+            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int), "alarmMode": ("mode", int), "newColorTemperature": ("ColorTemp", int)})
             if values.get("mode") == 4 and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
                 # Floodlight: the schedule_plus has the same number 4 as autoadaptive, so switch it around
                 values["mode"] = 3
-            self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {}).update(values)
+            self.http_api._whiteled_settings.setdefault(channel, {}).update(values)
 
         elif cmd_id == 291:  # Floodlight
             for event_list in root:
@@ -688,7 +688,7 @@ class Baichuan:
                     channels.add(channel)
                     state = self._get_value_from_xml_element(event, "status", int)
                     if state is not None:
-                        self.http_api._whiteled_settings.setdefault(channel, {}).setdefault("WhiteLed", {})["state"] = state
+                        self.http_api._whiteled_settings.setdefault(channel, {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 464:  # network link type wire/wifi
@@ -1086,6 +1086,8 @@ class Baichuan:
                 self.capabilities[channel].add("floodLight")
             if (ledVersion >> 12) & 1:  # 13 th bit (4096) shift 12
                 self.capabilities[channel].add("ir_brightness")
+            if (ledVersion >> 17) & 1:  # 18 th bit (131072) shift 17
+                self.capabilities[channel].add("color_temp")
 
             if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
                 self.capabilities[channel].add("pre_record")
@@ -1242,6 +1244,9 @@ class Baichuan:
 
             if self.supported(channel, "ir_brightness") and inc_cmd("208", channel):
                 coroutines.append(self.get_status_led(channel))
+
+            if self.supported(channel, "color_temp") and inc_cmd("GetWhiteLed", channel):
+                coroutines.append(self.get_floodlight(channel))
 
             if self.supported(channel, "ai_cry") and inc_cmd("299", channel):
                 coroutines.append(self.get_cry_detection(channel))
@@ -1535,7 +1540,9 @@ class Baichuan:
         self._parse_xml(289, mess)
 
     @http_cmd("SetWhiteLed")
-    async def set_floodlight(self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | None = None, **kwargs) -> None:
+    async def set_floodlight(
+        self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | None = None, color_temp: int | None = None, **kwargs
+    ) -> None:
         """Control the floodlight"""
         if data := kwargs.get("WhiteLed"):
             channel = data["channel"]
@@ -1543,7 +1550,7 @@ class Baichuan:
             brightness = data.get("bright", brightness)
             mode = data.get("mode", mode)
 
-        if state is None and brightness is None and mode is None:
+        if state is None and brightness is None and mode is None and color_temp is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
 
         if mode == SpotlightModeEnum.schedule.value and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
@@ -1553,16 +1560,20 @@ class Baichuan:
         if state is not None:
             xml = xmls.SetWhiteLed.format(channel=channel, state=state)
             await self.send(cmd_id=288, channel=channel, body=xml)
-        if brightness is not None or mode is not None:
+        if brightness is not None or mode is not None or color_temp is not None:
+            get_state = False
             mess = await self.send(cmd_id=289, channel=channel)
             xml_body = XML.fromstring(mess)
             xml_element = xml_body.find(".//FloodlightTask")
             if xml_element is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: set_floodlight: could not find FloodlightTask")
-            if brightness is not None:
-                xml_brightness = xml_element.find("brightness_cur")
-                if xml_brightness is not None:
-                    xml_brightness.text = str(brightness)
+            if brightness is not None and (xml_brightness := xml_element.find("brightness_cur")) is not None:
+                xml_brightness.text = str(brightness)
+            if color_temp is not None and (xml_color_temp := xml_element.find("newColorTemperature")) is not None:
+                if color_temp < MIN_COLOR_TEMP or color_temp > MAX_COLOR_TEMP:
+                    raise InvalidParameterError(f"Baichuan host {self._host}: set_floodlight: color_temp {color_temp} not in range {MIN_COLOR_TEMP}...{MAX_COLOR_TEMP}")
+                xml_color_temp.text = str(round(100 * (MAX_COLOR_TEMP - color_temp) / (MAX_COLOR_TEMP - MIN_COLOR_TEMP)))
+                get_state = True
             if mode is not None:
                 xml_mode = xml_element.find("alarmMode")
                 if xml_mode is not None:
@@ -1573,6 +1584,9 @@ class Baichuan:
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
             await self.send(cmd_id=290, channel=channel, body=xml)
+
+            if get_state:
+                await self.get_floodlight(channel)
 
     @http_cmd(["GetPowerLed", "GetIrLights"])
     async def get_status_led(self, channel: int, **_kwargs) -> None:
