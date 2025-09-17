@@ -42,6 +42,7 @@ from .enums import (
     HubToneEnum,
     PtzEnum,
     SpotlightModeEnum,
+    SpotlightEventModeEnum,
     StatusLedEnum,
     SubType,
     TrackMethodEnum,
@@ -933,6 +934,16 @@ class Host:
                 mode_values.extend([SpotlightModeEnum.autoadaptive])
         return [val.name for val in mode_values]
 
+    def whiteled_event_mode(self, channel: int) -> str | None:
+        values = self._whiteled_settings.get(channel, {})
+        enabled = values.get("event_mode_enabled")
+        mode = values.get("event_mode")
+        if enabled is None or mode is None:
+            return None
+        if enabled != 1:
+            return SpotlightEventModeEnum.off.value
+        return mode
+
     def whiteled_brightness(self, channel: int) -> Optional[int]:
         if channel not in self._whiteled_settings:
             return None
@@ -944,6 +955,21 @@ class Host:
         if temp is None:
             return None
         return round(MAX_COLOR_TEMP - (MAX_COLOR_TEMP - MIN_COLOR_TEMP) * temp / 100)
+
+    def whiteled_event_brightness(self, channel: int) -> int | None:
+        if self.whiteled_event_mode(channel) in {None, SpotlightEventModeEnum.off.value}:
+            return None
+        return self._whiteled_settings.get(channel, {}).get("event_brightness")
+
+    def whiteled_event_on_time(self, channel: int) -> int | None:
+        if self.whiteled_event_mode(channel) != SpotlightEventModeEnum.on.value:
+            return None
+        return self._whiteled_settings.get(channel, {}).get("event_on_time")
+
+    def whiteled_event_flash_time(self, channel: int) -> int | None:
+        if self.whiteled_event_mode(channel) != SpotlightEventModeEnum.flash.value:
+            return None
+        return self._whiteled_settings.get(channel, {}).get("event_flash_time")
 
     def whiteled_schedule(self, channel: int) -> Optional[dict]:
         """Return the spotlight state."""

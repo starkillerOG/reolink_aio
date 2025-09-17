@@ -14,7 +14,7 @@ from xml.etree import ElementTree as XML
 from Cryptodome.Cipher import AES
 
 from ..const import MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
-from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum, SpotlightModeEnum
+from ..enums import BatteryEnum, DayNightEnum, HardwiredChimeTypeEnum, SpotlightModeEnum, SpotlightEventModeEnum
 from ..exceptions import (
     ApiError,
     CredentialsInvalidError,
@@ -673,7 +673,7 @@ class Baichuan:
             if channel is None:
                 return
             channels.add(channel)
-            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int), "alarmMode": ("mode", int), "newColorTemperature": ("ColorTemp", int)})
+            values = self._get_keys_from_xml(root, {"brightness_cur": ("bright", int), "alarmMode": ("mode", int), "newColorTemperature": ("ColorTemp", int), "alarmLightEnabledSL": ("event_mode_enabled", int), "alarmLightModeSL": ("event_mode", str), "brightnessAlarmSL": ("event_brightness", int), "duration": ("event_on_time", int), "flickerDurationSL": ("event_flash_time", int)})
             if values.get("mode") == 4 and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
                 # Floodlight: the schedule_plus has the same number 4 as autoadaptive, so switch it around
                 values["mode"] = 3
@@ -1090,6 +1090,7 @@ class Baichuan:
                 self.capabilities[channel].add("ir_brightness")
             if (ledVersion >> 17) & 1:  # 18 th bit (131072) shift 17
                 self.capabilities[channel].add("color_temp")
+                self.capabilities[channel].add("floodlight_event")
 
             if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
                 self.capabilities[channel].add("pre_record")
@@ -1543,7 +1544,7 @@ class Baichuan:
 
     @http_cmd("SetWhiteLed")
     async def set_floodlight(
-        self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | None = None, color_temp: int | None = None, **kwargs
+        self, channel: int = 0, state: bool | None = None, brightness: int | None = None, mode: int | None = None, color_temp: int | None = None, event_mode: str | None = None, event_brightness: int | None = None, event_on_time: int | None = None, event_flash_time: int | None = None, **kwargs
     ) -> None:
         """Control the floodlight"""
         if data := kwargs.get("WhiteLed"):
@@ -1552,7 +1553,7 @@ class Baichuan:
             brightness = data.get("bright", brightness)
             mode = data.get("mode", mode)
 
-        if state is None and brightness is None and mode is None and color_temp is None:
+        if state is None and brightness is None and mode is None and color_temp is None and event_mode is None and event_brightness is None and event_on_time is None and event_flash_time is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
 
         if mode == SpotlightModeEnum.schedule.value and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
@@ -1562,7 +1563,7 @@ class Baichuan:
         if state is not None:
             xml = xmls.SetWhiteLed.format(channel=channel, state=state)
             await self.send(cmd_id=288, channel=channel, body=xml)
-        if brightness is not None or mode is not None or color_temp is not None:
+        if brightness is not None or mode is not None or color_temp is not None or event_mode is not None or event_brightness is not None or event_on_time is not None or event_flash_time is not None:
             get_state = False
             mess = await self.send(cmd_id=289, channel=channel)
             xml_body = XML.fromstring(mess)
@@ -1572,10 +1573,10 @@ class Baichuan:
             if brightness is not None and (xml_brightness := xml_element.find("brightness_cur")) is not None:
                 xml_brightness.text = str(brightness)
             if color_temp is not None and (xml_color_temp := xml_element.find("newColorTemperature")) is not None:
+                get_state = True
                 if color_temp < MIN_COLOR_TEMP or color_temp > MAX_COLOR_TEMP:
                     raise InvalidParameterError(f"Baichuan host {self._host}: set_floodlight: color_temp {color_temp} not in range {MIN_COLOR_TEMP}...{MAX_COLOR_TEMP}")
                 xml_color_temp.text = str(round(100 * (MAX_COLOR_TEMP - color_temp) / (MAX_COLOR_TEMP - MIN_COLOR_TEMP)))
-                get_state = True
             if mode is not None:
                 xml_mode = xml_element.find("alarmMode")
                 if xml_mode is not None:
@@ -1583,6 +1584,19 @@ class Baichuan:
                 xml_enable = xml_element.find("enable")
                 if xml_enable is not None:
                     xml_enable.text = str(mode)
+            if event_mode is not None and (xml_event_mode := xml_element.find("alarmLightModeSL")) is not None and (xml_event_enable := xml_element.find("alarmLightEnabledSL")) is not None:
+                get_state = True
+                if event_mode == SpotlightEventModeEnum.off.value:
+                    xml_event_enable.text = "0"
+                else:
+                    xml_event_enable.text = "1"
+                    xml_event_mode.text = event_mode
+            if event_brightness is not None and (xml_event_brightness := xml_element.find("brightnessAlarmSL")) is not None:
+                xml_event_brightness.text = str(event_brightness)
+            if event_on_time is not None and (xml_on_time := xml_element.find("duration")) is not None:
+                xml_on_time.text = str(event_on_time)
+            if event_flash_time is not None and (xml_flash_time := xml_element.find("flickerDurationSL")) is not None:
+                xml_flash_time.text = str(event_flash_time)
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
             await self.send(cmd_id=290, channel=channel, body=xml)

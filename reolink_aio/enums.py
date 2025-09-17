@@ -45,6 +45,14 @@ class SpotlightModeEnum(Enum):
     autoadaptive = 4
 
 
+class SpotlightEventModeEnum(Enum):
+    """Options for the spotlight event mode"""
+
+    off = "off"
+    on = "keepOn"
+    flash = "flicker"
+
+
 class StatusLedEnum(Enum):
     """Options for the status led mode"""
 
