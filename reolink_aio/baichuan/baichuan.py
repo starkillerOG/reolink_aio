@@ -1090,6 +1090,7 @@ class Baichuan:
                 self.capabilities[channel].add("ir_brightness")
             if (ledVersion >> 17) & 1:  # 18 th bit (131072) shift 17
                 self.capabilities[channel].add("color_temp")
+            if (ledVersion >> 19) & 1:  # 20 th bit (524288) shift 19
                 self.capabilities[channel].add("floodlight_event")
 
             if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
@@ -1592,10 +1593,13 @@ class Baichuan:
                     xml_event_enable.text = "1"
                     xml_event_mode.text = event_mode
             if event_brightness is not None and (xml_event_brightness := xml_element.find("brightnessAlarmSL")) is not None:
+                get_state = True
                 xml_event_brightness.text = str(event_brightness)
             if event_on_time is not None and (xml_on_time := xml_element.find("duration")) is not None:
+                get_state = True
                 xml_on_time.text = str(event_on_time)
             if event_flash_time is not None and (xml_flash_time := xml_element.find("flickerDurationSL")) is not None:
+                get_state = True
                 xml_flash_time.text = str(event_flash_time)
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
