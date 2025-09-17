@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/sponsors/starkillerOG"><img src="https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86" alt="Sponsor"></a>
-  <a href="https://reolink.pxf.io/q44QWq"><img src="https://img.shields.io/static/v1?label=Affiliate link&message=%E2%9D%A4&color=%23fe8e86" alt="Affiliate link"></a>
+  <a href="https://reolink.pxf.io/q44QWq"><img src="https://img.shields.io/static/v1?label=Affiliate%20link&message=%E2%9D%A4&color=%23fe8e86" alt="Affiliate link"></a>
   <a href="https://pypi.org/project/reolink-aio"><img src="https://img.shields.io/pypi/dm/reolink-aio"></a>
   <a href="https://github.com/starkillerOG/reolink_aio/releases"><img src="https://img.shields.io/github/v/release/StarkillerOG/reolink_aio?display_name=tag&include_prereleases&sort=semver" alt="Current version"></a>
 </p>
@@ -138,6 +138,8 @@ if __name__ == "__main__":
 ````
 
 ### Acknowledgment
+This library is officially authorized by Reolink, with @starkillerOG as the main developer, and it is built with the support of Reolink's official resources.
+
 This library is based on the work of:
 - @fwestenberg: https://github.com/fwestenberg/reolink_dev
 
