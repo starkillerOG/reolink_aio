@@ -63,6 +63,7 @@ MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 30  # seconds
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
+YOLO_DETECTS = {"person", "vehicle"}
 SMART_AI = {
     "crossline": (527, 528),
     "intrusion": (529, 530),
@@ -752,6 +753,10 @@ class Baichuan:
                         continue
                     channels.add(channel)
 
+                    state_dict = self.http_api._ai_detection_states.get(channel, {})
+                    for key in YOLO_DETECTS.intersection(state_dict):
+                        state_dict[key] = False
+
                     for event_type in event.findall("YoloWorldType"):
                         yolo_type = self._get_value_from_xml_element(event_type, "type")
                         if yolo_type is None:
@@ -761,8 +766,7 @@ class Baichuan:
                         if yolo_type == "motor vehicle":
                             yolo_type = "vehicle"
 
-                        state_dict = self.http_api._ai_detection_states.get(channel, {})
-                        if yolo_type not in state_dict:
+                        if yolo_type not in state_dict or yolo_type not in YOLO_DETECTS:
                             if f"TCP_yolo_event_unknown_{yolo_type}" not in self._log_once:
                                 self._log_once.append(f"TCP_yolo_event_unknown_{yolo_type}")
                                 _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event %s", self.http_api.nvr_name, channel, yolo_type)
