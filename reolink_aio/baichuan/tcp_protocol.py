@@ -147,21 +147,21 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         # extract receive future
         receive_future = self.receive_futures.get(rec_cmd_id, {}).get(rec_mess_id)
 
-        # check status code
-        if len_header == 24:
-            rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
-            if rec_status_code != 200:
-                if receive_future is not None:
-                    if rec_status_code == 401:
-                        exc = ApiError(f"Baichuan host {self._host}: received 401 unauthorized login from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
-                    else:
-                        exc = ApiError(f"Baichuan host {self._host}: received status code {rec_status_code} from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
-                    receive_future.set_exception(exc)
-                else:
-                    _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s and status code %s", self._host, rec_cmd_id, rec_status_code)
-                return
-
         try:
+            # check status code
+            if len_header == 24:
+                rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
+                if rec_status_code != 200:
+                    if receive_future is not None:
+                        if rec_status_code == 401:
+                            exc = ApiError(f"Baichuan host {self._host}: received 401 unauthorized login from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
+                        else:
+                            exc = ApiError(f"Baichuan host {self._host}: received status code {rec_status_code} from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
+                        receive_future.set_exception(exc)
+                    else:
+                        _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s and status code %s", self._host, rec_cmd_id, rec_status_code)
+                    return
+
             if receive_future is None:
                 if self._push_callback is not None:
                     self._push_callback(rec_cmd_id, self._data_chunk, len_header)
