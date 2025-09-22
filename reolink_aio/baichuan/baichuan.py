@@ -1075,6 +1075,9 @@ class Baichuan:
         for channel in self.http_api._channels:
             self.capabilities.setdefault(channel, set())
 
+            if self.http_api.is_nvr and self.http_api.wifi_connection(channel) and (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
+                coroutines.append(("wifi", channel, self.get_wifi_signal(channel)))
+
             if self.http_api.api_version("talk", channel) > 0:
                 coroutines.append((10, channel, self.send(cmd_id=10, channel=channel)))
 
@@ -1197,6 +1200,8 @@ class Baichuan:
                 elif cmd_id == 551:  # taken item
                     self.capabilities[channel].add("ai_taken_item")
                     self._parse_xml(cmd_id, result)
+                elif cmd_id == "wifi":
+                    self.capabilities[channel].add("wifi")
                 elif cmd_id == "day_night_state" and self.day_night_state is not None:
                     self.capabilities[channel].add("day_night_state")
                 elif cmd_id == "cry" and result:

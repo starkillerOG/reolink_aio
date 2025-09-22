@@ -1724,9 +1724,6 @@ class Host:
                 if self.api_version("upgrade") >= 2:
                     self._capabilities[channel].add("update")
 
-            if self.is_nvr and self.wifi_connection(channel) and (self.api_version("supportWiFi", channel) > 0 or self._is_hub):
-                self._capabilities[channel].add("wifi")
-
             if self.api_version("supportWebhook", channel) > 0:
                 self._capabilities[channel].add("webhook")
 
