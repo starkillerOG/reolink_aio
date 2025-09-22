@@ -96,7 +96,7 @@ class Baichuan:
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
-        self._log_once: list[str] = []
+        self._log_once: set[str] = set()
         self.last_privacy_check: float = 0
 
         # TCP connection
@@ -581,7 +581,7 @@ class Baichuan:
                                 if ai_type in ("none", "other"):
                                     continue
                                 if ai_type not in self.http_api._ai_detection_states.get(channel, {}) and f"TCP_event_unknown_{ai_type}" not in self._log_once:
-                                    self._log_once.append(f"TCP_event_unknown_{ai_type}")
+                                    self._log_once.add(f"TCP_event_unknown_{ai_type}")
                                     _LOGGER.warning("Reolink %s TCP event channel %s, received unknown event %s", self.http_api.nvr_name, channel, ai_type)
 
                         # reset all smart AI events to False
@@ -632,7 +632,7 @@ class Baichuan:
                             _LOGGER.debug("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
                     else:
                         if f"TCP_event_tag_{event.tag}" not in self._log_once:
-                            self._log_once.append(f"TCP_event_tag_{event.tag}")
+                            self._log_once.add(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
         elif cmd_id == 145:  # ChannelInfoList: Sleep status
@@ -768,7 +768,7 @@ class Baichuan:
 
                         if yolo_type not in state_dict or yolo_type not in YOLO_DETECTS:
                             if f"TCP_yolo_event_unknown_{yolo_type}" not in self._log_once:
-                                self._log_once.append(f"TCP_yolo_event_unknown_{yolo_type}")
+                                self._log_once.add(f"TCP_yolo_event_unknown_{yolo_type}")
                                 _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event %s", self.http_api.nvr_name, channel, yolo_type)
                             continue
 

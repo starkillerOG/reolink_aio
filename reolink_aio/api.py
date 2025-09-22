@@ -319,7 +319,7 @@ class Host:
         self._subscription_termination_time: dict[str, datetime] = {}
         self._subscription_time_difference: dict[str, float] = {}
         self._onvif_only_motion = {SubType.push: True, SubType.long_poll: True}
-        self._log_once: list[str] = []
+        self._log_once: set[str] = set()
 
     ##############################################################################
     # Properties
@@ -6774,13 +6774,13 @@ class Host:
                         channel = int(source_element.attrib["Value"])
                     except ValueError:
                         if f"ONVIF_{rule}_invalid_channel" not in self._log_once:
-                            self._log_once.append(f"ONVIF_{rule}_invalid_channel")
+                            self._log_once.add(f"ONVIF_{rule}_invalid_channel")
                             _LOGGER.warning("Reolink ONVIF event '%s' data contained invalid channel '%s', issuing poll instead", rule, source_element.attrib["Value"])
 
             if channel is None:
                 # Unknown which channel caused the event, poll all channels
                 if f"ONVIF_{rule}_no_channel" not in self._log_once:
-                    self._log_once.append(f"ONVIF_{rule}_no_channel")
+                    self._log_once.add(f"ONVIF_{rule}_no_channel")
                     _LOGGER.warning("Reolink ONVIF event '%s' does not contain channel", rule)
                 if not await self.get_motion_state_all_ch():
                     _LOGGER.error("Could not poll motion state after receiving ONVIF event with unknown channel")
@@ -6797,13 +6797,13 @@ class Host:
             data_element = message.find(f".//\u007bhttp://www.onvif.org/ver10/schema\u007dSimpleItem[@Name='{key}']")
             if data_element is None or "Value" not in data_element.attrib:
                 if f"ONVIF_{rule}_no_data" not in self._log_once:
-                    self._log_once.append(f"ONVIF_{rule}_no_data")
+                    self._log_once.add(f"ONVIF_{rule}_no_data")
                     _LOGGER.warning("ONVIF event '%s' did not contain data:\n%s", rule, data)
                 continue
 
             if rule not in ["Motion", "MotionAlarm", "FaceDetect", "PeopleDetect", "VehicleDetect", "DogCatDetect", "Package", "Visitor"]:
                 if f"ONVIF_unknown_{rule}" not in self._log_once:
-                    self._log_once.append(f"ONVIF_unknown_{rule}")
+                    self._log_once.add(f"ONVIF_unknown_{rule}")
                     _LOGGER.warning("ONVIF event with unknown rule: '%s'", rule)
                 continue
 
@@ -6835,7 +6835,7 @@ class Host:
         if not event_channels and not contains_channels:
             # ONVIF notification withouth known events
             if "ONVIF_no_known" not in self._log_once:
-                self._log_once.append("ONVIF_no_known")
+                self._log_once.add("ONVIF_no_known")
                 _LOGGER.warning("Reolink ONVIF notification received withouth any known events:\n%s", data)
             if not await self.get_motion_state_all_ch():
                 _LOGGER.error("Could not poll motion state after receiving ONVIF event without any known events")
@@ -6844,7 +6844,7 @@ class Host:
         if self._onvif_only_motion[sub_type] and any(self.ai_supported(ch) for ch in event_channels):
             # Poll all other states since not all cameras have rich notifications including the specific events
             if f"ONVIF_only_motion_{sub_type}" not in self._log_once:
-                self._log_once.append(f"ONVIF_only_motion_{sub_type}")
+                self._log_once.add(f"ONVIF_only_motion_{sub_type}")
                 _LOGGER.debug("Reolink model '%s' appears to not support rich notifications for %s", self.model, sub_type)
             if not await self.get_ai_state_all_ch():
                 _LOGGER.error("Could not poll AI event state after receiving ONVIF event with only motion event")
