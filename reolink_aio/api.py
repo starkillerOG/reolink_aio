@@ -4146,6 +4146,7 @@ class Host:
                     chime.sw_version = dev["version"]
                 if "type" in dev:
                     chime.event_info = dev["type"]
+                    chime.update_enums()
 
         elif data["cmd"] == "DingDongOpt":
             if chime_id not in self._chime_list:
@@ -6867,6 +6868,8 @@ class Chime:
         self.connect_state: int | None = None
         self.event_info: dict[str, dict[str, int]] | None = None
         self.sw_version: str | None = None
+        self._log_once: set[str] = set()
+        self._tone_names: dict[str, str | None] = {}
 
     def __repr__(self) -> str:
         if self.channel is None:
@@ -6894,6 +6897,23 @@ class Chime:
         if state != 1:
             return -1
         return self.event_info.get(event_type, {}).get("musicId")
+
+    def update_enums(self) -> None:
+        self._tone_names = {}
+        for event_type in self.chime_event_types:
+            tone = self.tone(event_type)
+            tone_name = None
+            if tone is not None:
+                try:
+                    tone_name = ChimeToneEnum(tone).name
+                except (ValueError, KeyError):
+                    if f"tone_name_{event_type}" not in self._log_once:
+                        self._log_once.add(f"tone_name_{event_type}")
+                        _LOGGER.exception("Reolink chime '%s' has an unknown value", self.name)
+            self._tone_names[event_type] = tone_name
+
+    def tone_name(self, event_type: str) -> str | None:
+        return self._tone_names.get(event_type)
 
     async def play(self, tone_id: int) -> None:
         tone_id_list = [val.value for val in ChimeToneEnum]
