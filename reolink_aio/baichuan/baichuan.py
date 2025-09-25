@@ -1132,6 +1132,9 @@ class Baichuan:
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
 
+            if self.http_api.supported(channel, "pan_tilt"):
+                coroutines.append(("ptz_position", channel, self.get_ptz_position(channel)))
+
             ledVersion = self.api_version("ledCtrl", channel)
             if (ledVersion >> 0) & 1:  # 1th bit (1), shift 0
                 self.capabilities[channel].add("status_led")  # internal use only
@@ -1206,6 +1209,13 @@ class Baichuan:
                     self.capabilities[channel].add("day_night_state")
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
+                elif cmd_id == "ptz_position":
+                    if self.http_api.ptz_pan_position(channel) is not None:
+                        self.capabilities[channel].add("ptz_position")
+                        self.capabilities[channel].add("ptz_pan_position")
+                    if self.http_api.ptz_tilt_position(channel) is not None:
+                        self.capabilities[channel].add("ptz_position")
+                        self.capabilities[channel].add("ptz_tilt_position")
                 elif cmd_id == "GetAudioCfg":
                     self.capabilities[channel].add("volume")
                     if self.api_version("doorbellVersion", channel) > 0 and "visitorLoudspeaker" in self.http_api._audio_settings.get(channel, {}):
@@ -1308,6 +1318,9 @@ class Baichuan:
 
             if self.supported(channel, "ai_cry") and inc_cmd("299", channel):
                 coroutines.append(self.get_cry_detection(channel))
+
+            if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
+                coroutines.append(self.get_ptz_position(channel))
 
             if self.supported(channel, "pre_record") and inc_cmd("594", channel):
                 coroutines.append(self.get_pre_recording(channel))
@@ -1499,10 +1512,12 @@ class Baichuan:
         if value is not None:
             self.http_api._wifi_signal[channel] = int(value)
 
+    @http_cmd("GetPtzCurPos")
     async def get_ptz_position(self, channel: int) -> None:
         """Get the wifi signal of the host"""
         mess = await self.send(cmd_id=433, channel=channel)
-        self._ptz_position[channel] = self._get_keys_from_xml(mess, ["pPos", "tPos"])
+        ptz_position = self._get_keys_from_xml(mess, {"pPos": ("Ppos", int), "tPos": ("Tpos", int)})
+        self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
 
     async def get_cry_detection(self, channel: int) -> bool:
         """Check if cry detection is supported and get the sensitivity level"""
@@ -2540,18 +2555,6 @@ class Baichuan:
 
     def smart_ai_state(self, channel: int, smart_type: str, location: int, ai_type: str = "state") -> bool:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get(ai_type, False)
-
-    def pan_position(self, channel: int) -> int | None:
-        pos = self._ptz_position.get(channel, {}).get("pPos")
-        if pos is None:
-            return None
-        return int(pos)
-
-    def tilt_position(self, channel: int) -> int | None:
-        pos = self._ptz_position.get(channel, {}).get("tPos")
-        if pos is None:
-            return None
-        return int(pos)
 
     def hardwired_chime_type(self, channel: int) -> str | None:
         return str(self._hardwired_chime_settings.get(channel, {}).get("type"))

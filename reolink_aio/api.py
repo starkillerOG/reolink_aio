@@ -1811,12 +1811,6 @@ class Host:
                         self._capabilities[channel].add("ptz_callibrate")
                     if self.api_version("GetPtzGuard", channel) > 0:
                         self._capabilities[channel].add("ptz_guard")
-                    if self.api_version("GetPtzCurPos", channel) > 0:
-                        self._capabilities[channel].add("ptz_position")
-                        if self.ptz_pan_position(channel) is not None:
-                            self._capabilities[channel].add("ptz_pan_position")
-                        if self.ptz_tilt_position(channel) is not None:
-                            self._capabilities[channel].add("ptz_tilt_position")
                 if ptz_ver in [2, 3]:
                     self._capabilities[channel].add("ptz_speed")
                 if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
@@ -2198,9 +2192,6 @@ class Host:
             if self.supported(channel, "ptz_guard") and inc_cmd("GetPtzGuard", channel):
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
 
-            if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
-                ch_body.append({"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}})
-
             if self.supported(channel, "auto_track") and inc_cmd("GetAiCfg", channel):
                 ch_body.append({"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}})
 
@@ -2447,7 +2438,6 @@ class Host:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
-                ch_body.append({"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}})
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
             if self.api_version("mask", channel) > 0:
@@ -2528,7 +2518,6 @@ class Host:
         self._api_version["GetWhiteLed"] = check_command_exists("GetWhiteLed")
         self._api_version["GetDeviceAudioCfg"] = check_command_exists("GetDeviceAudioCfg")
         self._api_version["GetPtzGuard"] = check_command_exists("GetPtzGuard")
-        self._api_version["GetPtzCurPos"] = check_command_exists("GetPtzCurPos")
         if self.api_version("scheduleVersion") >= 1:
             self._api_version["GetEmail"] = check_command_exists("GetEmailV20")
             self._api_version["GetPush"] = check_command_exists("GetPushV20")
@@ -4037,7 +4026,7 @@ class Host:
                     self._ptz_guard_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetPtzCurPos":
-                    self._ptz_position[channel] = data["value"]
+                    self._ptz_position[channel] = data["value"].get("PtzCurPos", {})
 
                 elif data["cmd"] == "GetAiCfg":
                     self._auto_track_settings[channel] = data["value"]
@@ -4440,11 +4429,11 @@ class Host:
 
     def ptz_pan_position(self, channel: int) -> int | None:
         """pan position"""
-        return self._ptz_position.get(channel, {}).get("PtzCurPos", {}).get("Ppos")
+        return self._ptz_position.get(channel, {}).get("Ppos")
 
     def ptz_tilt_position(self, channel: int) -> int | None:
         """tilt position"""
-        return self._ptz_position.get(channel, {}).get("PtzCurPos", {}).get("Tpos")
+        return self._ptz_position.get(channel, {}).get("Tpos")
 
     def ptz_guard_enabled(self, channel: int) -> bool:
         if channel not in self._ptz_guard_settings:
