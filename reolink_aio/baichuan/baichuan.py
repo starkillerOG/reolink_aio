@@ -1166,6 +1166,9 @@ class Baichuan:
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
             if (aiVersion >> 22) & 1:  # 23th bit (4194304), shift 22
                 coroutines.append(("cry", channel, self.get_cry_detection(channel)))
+            if (aiVersion >> 23) & 1:  # 24th bit (8388608), shift 23 Yolo World
+                self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
+                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
 
             if self.http_api.api_version("doorbellVersion", channel) > 0:
                 self.http_api._is_doorbell[channel] = True
