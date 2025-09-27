@@ -13,7 +13,16 @@ from xml.etree import ElementTree as XML
 
 from Cryptodome.Cipher import AES
 
-from ..const import AI_DETECT_CONVERSION, YOLO_CONVERSION, YOLO_DETECTS, YOLO_DETECT_TYPES, MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
+from ..const import (
+    AI_DETECT_CONVERSION,
+    MAX_COLOR_TEMP,
+    MIN_COLOR_TEMP,
+    NONE_WAKING_COMMANDS,
+    UNKNOWN,
+    YOLO_CONVERSION,
+    YOLO_DETECT_TYPES,
+    YOLO_DETECTS,
+)
 from ..enums import (
     BatteryEnum,
     DayNightEnum,
@@ -759,10 +768,10 @@ class Baichuan:
                     _LOGGER.debug("Reolink %s TCP event channel %s, Manual record: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 600:  # AI YOLO world basic detection
-            for ch in self._ai_yolo_600:
+            for ch, item_dict in self._ai_yolo_600.items():
                 channels.add(ch)
-                for key in self._ai_yolo_600[ch]:
-                    self._ai_yolo_600[ch][key] = False
+                for key in item_dict:
+                    item_dict[key] = False
 
             for event_list in root:
                 for event in event_list:
@@ -817,7 +826,7 @@ class Baichuan:
 
                         _LOGGER.debug("Reolink %s TCP yolo event channel %s, %s: True", self.http_api.nvr_name, channel, yolo_type)
                         yolo_dict[yolo_type] = True
-                        
+
                         sub_type = None
                         for type_item in event_type.findall("subTypeList"):
                             new_sub_type = self._get_value_from_xml_element(type_item, "subType")
@@ -827,7 +836,9 @@ class Baichuan:
                             if new_sub_type not in YOLO_DETECT_TYPES.get(yolo_type, []):
                                 if f"TCP_yolo_type_unknown_{new_sub_type}" not in self._log_once:
                                     self._log_once.add(f"TCP_yolo_type_unknown_{new_sub_type}")
-                                    _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event sub type '%s'", self.http_api.nvr_name, channel, new_sub_type)
+                                    _LOGGER.warning(
+                                        "Reolink %s TCP event channel %s, received unknown yolo AI event sub type '%s'", self.http_api.nvr_name, channel, new_sub_type
+                                    )
                                 continue
                             if sub_type is None:
                                 sub_type = new_sub_type

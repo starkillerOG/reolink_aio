@@ -30,7 +30,13 @@ from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 from . import templates, typings
 from .baichuan import DEFAULT_BC_PORT, Baichuan, PortType
-from .const import AI_DETECT_CONVERSION, MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
+from .const import (
+    AI_DETECT_CONVERSION,
+    MAX_COLOR_TEMP,
+    MIN_COLOR_TEMP,
+    NONE_WAKING_COMMANDS,
+    UNKNOWN,
+)
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
