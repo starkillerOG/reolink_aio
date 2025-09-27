@@ -5224,19 +5224,8 @@ class Host:
 
         if channel is not None:
             params["channel"] = channel
-        else:
-            await self.baichuan.AudioAlarmPlay(**params)
-            return
 
-        body = [
-            {
-                "cmd": "AudioAlarmPlay",
-                "action": 0,
-                "param": params,
-            }
-        ]
-
-        await self.send_setting(body)
+        await self.baichuan.AudioAlarmPlay(**params)
 
     async def set_daynight(self, channel: int, value: str) -> None:
         if channel not in self._channels:
