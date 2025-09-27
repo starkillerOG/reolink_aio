@@ -146,6 +146,7 @@ class Baichuan:
         self._ir_brightness: dict[int, int] = {}
         self._cry_sensitivity: dict[int, int] = {}
         self._pre_record_state: dict[int, dict] = {}
+        self._siren_state: dict[int, bool] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -725,6 +726,16 @@ class Baichuan:
             self._parse_smart_ai_settings(root, channels, "legacy")
         elif cmd_id == 551:  # taken item
             self._parse_smart_ai_settings(root, channels, "loss")
+
+        elif cmd_id == 547:  # siren status
+            for item in root.findall(".//SirenStatus"):
+                channel = self._get_channel_from_xml_element(item, "channel")
+                state = self._get_value_from_xml_element(item, "status", int)
+                if channel is None or state is None:
+                    continue
+                channels.add(channel)
+                self._siren_state[channel] = state == 1
+                _LOGGER.debug("Reolink %s TCP event channel %s, Siren status: %s", self.http_api.nvr_name, channel, state == 1)
 
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
@@ -2564,3 +2575,6 @@ class Baichuan:
             return False
 
         return self._hardwired_chime_settings[channel]["enable"] == 1
+
+    def siren_state(self, channel: int) -> bool | None:
+        return self._siren_state.get(channel)
