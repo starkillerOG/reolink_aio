@@ -730,10 +730,6 @@ class Host:
 
         return False
 
-    def ai_detection_states(self, channel: int) -> dict[str, bool]:
-        """Return all the AI object detection state."""
-        return self._ai_detection_states[channel]
-
     def visitor_detected(self, channel: int) -> bool:
         """Return the visitor detection state (polled)."""
         return channel in self._visitor_states and self._visitor_states[channel]
