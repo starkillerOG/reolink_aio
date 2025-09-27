@@ -89,6 +89,7 @@ VEHICLE_DETECTION_TYPE = "vehicle"
 PET_DETECTION_TYPE = "pet"
 VISITOR_DETECTION_TYPE = "visitor"
 PACKAGE_DETECTION_TYPE = "package"
+AI_DETECT_CONVERSION = {PERSON_DETECTION_TYPE: "people", PET_DETECTION_TYPE: "dog_cat"}
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
@@ -721,11 +722,21 @@ class Host:
 
     def ai_detected(self, channel: int, object_type: str) -> bool:
         """Return the AI object detection state (polled)."""
-        for key, value in self._ai_detection_states.get(channel, {}).items():
-            if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
-                return value
+        ai_val = (
+            self._ai_detection_states.get(channel, {}).get(object_type)
+            or self.baichuan._ai_yolo_600.get(channel, {}).get(object_type)
+            or self.baichuan._ai_yolo_696.get(channel, {}).get(object_type)
+        )
 
-        return False
+        if ai_val is None:
+            key = AI_DETECT_CONVERSION.get(object_type, object_type)
+            ai_val = (
+                self._ai_detection_states.get(channel, {}).get(key, False)
+                or self.baichuan._ai_yolo_600.get(channel, {}).get(key, False)
+                or self.baichuan._ai_yolo_696.get(channel, {}).get(key, False)
+            )
+
+        return ai_val
 
     def visitor_detected(self, channel: int) -> bool:
         """Return the visitor detection state (polled)."""

@@ -63,8 +63,8 @@ MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 30  # seconds
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
-YOLO_CONVERSION = {"person": "people", "motor vehicle": "vehicle"}
-YOLO_DETECTS = {"people", "vehicle"}
+YOLO_CONVERSION = {"person": "people", "motor vehicle": "vehicle", "animal": "dog_cat"}
+YOLO_DETECTS = {"people", "vehicle", "package"}
 SMART_AI = {
     "crossline": (527, 528),
     "intrusion": (529, 530),
@@ -148,6 +148,9 @@ class Baichuan:
         self._cry_sensitivity: dict[int, int] = {}
         self._pre_record_state: dict[int, dict] = {}
         self._siren_state: dict[int, bool] = {}
+        self._ai_yolo_600: dict[int, dict[str, bool]] = {}
+        self._ai_yolo_696: dict[int, dict[str, bool]] = {}
+        self._ai_yolo_sub_type: dict[int, bool] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -757,7 +760,36 @@ class Baichuan:
                     self.http_api._manual_record_settings.setdefault(channel, {}).setdefault("Rec", {})["enable"] = state
                     _LOGGER.debug("Reolink %s TCP event channel %s, Manual record: %s", self.http_api.nvr_name, channel, state)
 
-        elif cmd_id == 600:  # AI YOLO world
+        elif cmd_id == 600:  # AI YOLO world basic detection
+            for ch in self._ai_yolo_600:
+                for key in self._ai_yolo_600[ch]:
+                    self._ai_yolo_600[ch][key] = False
+
+            for event_list in root:
+                for event in event_list:
+                    channel = self._get_channel_from_xml_element(event, "channel")
+                    if channel is None:
+                        continue
+                    channels.add(channel)
+                    
+                    state_dict = self.http_api._ai_detection_states.get(channel, {})
+                    for event_type in event.findall("YoloWorldType"):
+                        yolo_type = self._get_value_from_xml_element(event_type, "type")
+                        if yolo_type is None:
+                            continue
+                        if not self._events_active and self._subscribed:
+                            self._events_active = True
+                        yolo_type = YOLO_CONVERSION.get(yolo_type, yolo_type)
+                        if yolo_type not in state_dict or yolo_type not in YOLO_DETECTS:
+                            if f"TCP_yolo_event_unknown_{yolo_type}" not in self._log_once:
+                                self._log_once.add(f"TCP_yolo_event_unknown_{yolo_type}")
+                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event %s", self.http_api.nvr_name, channel, yolo_type)
+                            continue
+
+                        _LOGGER.debug("Reolink %s TCP yolo event channel %s, %s: True", self.http_api.nvr_name, channel, yolo_type)
+                        self._ai_yolo_600.setdefault(channel, {})[yolo_type] = True
+
+        elif cmd_id == 696:  # AI YOLO world detailed detection
             for event_list in root:
                 for event in event_list:
                     channel = self._get_channel_from_xml_element(event, "channel")
@@ -766,8 +798,9 @@ class Baichuan:
                     channels.add(channel)
 
                     state_dict = self.http_api._ai_detection_states.get(channel, {})
-                    for key in YOLO_DETECTS.intersection(state_dict):
-                        state_dict[key] = False
+                    yolo_dict = self._ai_yolo_696.setdefault(channel, {})
+                    for key in YOLO_DETECTS.intersection(yolo_dict):
+                        yolo_dict[key] = False
 
                     for event_type in event.findall("YoloWorldType"):
                         yolo_type = self._get_value_from_xml_element(event_type, "type")
@@ -783,7 +816,7 @@ class Baichuan:
                             continue
 
                         _LOGGER.debug("Reolink %s TCP yolo event channel %s, %s: True", self.http_api.nvr_name, channel, yolo_type)
-                        state_dict[yolo_type] = True
+                        yolo_dict[yolo_type] = True
 
         elif cmd_id == 603:  # sceneListID
             for scene_id in root.findall(".//id"):
