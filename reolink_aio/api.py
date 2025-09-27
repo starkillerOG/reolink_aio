@@ -30,7 +30,7 @@ from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 from . import templates, typings
 from .baichuan import DEFAULT_BC_PORT, Baichuan, PortType
-from .const import MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
+from .const import AI_DETECT_CONVERSION, MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
 from .enums import (
     BatteryEnum,
     BinningModeEnum,
@@ -89,7 +89,6 @@ VEHICLE_DETECTION_TYPE = "vehicle"
 PET_DETECTION_TYPE = "pet"
 VISITOR_DETECTION_TYPE = "visitor"
 PACKAGE_DETECTION_TYPE = "package"
-AI_DETECT_CONVERSION = {PERSON_DETECTION_TYPE: "people", PET_DETECTION_TYPE: "dog_cat"}
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
@@ -1715,6 +1714,10 @@ class Host:
 
             if self.api_version("supportAiAnimal", channel) and self.ai_supported(channel, PET_DETECTION_TYPE):
                 self._capabilities[channel].add("ai_animal")
+
+            for key, value in self._ai_detection_support.get(channel, {}).items():
+                if value:
+                    self._capabilities[channel].add(f"ai_{key}")
 
             if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
                 continue

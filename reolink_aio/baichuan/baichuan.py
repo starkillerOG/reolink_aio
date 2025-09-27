@@ -13,7 +13,7 @@ from xml.etree import ElementTree as XML
 
 from Cryptodome.Cipher import AES
 
-from ..const import MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
+from ..const import AI_DETECT_CONVERSION, YOLO_CONVERSION, YOLO_DETECTS, YOLO_DETECT_TYPES, MAX_COLOR_TEMP, MIN_COLOR_TEMP, NONE_WAKING_COMMANDS, UNKNOWN
 from ..enums import (
     BatteryEnum,
     DayNightEnum,
@@ -63,8 +63,6 @@ MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 30  # seconds
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
-YOLO_CONVERSION = {"person": "people", "motor vehicle": "vehicle", "animal": "dog_cat"}
-YOLO_DETECTS = {"people", "vehicle", "package"}
 SMART_AI = {
     "crossline": (527, 528),
     "intrusion": (529, 530),
@@ -150,7 +148,7 @@ class Baichuan:
         self._siren_state: dict[int, bool] = {}
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
-        self._ai_yolo_sub_type: dict[int, bool] = {}
+        self._ai_yolo_sub_type: dict[int, str | None] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -762,6 +760,7 @@ class Baichuan:
 
         elif cmd_id == 600:  # AI YOLO world basic detection
             for ch in self._ai_yolo_600:
+                channels.add(ch)
                 for key in self._ai_yolo_600[ch]:
                     self._ai_yolo_600[ch][key] = False
 
@@ -771,8 +770,7 @@ class Baichuan:
                     if channel is None:
                         continue
                     channels.add(channel)
-                    
-                    state_dict = self.http_api._ai_detection_states.get(channel, {})
+
                     for event_type in event.findall("YoloWorldType"):
                         yolo_type = self._get_value_from_xml_element(event_type, "type")
                         if yolo_type is None:
@@ -780,7 +778,7 @@ class Baichuan:
                         if not self._events_active and self._subscribed:
                             self._events_active = True
                         yolo_type = YOLO_CONVERSION.get(yolo_type, yolo_type)
-                        if yolo_type not in state_dict or yolo_type not in YOLO_DETECTS:
+                        if not self.http_api.supported(channel, f"ai_{yolo_type}") or yolo_type not in YOLO_DETECTS:
                             if f"TCP_yolo_event_unknown_{yolo_type}" not in self._log_once:
                                 self._log_once.add(f"TCP_yolo_event_unknown_{yolo_type}")
                                 _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event %s", self.http_api.nvr_name, channel, yolo_type)
@@ -797,10 +795,12 @@ class Baichuan:
                         continue
                     channels.add(channel)
 
-                    state_dict = self.http_api._ai_detection_states.get(channel, {})
                     yolo_dict = self._ai_yolo_696.setdefault(channel, {})
-                    for key in YOLO_DETECTS.intersection(yolo_dict):
+                    sub_type_dict = self._ai_yolo_sub_type.setdefault(channel, {})
+                    for key in yolo_dict:
                         yolo_dict[key] = False
+                    for key in sub_type_dict:
+                        sub_type_dict[key] = None
 
                     for event_type in event.findall("YoloWorldType"):
                         yolo_type = self._get_value_from_xml_element(event_type, "type")
@@ -809,14 +809,31 @@ class Baichuan:
                         if not self._events_active and self._subscribed:
                             self._events_active = True
                         yolo_type = YOLO_CONVERSION.get(yolo_type, yolo_type)
-                        if yolo_type not in state_dict or yolo_type not in YOLO_DETECTS:
+                        if not self.http_api.supported(channel, f"ai_{yolo_type}") or yolo_type not in YOLO_DETECTS:
                             if f"TCP_yolo_event_unknown_{yolo_type}" not in self._log_once:
                                 self._log_once.add(f"TCP_yolo_event_unknown_{yolo_type}")
-                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event %s", self.http_api.nvr_name, channel, yolo_type)
+                                _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event '%s'", self.http_api.nvr_name, channel, yolo_type)
                             continue
 
                         _LOGGER.debug("Reolink %s TCP yolo event channel %s, %s: True", self.http_api.nvr_name, channel, yolo_type)
                         yolo_dict[yolo_type] = True
+                        
+                        sub_type = None
+                        for type_item in event_type.findall("subTypeList"):
+                            new_sub_type = self._get_value_from_xml_element(type_item, "subType")
+                            if new_sub_type is None:
+                                continue
+                            new_sub_type = new_sub_type.replace(" ", "_")
+                            if new_sub_type not in YOLO_DETECT_TYPES.get(yolo_type, []):
+                                if f"TCP_yolo_type_unknown_{new_sub_type}" not in self._log_once:
+                                    self._log_once.add(f"TCP_yolo_type_unknown_{new_sub_type}")
+                                    _LOGGER.warning("Reolink %s TCP event channel %s, received unknown yolo AI event sub type '%s'", self.http_api.nvr_name, channel, new_sub_type)
+                                continue
+                            if sub_type is None:
+                                sub_type = new_sub_type
+                            else:
+                                sub_type = f"{sub_type}, {new_sub_type}"
+                        sub_type_dict[yolo_type] = sub_type
 
         elif cmd_id == 603:  # sceneListID
             for scene_id in root.findall(".//id"):
@@ -1169,6 +1186,8 @@ class Baichuan:
             if (aiVersion >> 23) & 1:  # 24th bit (8388608), shift 23 Yolo World
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
+                self.capabilities[channel].add("ai_non-motor vehicle")
+                self.capabilities[channel].add("ai_yolo_type")
 
             if self.http_api.api_version("doorbellVersion", channel) > 0:
                 self.http_api._is_doorbell[channel] = True
@@ -2601,6 +2620,13 @@ class Baichuan:
 
     def smart_ai_state(self, channel: int, smart_type: str, location: int, ai_type: str = "state") -> bool:
         return self._ai_detect.get(channel, {}).get(smart_type, {}).get(location, {}).get(ai_type, False)
+
+    def ai_detect_type(self, channel: int, object_type: str) -> str | None:
+        val = self._ai_yolo_sub_type.get(channel, {}).get(object_type)
+        if val is None:
+            key = AI_DETECT_CONVERSION.get(object_type, object_type)
+            val = self._ai_yolo_sub_type.get(channel, {}).get(key)
+        return val
 
     def hardwired_chime_type(self, channel: int) -> str | None:
         return str(self._hardwired_chime_settings.get(channel, {}).get("type"))
