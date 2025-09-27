@@ -721,10 +721,7 @@ class Host:
 
     def ai_detected(self, channel: int, object_type: str) -> bool:
         """Return the AI object detection state (polled)."""
-        if channel not in self._ai_detection_states or self._ai_detection_states[channel] is None:
-            return False
-
-        for key, value in self._ai_detection_states[channel].items():
+        for key, value in self._ai_detection_states.get(channel, {}).items():
             if key == object_type or (object_type == PERSON_DETECTION_TYPE and key == "people") or (object_type == PET_DETECTION_TYPE and key == "dog_cat"):
                 return value
 
@@ -2612,11 +2609,7 @@ class Host:
 
         self.map_channel_json_response(json_data, channel)
 
-        return (
-            None
-            if self._ai_detection_states is None or channel not in self._ai_detection_states or self._ai_detection_states[channel] is None
-            else self._ai_detection_states[channel]
-        )
+        return self._ai_detection_states.get(channel)
 
     async def get_ai_state_all_ch(self) -> bool:
         """Fetch Ai and visitor state all channels at once (AI + visitor)."""
