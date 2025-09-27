@@ -63,7 +63,8 @@ MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 TIMEOUT = 30  # seconds
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
-YOLO_DETECTS = {"person", "vehicle"}
+YOLO_CONVERSION = {"person": "people", "motor vehicle": "vehicle"}
+YOLO_DETECTS = {"people", "vehicle"}
 SMART_AI = {
     "crossline": (527, 528),
     "intrusion": (529, 530),
@@ -774,9 +775,7 @@ class Baichuan:
                             continue
                         if not self._events_active and self._subscribed:
                             self._events_active = True
-                        if yolo_type == "motor vehicle":
-                            yolo_type = "vehicle"
-
+                        yolo_type = YOLO_CONVERSION.get(yolo_type, yolo_type)
                         if yolo_type not in state_dict or yolo_type not in YOLO_DETECTS:
                             if f"TCP_yolo_event_unknown_{yolo_type}" not in self._log_once:
                                 self._log_once.add(f"TCP_yolo_event_unknown_{yolo_type}")
