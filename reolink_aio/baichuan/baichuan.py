@@ -157,7 +157,7 @@ class Baichuan:
         self._siren_state: dict[int, bool] = {}
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
-        self._ai_yolo_sub_type: dict[int, str | None] = {}
+        self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -768,8 +768,8 @@ class Baichuan:
                     _LOGGER.debug("Reolink %s TCP event channel %s, Manual record: %s", self.http_api.nvr_name, channel, state)
 
         elif cmd_id == 600:  # AI YOLO world basic detection
-            for ch, item_dict in self._ai_yolo_600.items():
-                channels.add(ch)
+            for chan, item_dict in self._ai_yolo_600.items():
+                channels.add(chan)
                 for key in item_dict:
                     item_dict[key] = False
 
