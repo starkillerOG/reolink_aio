@@ -2028,11 +2028,14 @@ class Host:
                 else:
                     ch_body = [{"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}}]
             elif cmd == "GetAiAlarm" and self.supported(channel, "ai_sensitivity"):
-                ch_body = []
-                for ai_type in self.ai_supported_types(channel):
-                    if ai_type == "cry":
-                        continue
-                    ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
+                if self.supported(channel, "ai_yolo_type"):
+                    await self.baichuan.get_yolo_settings(channel)
+                else:
+                    ch_body = []
+                    for ai_type in self.ai_supported_types(channel):
+                        if ai_type == "cry":
+                            continue
+                        ch_body.append({"cmd": "GetAiAlarm", "action": 0, "param": {"channel": channel, "ai_type": ai_type}})
             elif cmd in ["GetEmail", "GetEmailV20"] and (self.supported(channel, "email") or (self.supported(None, "email") and channel == 0)):
                 if self.api_version("GetEmail") >= 1:
                     ch_body = [{"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}}]
@@ -2271,7 +2274,7 @@ class Host:
                 else:
                     ch_body.append({"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}})
 
-            if self.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
+            if not self.supported(channel, "ai_yolo_type") and self.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
                 for ai_type in self.ai_supported_types(channel):
                     if ai_type == "cry":
                         continue
@@ -3879,9 +3882,7 @@ class Host:
 
                 elif data["cmd"] == "GetAiAlarm":
                     ai_type = data["value"]["AiAlarm"]["ai_type"]
-                    if channel not in self._ai_alarm_settings:
-                        self._ai_alarm_settings[channel] = {}
-                    self._ai_alarm_settings[channel][ai_type] = data["value"]["AiAlarm"]
+                    self._ai_alarm_settings.setdefault(channel, {})[ai_type] = data["value"]["AiAlarm"]
 
                 elif data["cmd"] == "GetAiState":
                     self._ai_detection_states.setdefault(channel, {})
@@ -5401,8 +5402,12 @@ class Host:
             raise InvalidParameterError(f"set_ai_sensitivity: sensitivity '{value}' is not integer")
         if value < 0 or value > 100:
             raise InvalidParameterError(f"set_ai_sensitivity: sensitivity {value} not in range 0...100")
-        if ai_type not in self.ai_supported_types(channel):
+        if not self.supported(channel, f"ai_{ai_type}"):
             raise InvalidParameterError(f"set_ai_sensitivity: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}")
+
+        if self.supported(channel, "ai_yolo_type"):
+            await self.baichuan.set_yolo_settings(channel, ai_type=ai_type, sensitivity=value)
+            return
 
         body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "sensitivity": value}}}]
         await self.send_setting(body)
@@ -5417,8 +5422,12 @@ class Host:
             raise InvalidParameterError(f"set_ai_delay: delay '{value}' is not integer")
         if value < 0 or value > 8:
             raise InvalidParameterError(f"set_ai_delay: delay {value} not in range 0...8")
-        if ai_type not in self.ai_supported_types(channel):
+        if not self.supported(channel, f"ai_{ai_type}"):
             raise InvalidParameterError(f"set_ai_delay: ai type '{ai_type}' not supported for channel {channel}, supported types are {self.ai_supported_types(channel)}")
+
+        if self.supported(channel, "ai_yolo_type"):
+            await self.baichuan.set_yolo_settings(channel, ai_type=ai_type, delay=value)
+            return
 
         body: typings.reolink_json = [{"cmd": "SetAiAlarm", "action": 0, "param": {"AiAlarm": {"channel": channel, "ai_type": ai_type, "stay_time": value}}}]
         await self.send_setting(body)

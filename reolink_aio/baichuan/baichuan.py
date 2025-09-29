@@ -1395,6 +1395,9 @@ class Baichuan:
             if self.supported(channel, "ai_cry") and inc_cmd("299", channel):
                 coroutines.append(self.get_cry_detection(channel))
 
+            if self.supported(channel, "ai_yolo_type") and self.http_api.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
+                coroutines.append(self.get_yolo_settings(channel))
+
             if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
                 coroutines.append(self.get_ptz_position(channel))
 
@@ -1614,6 +1617,39 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=300, channel=channel, body=xml)
         await self.get_cry_detection(channel)
+
+    async def get_yolo_settings(self, channel: int) -> None:
+        """Get the yoloworld AI settings"""
+        mess = await self.send(cmd_id=628, channel=channel)
+        root = XML.fromstring(mess)
+        self.http_api._ai_alarm_settings.setdefault(channel, {})
+        for conf in root.findall(".//YoloWorldCfg"):
+            data = self._get_keys_from_xml(conf, {"type": ("type", str), "sensitivity": ("sensitivity", int), "stayTime": ("stay_time", int)})
+            if (ai_type := data.get("type")) is not None:
+                data.pop("type")
+                ai_type = YOLO_CONVERSION.get(ai_type, ai_type)
+                self.http_api._ai_alarm_settings[channel][ai_type] = data
+
+    async def set_yolo_settings(self, channel: int, ai_type: str, sensitivity: int | None = None, delay: int | None = None) -> None:
+        mess = await self.send(cmd_id=628, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        for conf in xml_body.findall(".//YoloWorldCfg"):
+            conf_ai_type = self._get_value_from_xml_element(conf, "type")
+            if conf_ai_type is None:
+                continue
+            conf_ai_type = YOLO_CONVERSION.get(conf_ai_type, conf_ai_type)
+            if conf_ai_type == ai_type:
+                if sensitivity is not None and (xml_sensitivity := conf.find(".//sensitivity")) is not None:
+                    xml_sensitivity.text = str(sensitivity)
+                if delay is not None and (xml_delay := conf.find(".//stayTime")) is not None:
+                    xml_delay.text = str(delay)
+                break
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=629, channel=channel, body=xml)
+        await self.get_yolo_settings(channel)
 
     async def get_day_night_state(self, channel: int) -> None:
         """Get the day night state"""
