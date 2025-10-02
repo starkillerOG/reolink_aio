@@ -1646,7 +1646,7 @@ class Host:
             # Check if this camera publishes its inital state upon ONVIF subscription
             self._capabilities["Host"].add("initial_ONVIF_state")
 
-        if self._ftp_settings and not self._is_hub:
+        if self._ftp_settings and self.api_version("supportIfttt", 0) <= 0 and not self._is_hub:
             self._capabilities["Host"].add("ftp")
 
         if self._push_settings and not self._is_hub:
@@ -1657,11 +1657,13 @@ class Host:
 
         if self._recording_settings and not self._is_hub:
             self._capabilities["Host"].add("recording")
+            if self.api_version("supportIfttt", 0) <= 0:
+                self._capabilities["Host"].add("rec_enable")
 
         if self.recording_packing_time_list and self.recording_packing_time:
             self._capabilities["Host"].add("pak_time")
 
-        if self._email_settings and not self._is_hub:
+        if self._email_settings and self.api_version("supportIfttt", 0) <= 0 and not self._is_hub:
             self._capabilities["Host"].add("email")
 
         if self.api_version("supportBuzzer") > 0 and not self._is_hub:
@@ -1740,7 +1742,11 @@ class Host:
             if self.api_version("supportWebhook", channel) > 0:
                 self._capabilities[channel].add("webhook")
 
-            if channel in self._ftp_settings and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"]):
+            if (
+                channel in self._ftp_settings
+                and self.api_version("supportIfttt", channel) <= 0
+                and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"])
+            ):
                 self._capabilities[channel].add("ftp")
 
             if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
@@ -1751,6 +1757,8 @@ class Host:
 
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
                 self._capabilities[channel].add("recording")
+                if self.api_version("supportIfttt", channel) <= 0:
+                    self._capabilities["Host"].add("rec_enable")
 
             if self.post_recording_time_list(channel) and self.post_recording_time(channel):
                 self._capabilities[channel].add("post_rec_time")
@@ -1758,7 +1766,11 @@ class Host:
             if channel in self._manual_record_settings and "enable" in self._recording_settings[channel]["Rec"]:
                 self._capabilities[channel].add("manual_record")
 
-            if channel in self._email_settings and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"]):
+            if (
+                channel in self._email_settings
+                and self.api_version("supportIfttt", channel) <= 0
+                and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"])
+            ):
                 self._capabilities[channel].add("email")
 
             if channel in self._buzzer_settings and self.api_version("supportBuzzer") > 0 and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]:
@@ -1794,8 +1806,9 @@ class Host:
                 self._capabilities[channel].add("chime")
 
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
-                self._capabilities[channel].add("siren")
                 self._capabilities[channel].add("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
+                if self.api_version("supportIfttt", channel) <= 0:
+                    self._capabilities[channel].add("siren")
 
             if self._enc_settings.get(channel, {}).get("Enc", {}).get("audio") is not None:
                 self._capabilities[channel].add("audio")
