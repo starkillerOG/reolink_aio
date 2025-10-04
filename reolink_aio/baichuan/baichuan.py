@@ -158,7 +158,7 @@ class Baichuan:
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
-        self._rules: dict[int, dict[int, dict[str, str | bool]]] = {}
+        self._rules: dict[int, dict[int, dict[str, Any]]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -468,7 +468,9 @@ class Baichuan:
         xml_value = xml_element.find(f".//{key}")
         if xml_value is None:
             return None
-        value = xml_value.text
+        value: str | int | None = xml_value.text
+        if value is None:
+            return None
         try:
             if type_class == bool:
                 value = int(value)
@@ -491,7 +493,7 @@ class Baichuan:
             root = xml
         result: dict[str, Any] = {}
         for key in keys:
-            value = self._get_value_from_xml_element(root, key)
+            value: str | int | None = self._get_value_from_xml_element(root, key)
             if value is None:
                 continue
             if isinstance(keys, dict):
@@ -1607,7 +1609,7 @@ class Baichuan:
     async def get_cry_detection(self, channel: int) -> bool:
         """Check if cry detection is supported and get the sensitivity level"""
         mess = await self.send(cmd_id=299, channel=channel)
-        data = self._get_keys_from_xml(mess, {{"cryDetectAbility": ("cryDetectAbility", str)}, {"cryDetectLevel": ("cryDetectLevel", int)}})
+        data = self._get_keys_from_xml(mess, {"cryDetectAbility": ("cryDetectAbility", str), "cryDetectLevel": ("cryDetectLevel", int)})
         if (cry_sensitivity := data.get("cryDetectLevel")) is not None:
             self._cry_sensitivity[channel] = cry_sensitivity
         return data.get("cryDetectAbility") == "1"  # supported or not
@@ -1699,7 +1701,7 @@ class Baichuan:
     async def get_privacy_mode(self, channel: int = 0) -> bool | None:
         """Get the privacy mode state"""
         mess = await self.send(cmd_id=574, channel=channel)
-        sleep = self._get_value_from_xml(mess, "sleep", bool)
+        sleep = self._get_value_from_xml_element(XML.fromstring(mess), "sleep", bool)
         if sleep is None:
             return None
         self._privacy_mode[channel] = sleep
@@ -2322,7 +2324,8 @@ class Baichuan:
 
         await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
 
-    def _parse_rule(self, root: str) -> None:
+    def _parse_rule(self, mess: str) -> None:
+        root = XML.fromstring(mess)
         for IFTTT_list in root:
             for rule in IFTTT_list:
                 data = self._get_keys_from_xml(rule, {"channel": ("channel", int), "id": ("id", int), "enable": ("enable", bool), "name": ("name", str)})
@@ -2354,30 +2357,27 @@ class Baichuan:
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         mess = await self.send(cmd_id=668, body=xml)
-        root = XML.fromstring(mess)
-        self._parse_rule(root)
+        self._parse_rule(mess)
 
     async def get_rule(self, rule_id: int) -> None:
         """Get the list of survaillance rule ids and update the state"""
         xml = xmls.GetRule.format(rule_id=rule_id)
         mess = await self.send(cmd_id=668, body=xml)
-        root = XML.fromstring(mess)
-        self._parse_rule(root)
+        self._parse_rule(mess)
 
     async def set_rule_enabled(self, rule_id: int, enabled: bool) -> None:
         """Enable/disable a survaillance rule"""
         xml = xmls.GetRule.format(rule_id=rule_id)
         mess = await self.send(cmd_id=668, body=xml)
         root = XML.fromstring(mess)
-        
+
         enabled_str = "1" if enabled else "0"
-        
+
         if (xml_list := root.find("IFTTTList")) is not None:
+            xml_list.tag = "IFTTTUpdate"
             if (xml_rule := xml_list.find("linkage")) is not None:
                 if (xml_enable := xml_rule.find("enable")) is not None:
                     xml_enable.text = enabled_str
-
-        xml_list.tag = "IFTTTUpdate"
 
         xml = XML.tostring(root, encoding="unicode")
         xml = xmls.XML_HEADER + xml
