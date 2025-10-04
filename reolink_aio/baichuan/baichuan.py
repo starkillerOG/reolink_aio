@@ -158,6 +158,7 @@ class Baichuan:
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
+        self._rules: dict[int, dict[int, dict[str, str | bool]]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -2320,6 +2321,80 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
 
         await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
+
+    def _parse_rule(self, root: str) -> None:
+        for IFTTT_list in root:
+            for rule in IFTTT_list:
+                data = self._get_keys_from_xml(rule, {"channel": ("channel", int), "id": ("id", int), "enable": ("enable", bool), "name": ("name", str)})
+                channel = data.pop("channel", None)
+                rule_id = data.pop("id", None)
+                if channel is None or rule_id is None:
+                    continue
+                ch_rule = self._rules.setdefault(channel, {})
+                if not self.http_api._startup and rule_id not in ch_rule:
+                    _LOGGER.info(
+                        "New Reolink survaillance rule '%s' discovered for %s",
+                        data.get("name", ""),
+                        self.http_api.camera_name(channel),
+                    )
+                    self.http_api._new_devices = True
+                ch_rule[rule_id] = data
+
+    async def get_rules(self) -> None:
+        """Get the list of survaillance rule ids and update the state"""
+        mess = await self.send(cmd_id=685)
+        root = XML.fromstring(mess)
+
+        xml_body = XML.Element("body")
+        main = XML.SubElement(xml_body, "IFTTTList", version="1.1")
+        for rule_item in root.findall(".//id"):
+            sub = XML.SubElement(main, "id")
+            sub.text = rule_item.text
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        mess = await self.send(cmd_id=668, body=xml)
+        root = XML.fromstring(mess)
+        self._parse_rule(root)
+
+    async def get_rule(self, rule_id: int) -> None:
+        """Get the list of survaillance rule ids and update the state"""
+        xml = xmls.GetRule.format(rule_id=rule_id)
+        mess = await self.send(cmd_id=668, body=xml)
+        root = XML.fromstring(mess)
+        self._parse_rule(root)
+
+    async def set_rule_enabled(self, rule_id: int, enabled: bool) -> None:
+        """Enable/disable a survaillance rule"""
+        xml = xmls.GetRule.format(rule_id=rule_id)
+        mess = await self.send(cmd_id=668, body=xml)
+        root = XML.fromstring(mess)
+        
+        enabled_str = "1" if enabled else "0"
+        
+        if (xml_list := root.find("IFTTTList")) is not None:
+            if (xml_rule := xml_list.find("linkage")) is not None:
+                if (xml_enable := xml_rule.find("enable")) is not None:
+                    xml_enable.text = enabled_str
+
+        xml_list.tag = "IFTTTUpdate"
+
+        xml = XML.tostring(root, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=667, body=xml)
+        await self.get_rule(rule_id)
+
+    def rule_ids(self, channel: int) -> list[int]:
+        """Return the list of survaillance rule ids"""
+        return list(self._rules.get(channel, {}))
+
+    def rule_name(self, channel: int, rule_id: int) -> str:
+        """Return the survaillance rule name"""
+        return self._rules.get(channel, {}).get(rule_id, {}).get("name", UNKNOWN)
+
+    def rule_enabled(self, channel: int, rule_id: int) -> bool:
+        """Return if the survaillance rule is enabled or not"""
+        return self._rules.get(channel, {}).get(rule_id, {}).get("enable", False)
 
     def _xml_time_to_datetime(self, xml_time: XML.Element | None) -> datetime | None:
         if xml_time is None:

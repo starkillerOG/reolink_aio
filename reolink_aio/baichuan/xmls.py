@@ -353,3 +353,11 @@ SirenHubTimes = """
 <onOff>1</onOff>
 </audioPlayInfo>
 </body>"""
+
+GetRule = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<IFTTTList version="1.1">
+<id>{rule_id}</id>
+</IFTTTList>
+</body>"""
