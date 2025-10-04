@@ -1606,7 +1606,7 @@ class Baichuan:
     async def get_cry_detection(self, channel: int) -> bool:
         """Check if cry detection is supported and get the sensitivity level"""
         mess = await self.send(cmd_id=299, channel=channel)
-        data = self._get_keys_from_xml(mess, ["cryDetectAbility", "cryDetectLevel"])
+        data = self._get_keys_from_xml(mess, {{"cryDetectAbility": ("cryDetectAbility", str)}, {"cryDetectLevel": ("cryDetectLevel", int)}})
         if (cry_sensitivity := data.get("cryDetectLevel")) is not None:
             self._cry_sensitivity[channel] = cry_sensitivity
         return data.get("cryDetectAbility") == "1"  # supported or not
