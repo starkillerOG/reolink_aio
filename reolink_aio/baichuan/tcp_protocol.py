@@ -151,7 +151,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             # check status code
             if len_header == 24:
                 rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
-                if rec_status_code != 200:
+                if rec_status_code not in [200, 300]:
                     if receive_future is not None:
                         if rec_status_code == 401:
                             exc = ApiError(f"Baichuan host {self._host}: received 401 unauthorized login from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
