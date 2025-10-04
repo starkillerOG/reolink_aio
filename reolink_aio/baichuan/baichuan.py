@@ -467,8 +467,11 @@ class Baichuan:
         xml_value = xml_element.find(f".//{key}")
         if xml_value is None:
             return None
+        value = xml_value.text
         try:
-            return type_class(xml_value.text)
+            if type_class == bool:
+                value = int(value)
+            return type_class(value)
         except ValueError as err:
             _LOGGER.debug(err)
             return None
@@ -492,6 +495,8 @@ class Baichuan:
                 continue
             if isinstance(keys, dict):
                 (new_key, type_class) = keys[key]
+                if type_class == bool:
+                    value = int(value)
                 result[new_key] = type_class(value)
             else:
                 result[key] = value
@@ -860,10 +865,10 @@ class Baichuan:
                 if channel is None:
                     channel = 0
                 channels.add(channel)
-                state = self._get_value_from_xml_element(item, "sleep")
+                state = self._get_value_from_xml_element(item, "sleep", bool)
                 if state is not None:
-                    self._privacy_mode[channel] = state == "1"
-                    _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, self._privacy_mode[channel])
+                    self._privacy_mode[channel] = state
+                    _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, state)
 
         # call the callbacks
         for cmd in cmd_ids:
@@ -1023,10 +1028,10 @@ class Baichuan:
                 if not self.http_api._is_hub:
                     self.http_api._is_hub = self._dev_type == "homehub" or dev_type_info == "HOMEHUB"
 
-            data = self._get_keys_from_xml(dev_info, {"sleep": ("sleep", str), "channelNum": ("channelNum", int)})
+            data = self._get_keys_from_xml(dev_info, {"sleep": ("sleep", bool), "channelNum": ("channelNum", int)})
             # privacy mode
             if "sleep" in data:
-                self._privacy_mode[0] = data["sleep"] == "1"
+                self._privacy_mode[0] = data["sleep"]
             # channels
             if "channelNum" in data and self.http_api._num_channels == 0 and not self.http_api._is_nvr:
                 self.http_api._channels.clear()
@@ -1693,18 +1698,17 @@ class Baichuan:
     async def get_privacy_mode(self, channel: int = 0) -> bool | None:
         """Get the privacy mode state"""
         mess = await self.send(cmd_id=574, channel=channel)
-        sleep = self._get_value_from_xml(mess, "sleep")
+        sleep = self._get_value_from_xml(mess, "sleep", bool)
         if sleep is None:
             return None
-        value = sleep == "1"
-        self._privacy_mode[channel] = value
+        self._privacy_mode[channel] = sleep
         self.last_privacy_check = time_now()
 
         self.capabilities.setdefault(channel, set()).add("privacy_mode")
         if not self.http_api.is_nvr:
             self.capabilities.setdefault(None, set()).add("privacy_mode")
 
-        return value
+        return sleep
 
     async def set_privacy_mode(self, channel: int = 0, enable: bool = False) -> None:
         """Set the privacy mode"""
