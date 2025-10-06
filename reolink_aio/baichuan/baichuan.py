@@ -158,6 +158,7 @@ class Baichuan:
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
+        self._rule_ids: set[int] = set()
         self._rules: dict[int, dict[int, dict[str, Any]]] = {}
 
     async def _connect_if_needed(self):
@@ -1123,6 +1124,8 @@ class Baichuan:
             self.capabilities[None].add("wifi")
         if self.http_api.is_hub and self.api_version("doorbellVersion") > 0:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
+        if self.http_api.api_version("supportIfttt", 0) > 0:
+            host_coroutines.append(("rules", self.get_rule_ids()))
 
         if host_coroutines:
             results = await asyncio.gather(*[cor[1] for cor in host_coroutines], return_exceptions=True)
@@ -1141,6 +1144,8 @@ class Baichuan:
                 elif cmd_id == "dingdonglist":
                     if self.http_api._GetDingDong_present.get(None):
                         self.capabilities[None].add("chime")
+                elif cmd_id == "rules":
+                    self.capabilities[None].add("rules")
 
         # Stream capabilities
         for channel in self.http_api._stream_channels:
@@ -1378,11 +1383,17 @@ class Baichuan:
         if self.supported(None, "chime") and inc_host_cmd("GetDingDongCfg", no_wake_check=True):
             # None waking for Hub connected
             coroutines.append(self.GetDingDongCfg())
+        if self.supported(None, "rules"):
+            coroutines.append(self.get_rule_ids())
 
         # channels
         for channel in self.http_api._channels:
             if self.http_api.supported(channel, "wifi") and inc_cmd("115", channel):
                 coroutines.append(self.get_wifi_signal(channel))
+
+            if self.supported(None, "rules") and inc_cmd("rules", channel):
+                for rule_id in self.rule_ids(channel):
+                    coroutines.append(self.get_rule(rule_id))
 
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
@@ -2343,29 +2354,43 @@ class Baichuan:
                     self.http_api._new_devices = True
                 ch_rule[rule_id] = data
 
-    async def get_rules(self) -> None:
-        """Get the list of survaillance rule ids and update the state"""
+    async def get_rule_ids(self) -> None:
+        """Get the list of survaillance rule ids"""
         mess = await self.send(cmd_id=685)
         root = XML.fromstring(mess)
 
-        xml_body = XML.Element("body")
-        main = XML.SubElement(xml_body, "IFTTTList", version="1.1")
         for rule_item in root.findall(".//id"):
-            sub = XML.SubElement(main, "id")
-            sub.text = rule_item.text
-
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
-        mess = await self.send(cmd_id=668, body=xml)
-        self._parse_rule(mess)
+            if rule_item.text is None:
+                continue
+            rule_id = int(rule_item.text)
+            if rule_id not in self._rule_ids:
+                self._rule_ids.add(rule_id)
+                # get the corresponding channel of this unknown rule
+                await self.get_rule(rule_id)
+                if not self.http_api._startup:
+                    _LOGGER.info(
+                        "New Reolink survaillance rule id '%s' discovered for %s",
+                        rule_id,
+                        self.http_api.nvr_name,
+                    )
+                    self.http_api._new_devices = True
 
     async def get_rule(self, rule_id: int) -> None:
-        """Get the list of survaillance rule ids and update the state"""
+        """Get the state of a survaillance rule"""
         xml = xmls.GetRule.format(rule_id=rule_id)
         mess = await self.send(cmd_id=668, body=xml)
-        self._parse_rule(mess)
+        root = XML.fromstring(mess)
 
-    async def set_rule_enabled(self, rule_id: int, enabled: bool) -> None:
+        for IFTTT_list in root:
+            for rule in IFTTT_list:
+                data = self._get_keys_from_xml(rule, {"channel": ("channel", int), "id": ("id", int), "enable": ("enable", bool), "name": ("name", str)})
+                channel = data.pop("channel", None)
+                rule_id = data.pop("id", None)
+                if channel is None or rule_id is None:
+                    continue
+                self._rules.setdefault(channel, {})[rule_id] = data
+
+    async def set_rule_enabled(self, channel: int, rule_id: int, enabled: bool) -> None:
         """Enable/disable a survaillance rule"""
         xml = xmls.GetRule.format(rule_id=rule_id)
         mess = await self.send(cmd_id=668, body=xml)
@@ -2378,6 +2403,9 @@ class Baichuan:
             if (xml_rule := xml_list.find("linkage")) is not None:
                 if (xml_enable := xml_rule.find("enable")) is not None:
                     xml_enable.text = enabled_str
+                if (xml_channel := xml_rule.find("channel")) is not None:
+                    if str(channel) != xml_channel.text:
+                        raise InvalidParameterError(f"Baichuan host {self._host}: set_rule_enabled: rule id {rule_id} does not belong to channel {channel}")
 
         xml = XML.tostring(root, encoding="unicode")
         xml = xmls.XML_HEADER + xml
