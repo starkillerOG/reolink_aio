@@ -160,6 +160,7 @@ class Baichuan:
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
         self._rule_ids: set[int] = set()
         self._rules: dict[int, dict[int, dict[str, Any]]] = {}
+        self._io_input: dict[int, dict[int, bool]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -804,6 +805,20 @@ class Baichuan:
 
                         _LOGGER.debug("Reolink %s TCP yolo event channel %s, %s: True", self.http_api.nvr_name, channel, yolo_type)
                         self._ai_yolo_600.setdefault(channel, {})[yolo_type] = True
+
+        elif cmd_id == 677:  # IO input
+            for event_list in root.findall(".//statusList"):
+                channel = self._get_channel_from_xml_element(event_list, "channel")
+                if channel is None:
+                    continue
+                channels.add(channel)
+                for event in event_list.findall(".//ioItem"):
+                    index = self._get_value_from_xml_element(event, "index", int)
+                    state = self._get_value_from_xml_element(event, "result", bool)
+                    if index is None or state is None:
+                        continue
+                    self._io_input.setdefault(channel, {})[index] = state
+                    _LOGGER.debug("Reolink %s TCP IO input event channel %s, index %s: %s", self.http_api.nvr_name, channel, index, state)
 
         elif cmd_id == 696:  # AI YOLO world detailed detection
             for event_list in root:
