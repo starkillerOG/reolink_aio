@@ -160,7 +160,9 @@ class Baichuan:
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
         self._rule_ids: set[int] = set()
         self._rules: dict[int, dict[int, dict[str, Any]]] = {}
-        self._io_input: dict[int, dict[int, bool]] = {}
+        self._io_inputs: dict[int | None, list[int]] = {}
+        self._io_outputs: dict[int | None, list[int]] = {}
+        self._io_input: dict[int | None, dict[int, bool]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -1131,6 +1133,12 @@ class Baichuan:
         self.capabilities.setdefault(None, set())
         if self.api_version("reboot") > 0:
             self.capabilities[None].add("reboot")
+        if (io_inputs := self.api_version("IOInputPortNum")) > 0:
+            channel = None if self.http_api._is_nvr else 0
+            self._io_inputs[channel] = list(range(0, io_inputs))
+        if (io_outputs := self.api_version("IOOutputPortNum")) > 0:
+            channel = None if self.http_api._is_nvr else 0
+            self._io_outputs[channel] = list(range(0, io_outputs))
         host_coroutines: list[tuple[Any, Coroutine]] = []
         host_coroutines.append(("network_info", self.get_network_info()))
         if self.api_version("sceneModeCfg") > 0:
@@ -2796,6 +2804,15 @@ class Baichuan:
             key = AI_DETECT_CONVERSION.get(object_type, object_type)
             val = self._ai_yolo_sub_type.get(channel, {}).get(key)
         return val
+
+    def io_inputs(self, channel: int | None) -> list[int]:
+        return self._io_inputs.get(channel, [])
+
+    def io_outputs(self, channel: int | None) -> list[int]:
+        return self._io_outputs.get(channel, [])
+
+    def io_input_state(self, channel: int | None, index: int) -> bool | None:
+        return self._io_input.get(channel, {}).get(index)
 
     def hardwired_chime_type(self, channel: int) -> str | None:
         return str(self._hardwired_chime_settings.get(channel, {}).get("type"))
