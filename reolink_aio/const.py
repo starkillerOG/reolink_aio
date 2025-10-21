@@ -67,7 +67,7 @@ YOLO_CONVERSION = {"person": "people", "motor vehicle": "vehicle", "animal": "do
 YOLO_DETECTS = {"people", "vehicle", "package", "non-motor vehicle", "dog_cat"}
 YOLO_DETECT_TYPES = {
     "people": ["man", "woman"],
-    "vehicle": ["sedan", "suv", "pickup_truck", "motorcycle"],
+    "vehicle": ["sedan", "suv", "pickup_truck", "bus", "motorcycle"],
     "dog_cat": ["dog", "cat"],
     "package": ["package"],
     "non-motor vehicle": ["bicycle"],
