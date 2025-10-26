@@ -3870,6 +3870,8 @@ class Host:
                         self._ai_detection_support.setdefault(channel, {})
                         for key, value in data["value"]["ai"].items():
                             supported: bool = value.get("support", 0) == 1
+                            if not supported:
+                                continue
                             self._ai_detection_states[channel][key] = supported and value.get("alarm_state", 0) == 1
                             self._ai_detection_support[channel][key] = supported
                         if "other" in data["value"]["ai"]:  # Battery cams use PIR detection with the "other" item
