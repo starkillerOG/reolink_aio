@@ -1758,7 +1758,7 @@ class Host:
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
                 self._capabilities[channel].add("recording")
                 if self.api_version("supportIfttt", channel) <= 0:
-                    self._capabilities["Host"].add("rec_enable")
+                    self._capabilities[channel].add("rec_enable")
 
             if self.post_recording_time_list(channel) and self.post_recording_time(channel):
                 self._capabilities[channel].add("post_rec_time")
