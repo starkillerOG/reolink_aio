@@ -1807,7 +1807,7 @@ class Host:
 
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
                 self._capabilities[channel].add("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
-                if self.api_version("supportIfttt", channel) <= 0:
+                if self.api_version("supportIfttt", channel) <= 0 and self.baichuan.api_version("linkages", channel) <= 0:
                     self._capabilities[channel].add("siren")
 
             if self._enc_settings.get(channel, {}).get("Enc", {}).get("audio") is not None:
