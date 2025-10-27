@@ -1147,8 +1147,6 @@ class Baichuan:
             self.capabilities[None].add("wifi")
         if self.http_api.is_hub and self.api_version("doorbellVersion") > 0:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
-        if self.http_api.api_version("supportIfttt", 0) > 0:
-            host_coroutines.append(("rules", self.get_rule_ids()))
 
         if host_coroutines:
             results = await asyncio.gather(*[cor[1] for cor in host_coroutines], return_exceptions=True)
@@ -1167,8 +1165,6 @@ class Baichuan:
                 elif cmd_id == "dingdonglist":
                     if self.http_api._GetDingDong_present.get(None):
                         self.capabilities[None].add("chime")
-                elif cmd_id == "rules":
-                    self.capabilities[None].add("rules")
 
         # Stream capabilities
         for channel in self.http_api._stream_channels:
@@ -1190,6 +1186,9 @@ class Baichuan:
 
             if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
                 coroutines.append(("privacy_mode", channel, self.get_privacy_mode(channel)))  # capability added in get_privacy_mode
+
+            if self.http_api.api_version("supportIfttt", channel) > 0 or self.api_version("linkages", channel) > 0:
+                coroutines.append(("rules", channel, self.get_rule_ids(channel)))
 
             if (self.api_version("smartAI", channel) >> 1) & 1:  # 2th bit (2), shift 1
                 coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))  # crossline
@@ -1317,6 +1316,8 @@ class Baichuan:
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == "wifi":
                     self.capabilities[channel].add("wifi")
+                elif cmd_id == "rules":
+                    self.capabilities[channel].add("rules")
                 elif cmd_id == "day_night_state" and self.day_night_state is not None:
                     self.capabilities[channel].add("day_night_state")
                 elif cmd_id == "cry" and result:
@@ -1406,17 +1407,17 @@ class Baichuan:
         if self.supported(None, "chime") and inc_host_cmd("GetDingDongCfg", no_wake_check=True):
             # None waking for Hub connected
             coroutines.append(self.GetDingDongCfg())
-        if self.supported(None, "rules"):
-            coroutines.append(self.get_rule_ids())
 
         # channels
         for channel in self.http_api._channels:
             if self.http_api.supported(channel, "wifi") and inc_cmd("115", channel):
                 coroutines.append(self.get_wifi_signal(channel))
 
-            if self.supported(None, "rules") and inc_cmd("rules", channel):
-                for rule_id in self.rule_ids(channel):
-                    coroutines.append(self.get_rule(rule_id))
+            if self.supported(channel, "rules"):
+                coroutines.append(self.get_rule_ids(channel))
+                if inc_cmd("rules", channel):
+                    for rule_id in self.rule_ids(channel):
+                        coroutines.append(self.get_rule(rule_id, channel))
 
             if self.supported(channel, "day_night_state") and inc_cmd("296", channel):
                 coroutines.append(self.get_day_night_state(channel))
@@ -2377,9 +2378,9 @@ class Baichuan:
                     self.http_api._new_devices = True
                 ch_rule[rule_id] = data
 
-    async def get_rule_ids(self) -> None:
+    async def get_rule_ids(self, channel: int) -> None:
         """Get the list of survaillance rule ids"""
-        mess = await self.send(cmd_id=685)
+        mess = await self.send(cmd_id=685, channel=channel)
         root = XML.fromstring(mess)
 
         for rule_item in root.findall(".//id"):
@@ -2389,7 +2390,7 @@ class Baichuan:
             if rule_id not in self._rule_ids:
                 self._rule_ids.add(rule_id)
                 # get the corresponding channel of this unknown rule
-                await self.get_rule(rule_id)
+                await self.get_rule(rule_id, channel)
                 if not self.http_api._startup:
                     _LOGGER.info(
                         "New Reolink survaillance rule id '%s' discovered for %s",
@@ -2398,25 +2399,24 @@ class Baichuan:
                     )
                     self.http_api._new_devices = True
 
-    async def get_rule(self, rule_id: int) -> None:
+    async def get_rule(self, rule_id: int, channel: int) -> None:
         """Get the state of a survaillance rule"""
         xml = xmls.GetRule.format(rule_id=rule_id)
-        mess = await self.send(cmd_id=668, body=xml)
+        mess = await self.send(cmd_id=668, channel=channel, body=xml)
         root = XML.fromstring(mess)
 
         for IFTTT_list in root:
             for rule in IFTTT_list:
-                data = self._get_keys_from_xml(rule, {"channel": ("channel", int), "id": ("id", int), "enable": ("enable", bool), "name": ("name", str)})
-                channel = data.pop("channel", None)
+                data = self._get_keys_from_xml(rule, {"id": ("id", int), "enable": ("enable", bool), "name": ("name", str)})
                 rule_id = data.pop("id", None)
-                if channel is None or rule_id is None:
+                if rule_id is None:
                     continue
                 self._rules.setdefault(channel, {})[rule_id] = data
 
     async def set_rule_enabled(self, channel: int, rule_id: int, enabled: bool) -> None:
         """Enable/disable a survaillance rule"""
         xml = xmls.GetRule.format(rule_id=rule_id)
-        mess = await self.send(cmd_id=668, body=xml)
+        mess = await self.send(cmd_id=668, channel=channel, body=xml)
         root = XML.fromstring(mess)
 
         enabled_str = "1" if enabled else "0"
@@ -2426,14 +2426,11 @@ class Baichuan:
             if (xml_rule := xml_list.find("linkage")) is not None:
                 if (xml_enable := xml_rule.find("enable")) is not None:
                     xml_enable.text = enabled_str
-                if (xml_channel := xml_rule.find("channel")) is not None:
-                    if str(channel) != xml_channel.text:
-                        raise InvalidParameterError(f"Baichuan host {self._host}: set_rule_enabled: rule id {rule_id} does not belong to channel {channel}")
 
         xml = XML.tostring(root, encoding="unicode")
         xml = xmls.XML_HEADER + xml
-        await self.send(cmd_id=667, body=xml)
-        await self.get_rule(rule_id)
+        await self.send(cmd_id=667, channel=channel, body=xml)
+        await self.get_rule(rule_id, channel)
 
     def rule_ids(self, channel: int) -> list[int]:
         """Return the list of survaillance rule ids"""
