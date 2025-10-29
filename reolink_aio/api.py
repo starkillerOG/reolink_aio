@@ -1826,7 +1826,7 @@ class Host:
                     else:
                         self._capabilities[channel].add("zoom")
                         self._capabilities[channel].add("focus")
-                        if self.api_version("disableAutoFocus", channel) > 0:
+                        if self.api_version("disableAutoFocus", channel) > 0 and channel in self._auto_focus_settings:
                             self._capabilities[channel].add("auto_focus")
                 if ptz_ver in [2, 3, 5]:
                     self._capabilities[channel].add("tilt")
@@ -2463,6 +2463,8 @@ class Host:
                 ch_body.append({"cmd": "GetPowerLed", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "zoom_basic") or self.api_version("supportDigitalZoom", channel) > 0:
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
+                if self.api_version("disableAutoFocus", channel) > 0:
+                    ch_body.append({"cmd": "GetAutoFocus", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
