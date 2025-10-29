@@ -4084,7 +4084,7 @@ class Host:
                     self._auto_reply_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetAutoFocus":
-                    self._auto_focus_settings[channel] = data["value"]
+                    self._auto_focus_settings[channel] = data["value"]["AutoFocus"]
 
                 elif data["cmd"] == "GetZoomFocus":
                     self._zoom_focus_settings[channel] = data["value"]
@@ -4339,7 +4339,7 @@ class Host:
         if channel not in self._auto_focus_settings:
             return True
 
-        return self._auto_focus_settings[channel]["AutoFocus"]["disable"] == 0
+        return self._auto_focus_settings[channel]["disable"] == 0
 
     async def set_autofocus(self, channel: int, enable: bool) -> None:
         """Enable/Disable AutoFocus on a camera."""

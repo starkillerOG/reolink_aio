@@ -2281,6 +2281,31 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=218, channel=channel, body=xml)
 
+    @http_cmd("GetAutoFocus")
+    async def GetAutoFocus(self, **kwargs) -> None:
+        """Get the auto focus settings"""
+        channel = kwargs.get("channel")
+        if channel is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: GetAutoFocus invalid input params")
+
+        mess = await self.send(cmd_id=224, channel=channel)
+        root = XML.fromstring(mess)
+        data = self._get_keys_from_xml(root, {"disable": ("disable", int)})
+
+        self.http_api._auto_focus_settings.setdefault(channel, {}).update(data)
+
+    @http_cmd("SetAutoFocus")
+    async def SetAutoFocus(self, **kwargs) -> None:
+        """Set the auto focus settings"""
+        param = kwargs.get("AutoFocus", {})
+        channel = param.get("channel")
+        disable = param.get("disable")
+        if channel is None or disable is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: SetAutoFocus invalid input params")
+
+        xml = xmls.SetAutoFocus.format(channel=channel, disable=disable)
+        await self.send(cmd_id=225, channel=channel, body=xml)
+
     async def get_scene_info(self, scene_id: int) -> None:
         """Get the name of a scene"""
         xml = xmls.GetSceneInfo.format(scene_id=scene_id)

@@ -361,3 +361,12 @@ GetRule = """
 <id>{rule_id}</id>
 </IFTTTList>
 </body>"""
+
+SetAutoFocus = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<AutoFocus version="1.1">
+<channelId>{channel}</channelId>
+<disable>{disable}</disable>
+</AutoFocus>
+</body>"""
