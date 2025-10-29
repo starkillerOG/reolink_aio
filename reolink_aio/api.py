@@ -1024,15 +1024,24 @@ class Host:
         if stream is None:
             stream = "main"
 
-        return self._enc_settings[channel]["Enc"][f"{stream}Stream"]["bitRate"]
+        return self._enc_settings[channel][f"{stream}Stream"]["bitRate"]
 
     def bit_rate_list(self, channel: int, stream: str | None = None) -> list[int]:
         if channel not in self._enc_range:
             return []
         if stream is None:
             stream = "main"
+        stream_str = f"{stream}Stream"
 
-        return sorted(self._enc_range[channel]["Enc"][0][f"{stream}Stream"]["bitRate"])
+        enc_range = self._enc_range[channel][0]
+        height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
+        # search for the correct encoding range
+        for enc_range_i in self._enc_range[channel]:
+            if enc_range_i["chnBit"] == pow(2, channel) and height == enc_range_i[stream_str]["height"]:
+                enc_range = enc_range_i
+                break
+
+        return sorted(enc_range[stream_str]["bitRate"])
 
     def frame_rate(self, channel: int, stream: str | None = None) -> int | None:
         if channel not in self._enc_settings:
@@ -1040,15 +1049,24 @@ class Host:
         if stream is None:
             stream = "main"
 
-        return self._enc_settings[channel]["Enc"][f"{stream}Stream"]["frameRate"]
+        return self._enc_settings[channel][f"{stream}Stream"]["frameRate"]
 
     def frame_rate_list(self, channel: int, stream: str | None = None) -> list[int]:
         if channel not in self._enc_range:
             return []
         if stream is None:
             stream = "main"
+        stream_str = f"{stream}Stream"
 
-        return sorted(self._enc_range[channel]["Enc"][0][f"{stream}Stream"]["frameRate"])
+        enc_range = self._enc_range[channel][0]
+        height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
+        # search for the correct encoding range
+        for enc_range_i in self._enc_range[channel]:
+            if enc_range_i["chnBit"] == pow(2, channel) and height == enc_range_i[stream_str]["height"]:
+                enc_range = enc_range_i
+                break
+
+        return sorted(enc_range[stream_str]["frameRate"])
 
     def daynight_state(self, channel: int) -> Optional[str]:
         if channel not in self._isp_settings:
@@ -1124,7 +1142,7 @@ class Host:
         if channel not in self._enc_settings:
             return False
 
-        return self._enc_settings[channel]["Enc"]["audio"] == 1
+        return self._enc_settings[channel]["audio"] == 1
 
     def volume(self, channel: int) -> int:
         if channel not in self._audio_settings:
@@ -1810,7 +1828,7 @@ class Host:
                 if self.api_version("supportIfttt", channel) <= 0 and self.baichuan.api_version("linkages", channel) <= 0:
                     self._capabilities[channel].add("siren")
 
-            if self._enc_settings.get(channel, {}).get("Enc", {}).get("audio") is not None:
+            if self._enc_settings.get(channel, {}).get("audio") is not None:
                 self._capabilities[channel].add("audio")
 
             ptz_ver = self.api_version("ptzType", channel)
@@ -3222,8 +3240,8 @@ class Host:
         param["snapType"] = stream
 
         if stream == "sub":
-            height = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("height")
-            width = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("width")
+            height = self._enc_settings.get(channel, {}).get(f"{stream}Stream", {}).get("height")
+            width = self._enc_settings.get(channel, {}).get(f"{stream}Stream", {}).get("width")
             if height is not None and width is not None:
                 param["width"] = width
                 param["height"] = height
@@ -3288,7 +3306,7 @@ class Host:
         return self.encoding(channel, stream)
 
     def encoding(self, channel: int, stream: str = "main") -> str:
-        encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
+        encoding = self._enc_settings.get(channel, {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is not None:
             return encoding
         if stream == "sub":
@@ -3364,7 +3382,7 @@ class Host:
             except ReolinkError:
                 pass
 
-        encoding = self._enc_settings.get(channel, {}).get("Enc", {}).get(f"{stream}Stream", {}).get("vType")
+        encoding = self._enc_settings.get(channel, {}).get(f"{stream}Stream", {}).get("vType")
         if encoding is None and stream == "main" and channel in self._rtsp_mainStream:
             if not check:
                 return self._rtsp_mainStream[channel]
@@ -3967,9 +3985,9 @@ class Host:
                 elif data["cmd"] == "GetEnc":
                     # GetEnc returns incorrect channel for DUO camera
                     # response_channel = data["value"]["Enc"]["channel"]
-                    self._enc_settings[channel] = data["value"]
+                    self._enc_settings[channel] = data["value"]["Enc"]
                     if "range" in data:
-                        self._enc_range[channel] = data["range"]
+                        self._enc_range[channel] = data["range"]["Enc"]
 
                 elif data["cmd"] == "GetRtspUrl":
                     response_channel = data["value"]["rtspUrl"]["channel"]
@@ -4869,7 +4887,7 @@ class Host:
         if channel not in self._enc_settings:
             raise NotSupportedError(f"set_audio: Audio on camera {self.camera_name(channel)} is not available")
 
-        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": {"Enc": self._enc_settings[channel]}}]
         body[0]["param"]["Enc"]["audio"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -4883,7 +4901,7 @@ class Host:
         if stream is None:
             stream = "main"
 
-        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": {"Enc": self._enc_settings[channel]}}]
         body[0]["param"]["Enc"][f"{stream}Stream"]["bitRate"] = value
 
         await self.send_setting(body)
@@ -4897,7 +4915,7 @@ class Host:
         if stream is None:
             stream = "main"
 
-        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": self._enc_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetEnc", "action": 0, "param": {"Enc": self._enc_settings[channel]}}]
         body[0]["param"]["Enc"][f"{stream}Stream"]["frameRate"] = value
 
         await self.send_setting(body)
