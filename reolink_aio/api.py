@@ -719,11 +719,11 @@ class Host:
 
     def is_doorbell(self, channel: int) -> bool:
         """Wether or not the camera is a doorbell"""
-        return channel in self._is_doorbell and self._is_doorbell[channel]
+        return self._is_doorbell.get(channel, False)
 
     def motion_detected(self, channel: int) -> bool:
         """Return the motion detection state (polled)."""
-        return channel in self._motion_detection_states and self._motion_detection_states[channel]
+        return self._motion_detection_states.get(channel, False)
 
     def ai_detected(self, channel: int, object_type: str) -> bool:
         """Return the AI object detection state (polled)."""
@@ -745,7 +745,7 @@ class Host:
 
     def visitor_detected(self, channel: int) -> bool:
         """Return the visitor detection state (polled)."""
-        return channel in self._visitor_states and self._visitor_states[channel]
+        return self._visitor_states.get(channel, False)
 
     def ai_supported(self, channel: int, object_type: Optional[str] = None) -> bool:
         """Return if the AI object type detection is supported or not."""
@@ -782,7 +782,7 @@ class Host:
         return self._audio_alarm_settings[channel]["Audio"]["schedule"]["enable"] == 1
 
     def ir_enabled(self, channel: int) -> bool:
-        return channel in self._ir_settings and self._ir_settings[channel]["IrLights"]["state"] == "Auto"
+        return self._ir_settings.get(channel, {}).get("IrLights", {}).get("state") == "Auto"
 
     def status_led_enabled(self, channel: int) -> bool:
         if channel not in self._status_led_settings:
@@ -2614,7 +2614,7 @@ class Host:
 
         self.map_channel_json_response(json_data, channel)
 
-        return None if channel not in self._motion_detection_states else self._motion_detection_states[channel]
+        return self._motion_detection_states.get(channel)
 
     async def get_ai_state(self, channel: int) -> Optional[dict[str, bool]]:
         if channel not in self._channels:
@@ -2732,7 +2732,7 @@ class Host:
 
         self.map_channel_json_response(json_data, channel)
 
-        return None if channel not in self._motion_detection_states else self._motion_detection_states[channel]
+        return self._motion_detection_states.get(channel)
 
     async def get_motion_state_all_ch(self) -> bool:
         """Fetch All motions states of all channels at once (regular + AI + visitor)."""
