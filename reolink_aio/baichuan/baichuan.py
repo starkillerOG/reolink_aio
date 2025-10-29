@@ -1233,7 +1233,9 @@ class Baichuan:
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
                 self.capabilities[channel].add("ai_non-motor vehicle")
-                self.capabilities[channel].add("ai_yolo_type")
+                self.capabilities[channel].add("ai_yolo")
+                if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
+                    self.capabilities[channel].add("ai_yolo_type")
 
             if self.http_api.api_version("doorbellVersion", channel) > 0:
                 self.http_api._is_doorbell[channel] = True
@@ -1438,7 +1440,7 @@ class Baichuan:
             if self.supported(channel, "ai_cry") and inc_cmd("299", channel):
                 coroutines.append(self.get_cry_detection(channel))
 
-            if self.supported(channel, "ai_yolo_type") and self.http_api.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
+            if self.supported(channel, "ai_yolo") and self.http_api.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
                 coroutines.append(self.get_yolo_settings(channel))
 
             if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
