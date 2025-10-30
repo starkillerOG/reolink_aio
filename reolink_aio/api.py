@@ -939,7 +939,7 @@ class Host:
             mode_values.extend([SpotlightModeEnum.onatnight])
         if self.api_version("supportLightAutoBrightness", channel) > 0 or (ledCtrl >> 14) & 1:  # 15th bit (16384), shift 14
             mode_values.extend([SpotlightModeEnum.adaptive])
-            if not (ledCtrl >> 6) & 1:  # 7th bit (64), shift 6
+            if not (ledCtrl >> 6) & 1 or (ledCtrl >> 13) & 1:  # 7th bit (64), shift 6
                 mode_values.extend([SpotlightModeEnum.autoadaptive])
         return [val.name for val in mode_values]
 
