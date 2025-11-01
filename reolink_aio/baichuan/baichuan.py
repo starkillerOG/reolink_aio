@@ -155,6 +155,7 @@ class Baichuan:
         self._cry_sensitivity: dict[int, int] = {}
         self._pre_record_state: dict[int, dict] = {}
         self._siren_state: dict[int, bool] = {}
+        self._noise_reduction: dict[int, int] = {}
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
@@ -1270,6 +1271,8 @@ class Baichuan:
                 # self.capabilities[channel].add("siren")
             if (audioVersion >> 4) & 1 or (audioVersion >> 9) & 1:  # 5 & 10 th bit (16 & 512) shift 4 & 9
                 coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
+            if self.http_api.api_version("supportAIDenoise", channel) > 0:
+                coroutines.append(("GetAudioNoise", channel, self.GetAudioNoise(channel)))
 
             if self._dev_type == "light":
                 self.capabilities[channel].add("PIR")
@@ -1339,6 +1342,8 @@ class Baichuan:
                         self.capabilities[channel].add("volume_speak")
                     if self.http_api.volume_doorbell(channel) is not None:
                         self.capabilities[channel].add("volume_doorbell")
+                elif cmd_id == "GetAudioNoise":
+                    self.capabilities[channel].add("noise_reduction")
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
@@ -1451,6 +1456,9 @@ class Baichuan:
 
             if self.supported(channel, "volume") and inc_cmd("GetAudioCfg", channel):
                 coroutines.append(self.GetAudioCfg(channel))
+
+            if self.supported(channel, "noise_reduction") and inc_cmd("439", channel):
+                coroutines.append(self.GetAudioNoise(channel))
 
         # chimes
         for chime_id, chime in self.http_api._chime_list.items():
@@ -1987,6 +1995,41 @@ class Baichuan:
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=265, channel=channel, body=xml)
+
+    async def GetAudioNoise(self, channel: int) -> None:
+        """Get the audio noise reduction settings"""
+        mess = await self.send(cmd_id=439, channel=channel)
+        root = XML.fromstring(mess)
+        data = self._get_keys_from_xml(
+            root,
+            {
+                "enable": ("enable", bool),
+                "level": ("level", int),
+            },
+        )
+
+        if data.get("enable"):
+            self._noise_reduction[channel] = data.get("level", 0)
+        else:
+            self._noise_reduction[channel] = 0
+
+    async def SetAudioNoise(self, channel: int, level: int) -> None:
+        """Set the audio noise reduction settings"""
+        mess = await self.send(cmd_id=439, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (xml_enable := xml_body.find(".//enable")) is not None:
+            if level <= 0:
+                xml_enable.text = "0"
+            else:
+                xml_enable.text = "1"
+        if level > 0 and (xml_level := xml_body.find(".//level")) is not None:
+            xml_level.text = str(level)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=440, channel=channel, body=xml)
+        await self.GetAudioNoise(channel)
 
     async def SetEnc(self, channel: int, stream: str, encoding: str | None = None, **_kwargs) -> None:
         """Set the encoding of a stream"""
@@ -2849,3 +2892,6 @@ class Baichuan:
 
     def siren_state(self, channel: int) -> bool | None:
         return self._siren_state.get(channel)
+
+    def audio_noise_reduction(self, channel: int) -> int | None:
+        return self._noise_reduction.get(channel)
