@@ -2819,6 +2819,7 @@ class Host:
         if now - self._last_sw_id_check > 300 and (channel not in self._sw_hardware_id or channel not in self._sw_model_id):
             self._last_sw_id_check = now
 
+            # alternative: "https://reolink.com/wp-json/reo-v2/download/product/selection-list"
             request_URL = "https://reolink.com/wp-json/reo-v2/download/hardware-version/selection-list"
             json_data = await self.send_reolink_com(request_URL)
 
