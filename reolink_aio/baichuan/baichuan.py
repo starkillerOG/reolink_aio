@@ -1766,9 +1766,9 @@ class Baichuan:
         # get the new privacy mode status
         await self.get_privacy_mode(channel)
 
-    async def reboot(self) -> None:
+    async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
-        await self.send(cmd_id=23)
+        await self.send(cmd_id=23, channel=channel)
 
     @http_cmd("GetWhiteLed")
     async def get_floodlight(self, channel: int, **_kwargs) -> None:
