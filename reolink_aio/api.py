@@ -3190,8 +3190,12 @@ class Host:
 
         return json_data[0]["value"]["Status"]["Persent"]
 
-    async def reboot(self) -> None:
+    async def reboot(self, channel: int | None = None) -> None:
         """Reboot the camera."""
+        if channel is not None:
+            await self.baichuan.reboot(channel)
+            return
+
         if not self.supported(None, "reboot"):
             raise NotSupportedError(f"Reboot: not supported by {self.nvr_name}")
 
