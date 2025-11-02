@@ -43,6 +43,7 @@ from .enums import (
     ChimeToneEnum,
     DayNightEnum,
     EncodingEnum,
+    ExposureEnum,
     GuardEnum,
     HDREnum,
     HubToneEnum,
@@ -1089,6 +1090,9 @@ class Host:
             return -1
 
         return self._isp_settings[channel]["Isp"].get("hdr", -1)
+
+    def exposure(self, channel: int) -> str | None:
+        return self._isp_settings[channel]["Isp"].get("exposure")
 
     def binning_mode(self, channel: int) -> int:
         if channel not in self._isp_settings:
@@ -5330,6 +5334,24 @@ class Host:
             body[0]["param"]["Isp"]["hdr"] = 2 if value else 0
         else:
             body[0]["param"]["Isp"]["hdr"] = value
+
+        await self.send_setting(body)
+
+    async def set_exposure(self, channel: int, value: str) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_exposure: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "exposure"):
+            raise NotSupportedError(f"set_exposure: ISP exposure on camera {self.camera_name(channel)} is not available")
+        await self.get_state(cmd="GetIsp", ch=channel)
+        if channel not in self._isp_settings or not self._isp_settings[channel]:
+            raise NotSupportedError(f"set_exposure: ISP on camera {self.camera_name(channel)} is not available")
+
+        val_list = [val.value for val in ExposureEnum]
+        if value not in val_list:
+            raise InvalidParameterError(f"set_exposure: value {value} not in {val_list}")
+
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body[0]["param"]["Isp"]["exposure"] = value
 
         await self.send_setting(body)
 

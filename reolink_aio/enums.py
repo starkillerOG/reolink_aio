@@ -34,6 +34,15 @@ class EncodingEnum(Enum):
     h265 = "h265"
 
 
+class ExposureEnum(Enum):
+    """Options for exposure mode"""
+
+    auto = "Auto"
+    lownoise = "LowNoise"
+    antismearing = "Anti-Smearing"
+    manual = "Manual"
+
+
 class SpotlightModeEnum(Enum):
     """Options for the spotlight mode"""
 
