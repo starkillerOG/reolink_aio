@@ -1235,6 +1235,9 @@ class Host:
 
         return 101 - self._pir[channel]["sensitive"]
 
+    def pir_interval(self, channel: int) -> int | None:
+        return self._pir.get(channel, {}).get("interval")
+
     def md_sensitivity(self, channel: int) -> int:
         if channel not in self._md_alarm_settings:
             return 0
@@ -2220,9 +2223,6 @@ class Host:
 
             if self.supported(channel, "battery") and inc_cmd("GetBatteryInfo", channel):
                 ch_body.append({"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}})
-
-            if self.supported(channel, "PIR") and inc_cmd("GetPirInfo", channel):
-                ch_body.append({"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "privacy_mask") and inc_cmd("GetMask", channel):
                 ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
@@ -5374,7 +5374,7 @@ class Host:
 
         await self.send_setting(body)
 
-    async def set_pir(self, channel: int, enable: bool | None = None, reduce_alarm: bool | None = None, sensitivity: int | None = None) -> None:
+    async def set_pir(self, channel: int, enable: bool | None = None, reduce_alarm: bool | None = None, sensitivity: int | None = None, interval: int | None = None) -> None:
         """Set PIR settings."""
         if channel not in self._channels:
             raise InvalidParameterError(f"set_pir: no camera connected to channel '{channel}'")
@@ -5392,6 +5392,11 @@ class Host:
             pir["reduceAlarm"] = 1 if reduce_alarm else 0
         if sensitivity is not None:
             pir["sensitive"] = int(101 - sensitivity)
+
+        if interval is not None:
+            pir["interval"] = interval
+            await self.baichuan.SetPirInfo(pirInfo=pir)
+            return
 
         body: typings.reolink_json = [{"cmd": "SetPirInfo", "action": 0, "param": {"pirInfo": pir}}]
         await self.send_setting(body)

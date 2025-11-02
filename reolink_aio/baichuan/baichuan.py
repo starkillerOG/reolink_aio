@@ -1278,8 +1278,11 @@ class Baichuan:
             if self.http_api.api_version("supportAIDenoise", channel) > 0:
                 coroutines.append(("GetAudioNoise", channel, self.GetAudioNoise(channel)))
 
+            if self.http_api.supported(channel, "PIR"):
+                # check for pir interval compatability
+                coroutines.append(("GetPirInfo", channel, self.GetPirInfo(channel)))
             if self._dev_type == "light":
-                self.capabilities[channel].add("PIR")
+                self.capabilities[channel].add("PIR")  # probably the rfVersion flag
 
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
             # Fallback for missing information
@@ -1348,6 +1351,9 @@ class Baichuan:
                         self.capabilities[channel].add("volume_doorbell")
                 elif cmd_id == "GetAudioNoise":
                     self.capabilities[channel].add("noise_reduction")
+                elif cmd_id == "GetPirInfo":
+                    if self.http_api._pir.get(channel, {}).get("interval_max", 0) > 0:
+                        self.capabilities[channel].add("PIR_interval")
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
@@ -1451,6 +1457,9 @@ class Baichuan:
 
             if self.supported(channel, "ai_yolo") and self.http_api.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
                 coroutines.append(self.get_yolo_settings(channel))
+
+            if self.http_api.supported(channel, "PIR") and inc_cmd("GetPirInfo", channel):
+                coroutines.append(self.GetPirInfo(channel))
 
             if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
                 coroutines.append(self.get_ptz_position(channel))
@@ -2248,7 +2257,16 @@ class Baichuan:
         """Get the Pir settings"""
         mess = await self.send(cmd_id=212, channel=channel)
         root = XML.fromstring(mess)
-        data = self._get_keys_from_xml(root, {"enable": ("enable", int), "sensiValue": ("sensitive", int), "reduceFalseAlarm": ("reduceAlarm", int)})
+        data = self._get_keys_from_xml(
+            root,
+            {
+                "enable": ("enable", int),
+                "sensiValue": ("sensitive", int),
+                "reduceFalseAlarm": ("reduceAlarm", int),
+                "interval": ("interval", int),
+                "intervalSecMax": ("interval_max", int),
+            },
+        )
         self.http_api._pir.setdefault(channel, {}).update(data)
 
     @http_cmd("SetPirInfo")
@@ -2260,16 +2278,22 @@ class Baichuan:
         mess = await self.send(cmd_id=212, channel=channel)
         xml_body = XML.fromstring(mess)
 
+        get_state = False
         if (enable := param.get("enable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
             xml_enable.text = str(enable)
         if (sens := param.get("sensitive")) is not None and (xml_sens := xml_body.find(".//sensiValue")) is not None:
             xml_sens.text = str(sens)
         if (reduce_alarm := param.get("reduceAlarm")) is not None and (xml_reduce_alarm := xml_body.find(".//reduceFalseAlarm")) is not None:
             xml_reduce_alarm.text = str(reduce_alarm)
+        if (interval := param.get("interval")) is not None and (xml_inter := xml_body.find(".//interval")) is not None:
+            xml_inter.text = str(interval)
+            get_state = True
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=213, channel=channel, body=xml)
+        if get_state:
+            await self.GetPirInfo(channel)
 
     @http_cmd(["GetEmail", "GetEmailV20"])
     async def GetEmail(self, channel: int, **_kwargs) -> None:
