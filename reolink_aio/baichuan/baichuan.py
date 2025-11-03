@@ -1269,7 +1269,7 @@ class Baichuan:
             if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
                 self.capabilities[channel].add("pre_record")
 
-            if self.api_version("reboot", channel) > 0:
+            if self.http_api.is_nvr and self.api_version("reboot", channel) > 0:
                 self.capabilities[channel].add("reboot")
 
             audioVersion = self.api_version("audioVersion", channel)
