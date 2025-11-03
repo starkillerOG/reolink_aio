@@ -1,6 +1,7 @@
 """Constants for Reolink"""
 
 WAKING_COMMANDS = {
+    "GetEnc",
     "GetWhiteLed",
     "GetZoomFocus",
     "GetAudioCfg",
@@ -21,7 +22,6 @@ WAKING_COMMANDS = {
 }
 
 NONE_WAKING_COMMANDS = {
-    "GetEnc",
     "GetIsp",
     "GetEvents",
     "GetMdState",
