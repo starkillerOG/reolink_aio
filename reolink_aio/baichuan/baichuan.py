@@ -291,7 +291,8 @@ class Baichuan:
         except ApiError as err:
             if retry <= 0 or err.rspCode != 400:
                 raise err
-            _LOGGER.debug("%s, trying again", str(err))
+            _LOGGER.debug("%s, trying again in 1.5 s", str(err))
+            await asyncio.sleep(1.5)  # give the battery cam time to wake
             retrying = True
         except asyncio.TimeoutError as err:
             ch_str = f", ch {channel}" if channel is not None else ""
