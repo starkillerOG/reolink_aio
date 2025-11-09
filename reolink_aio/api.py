@@ -6174,29 +6174,32 @@ class Host:
         # retry commands that have not been received by the camera (battery cam waking from sleep)
         retry_cmd = []
         retry_idxs = []
+        coroutines = []
         for idx, cmd_data in enumerate(json_data):
             if cmd_data["code"] != 0:
                 cmd_body = body[idx]
                 cmd = cmd_body.get("cmd", "")
                 rsp_code = cmd_data.get("error", {}).get("rspCode", 0)
                 # check if baichuan has a fallback function
-                if retry > 0 and cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
+                if cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
                     func = self.baichuan.cmd_funcs[cmd]
                     args = cmd_body.get("param", {})
-                    try:
-                        await func(**args)
-                    except ReolinkError as err:
-                        _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd, str(err))
-                        json_data[idx]["Baichuan_fallback_succes"] = False
-                    else:
-                        _LOGGER.debug("Baichuan fallback succeeded for %s", cmd)
-                        json_data[idx]["Baichuan_fallback_succes"] = True
-                        self.baichuan_cmds.add(cmd)
-                        continue
-                if rsp_code in [-12, -13, -17]:
+                    coroutines.append((idx, cmd, func(**args)))
+                elif rsp_code in [-12, -13, -17]:
                     # add to the list of cmds to retry
                     retry_cmd.append(cmd_body)
                     retry_idxs.append(idx)
+        if coroutines and retry > 0:
+            results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
+            for i, result in enumerate(results):
+                (idx, cmd, _) = coroutines[i]
+                if isinstance(result, ReolinkError):
+                    _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd, str(result))
+                    json_data[idx]["Baichuan_fallback_succes"] = False
+                else:
+                    _LOGGER.debug("Baichuan fallback succeeded for %s", cmd)
+                    json_data[idx]["Baichuan_fallback_succes"] = True
+                    self.baichuan_cmds.add(cmd)
         if retry_cmd and retry > 0:
             _LOGGER.debug(
                 "cmd %s: returned response code %s/%s, retrying in 1.0 s",
