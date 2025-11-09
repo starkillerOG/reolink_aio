@@ -106,6 +106,7 @@ class Baichuan:
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
         self._log_once: set[str] = set()
+        self._log_error: bool = True
         self.last_privacy_check: float = 0
 
         # TCP connection
@@ -1152,7 +1153,12 @@ class Baichuan:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
 
         if host_coroutines:
-            results = await asyncio.gather(*[cor[1] for cor in host_coroutines], return_exceptions=True)
+            try:
+                async with asyncio.timeout(3 * TIMEOUT):
+                    results = await asyncio.gather(*[cor[1] for cor in host_coroutines], return_exceptions=True)
+            except asyncio.TimeoutError:
+                _LOGGER.warning("Baichuan host %s: Timeout of 3*%s sec getting host capabilities", self._host, TIMEOUT)
+                results = []
             for i, result in enumerate(results):
                 (cmd_id, _) = host_coroutines[i]
                 if isinstance(result, ReolinkError):
@@ -1299,7 +1305,12 @@ class Baichuan:
             coroutines.append(("scene", scene_id, self.get_scene_info(scene_id)))
 
         if coroutines:
-            results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
+            try:
+                async with asyncio.timeout(3 * TIMEOUT):
+                    results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
+            except asyncio.TimeoutError:
+                _LOGGER.warning("Baichuan host %s: Timeout of 3*%s sec getting channel capabilities", self._host, TIMEOUT)
+                results = []
             for i, result in enumerate(results):
                 (cmd_id, channel, _) = coroutines[i]
                 if isinstance(result, ReolinkError):
@@ -1490,7 +1501,15 @@ class Baichuan:
                 coroutines.append(self.get_DingDongOpt(chime_id=chime_id))
 
         if coroutines:
-            results = await asyncio.gather(*coroutines, return_exceptions=True)
+            try:
+                async with asyncio.timeout(3 * TIMEOUT):
+                    results = await asyncio.gather(*coroutines, return_exceptions=True)
+            except asyncio.TimeoutError:
+                if self._log_error:
+                    _LOGGER.warning("Baichuan host %s: Timeout of 3*%s sec getting states", self._host, TIMEOUT)
+                    self._log_error = False
+                return
+            self._log_error = True
             for result in results:
                 if isinstance(result, ReolinkError):
                     _LOGGER.debug(result)
