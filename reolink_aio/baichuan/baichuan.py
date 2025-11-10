@@ -108,6 +108,7 @@ class Baichuan:
         self._log_once: set[str] = set()
         self._log_error: bool = True
         self.last_privacy_check: float = 0
+        self.last_privacy_on: float = 0
 
         # TCP connection
         self._mutex = asyncio.Lock()
@@ -1789,7 +1790,10 @@ class Baichuan:
         if sleep is None:
             return None
         self._privacy_mode[channel] = sleep
-        self.last_privacy_check = time_now()
+        now = time_now()
+        self.last_privacy_check = now
+        if sleep:
+            self.last_privacy_on = now
 
         self.capabilities.setdefault(channel, set()).add("privacy_mode")
         if not self.http_api.is_nvr:

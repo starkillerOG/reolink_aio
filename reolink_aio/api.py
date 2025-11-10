@@ -1286,8 +1286,7 @@ class Host:
         if self.baichuan.privacy_mode() is None:
             return
 
-        now = time_now()
-        if now - self.baichuan.last_privacy_check > 2:
+        if time_now() - self.baichuan.last_privacy_check > 2:
             _LOGGER.debug("Checking privacy mode before login into host %s", self._host)
             try:
                 await self.baichuan.get_privacy_mode()
@@ -6052,6 +6051,8 @@ class Host:
                 await self.expire_session()
                 raise ReolinkConnectionError(f"Host {self._host}:{self._port}: connection error: {str(err)}") from err
             _LOGGER.debug("Host %s:%s: connection error, trying again: %s", self._host, self._port, str(err))
+            if time_now() - self.baichuan.last_privacy_on < 60:
+                await asyncio.sleep(7.5)
             return await self.send(body, param, expected_response_type, retry)
         except UnicodeDecodeError as err:
             if retry <= 0:
