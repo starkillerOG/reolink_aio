@@ -1588,6 +1588,8 @@ class Baichuan:
             try:
                 mess = await self.send(cmd_id=318, channel=channel)
             except ReolinkError:
+                if self.http_api.is_nvr and self.http_api._channel_online_check.get(channel, True):
+                    _LOGGER.warning("Baichuan host %s: GetChnTypeInfo failed, camera %s, channel %s is offline", self._host, self.http_api.camera_name(channel), channel)
                 self.http_api._channel_online_check[channel] = False
                 raise
             self.http_api._channel_online_check[channel] = True
@@ -2001,7 +2003,7 @@ class Baichuan:
         except ReolinkError:
             if alarm_mode != "manul" or kwargs.get("manual_switch") != 1:
                 raise
-            _LOGGER.debug("Baichaun host {self._host}: AudioAlarmPlay failed to play manual, using times 2 instead")
+            _LOGGER.debug("Baichaun host %s: AudioAlarmPlay failed to play manual, using times 2 instead", self._host)
             if channel is None:
                 xml = xmls.SirenHubTimes.format(times=2)
             else:
