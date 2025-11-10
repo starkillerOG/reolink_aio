@@ -1442,6 +1442,9 @@ class Baichuan:
 
         # channels
         for channel in self.http_api._channels:
+            if not self.http_api.camera_online(channel):
+                continue
+
             if self.http_api.supported(channel, "wifi") and inc_cmd("115", channel):
                 coroutines.append(self.get_wifi_signal(channel))
 

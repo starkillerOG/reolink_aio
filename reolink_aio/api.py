@@ -678,9 +678,7 @@ class Host:
     def camera_online(self, channel: int) -> bool:
         if not self.is_nvr or not self._GetChannelStatus_present:
             return True
-        if channel not in self._channel_online:
-            return False
-        return self._channel_online[channel]
+        return self._channel_online.get(channel, False)
 
     def camera_model(self, channel: int | None) -> str:
         if channel not in [0, None] and not self.is_nvr and channel not in self._model and channel in self._stream_channels:
@@ -2201,6 +2199,8 @@ class Host:
             return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and inc_wake(cmd, channel)
 
         for channel in self._stream_channels:
+            if not self.camera_online(channel):
+                continue
             ch_body = []
             if inc_cmd("GetEnc", channel):
                 ch_body.append({"cmd": "GetEnc", "action": 0, "param": {"channel": channel}})
@@ -2209,6 +2209,9 @@ class Host:
             chime_ids.extend([-1] * len(ch_body))
 
         for channel in self._channels:
+            if not self.camera_online(channel):
+                _LOGGER.debug("Host %s:%s: skipping update of channel %s because it is not online", self._host, self._port, channel)
+                continue
             ch_body = []
             if inc_cmd("GetIsp", channel):
                 ch_body.append({"cmd": "GetIsp", "action": 0, "param": {"channel": channel}})
@@ -6952,6 +6955,8 @@ class Chime:
 
     @property
     def online(self) -> bool:
+        if self.channel is not None and not self.host.camera_online(self.channel):
+            return False
         if self.connect_state == 2:
             return True
         return False
