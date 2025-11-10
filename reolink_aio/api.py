@@ -1036,9 +1036,10 @@ class Host:
 
         enc_range = self._enc_range[channel][0]
         height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
+        ch_bit = pow(2, channel)
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
-            if enc_range_i["chnBit"] == pow(2, channel) and height == enc_range_i[stream_str]["height"]:
+            if enc_range_i.get("chnBit", ch_bit) == ch_bit and height == enc_range_i.get(stream_str, {}).get("height", height):
                 enc_range = enc_range_i
                 break
 
@@ -1061,9 +1062,10 @@ class Host:
 
         enc_range = self._enc_range[channel][0]
         height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
+        ch_bit = pow(2, channel)
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
-            if enc_range_i["chnBit"] == pow(2, channel) and height == enc_range_i[stream_str]["height"]:
+            if enc_range_i.get("chnBit", ch_bit) == ch_bit and height == enc_range_i.get(stream_str, {}).get("height", height):
                 enc_range = enc_range_i
                 break
 
