@@ -1585,7 +1585,12 @@ class Baichuan:
         if channel is None:
             mess = await self.send(cmd_id=80)
         else:
-            mess = await self.send(cmd_id=318, channel=channel)
+            try:
+                mess = await self.send(cmd_id=318, channel=channel)
+            except ReolinkError:
+                self.http_api._channel_online_check[channel] = False
+                raise
+            self.http_api._channel_online_check[channel] = True
         self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo", "serialNumber", "name"])
         dev_info = self._dev_info[channel]
 

@@ -224,6 +224,7 @@ class Host:
         self._other_brand_channels: list[int] = []
         self._stream_channels: list[int] = []
         self._channel_online: dict[int, bool] = {}
+        self._channel_online_check: dict[int, bool] = {}
         self._is_doorbell: dict[int, bool] = {}
         self._GetDingDong_present: dict[int | None, bool] = {}
 
@@ -678,7 +679,7 @@ class Host:
     def camera_online(self, channel: int) -> bool:
         if not self.is_nvr or not self._GetChannelStatus_present:
             return True
-        return self._channel_online.get(channel, False)
+        return self._channel_online.get(channel, False) and self._channel_online_check.get(channel, True)
 
     def camera_model(self, channel: int | None) -> str:
         if channel not in [0, None] and not self.is_nvr and channel not in self._model and channel in self._stream_channels:
@@ -3880,6 +3881,7 @@ class Host:
                     continue
 
                 if data["cmd"] == "GetChnTypeInfo":
+                    self._channel_online_check[channel] = True
                     if data["value"]["typeInfo"] != "":
                         self._model[channel] = data["value"]["typeInfo"]
                     self._is_doorbell[channel] = "Doorbell" in self._model.get(channel, "")
