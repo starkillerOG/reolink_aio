@@ -4202,7 +4202,8 @@ class Host:
                 return
             chime = self._chime_list[chime_id]
             value = data["value"]["DingDong"]
-            chime.name = value["name"]
+            if value.get("name"):
+                chime.name = value["name"]
             chime.led_state = value["ledState"] == 1
             chime.volume = value["volLevel"]
 
