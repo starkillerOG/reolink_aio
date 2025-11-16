@@ -1150,6 +1150,10 @@ class Baichuan:
             host_coroutines.append((603, self.send(cmd_id=603)))
         if self.api_version("wifi") > 0:
             self.capabilities[None].add("wifi")
+        if self.api_version("rtsp") > 0 and self.http_api._rtsp_port is not None:
+            self.capabilities[None].add("RTSP")
+        if self.api_version("onvif") > 0 and self.http_api._onvif_port is not None:
+            self.capabilities[None].add("ONVIF")
         if self.http_api.is_hub and self.api_version("doorbellVersion") > 0:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
 
