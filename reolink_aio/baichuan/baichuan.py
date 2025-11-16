@@ -1702,6 +1702,24 @@ class Baichuan:
         ptz_position = self._get_keys_from_xml(mess, {"pPos": ("Ppos", int), "tPos": ("Tpos", int)})
         self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
 
+    @http_cmd(["GetAlarm", "GetMdAlarm"])
+    async def GetMdAlarm(self, channel: int | None = None, **kwargs) -> None:
+        """Get the motion sensitivity"""
+        channel = kwargs.get("Alarm", {}).get("channel", channel)
+        mess = await self.send(cmd_id=46, channel=channel)
+        root = XML.fromstring(mess)
+
+        info = root.find(".//sensInfoNew")
+        if info is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: GetMdAlarm fallback channel {channel} got unexpected data")
+        sens = self._get_value_from_xml_element(info, "sensitivityDefault", int)
+        if sens is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: GetMdAlarm fallback channel {channel} got unexpected data")
+        if self.http_api.baichuan_only:
+            self.http_api._api_version["GetMdAlarm"] = 1
+        self.http_api._md_alarm_settings.setdefault(channel, {})["useNewSens"] = 1
+        self.http_api._md_alarm_settings[channel].setdefault("newSens", {})["sensDef"] = sens
+
     async def get_cry_detection(self, channel: int) -> bool:
         """Check if cry detection is supported and get the sensitivity level"""
         mess = await self.send(cmd_id=299, channel=channel)
