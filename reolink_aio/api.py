@@ -1248,13 +1248,13 @@ class Host:
             return 0
 
         if self.api_version("GetMdAlarm") >= 1:
-            if self._md_alarm_settings[channel]["MdAlarm"].get("useNewSens", 0) == 1:
-                return 51 - self._md_alarm_settings[channel]["MdAlarm"]["newSens"]["sensDef"]
+            if self._md_alarm_settings[channel].get("useNewSens", 0) == 1:
+                return 51 - self._md_alarm_settings[channel]["newSens"]["sensDef"]
 
-            sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["MdAlarm"]["sens"]]
+            sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["sens"]]
             return 51 - mean(sensitivities)
 
-        sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["Alarm"]["sens"]]
+        sensitivities = [sens["sensitivity"] for sens in self._md_alarm_settings[channel]["sens"]]
         return 51 - mean(sensitivities)
 
     def ai_sensitivity(self, channel: int, ai_type: str) -> int:
@@ -3925,10 +3925,10 @@ class Host:
                     self._motion_detection_states[channel] = data["value"]["state"] == 1
 
                 elif data["cmd"] == "GetAlarm":
-                    self._md_alarm_settings[channel] = data["value"]
+                    self._md_alarm_settings[channel] = data["value"]["Alarm"]
 
                 elif data["cmd"] == "GetMdAlarm":
-                    self._md_alarm_settings[channel] = data["value"]
+                    self._md_alarm_settings[channel] = data["value"]["MdAlarm"]
 
                 elif data["cmd"] == "GetAiAlarm":
                     ai_type = data["value"]["AiAlarm"]["ai_type"]
@@ -5398,7 +5398,7 @@ class Host:
         if channel not in self._md_alarm_settings:
             raise NotSupportedError(f"set_motion_detection: alarm on camera {self.camera_name(channel)} is not available")
 
-        body: typings.reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": self._md_alarm_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetAlarm", "action": 0, "param": {"Alarm": self._md_alarm_settings[channel]}}]
         body[0]["param"]["Alarm"]["enable"] = 1 if enable else 0
 
         await self.send_setting(body)
@@ -5456,7 +5456,7 @@ class Host:
                         "Alarm": {
                             "channel": channel,
                             "type": "md",
-                            "sens": self._md_alarm_settings[channel]["Alarm"]["sens"],
+                            "sens": self._md_alarm_settings[channel]["sens"],
                         }
                     },
                 }
