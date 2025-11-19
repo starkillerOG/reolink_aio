@@ -2523,6 +2523,7 @@ class Host:
                         {"cmd": "GetRec", "action": 1, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}},
+                        {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
 
@@ -2582,14 +2583,13 @@ class Host:
             self._api_version["GetFtp"] = check_command_exists("GetFtpV20")
             self._api_version["GetRec"] = check_command_exists("GetRecV20")
             self._api_version["GetAudioAlarm"] = check_command_exists("GetAudioAlarmV20")
-            self._api_version["GetMdAlarm"] = check_command_exists("GetMdAlarm")
         else:
             self._api_version["GetEmail"] = 0
             self._api_version["GetPush"] = 0
             self._api_version["GetFtp"] = 0
             self._api_version["GetRec"] = 0
             self._api_version["GetAudioAlarm"] = 0
-            self._api_version["GetMdAlarm"] = 0
+        self._api_version["GetMdAlarm"] = check_command_exists("GetMdAlarm")
 
         self.construct_capabilities()
 
