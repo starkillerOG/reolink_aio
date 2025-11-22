@@ -26,6 +26,7 @@ from ..const import (
 from ..enums import (
     BatteryEnum,
     DayNightEnum,
+    EncodingEnum,
     HardwiredChimeTypeEnum,
     SpotlightEventModeEnum,
     SpotlightModeEnum,
@@ -1623,6 +1624,44 @@ class Baichuan:
                 _LOGGER.debug("Reolink %s: %s", self.http_api.camera_name(channel), err)
 
         return self._dev_info[channel]
+
+    @http_cmd("GetEnc")
+    async def GetEnc(self, channel: int) -> None:
+        """Get the encoding info of a channel"""
+        root = await self.send(cmd_id=56, channel=channel)
+        mess = XML.fromstring(root)
+        audio = 1
+        if (main := mess.find(".//mainStream")) is not None:
+            data = self._get_keys_from_xml(
+                main,
+                {
+                    "audio": ("audio", int),
+                    "width": ("width", int),
+                    "height": ("height", int),
+                    "videoEncType": ("vType_int", int),
+                    "frame": ("frameRate", int),
+                    "bitRate": ("bitRate", int),
+                },
+            )
+            data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
+            self.http_api._enc_settings.setdefault(channel, {}).setdefault("mainStream", {}).update(data)
+            audio = audio and data.get("audio", 0)
+        if (sub := mess.find(".//subStream")) is not None:
+            data = self._get_keys_from_xml(
+                sub,
+                {
+                    "audio": ("audio", int),
+                    "width": ("width", int),
+                    "height": ("height", int),
+                    "videoEncType": ("vType_int", int),
+                    "frame": ("frameRate", int),
+                    "bitRate": ("bitRate", int),
+                },
+            )
+            data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
+            self.http_api._enc_settings.setdefault(channel, {}).setdefault("subStream", {}).update(data)
+            audio = audio and data.get("audio", 0)
+        self.http_api._enc_settings.setdefault(channel, {})["audio"] = audio
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
