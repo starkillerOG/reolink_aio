@@ -1759,6 +1759,30 @@ class Baichuan:
         data = self._get_keys_from_xml(mess, {"sensitivity": ("sensitivity", int), "stayTime": ("stay_time", int)})
         self.http_api._ai_alarm_settings.setdefault(channel, {}).setdefault(ai_type, {}).update(data)
 
+    @http_cmd("SetAiAlarm")
+    async def SetAiAlarm(self, **kwargs) -> None:
+        """Set the AI detection sensitivity/delay"""
+        param = kwargs.get("AiAlarm", {})
+        channel = param.get("channel")
+        ai_type = param.get("ai_type")
+        sensitivity = param.get("sensitivity")
+        stay_time = param.get("stay_time")
+        if channel is None or ai_type is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetAiAlarm channel {channel}")
+
+        xml = xmls.GetAiAlarm.format(channel=channel, ai_type=ai_type)
+        mess = await self.send(cmd_id=342, channel=channel, body=xml)
+        xml_body = XML.fromstring(mess)
+
+        if sensitivity is not None and (xml_sensitivity := xml_body.find(".//sensitivity")) is not None:
+            xml_sensitivity.text = str(sensitivity)
+        if stay_time is not None and (xml_stay_time := xml_body.find(".//stayTime")) is not None:
+            xml_stay_time.text = str(stay_time)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=343, channel=channel, body=xml)
+
     async def get_cry_detection(self, channel: int) -> bool:
         """Check if cry detection is supported and get the sensitivity level"""
         mess = await self.send(cmd_id=299, channel=channel)
