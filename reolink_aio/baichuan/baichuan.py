@@ -1720,6 +1720,33 @@ class Baichuan:
         self.http_api._md_alarm_settings.setdefault(channel, {})["useNewSens"] = 1
         self.http_api._md_alarm_settings[channel].setdefault("newSens", {})["sensDef"] = sens
 
+    @http_cmd(["SetAlarm", "SetMdAlarm"])
+    async def SetMdAlarm(self, **kwargs) -> None:
+        """Set the motion sensitivity"""
+        channel = kwargs.get("MdAlarm", {}).get("channel")
+        if channel is None:
+            channel = kwargs.get("Alarm", {}).get("channel")
+        sensitivity = kwargs.get("MdAlarm", {}).get("newSens", {}).get("sensDef")
+        if sensitivity is None:
+            sensitivity = kwargs.get("Alarm", {}).get("sens", [{}])[0].get("sensitivity")
+        if channel is None or sensitivity is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetMdAlarm channel {channel}")
+
+        mess = await self.send(cmd_id=46, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        info = xml_body.find(".//sensInfoNew")
+        if info is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: SetMdAlarm fallback channel {channel} got unexpected data")
+        xml_sensitivity = info.find(".//sensitivityDefault")
+        if xml_sensitivity is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: SetMdAlarm fallback channel {channel} got unexpected data")
+        xml_sensitivity.text = str(sensitivity)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=47, channel=channel, body=xml)
+
     async def get_cry_detection(self, channel: int) -> bool:
         """Check if cry detection is supported and get the sensitivity level"""
         mess = await self.send(cmd_id=299, channel=channel)
