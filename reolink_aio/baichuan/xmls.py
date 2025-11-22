@@ -370,3 +370,12 @@ SetAutoFocus = """
 <disable>{disable}</disable>
 </AutoFocus>
 </body>"""
+
+GetAiAlarm = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<AiDetectCfg version="1.1">
+<chn>{channel}</chn>
+<type>{ai_type}</type>
+</AiDetectCfg>
+</body>"""

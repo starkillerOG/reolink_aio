@@ -1241,6 +1241,10 @@ class Baichuan:
             if (aiVersion >> 6) & 1:  # 7th bit (64), shift 6
                 self.capabilities[channel].add("motion_detection")  # other detection (PIR)
                 self.http_api._motion_detection_states.setdefault(channel, False)
+            if (aiVersion >> 8) & 1:  # 9th bit (256), shift 8
+                self.capabilities[channel].add("ai_delay")
+            if (aiVersion >> 9) & 1:  # 10th bit (512), shift 9
+                self.capabilities[channel].add("ai_sensitivity")
             if (aiVersion >> 17) & 1:  # 18th bit (131072), shift 17
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
@@ -1746,6 +1750,14 @@ class Baichuan:
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=47, channel=channel, body=xml)
+
+    @http_cmd("GetAiAlarm")
+    async def GetAiAlarm(self, channel: int, ai_type: str) -> None:
+        """Get the AI detection sensitivity/delay"""
+        xml = xmls.GetAiAlarm.format(channel=channel, ai_type=ai_type)
+        mess = await self.send(cmd_id=342, channel=channel, body=xml)
+        data = self._get_keys_from_xml(mess, {"sensitivity": ("sensitivity", int), "stayTime": ("stay_time", int)})
+        self.http_api._ai_alarm_settings.setdefault(channel, {}).setdefault(ai_type, {}).update(data)
 
     async def get_cry_detection(self, channel: int) -> bool:
         """Check if cry detection is supported and get the sensitivity level"""
