@@ -1067,6 +1067,29 @@ class Baichuan:
                     for ch in range(self.http_api._num_channels):
                         self.http_api._channels.append(ch)
 
+        self.http_api._enc_range = {}
+        for info in root.findall(".//StreamInfo"):
+            channelBits = self._get_value_from_xml_element(info, "channelBits", int)
+            if channelBits is None:
+                continue
+            for ch in range(0, channelBits.bit_length(), 1):
+                if not (channelBits >> ch) & 1:
+                    continue
+                enc_range = self.http_api._enc_range.setdefault(ch, [])
+                enc_data: dict[str, Any] = {"chnBit": channelBits}
+                for encoding in info.findall(".//encodeTable"):
+                    stream_type = self._get_value_from_xml_element(encoding, "type", str)
+                    if stream_type is None:
+                        continue
+                    enc_data[stream_type] = self._get_keys_from_xml(encoding, {"width": ("width", int), "height": ("height", int)})
+                    framerateTable = self._get_value_from_xml_element(encoding, "framerateTable", str)
+                    if framerateTable is not None:
+                        enc_data[stream_type]["frameRate"] = [int(val) for val in framerateTable.split(",")]
+                    bitrateTable = self._get_value_from_xml_element(encoding, "bitrateTable", str)
+                    if bitrateTable is not None:
+                        enc_data[stream_type]["bitRate"] = [int(val) for val in bitrateTable.split(",")]
+                enc_range.append(enc_data)
+
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
         if self._subscribed:

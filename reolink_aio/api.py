@@ -280,7 +280,7 @@ class Host:
         self._push_settings: dict[int, dict] = {}
         self._webhook_settings: dict[int, dict] = {}
         self._enc_settings: dict[int, dict] = {}
-        self._enc_range: dict[int, dict] = {}
+        self._enc_range: dict[int, list[dict]] = {}
         self._ptz_presets_settings: dict[int, dict] = {}
         self._ptz_patrol_settings: dict[int, dict] = {}
         self._ptz_guard_settings: dict[int, dict] = {}
@@ -1038,7 +1038,7 @@ class Host:
         ch_bit = pow(2, channel)
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
-            if enc_range_i.get("chnBit", ch_bit) == ch_bit and height == enc_range_i.get(stream_str, {}).get("height", height):
+            if (enc_range_i.get("chnBit", ch_bit) >> channel) & 1 and height == enc_range_i.get(stream_str, {}).get("height", height):
                 enc_range = enc_range_i
                 break
 
@@ -1064,7 +1064,7 @@ class Host:
         ch_bit = pow(2, channel)
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
-            if enc_range_i.get("chnBit", ch_bit) == ch_bit and height == enc_range_i.get(stream_str, {}).get("height", height):
+            if (enc_range_i.get("chnBit", ch_bit) >> channel) & 1 and height == enc_range_i.get(stream_str, {}).get("height", height):
                 enc_range = enc_range_i
                 break
 
@@ -2448,7 +2448,7 @@ class Host:
         channels = []
         for channel in self._stream_channels:
             ch_body = [
-                {"cmd": "GetEnc", "action": 1, "param": {"channel": channel}},
+                {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
             ]
             body.extend(ch_body)
