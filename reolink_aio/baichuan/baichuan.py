@@ -1685,6 +1685,54 @@ class Baichuan:
             self.http_api._enc_settings.setdefault(channel, {}).setdefault("subStream", {}).update(data)
             audio = audio and data.get("audio", 0)
         self.http_api._enc_settings.setdefault(channel, {})["audio"] = audio
+        self.http_api._enc_settings[channel]["channel"] = channel
+
+    @http_cmd("SetEnc")
+    async def SetEnc(self, channel: int | None = None, stream: str | None = None, encoding: str | None = None, **kwargs) -> None:
+        """Set the encoding info of a stream"""
+        param = kwargs.get("Enc", {})
+        param_sub = param.get("subStream", {})
+        param_main = param.get("mainStream", {})
+        audio = param.get("audio")
+        sub_bitrate = param_sub.get("bitRate")
+        sub_frameRate = param_sub.get("frameRate")
+        main_bitrate = param_main.get("bitRate")
+        main_frameRate = param_main.get("frameRate")
+        if channel is None:
+            channel = param.get("channel")
+        if channel is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: SetEnc channel not defined")
+
+        mess = await self.send(cmd_id=56, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if stream is not None and encoding is not None:
+            xml_stream = xml_body.find(f".//{stream}Stream")
+            if xml_stream is None:
+                raise InvalidParameterError(f"Baichuan host {self._host}: SetEnc could not find stream {stream} in XML")
+            if (xml_encoding := xml_stream.find(".//videoEncType")) is not None:
+                encoding_int = 1 if encoding == "h265" else 0
+                xml_encoding.text = str(encoding_int)
+
+        if audio is not None:
+            for xml_audio in xml_body.findall(".//audio"):
+                xml_audio.text = str(audio)
+        xml_sub = xml_body.find(".//subStream")
+        if xml_sub is not None:
+            if sub_bitrate is not None and (xml_sub_bitrate := xml_sub.find(".//bitRate")) is not None:
+                xml_sub_bitrate.text = str(sub_bitrate)
+            if sub_frameRate is not None and (xml_sub_framerate := xml_sub.find(".//frame")) is not None:
+                xml_sub_framerate.text = str(sub_frameRate)
+        xml_main = xml_body.find(".//mainStream")
+        if xml_main is not None:
+            if main_bitrate is not None and (xml_main_bitrate := xml_main.find(".//bitRate")) is not None:
+                xml_main_bitrate.text = str(main_bitrate)
+            if main_frameRate is not None and (xml_main_framerate := xml_main.find(".//frame")) is not None:
+                xml_main_framerate.text = str(main_frameRate)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=57, channel=channel, body=xml)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
@@ -2230,23 +2278,6 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=440, channel=channel, body=xml)
         await self.GetAudioNoise(channel)
-
-    async def SetEnc(self, channel: int, stream: str, encoding: str | None = None, **_kwargs) -> None:
-        """Set the encoding of a stream"""
-        mess = await self.send(cmd_id=56, channel=channel)
-        xml_body = XML.fromstring(mess)
-
-        xml_stream = xml_body.find(f".//{stream}Stream")
-        if xml_stream is None:
-            raise InvalidParameterError(f"Baichuan host {self._host}: SetEnc could not find stream {stream} in XML")
-
-        encoding_int = 1 if encoding == "h265" else 0
-        if encoding is not None and (xml_encoding := xml_stream.find(".//videoEncType")) is not None:
-            xml_encoding.text = str(encoding_int)
-
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
-        await self.send(cmd_id=57, channel=channel, body=xml)
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int | None = None, retry: int = 3, **_kwargs) -> None:
