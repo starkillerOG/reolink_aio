@@ -278,6 +278,13 @@ UserList = """
 <userName>{username}</userName>
 </Extension>"""
 
+AbilityInfo = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<userName>{username}</userName>
+<token>image</token>
+</Extension>"""
+
 SetWhiteLed = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>

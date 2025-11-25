@@ -1160,6 +1160,8 @@ class Baichuan:
 
         # Host capabilities
         self.capabilities.setdefault(None, set())
+        for channel in self.http_api._channels:
+            self.capabilities.setdefault(channel, set())
         if self.api_version("reboot") > 0:
             self.capabilities[None].add("reboot")
         if (io_inputs := self.api_version("IOInputPortNum")) > 0:
@@ -1170,6 +1172,7 @@ class Baichuan:
             self._io_outputs[channel] = list(range(0, io_outputs))
         host_coroutines: list[tuple[Any, Coroutine]] = []
         host_coroutines.append(("network_info", self.get_network_info()))
+        host_coroutines.append(("ability_info", self._get_ability_info()))
         if self.api_version("sceneModeCfg") > 0:
             host_coroutines.append((603, self.send(cmd_id=603)))
         if self.api_version("wifi") > 0:
@@ -1214,8 +1217,6 @@ class Baichuan:
         # Channel capabilities
         coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._channels:
-            self.capabilities.setdefault(channel, set())
-
             if self.http_api.is_nvr and self.http_api.wifi_connection(channel) and (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
                 coroutines.append(("wifi", channel, self.get_wifi_signal(channel)))
 
@@ -1437,6 +1438,29 @@ class Baichuan:
                         value = feature.text
                     abilities_dict[pretty_key][feature.tag] = value
         return abilities_dict
+
+    async def _get_ability_info(self) -> None:
+        """Get ability info as part of get_host_data."""
+        xml = xmls.AbilityInfo.format(username=self._username)
+        try:
+            mess = await self.send(cmd_id=151, extension=xml)
+            root = XML.fromstring(mess)
+            if (ability_info := root.find("AbilityInfo")) is None:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
+            if (image_info := ability_info.find("image")) is not None:
+                for image_ch in image_info.findall("subModule"):
+                    channel = self._get_channel_from_xml_element(image_ch)
+                    if channel is None:
+                        raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
+                    ability = self._get_value_from_xml_element(image_ch, "abilityValue")
+                    if ability is None:
+                        raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
+                    if "ledState_rw" in ability:
+                        self.capabilities[channel].add("ir_lights")
+        except ReolinkError:
+            for channel in self.http_api._channels:
+                self.capabilities[channel].add("ir_lights")
+            raise
 
     async def get_states(self, cmd_list: cmd_list_type = None, wake: dict[int, bool] | None = None) -> None:
         """Update the state information of polling data"""
