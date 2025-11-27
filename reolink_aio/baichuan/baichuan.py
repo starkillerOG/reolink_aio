@@ -2464,12 +2464,27 @@ class Baichuan:
         xml = xmls.QuickReplyPlay_XML.format(channel=channel, file_id=file_id)
         await self.send(cmd_id=349, channel=channel, body=xml)
 
-    @http_cmd("SetRecV20")
+    @http_cmd(["GetRecV20", "GetRec"])
+    async def GetRec(self, channel: int, **_kwargs) -> None:
+        """Get the recording info"""
+        mess = await self.send(cmd_id=81, channel=channel)
+        root = XML.fromstring(mess)
+        enable = self._get_value_from_xml_element(root, "enable", int)
+
+        if self.http_api.api_version("GetRec") >= 1:
+            self.http_api._recording_settings.setdefault(channel, {})["scheduleEnable"] = enable
+        self.http_api._recording_settings.setdefault(channel, {}).setdefault("schedule", {})["enable"] = enable
+
+    @http_cmd(["SetRecV20", "SetRec"])
     async def SetRecV20(self, **kwargs) -> None:
-        """Get the GetDingDongCfg info"""
+        """Set the recoding info"""
         rec = kwargs.get("Rec", {})
         channel = rec.get("schedule", {}).get("channel")
         enable = rec.get("scheduleEnable")
+        if enable is None:
+            enable = rec.get("schedule", {}).get("enable")
+        if enable is None:
+            enable = rec.get("enable")
         if channel is None or enable is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: SetRecV20 invalid input params")
 
