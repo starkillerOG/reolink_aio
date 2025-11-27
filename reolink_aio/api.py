@@ -862,47 +862,47 @@ class Host:
     def recording_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetRec") >= 1:
-                return all(self._recording_settings[ch]["Rec"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
+                return all(self._recording_settings[ch]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
-            return all(self._recording_settings[ch]["Rec"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
+            return all(self._recording_settings[ch]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._recording_settings)
 
         if channel not in self._recording_settings:
             return False
 
         if self.api_version("GetRec") >= 1:
-            return self._recording_settings[channel]["Rec"]["scheduleEnable"] == 1
+            return self._recording_settings[channel]["scheduleEnable"] == 1
 
-        return self._recording_settings[channel]["Rec"]["schedule"]["enable"] == 1
+        return self._recording_settings[channel]["schedule"]["enable"] == 1
 
     @property
     def recording_packing_time(self) -> str:
         if not self._recording_settings:
             return ""
         channel = next(iter(self._recording_settings))
-        return self._recording_settings[channel].get("Rec", {}).get("packTime", "")
+        return self._recording_settings[channel].get("packTime", "")
 
     @property
     def recording_packing_time_list(self) -> list[str]:
         if not self._recording_range:
             return []
         channel = next(iter(self._recording_range))
-        return self._recording_range[channel].get("Rec", {}).get("packTime", [])
+        return self._recording_range[channel].get("packTime", [])
 
     def post_recording_time(self, channel: int) -> str:
         if channel not in self._recording_settings:
             return ""
-        return self._recording_settings[channel].get("Rec", {}).get("postRec", "")
+        return self._recording_settings[channel].get("postRec", "")
 
     def post_recording_time_list(self, channel: int) -> list[str]:
         if channel not in self._recording_range:
             return []
-        return self._recording_range[channel].get("Rec", {}).get("postRec", [])
+        return self._recording_range[channel].get("postRec", [])
 
     def manual_record_enabled(self, channel: int) -> bool:
         if channel not in self._manual_record_settings:
             return False
 
-        return self._manual_record_settings[channel]["Rec"]["enable"] > 0
+        return self._manual_record_settings[channel]["enable"] > 0
 
     def buzzer_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -1780,7 +1780,7 @@ class Host:
             if self.api_version("mask", channel) > 0 and self._privacy_mask.get(channel, {}).get("area"):
                 self._capabilities[channel].add("privacy_mask")
 
-            if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]["Rec"]):
+            if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]):
                 self._capabilities[channel].add("recording")
                 if self.api_version("supportIfttt", channel) <= 0:
                     self._capabilities[channel].add("rec_enable")
@@ -1788,7 +1788,7 @@ class Host:
             if self.post_recording_time_list(channel) and self.post_recording_time(channel):
                 self._capabilities[channel].add("post_rec_time")
 
-            if channel in self._manual_record_settings and "enable" in self._recording_settings[channel]["Rec"]:
+            if channel in self._manual_record_settings and "enable" in self._recording_settings[channel]:
                 self._capabilities[channel].add("manual_record")
 
             if (
@@ -2595,7 +2595,7 @@ class Host:
 
         for channel in self._channels:
             # fix for manual record firmware bug, it should be 0 or 1, other values are a bug and cause battery drain
-            if self.supported(channel, "manual_record") and (val := self._manual_record_settings[channel]["Rec"]["enable"]) > 1:
+            if self.supported(channel, "manual_record") and (val := self._manual_record_settings[channel]["enable"]) > 1:
                 _LOGGER.warning("Manual recording of Reolink %s has value %s which is a firmware bug, disabling manual recording", self.camera_name(channel), val)
                 await self.set_manual_record(channel, False)
 
@@ -4052,14 +4052,14 @@ class Host:
                     self._privacy_mask[channel] = data["value"]["Mask"]
 
                 elif data["cmd"] == "GetRec":
-                    self._recording_settings[channel] = data["value"]
+                    self._recording_settings[channel] = data["value"]["Rec"]
                     if "range" in data:
-                        self._recording_range[channel] = data["range"]
+                        self._recording_range[channel] = data["range"]["Rec"]
 
                 elif data["cmd"] == "GetRecV20":
-                    self._recording_settings[channel] = data["value"]
+                    self._recording_settings[channel] = data["value"]["Rec"]
                     if "range" in data:
-                        self._recording_range[channel] = data["range"]
+                        self._recording_range[channel] = data["range"]["Rec"]
 
                 elif data["cmd"] == "GetManualRec":
                     self._manual_record_settings[channel] = data["value"]
@@ -4816,11 +4816,11 @@ class Host:
 
         params = self._recording_settings[channel]
         if self.api_version("GetRec") >= 1:
-            params["Rec"]["scheduleEnable"] = on_off
-            body = [{"cmd": "SetRecV20", "action": 0, "param": params}]
+            params["scheduleEnable"] = on_off
+            body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec": params}}]
         else:
-            params["Rec"]["schedule"]["enable"] = on_off
-            body = [{"cmd": "SetRec", "action": 0, "param": params}]
+            params["schedule"]["enable"] = on_off
+            body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": params}}]
 
         await self.send_setting(body)
 
@@ -4847,13 +4847,13 @@ class Host:
             raise InvalidParameterError(f"set_post_recording_time: value {value} not in {self.post_recording_time_list(channel)}")
 
         params = self._recording_settings[channel]
-        params["Rec"]["postRec"] = value
+        params["postRec"] = value
         if self.api_version("GetRec") >= 1:
-            body = [{"cmd": "SetRecV20", "action": 0, "param": params}]
+            body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec": params}}]
             await self.send_setting(body)
             return
 
-        body = [{"cmd": "SetRec", "action": 0, "param": params}]
+        body = [{"cmd": "SetRec", "action": 0, "param": {"Rec": params}}]
         await self.send_setting(body)
 
     async def set_manual_record(self, channel: int, enable: bool) -> None:
