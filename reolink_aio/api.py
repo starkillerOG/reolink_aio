@@ -895,6 +895,8 @@ class Host:
 
     def post_recording_time_list(self, channel: int) -> list[str]:
         if channel not in self._recording_range:
+            if self.baichuan_only:
+                return ["15 Seconds", "30 Seconds", "1 Minute"]  # default for baichuan_only
             return []
         return self._recording_range[channel].get("postRec", [])
 
