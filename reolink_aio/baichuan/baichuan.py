@@ -2233,9 +2233,8 @@ class Baichuan:
     async def GetAudioCfg(self, channel: int, **_kwargs) -> None:
         """Get the audio settings"""
         mess = await self.send(cmd_id=264, channel=channel)
-        root = XML.fromstring(mess)
         data = self._get_keys_from_xml(
-            root,
+            mess,
             {
                 "volume": ("volume", int),
                 "talkAndReplyVolume": ("talkAndReplyVolume", int),
@@ -2271,9 +2270,8 @@ class Baichuan:
     async def GetAudioNoise(self, channel: int) -> None:
         """Get the audio noise reduction settings"""
         mess = await self.send(cmd_id=439, channel=channel)
-        root = XML.fromstring(mess)
         data = self._get_keys_from_xml(
-            root,
+            mess,
             {
                 "enable": ("enable", bool),
                 "level": ("level", int),
@@ -2359,8 +2357,7 @@ class Baichuan:
         mess = await self.send(cmd_id=485, channel=channel, body=xml)
 
         if option == 2:
-            root = XML.fromstring(mess)
-            data = self._get_keys_from_xml(root, {"name": ("name", str), "volLevel": ("volLevel", int), "ledState": ("ledState", int)})
+            data = self._get_keys_from_xml(mess, {"name": ("name", str), "volLevel": ("volLevel", int), "ledState": ("ledState", int)})
             json_data = {"cmd": "DingDongOpt", "code": 0, "value": {"DingDong": data}}
             self.http_api.map_chime_json_response(json_data, channel, chime_id)
 
@@ -2510,9 +2507,8 @@ class Baichuan:
     async def GetPirInfo(self, channel: int, **_kwargs) -> None:
         """Get the Pir settings"""
         mess = await self.send(cmd_id=212, channel=channel)
-        root = XML.fromstring(mess)
         data = self._get_keys_from_xml(
-            root,
+            mess,
             {
                 "enable": ("enable", int),
                 "sensiValue": ("sensitive", int),
@@ -2553,8 +2549,7 @@ class Baichuan:
     async def GetEmail(self, channel: int, **_kwargs) -> None:
         """Get the email settings"""
         mess = await self.send(cmd_id=217, channel=channel)
-        root = XML.fromstring(mess)
-        data = self._get_keys_from_xml(root, {"enable": ("enable", int)})
+        data = self._get_keys_from_xml(mess, {"enable": ("enable", int)})
         data["scheduleEnable"] = data["enable"]
         data["schedule"] = {"enable": data["enable"]}
         self.http_api._email_settings.setdefault(channel, {}).setdefault("Email", {}).update(data)
@@ -2583,8 +2578,7 @@ class Baichuan:
     async def GetPush(self, channel: int, **_kwargs) -> None:
         """Get the push settings"""
         mess = await self.send(cmd_id=219, channel=channel)
-        root = XML.fromstring(mess)
-        data = self._get_keys_from_xml(root, {"enable": ("enable", int)})
+        data = self._get_keys_from_xml(mess, {"enable": ("enable", int)})
         data["scheduleEnable"] = data["enable"]
         data["schedule"] = {"enable": data["enable"]}
         self.http_api._push_settings.setdefault(channel, {}).setdefault("Push", {}).update(data)
@@ -2617,8 +2611,7 @@ class Baichuan:
             raise InvalidParameterError(f"Baichuan host {self._host}: GetAutoFocus invalid input params")
 
         mess = await self.send(cmd_id=224, channel=channel)
-        root = XML.fromstring(mess)
-        data = self._get_keys_from_xml(root, {"disable": ("disable", int)})
+        data = self._get_keys_from_xml(mess, {"disable": ("disable", int)})
 
         self.http_api._auto_focus_settings.setdefault(channel, {}).update(data)
 
@@ -2638,9 +2631,8 @@ class Baichuan:
         """Get the name of a scene"""
         xml = xmls.GetSceneInfo.format(scene_id=scene_id)
         mess = await self.send(cmd_id=604, body=xml)
-        root = XML.fromstring(mess)
 
-        data = self._get_keys_from_xml(root, {"id": ("scene_id", int), "valid": ("valid", int), "name": ("name", str)})
+        data = self._get_keys_from_xml(mess, {"id": ("scene_id", int), "valid": ("valid", int), "name": ("name", str)})
         if data.get("scene_id") != scene_id:
             raise UnexpectedDataError(f"Baichuan host {self._host}: get_scene_info requested scene_id {scene_id} but received {data.get('scene_id')}")
         if data.get("valid") != 1:
