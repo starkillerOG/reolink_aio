@@ -220,6 +220,7 @@ class Host:
         # Channels of cameras, used in this NVR ([0] for a directly connected camera)
         self._GetChannelStatus_present: bool = False
         self._GetChannelStatus_has_name: bool = False
+        self._GetChnTypeInfo_present: bool = False
         self._channels: list[int] = []
         self._other_brand_channels: list[int] = []
         self._stream_channels: list[int] = []
@@ -3877,6 +3878,7 @@ class Host:
                     continue
 
                 if data["cmd"] == "GetChnTypeInfo":
+                    self._GetChnTypeInfo_present = True
                     self._channel_online_check[channel] = True
                     if data["value"]["typeInfo"] != "":
                         self._model[channel] = data["value"]["typeInfo"]

@@ -1658,10 +1658,13 @@ class Baichuan:
             try:
                 mess = await self.send(cmd_id=318, channel=channel)
             except ReolinkError:
+                if not self.http_api._GetChnTypeInfo_present:
+                    raise
                 if self.http_api.is_nvr and self.http_api._channel_online_check.get(channel, True):
                     _LOGGER.warning("Baichuan host %s: GetChnTypeInfo failed, camera %s, channel %s is offline", self._host, self.http_api.camera_name(channel), channel)
                 self.http_api._channel_online_check[channel] = False
                 raise
+            self.http_api._GetChnTypeInfo_present = True
             self.http_api._channel_online_check[channel] = True
         self._dev_info[channel] = self._get_keys_from_xml(mess, ["type", "hardwareVersion", "firmwareVersion", "itemNo", "serialNumber", "name"])
         dev_info = self._dev_info[channel]
