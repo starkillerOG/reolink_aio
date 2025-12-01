@@ -777,9 +777,9 @@ class Host:
             return False
 
         if self.api_version("GetAudioAlarm") >= 1:
-            return self._audio_alarm_settings[channel]["Audio"]["enable"] == 1
+            return self._audio_alarm_settings[channel]["enable"] == 1
 
-        return self._audio_alarm_settings[channel]["Audio"]["schedule"]["enable"] == 1
+        return self._audio_alarm_settings[channel]["schedule"]["enable"] == 1
 
     def ir_enabled(self, channel: int) -> bool:
         return self._ir_settings.get(channel, {}).get("IrLights", {}).get("state") == "Auto"
@@ -1217,12 +1217,6 @@ class Host:
             return 0
 
         return self._auto_reply_settings[channel]["AutoReply"]["timeout"]
-
-    def audio_alarm_settings(self, channel: int) -> dict:
-        if channel in self._audio_alarm_settings:
-            return self._audio_alarm_settings[channel]
-
-        return {}
 
     def pir_enabled(self, channel: int) -> bool | None:
         if channel not in self._pir:
@@ -4106,10 +4100,10 @@ class Host:
                     self._hub_audio_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetAudioAlarm":
-                    self._audio_alarm_settings[channel] = data["value"]
+                    self._audio_alarm_settings[channel] = data["value"]["Audio"]
 
                 elif data["cmd"] == "GetAudioAlarmV20":
-                    self._audio_alarm_settings[channel] = data["value"]
+                    self._audio_alarm_settings[channel] = data["value"]["Audio"]
 
                 elif data["cmd"] == "GetAudioFileList":
                     self._audio_file_list[channel] = data["value"]
