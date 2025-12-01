@@ -2620,7 +2620,7 @@ class Baichuan:
 
     @http_cmd(["SetPush", "SetPushV20"])
     async def SetPush(self, **kwargs) -> None:
-        """Get the push settings"""
+        """Set the push settings"""
         param = kwargs["Push"]
         channel = param.get("schedule", {}).get("channel")
 
@@ -2646,6 +2646,27 @@ class Baichuan:
         data["enable"] = data["enable"]
         data["schedule"] = {"enable": data["enable"]}
         self.http_api._audio_alarm_settings.setdefault(channel, {}).update(data)
+
+    @http_cmd(["SetAudioAlarm", "SetAudioAlarmV20"])
+    async def SetAudioAlarm(self, **kwargs) -> None:
+        """Set the siren on event settings"""
+        param = kwargs["Audio"]
+        channel = param.get("schedule", {}).get("channel")
+        enable = param.get("enable")
+        if enable is None:
+            enable = param.get("schedule", {}).get("enable")
+        if channel is None or enable is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: SetAudioAlarm invalid input params")
+
+        mess = await self.send(cmd_id=232, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=231, channel=channel, body=xml)
 
     @http_cmd("GetAutoFocus")
     async def GetAutoFocus(self, **kwargs) -> None:
