@@ -82,7 +82,17 @@ SMART_AI = {
     "loss": (551, 552),
 }
 
-TIME_STR_TO_INT_SEC = {"15 Seconds": 15, "30 Seconds": 30, "1 Minute": 60, "2 Minutes": 120, "5 Minutes": 300, "10 Minutes": 600, "30 Minutes": 1800, "45 Minutes": 2700, "60 Minutes": 3600}
+TIME_STR_TO_INT_SEC = {
+    "15 Seconds": 15,
+    "30 Seconds": 30,
+    "1 Minute": 60,
+    "2 Minutes": 120,
+    "5 Minutes": 300,
+    "10 Minutes": 600,
+    "30 Minutes": 1800,
+    "45 Minutes": 2700,
+    "60 Minutes": 3600,
+}
 TIME_INT_SEC_TO_STR = {v: k for k, v in TIME_STR_TO_INT_SEC.items()}
 
 T = TypeVar("T")
@@ -2477,8 +2487,8 @@ class Baichuan:
 
         mess = await self.send(cmd_id=54, channel=channel)
         data = self._get_keys_from_xml(mess, {"recordDelayTime": ("postRec_int", int), "packageTime": ("packTime_int", int)})
-        data["postRec"] = TIME_INT_SEC_TO_STR.get(data.get("postRec_int"))
-        data["packTime"] = TIME_INT_SEC_TO_STR.get(data.get("packTime_int", 0)*60)
+        data["postRec"] = TIME_INT_SEC_TO_STR.get(data.get("postRec_int", 0))
+        data["packTime"] = TIME_INT_SEC_TO_STR.get(data.get("packTime_int", 0) * 60)
         self.http_api._recording_settings[channel].update(data)
 
     @http_cmd(["SetRecV20", "SetRec"])
