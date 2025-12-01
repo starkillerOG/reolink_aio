@@ -1780,6 +1780,29 @@ class Baichuan:
         """Get the image settings"""
         await self._send_and_parse(26, channel)
 
+    @http_cmd("SetImage")
+    async def SetImage(self, **kwargs) -> None:
+        """Set the image settings"""
+        param = kwargs["Image"]
+        channel = param.get("channel")
+        mess = await self.send(cmd_id=26, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (bright := param.get("bright")) is not None and (xml_bright := xml_body.find("VideoInput/bright")) is not None:
+            xml_bright.text = str(bright)
+        if (contrast := param.get("contrast")) is not None and (xml_contrast := xml_body.find("VideoInput/contrast")) is not None:
+            xml_contrast.text = str(contrast)
+        if (saturation := param.get("saturation")) is not None and (xml_saturation := xml_body.find("VideoInput/saturation")) is not None:
+            xml_saturation.text = str(saturation)
+        if (hue := param.get("hue")) is not None and (xml_hue := xml_body.find("VideoInput/hue")) is not None:
+            xml_hue.text = str(hue)
+        if (sharpen := param.get("sharpen")) is not None and (xml_sharpen := xml_body.find("VideoInput/sharpen")) is not None:
+            xml_sharpen.text = str(sharpen)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=25, channel=channel, body=xml)
+
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
         """Get the UID of the host"""
