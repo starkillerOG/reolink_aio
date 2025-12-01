@@ -1772,6 +1772,11 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=57, channel=channel, body=xml)
 
+    @http_cmd("GetImage")
+    async def GetImage(self, channel: int, **_kwargs) -> None:
+        """Get the image settings"""
+        await self._send_and_parse(26, channel)
+
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
         """Get the UID of the host"""
