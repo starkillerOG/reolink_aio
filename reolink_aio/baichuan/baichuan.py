@@ -1329,7 +1329,8 @@ class Baichuan:
             audioVersion = self.api_version("audioVersion", channel)
             if (audioVersion >> 2) & 1:  # 3 th bit (4) shift 2
                 self.capabilities[channel].add("siren_play")
-                # self.capabilities[channel].add("siren")
+                if self.http_api.api_version("supportIfttt", channel) <= 0 and self.api_version("linkages", channel) <= 0:
+                    self.capabilities[channel].add("siren")
             if (audioVersion >> 4) & 1 or (audioVersion >> 9) & 1:  # 5 & 10 th bit (16 & 512) shift 4 & 9
                 coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
             if self.http_api.api_version("supportAIDenoise", channel) > 0:
@@ -2636,6 +2637,15 @@ class Baichuan:
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=218, channel=channel, body=xml)
+
+    @http_cmd(["GetAudioAlarm", "GetAudioAlarmV20"])
+    async def GetAudioAlarm(self, channel: int, **_kwargs) -> None:
+        """Get the siren on event settings"""
+        mess = await self.send(cmd_id=232, channel=channel)
+        data = self._get_keys_from_xml(mess, {"enable": ("enable", int)})
+        data["enable"] = data["enable"]
+        data["schedule"] = {"enable": data["enable"]}
+        self.http_api._audio_alarm_settings.setdefault(channel, {}).update(data)
 
     @http_cmd("GetAutoFocus")
     async def GetAutoFocus(self, **kwargs) -> None:
