@@ -2481,15 +2481,17 @@ class Baichuan:
         root = XML.fromstring(mess)
         enable = self._get_value_from_xml_element(root, "enable", int)
 
+        rec_set = self.http_api._recording_settings.setdefault(channel, {})
+        rec_set.setdefault("schedule", {})["enable"] = enable
+        rec_set["schedule"]["channel"] = channel
         if self.http_api.api_version("GetRec") >= 1:
-            self.http_api._recording_settings.setdefault(channel, {})["scheduleEnable"] = enable
-        self.http_api._recording_settings.setdefault(channel, {}).setdefault("schedule", {})["enable"] = enable
+            rec_set["scheduleEnable"] = enable
 
         mess = await self.send(cmd_id=54, channel=channel)
         data = self._get_keys_from_xml(mess, {"recordDelayTime": ("postRec_int", int), "packageTime": ("packTime_int", int)})
         data["postRec"] = TIME_INT_SEC_TO_STR.get(data.get("postRec_int", 0))
         data["packTime"] = TIME_INT_SEC_TO_STR.get(data.get("packTime_int", 0) * 60)
-        self.http_api._recording_settings[channel].update(data)
+        rec_set.update(data)
 
     @http_cmd(["SetRecV20", "SetRec"])
     async def SetRecV20(self, **kwargs) -> None:
@@ -2501,11 +2503,24 @@ class Baichuan:
             enable = rec.get("schedule", {}).get("enable")
         if enable is None:
             enable = rec.get("enable")
-        if channel is None or enable is None:
+        packTime = rec.get("packTime")
+        postRec = rec.get("postRec")
+        if channel is None or (enable is None and packTime is None and postRec is None):
             raise InvalidParameterError(f"Baichuan host {self._host}: SetRecV20 invalid input params")
 
-        xml = xmls.SetRecEnable.format(channel=channel, enable=enable)
-        await self.send(cmd_id=82, channel=channel, body=xml)
+        if enable is not None:
+            xml = xmls.SetRecEnable.format(channel=channel, enable=enable)
+            await self.send(cmd_id=82, channel=channel, body=xml)
+        if packTime is not None or postRec is not None:
+            mess = await self.send(cmd_id=54, channel=channel)
+            xml_body = XML.fromstring(mess)
+            if (packTime_int := TIME_STR_TO_INT_SEC.get(packTime)) is not None and (xml_packTime := xml_body.find(".//packageTime")) is not None:
+                xml_packTime.text = str(round(packTime_int / 60))
+            if (postRec_int := TIME_STR_TO_INT_SEC.get(postRec)) is not None and (xml_postRec := xml_body.find(".//recordDelayTime")) is not None:
+                xml_postRec.text = str(postRec_int)
+            xml = XML.tostring(xml_body, encoding="unicode")
+            xml = xmls.XML_HEADER + xml
+            await self.send(cmd_id=55, channel=channel, body=xml)
 
     @http_cmd("SetNetPort")
     async def SetNetPort(self, **kwargs) -> None:
