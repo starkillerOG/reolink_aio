@@ -2080,6 +2080,16 @@ class Baichuan:
         # get the new privacy mode status
         await self.get_privacy_mode(channel)
 
+    @http_cmd("GetMask")
+    async def GetMask(self, channel: int, **_kwargs) -> None:
+        """Get the privacy mask"""
+        mess = await self.send(cmd_id=52, channel=channel)
+        data = self._get_keys_from_xml(mess, {"enable": ("enable", int)})
+        root = XML.fromstring(mess)
+        if root.find("Shelter/shelterList/Shelter") is not None:
+            data["area"] = True
+        self.http_api._privacy_mask.setdefault(channel, {}).update(data)
+
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
         if not self.http_api.supported(channel, "reboot"):
