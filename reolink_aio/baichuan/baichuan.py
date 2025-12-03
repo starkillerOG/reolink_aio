@@ -2114,6 +2114,21 @@ class Baichuan:
             data["area"] = True
         self.http_api._privacy_mask.setdefault(channel, {}).update(data)
 
+    @http_cmd("SetMask")
+    async def SetMask(self, **kwargs) -> None:
+        """Get the privacy mask"""
+        param = kwargs["Mask"]
+        channel = param["channel"]
+        mess = await self.send(cmd_id=52, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (enable := param.get("enable")) is not None and (xml_enable := xml_body.find("Shelter/enable")) is not None:
+            xml_enable.text = str(enable)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=53, channel=channel, body=xml)
+
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
         if not self.http_api.supported(channel, "reboot"):
