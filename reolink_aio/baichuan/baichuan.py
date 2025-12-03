@@ -485,10 +485,12 @@ class Baichuan:
     def _get_value_from_xml_element(self, xml_element: XML.Element, key: str) -> str | None: ...
     @overload
     def _get_value_from_xml_element(self, xml_element: XML.Element, key: str, type_class: type[T]) -> T | None: ...
+    @overload
+    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str, type_class: type[T], recursive: bool) -> T | None: ...
 
-    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str, type_class=str):
+    def _get_value_from_xml_element(self, xml_element: XML.Element, key: str, type_class=str, recursive: bool = True):
         """Get a value for a key in a xml element"""
-        xml_value = xml_element.find(f".//{key}")
+        xml_value = xml_element.find(f".//{key}" if recursive else key)
         if xml_value is None:
             return None
         value: str | int | None = xml_value.text
@@ -508,7 +510,7 @@ class Baichuan:
             return None
         return channel
 
-    def _get_keys_from_xml(self, xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, type]]) -> dict[str, Any]:
+    def _get_keys_from_xml(self, xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, type]], recursive: bool = True) -> dict[str, Any]:
         """Get multiple keys from a xml and return as a dict"""
         if isinstance(xml, str):
             root = XML.fromstring(xml)
@@ -516,7 +518,7 @@ class Baichuan:
             root = xml
         result: dict[str, Any] = {}
         for key in keys:
-            value: str | int | None = self._get_value_from_xml_element(root, key)
+            value: str | int | None = self._get_value_from_xml_element(root, key, str, recursive)
             if value is None:
                 continue
             if isinstance(keys, dict):
@@ -2106,7 +2108,7 @@ class Baichuan:
     async def GetMask(self, channel: int, **_kwargs) -> None:
         """Get the privacy mask"""
         mess = await self.send(cmd_id=52, channel=channel)
-        data = self._get_keys_from_xml(mess, {"enable": ("enable", int)})
+        data = self._get_keys_from_xml(mess, {"Shelter/enable": ("enable", int)}, recursive=False)
         root = XML.fromstring(mess)
         if root.find("Shelter/shelterList/Shelter") is not None:
             data["area"] = True
