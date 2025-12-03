@@ -1254,9 +1254,22 @@ class Baichuan:
             if (SmartaiVersion >> 5) & 1:  # 6th bit (32), shift 5
                 coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))  # loss/taken item
 
-            if (self.api_version("newIspCfg", channel) >> 2) & 1:  # 3th bit (4), shift 2
+            newIspCfg = self.api_version("newIspCfg", channel)
+            if (newIspCfg >> 0) & 1 and self.http_api.daynight_state(channel) is not None:  # 1th bit (1), shift 0
+                self.capabilities[channel].add("dayNight")
+                if self.http_api.daynight_threshold(channel) is not None:
+                    self.capabilities[channel].add("dayNightThreshold")
+            if (newIspCfg >> 2) & 1:  # 3th bit (4), shift 2
                 self.capabilities[channel].add("exposure")
-            if (self.api_version("newIspCfg", channel) >> 16) & 1:  # 17th bit (65536), shift 16
+            if (newIspCfg >> 8) & 1:  # 9th bit (256), shift 8
+                self.capabilities[channel].add("isp_bright")
+            if self.http_api.baichuan_only and (newIspCfg >> 9) & 1:  # guess, still needs to be confirmed
+                self.capabilities[channel].add("isp_contrast")
+            if self.http_api.baichuan_only and (newIspCfg >> 10) & 1:  # guess, still needs to be confirmed
+                self.capabilities[channel].add("isp_satruation")
+            if self.http_api.baichuan_only and (newIspCfg >> 12) & 1:  # guess, still needs to be confirmed
+                self.capabilities[channel].add("isp_sharpen")
+            if (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
                 coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
 
             if self.api_version("motion", channel, no_key_return=1) > 0:
