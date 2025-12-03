@@ -1468,6 +1468,20 @@ class Baichuan:
                     abilities_dict[pretty_key][feature.tag] = value
         return abilities_dict
 
+    def _analyze_ability_info(self, ability_info: XML.Element, token: str, capability: dict[str, str]) -> None:
+        """Analyze a ability info segment."""
+        if (info := ability_info.find(token)) is not None:
+            for info_ch in info.findall("subModule"):
+                channel = self._get_channel_from_xml_element(info_ch)
+                if channel is None:
+                    raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
+                ability = self._get_value_from_xml_element(info_ch, "abilityValue")
+                if ability is None:
+                    raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
+                for key, value in capability.items():
+                    if key in ability:
+                        self.capabilities[channel].add(value)
+
     async def _get_ability_info(self) -> None:
         """Get ability info as part of get_host_data."""
         xml = xmls.AbilityInfo.format(username=self._username)
@@ -1476,20 +1490,13 @@ class Baichuan:
             root = XML.fromstring(mess)
             if (ability_info := root.find("AbilityInfo")) is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
-            if (image_info := ability_info.find("image")) is not None:
-                for image_ch in image_info.findall("subModule"):
-                    channel = self._get_channel_from_xml_element(image_ch)
-                    if channel is None:
-                        raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
-                    ability = self._get_value_from_xml_element(image_ch, "abilityValue")
-                    if ability is None:
-                        raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
-                    if "ledState_rw" in ability:
-                        self.capabilities[channel].add("ir_lights")
+            self._analyze_ability_info(ability_info, "image", {"ledState_rw": "ir_lights"})
         except ReolinkError:
             for channel in self.http_api._channels:
                 self.capabilities[channel].add("ir_lights")
             raise
+
+        self._analyze_ability_info(ability_info, "video", {"shelter_rw": "privacy_mask_basic"})
 
     async def get_states(self, cmd_list: cmd_list_type = None, wake: dict[int, bool] | None = None) -> None:
         """Update the state information of polling data"""

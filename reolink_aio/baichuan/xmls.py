@@ -282,7 +282,7 @@ AbilityInfo = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <Extension version="1.1">
 <userName>{username}</userName>
-<token>image</token>
+<token>image, video</token>
 </Extension>"""
 
 SetWhiteLed = """

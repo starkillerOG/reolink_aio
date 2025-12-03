@@ -1774,7 +1774,7 @@ class Host:
             if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
                 self._capabilities[channel].add("push")
 
-            if self.api_version("mask", channel) > 0 and self._privacy_mask.get(channel, {}).get("area"):
+            if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
                 self._capabilities[channel].add("privacy_mask")
 
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]):
@@ -2499,7 +2499,7 @@ class Host:
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
-            if self.api_version("mask", channel) > 0:
+            if self.api_version("mask", channel) > 0 or self.supported(channel, "privacy_mask_basic"):
                 ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("supportBuzzer") > 0:
