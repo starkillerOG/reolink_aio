@@ -1220,6 +1220,8 @@ class Baichuan:
                     if self.http_api._GetDingDong_present.get(None):
                         self.capabilities[None].add("chime")
 
+    async def get_channel_data(self) -> None:
+        """Fetch the channel settings/capabilities."""
         # Stream capabilities
         for channel in self.http_api._stream_channels:
             self.capabilities.setdefault(channel, set())

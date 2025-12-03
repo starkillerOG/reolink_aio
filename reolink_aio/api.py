@@ -2415,6 +2415,10 @@ class Host:
             self._host_data_raw["host"] = json_data
 
         self.map_host_json_response(json_data)
+
+        # Baichuan capabilities
+        await self.baichuan.get_host_data()
+
         self.construct_capabilities(warnings=False)
 
         # Check for invalid NVT-IPC cameras
@@ -2561,7 +2565,7 @@ class Host:
             )
 
         # Baichuan capabilities
-        await self.baichuan.get_host_data()
+        await self.baichuan.get_channel_data()
 
         # Let's assume all channels of an NVR or multichannel-camera always have the same versions of commands... Not sure though...
         def check_command_exists(cmd: str) -> int:
