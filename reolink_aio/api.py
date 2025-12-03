@@ -4060,7 +4060,7 @@ class Host:
                         self._recording_range[channel] = data["range"]["Rec"]
 
                 elif data["cmd"] == "GetManualRec":
-                    self._manual_record_settings[channel] = data["value"]
+                    self._manual_record_settings[channel] = data["value"]["Rec"]
 
                 elif data["cmd"] == "GetPtzPreset":
                     self._ptz_presets_settings[channel] = data["value"]
