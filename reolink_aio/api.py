@@ -1785,7 +1785,7 @@ class Host:
             if self.post_recording_time_list(channel) and self.post_recording_time(channel):
                 self._capabilities[channel].add("post_rec_time")
 
-            if channel in self._manual_record_settings and "enable" in self._recording_settings[channel]:
+            if "enable" in self._manual_record_settings.get(channel, {}):
                 self._capabilities[channel].add("manual_record")
 
             if (
