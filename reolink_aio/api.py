@@ -3222,6 +3222,106 @@ class Host:
             _LOGGER.debug("Error trying to reboot %s over HTTP(s): %s, trying baichuan reboot instead", err, self.nvr_name)
             await self.baichuan.reboot()
 
+    async def clear_certificates(self) -> bool:
+        """
+        Clear existing SSL/TLS certificates from the device.
+
+        Note: Most Reolink cameras require clearing certificates before importing new ones.
+        After clearing certificates, you must re-login before importing new certificates.
+
+        Returns:
+            True if clearing succeeded, False otherwise.
+
+        Raises:
+            NotSupportedError: If the device doesn't support certificate management.
+            ApiError: If the API returns an error.
+        """
+        body = [{"cmd": "CertificateClear", "action": 0}]
+
+        try:
+            await self.send_setting(body)
+            _LOGGER.info("Successfully cleared certificates from %s", self.nvr_name)
+            return True
+
+        except ReolinkError as err:
+            _LOGGER.error("Error clearing certificates from %s: %s", self.nvr_name, err)
+            raise
+
+    async def update_certificate(
+        self,
+        cert_content: str,
+        key_content: str,
+        cert_name: str = "server",
+    ) -> bool:
+        """
+        Update SSL/TLS certificate and private key on the device.
+
+        This method imports a new certificate, overriding any existing certificate.
+
+        Args:
+            cert_content: PEM-encoded certificate content.
+            key_content: PEM-encoded private key content.
+            cert_name: Base name for certificate files (default: "server").
+
+        Returns:
+            True if update succeeded.
+
+        Raises:
+            InvalidParameterError: If certificate or key content is invalid.
+            ApiError: If the API returns an error.
+
+        Note:
+            - The device only supports RSA certificates, not EC certificates.
+            - Some models (e.g., E1 Pro) may require a reboot to activate the certificate.
+        """
+        if not cert_content or not key_content:
+            raise InvalidParameterError("Certificate and key content must not be empty")
+
+        # Encode certificate and key to base64
+        cert_b64 = base64.b64encode(cert_content.encode("utf-8")).decode("utf-8")
+        key_b64 = base64.b64encode(key_content.encode("utf-8")).decode("utf-8")
+
+        # Calculate sizes
+        cert_size = len(cert_content.encode("utf-8"))
+        key_size = len(key_content.encode("utf-8"))
+
+        body = [
+            {
+                "cmd": "ImportCertificate",
+                "action": 0,
+                "param": {
+                    "importCertificate": {
+                        "crt": {
+                            "size": cert_size,
+                            "name": f"{cert_name}.crt",
+                            "content": cert_b64,
+                        },
+                        "key": {
+                            "size": key_size,
+                            "name": f"{cert_name}.key",
+                            "content": key_b64,
+                        },
+                    }
+                },
+            }
+        ]
+
+        _LOGGER.info(
+            "Updating certificate on %s (cert: %s bytes, key: %s bytes)",
+            self.nvr_name,
+            cert_size,
+            key_size,
+        )
+
+        try:
+            await self.send_setting(body)
+            _LOGGER.info("Successfully updated certificate on %s", self.nvr_name)
+            return True
+
+        except ReolinkError as err:
+            _LOGGER.error("Error updating certificate on %s: %s", self.nvr_name, err)
+            raise
+
     async def get_snapshot(self, channel: int, stream: Optional[str] = None) -> bytes | None:
         """Get the still image."""
         if channel not in self._stream_channels:
