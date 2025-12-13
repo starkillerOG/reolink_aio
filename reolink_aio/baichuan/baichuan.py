@@ -1279,8 +1279,8 @@ class Baichuan:
             newIspCfg = self.api_version("newIspCfg", channel)
             if (newIspCfg >> 0) & 1 and self.http_api.daynight_state(channel) is not None:  # 1th bit (1), shift 0
                 self.capabilities[channel].add("dayNight")
-                if self.http_api.daynight_threshold(channel) is not None:
-                    self.capabilities[channel].add("dayNightThreshold")
+                if (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
+                    coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
             if (newIspCfg >> 2) & 1:  # 3th bit (4), shift 2
                 self.capabilities[channel].add("exposure")
             if (newIspCfg >> 8) & 1:  # 9th bit (256), shift 8
@@ -1291,8 +1291,6 @@ class Baichuan:
                 self.capabilities[channel].add("isp_satruation")
             if self.http_api.baichuan_only and (newIspCfg >> 12) & 1:  # guess, still needs to be confirmed
                 self.capabilities[channel].add("isp_sharpen")
-            if (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
-                coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
 
             if self.api_version("motion", channel, no_key_return=1) > 0:
                 self.capabilities[channel].add("motion_detection")
@@ -1428,8 +1426,11 @@ class Baichuan:
                     self.capabilities[channel].add("wifi")
                 elif cmd_id == "rules":
                     self.capabilities[channel].add("rules")
-                elif cmd_id == "day_night_state" and self.day_night_state is not None:
-                    self.capabilities[channel].add("day_night_state")
+                elif cmd_id == "day_night_state":
+                    if self.http_api.daynight_threshold(channel) is not None:
+                        self.capabilities[channel].add("dayNightThreshold")
+                    if self.day_night_state(channel) is not None:
+                        self.capabilities[channel].add("day_night_state")
                 elif cmd_id == "cry" and result:
                     self.capabilities[channel].add("ai_cry")
                 elif cmd_id == "ptz_position":
