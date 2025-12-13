@@ -1074,37 +1074,22 @@ class Host:
         return sorted(enc_range[stream_str]["frameRate"])
 
     def daynight_state(self, channel: int) -> Optional[str]:
-        if channel not in self._isp_settings:
-            return None
-
-        return self._isp_settings[channel]["Isp"]["dayNight"]
+        return self._isp_settings.get(channel, {}).get("dayNight")
 
     def HDR_state(self, channel: int) -> int:
-        if channel not in self._isp_settings:
-            return -1
-
-        return self._isp_settings[channel]["Isp"].get("hdr", -1)
+        return self._isp_settings.get(channel, {}).get("hdr", -1)
 
     def exposure(self, channel: int) -> str | None:
-        return self._isp_settings[channel]["Isp"].get("exposure")
+        return self._isp_settings.get(channel, {}).get("exposure")
 
     def binning_mode(self, channel: int) -> int:
-        if channel not in self._isp_settings:
-            return -1
-
-        return self._isp_settings[channel]["Isp"].get("binningMode", -1)
+        return self._isp_settings.get(channel, {}).get("binningMode", -1)
 
     def daynight_threshold(self, channel: int) -> int | None:
-        if channel not in self._isp_settings:
-            return None
-
-        return self._isp_settings[channel]["Isp"].get("dayNightThreshold")
+        return self._isp_settings.get(channel, {}).get("dayNightThreshold")
 
     def backlight_state(self, channel: int) -> Optional[str]:
-        if channel not in self._isp_settings:
-            return None
-
-        return self._isp_settings[channel]["Isp"]["backLight"]
+        return self._isp_settings.get(channel, {}).get("backLight")
 
     def image_brightness(self, channel: int) -> int | None:
         if channel not in self._image_settings:
@@ -4014,7 +3999,7 @@ class Host:
 
                 elif data["cmd"] == "GetIsp":
                     response_channel = data["value"]["Isp"]["channel"]
-                    self._isp_settings[channel] = data["value"]
+                    self._isp_settings[channel] = data["value"]["Isp"]
 
                 elif data["cmd"] == "GetImage":
                     self._image_settings[channel] = data["value"]
@@ -5291,7 +5276,7 @@ class Host:
         if value not in val_list:
             raise InvalidParameterError(f"set_daynight: value {value} not in {val_list}")
 
-        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
         body[0]["param"]["Isp"]["dayNight"] = value
 
         await self.send_setting(body)
@@ -5309,7 +5294,7 @@ class Host:
         if value not in val_list:
             raise InvalidParameterError(f"set_binning_mode: value {value} not in {val_list}")
 
-        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
         body[0]["param"]["Isp"]["binningMode"] = value
 
         await self.send_setting(body)
@@ -5328,7 +5313,7 @@ class Host:
         if value not in val_list:
             raise InvalidParameterError(f"set_HDR: value {value} not in {val_list}")
 
-        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
         if isinstance(value, bool):
             body[0]["param"]["Isp"]["hdr"] = 2 if value else 0
         else:
@@ -5349,7 +5334,7 @@ class Host:
         if value not in val_list:
             raise InvalidParameterError(f"set_exposure: value {value} not in {val_list}")
 
-        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
         body[0]["param"]["Isp"]["exposure"] = value
 
         await self.send_setting(body)
@@ -5363,7 +5348,7 @@ class Host:
         if value < 0 or value > 100:
             raise InvalidParameterError(f"set_daynight_threshold: value {value} not in 0-100")
 
-        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
         body[0]["param"]["Isp"]["dayNightThreshold"] = value
 
         await self.send_setting(body)
@@ -5378,7 +5363,7 @@ class Host:
         if value not in ["BackLightControl", "DynamicRangeControl", "Off"]:
             raise InvalidParameterError(f"set_backlight: value {value} not in ['BackLightControl', 'DynamicRangeControl', 'Off']")
 
-        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": self._isp_settings[channel]}]
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
         body[0]["param"]["Isp"]["backLight"] = value
 
         await self.send_setting(body)
