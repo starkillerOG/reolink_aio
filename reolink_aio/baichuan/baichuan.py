@@ -27,6 +27,7 @@ from ..enums import (
     BatteryEnum,
     DayNightEnum,
     EncodingEnum,
+    ExposureEnum,
     HardwiredChimeTypeEnum,
     SpotlightEventModeEnum,
     SpotlightModeEnum,
@@ -579,12 +580,20 @@ class Baichuan:
                 )
                 self.http_api._image_settings.setdefault(channel, {}).setdefault("Image", {}).update(data)
 
+            isp = self.http_api._isp_settings.setdefault(channel, {})
             if (DayNight := root.find(".//DayNight")) is not None:
                 value = self._get_value_from_xml_element(DayNight, "mode")
                 if value is not None:
                     value = value.replace("And", "&")
                     value = value[0].upper() + value[1:]
-                    self.http_api._isp_settings.setdefault(channel, {}).setdefault("Isp", {})["dayNight"] = DayNightEnum(value).value
+                    isp["dayNight"] = DayNightEnum(value).value
+
+            data = self._get_keys_from_xml(root, {"hdrSwitch": ("hdr", int), "binning_mode": ("binningMode", int)})
+            exposure = self._get_value_from_xml_element(root, "InputAdvanceCfg/Exposure/mode", str, recursive=False)
+            for val in ExposureEnum:
+                if val.value.lower() == exposure:  # ensure the proper upper-case
+                    data["exposure"] = val.value
+            isp.update(data)
 
         elif cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
             for event_list in root:
@@ -754,6 +763,15 @@ class Baichuan:
                     if state is not None:
                         self.http_api._whiteled_settings.setdefault(channel, {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
+
+        elif cmd_id == 296:  # DayNight
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            data = self._get_keys_from_xml(root, {"stat": ("stat", str), "cur": ("dayNightThreshold", int)})
+            self._day_night_state[channel] = data["stat"]
+            if (threshold := data.get("dayNightThreshold")) is not None:
+                self.http_api._isp_settings.setdefault(channel, {})["dayNightThreshold"] = threshold
 
         elif cmd_id == 464:  # network link type wire/wifi
             self._get_value_from_xml_element(root, "net_type")
@@ -1799,10 +1817,15 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=57, channel=channel, body=xml)
 
-    @http_cmd("GetImage")
+    @http_cmd(["GetImage", "GetIsp"])
     async def GetImage(self, channel: int, **_kwargs) -> None:
         """Get the image settings"""
         await self._send_and_parse(26, channel)
+        if self.supported(channel, "day_night_state"):
+            try:
+                await self._send_and_parse(296, channel)
+            except ReolinkError as err:
+                _LOGGER.debug(err)
 
     @http_cmd("SetImage")
     async def SetImage(self, **kwargs) -> None:
@@ -2041,9 +2064,7 @@ class Baichuan:
 
     async def get_day_night_state(self, channel: int) -> None:
         """Get the day night state"""
-        mess = await self.send(cmd_id=296, channel=channel)
-        data = self._get_keys_from_xml(mess, ["stat"])
-        self._day_night_state[channel] = data["stat"]
+        await self._send_and_parse(296, channel)
 
     async def get_pre_recording(self, channel: int) -> None:
         """Get the pre recording settings"""
