@@ -1079,16 +1079,6 @@ class Host:
 
         return self._isp_settings[channel]["Isp"]["dayNight"]
 
-    def HDR_on(self, channel: int) -> bool | None:
-        if channel not in self._isp_settings:
-            return None
-
-        hdr = self._isp_settings[channel]["Isp"].get("hdr")
-        if hdr is None:
-            return None
-
-        return hdr > 0
-
     def HDR_state(self, channel: int) -> int:
         if channel not in self._isp_settings:
             return -1
