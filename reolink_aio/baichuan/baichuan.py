@@ -589,6 +589,7 @@ class Baichuan:
                     isp["dayNight"] = DayNightEnum(value).value
 
             data = self._get_keys_from_xml(root, {"hdrSwitch": ("hdr", int), "binning_mode": ("binningMode", int)})
+            data["channel"] = channel
             exposure = self._get_value_from_xml_element(root, "InputAdvanceCfg/Exposure/mode", str, recursive=False)
             for val in ExposureEnum:
                 if val.value.lower() == exposure:  # ensure the proper upper-case
@@ -1850,6 +1851,42 @@ class Baichuan:
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=25, channel=channel, body=xml)
+
+    @http_cmd("SetIsp")
+    async def SetIsp(self, **kwargs) -> None:
+        """Set the ISP settings"""
+        param = kwargs["Isp"]
+        channel = param.get("channel")
+        mess = await self.send(cmd_id=26, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        val: int | str | None = None
+        if (val := param.get("dayNight")) is not None and (xml_val := xml_body.find("InputAdvanceCfg/DayNight/mode")) is not None:
+            val = str(val).replace("&", "And")
+            val = val[0].lower() + val[1:]
+            xml_val.text = val
+        if (val := param.get("binningMode")) is not None and (xml_val := xml_body.find(".//binning_mode")) is not None:
+            xml_val.text = str(val)
+        if (val := param.get("hdr")) is not None and (xml_val := xml_body.find(".//hdrSwitch")) is not None:
+            xml_val.text = str(val)
+        if (val := param.get("exposure")) is not None and (xml_val := xml_body.find("InputAdvanceCfg/Exposure/mode")) is not None:
+            xml_val.text = val.lower()
+
+        if val is not None:
+            xml = XML.tostring(xml_body, encoding="unicode")
+            xml = xmls.XML_HEADER + xml
+            await self.send(cmd_id=25, channel=channel, body=xml)
+
+        if (val := param.get("dayNightThreshold")) is not None:
+            mess = await self.send(cmd_id=296, channel=channel)
+            xml_body = XML.fromstring(mess)
+
+            if (xml_val := xml_body.find(".//cur")) is not None:
+                xml_val.text = str(val)
+
+            xml = XML.tostring(xml_body, encoding="unicode")
+            xml = xmls.XML_HEADER + xml
+            await self.send(cmd_id=297, channel=channel, body=xml)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
