@@ -1280,17 +1280,19 @@ class Baichuan:
             newIspCfg = self.api_version("newIspCfg", channel)
             if (newIspCfg >> 0) & 1 and self.http_api.daynight_state(channel) is not None:  # 1th bit (1), shift 0
                 self.capabilities[channel].add("dayNight")
-                if (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
+                if (newIspCfg >> 13) & 1 or (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
                     coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
             if (newIspCfg >> 2) & 1:  # 3th bit (4), shift 2
                 self.capabilities[channel].add("exposure")
-            if (newIspCfg >> 8) & 1:  # 9th bit (256), shift 8
-                self.capabilities[channel].add("isp_bright")
-            if self.http_api.baichuan_only and (newIspCfg >> 9) & 1:  # guess, still needs to be confirmed
+            if (newIspCfg >> 8) & 1 or (newIspCfg >> 14) & 1:  # 9th bit (256), shift 8
+                self.capabilities[channel].add("isp_bright")  # 8 = brightness, 14 = brightness&shadows
+            if (newIspCfg >> 9) & 1:
                 self.capabilities[channel].add("isp_contrast")
-            if self.http_api.baichuan_only and (newIspCfg >> 10) & 1:  # guess, still needs to be confirmed
+            if (newIspCfg >> 10) & 1:
                 self.capabilities[channel].add("isp_satruation")
-            if self.http_api.baichuan_only and (newIspCfg >> 12) & 1:  # guess, still needs to be confirmed
+            if (newIspCfg >> 11) & 1:
+                self.capabilities[channel].add("isp_hue")
+            if (newIspCfg >> 12) & 1:
                 self.capabilities[channel].add("isp_sharpen")
 
             if self.api_version("motion", channel, no_key_return=1) > 0:
@@ -1428,7 +1430,8 @@ class Baichuan:
                 elif cmd_id == "rules":
                     self.capabilities[channel].add("rules")
                 elif cmd_id == "day_night_state":
-                    if self.http_api.daynight_threshold(channel) is not None:
+                    newIspCfg = self.api_version("newIspCfg", channel)
+                    if ((newIspCfg >> 13) & 1 or (newIspCfg >> 16) & 1) and self.http_api.daynight_threshold(channel) is not None:
                         self.capabilities[channel].add("dayNightThreshold")
                     if self.day_night_state(channel) is not None:
                         self.capabilities[channel].add("day_night_state")
