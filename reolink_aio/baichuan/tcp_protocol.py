@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 class BaichuanTcpClientProtocol(asyncio.Protocol):
     """Reolink Baichuan TCP protocol."""
 
-    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
         self._host: str = host
         self._data: bytes = b""
         self._data_chunk: bytes = b""
@@ -103,6 +103,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
 
         rec_cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
         rec_len_body = int.from_bytes(self._data[8:12], byteorder="little")
+        rec_payload_offset = 0
         rec_mess_id = int.from_bytes(self._data[12:16], byteorder="little")  # mess_id = enc_offset: 0/251 = push, 250 = host, 1-100 = channel
 
         mess_class = self._data[18:20].hex()
@@ -117,9 +118,6 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 _LOGGER.debug("Baichuan host %s: received start of modern header with message class %s but less then 24 bytes, waiting for the rest", self._host, mess_class)
                 return
             rec_payload_offset = int.from_bytes(self._data[20:24], byteorder="little")
-            if rec_payload_offset != 0:
-                self._set_error("with a non-zero payload offset, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
-                return
         elif mess_class == "1465":  # legacy 20 byte header
             len_header = 20
             self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
@@ -135,9 +133,15 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while header specified %s bytes, waiting for the rest", self._host, len_body, rec_len_body)
             return
 
+        # correct rec_payload_offset
+        if rec_payload_offset == 0:
+            rec_payload_offset = rec_len_body
+
         # extract data chunk
         len_chunk = rec_len_body + len_header
-        self._data_chunk = self._data[0:len_chunk]
+        len_message = rec_payload_offset + len_header
+        self._data_chunk = self._data[0:len_message]
+        payload = self._data[len_message:len_chunk]
         if len_body > rec_len_body:
             _LOGGER.debug("Baichuan host %s: received %s bytes while header specified %s bytes, parsing multiple messages", self._host, len_body, rec_len_body)
             self._data = self._data[len_chunk::]
@@ -151,7 +155,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             # check status code
             if len_header == 24:
                 rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
-                if rec_status_code not in [200, 300]:
+                if rec_status_code not in [200, 201, 300]:
                     if receive_future is not None:
                         if rec_status_code == 401:
                             exc = ApiError(f"Baichuan host {self._host}: received 401 unauthorized login from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
@@ -164,7 +168,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
 
             if receive_future is None:
                 if self._push_callback is not None:
-                    self._push_callback(rec_cmd_id, self._data_chunk, len_header)
+                    self._push_callback(rec_cmd_id, self._data_chunk, len_header, payload)
                 elif self.receive_futures:
                     expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                     _LOGGER.debug(
@@ -178,7 +182,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                     _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, dropping", self._host, rec_cmd_id)
                 return
 
-            receive_future.set_result((self._data_chunk, len_header))
+            receive_future.set_result((self._data_chunk, len_header, payload))
         finally:
             # if multiple messages received, parse the next also
             if self._data:

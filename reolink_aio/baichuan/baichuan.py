@@ -304,7 +304,7 @@ class Baichuan:
             async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
                     self._transport.write(header + enc_body_bytes)
-                data, len_header = await self._protocol.receive_futures[cmd_id][mess_id]
+                data, len_header, payload = await self._protocol.receive_futures[cmd_id][mess_id]
         except ApiError as err:
             if retry <= 0 or err.rspCode != 400:
                 raise err
@@ -342,10 +342,11 @@ class Baichuan:
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             ch_str = f" ch {channel}" if channel is not None else ""
+            payload_str = f" with payload length {len(payload)}" if len(payload) > 0 else ""
             if len(rec_body) > 0:
-                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s:\n%s", self._host, cmd_id, ch_str, self._hide_password(rec_body))
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s%s:\n%s", self._host, cmd_id, ch_str, payload_str, self._hide_password(rec_body))
             else:
-                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s status 200:OK without body", self._host, cmd_id, ch_str)
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s status 200:OK without body%s", self._host, cmd_id, ch_str, payload_str)
 
         return rec_body
 
@@ -422,7 +423,7 @@ class Baichuan:
             redacted = redacted.replace(self._password_hash, "<password_md5_hash>")
         return redacted
 
-    def _push_callback(self, cmd_id: int, data: bytes, len_header: int) -> None:
+    def _push_callback(self, cmd_id: int, data: bytes, len_header: int, payload: bytes) -> None:
         """Callback to parse a received message that was pushed"""
         # decryption
         try:
@@ -432,11 +433,17 @@ class Baichuan:
             return
 
         if len(rec_body) == 0:
-            _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body", self._host, cmd_id)
+            if len(payload) != 0:
+                _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body", self._host, cmd_id)
+            else:
+                _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body but with %s bytes payload", self._host, cmd_id, len(payload))
             return
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            _LOGGER.debug("Baichuan host %s: received push cmd_id %s:\n%s", self._host, cmd_id, self._hide_password(rec_body))
+            payload_str = ""
+            if (payload_len := len(payload)) != 0:
+                payload_str = f" with payload length {payload_len}"
+            _LOGGER.debug("Baichuan host %s: received push cmd_id %s%s:\n%s", self._host, cmd_id, payload_str, self._hide_password(rec_body))
 
         self._parse_xml(cmd_id, rec_body)
 
