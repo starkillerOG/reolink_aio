@@ -3236,8 +3236,21 @@ class Host:
                 param["width"] = width
                 param["height"] = height
 
+        if self.baichuan_only:
+            return await self.baichuan.snapshot(**param)
+
         body: typings.reolink_json = [{}]
-        response = await self.send(body, param, expected_response_type="image/jpeg")
+        try:
+            response = await self.send(body, param, expected_response_type="image/jpeg")
+        except ReolinkError as err:
+            _LOGGER.debug(
+                "Host: %s:%s: error getting snapshot channel %s: %s, retry using baichuan...",
+                self._host,
+                self._port,
+                channel,
+                err,
+            )
+            return await self.baichuan.snapshot(**param)
         if response is None or response == b"":
             _LOGGER.error(
                 "Host: %s:%s: error obtaining still image response for channel %s.",

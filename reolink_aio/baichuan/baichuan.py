@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
-from typing import TYPE_CHECKING, Any, Coroutine, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Coroutine, Literal, TypeVar, overload
 from xml.etree import ElementTree as XML
 
 from Cryptodome.Cipher import AES
@@ -182,6 +182,11 @@ class Baichuan:
         self._io_inputs: dict[int | None, list[int]] = {}
         self._io_outputs: dict[int | None, list[int]] = {}
         self._io_input: dict[int | None, dict[int, bool]] = {}
+
+        # futures
+        self._image_future: dict[int | None, asyncio.Future] = {}
+        self._image_future_data: dict[int | None, bytes] = {}
+        self._image_future_size: dict[int | None, int] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -360,13 +365,23 @@ class Baichuan:
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
         return cipher.encrypt(body.encode("utf8"))
 
-    def _aes_decrypt(self, data: bytes, header: bytes = b"") -> str:
+    @overload
+    def _aes_decrypt(self, data: bytes, header: bytes) -> str: ...
+    @overload
+    def _aes_decrypt(self, data: bytes, header: bytes, decode: Literal[True]) -> str: ...
+    @overload
+    def _aes_decrypt(self, data: bytes, header: bytes, decode: Literal[False]) -> bytes: ...
+
+    def _aes_decrypt(self, data: bytes, header: bytes, decode: bool = True) -> str | bytes:
         """Decrypt a message using AES decryption"""
         if self._aes_key is None:
             raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES decryption, header: {header.hex()}")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
-        return cipher.decrypt(data).decode("utf8")
+        decrypted = cipher.decrypt(data)
+        if not decode:
+            return decrypted
+        return decrypted.decode("utf8")
 
     def _decrypt(self, data: bytes, len_header: int, cmd_id: int, enc_type: EncType = EncType.AES) -> str:
         """Figure out the encryption method and decrypt the message"""
@@ -425,27 +440,35 @@ class Baichuan:
 
     def _push_callback(self, cmd_id: int, data: bytes, len_header: int, payload: bytes) -> None:
         """Callback to parse a received message that was pushed"""
+        payload_len = len(payload)
+        channel: int | None = int.from_bytes(data[12:16], byteorder="little") - 1
+        assert channel is not None
+        if channel < 0 or channel > 100:
+            channel = None
+
         # decryption
         try:
             rec_body = self._decrypt(data, len_header, cmd_id)
+            if payload_len != 0:
+                payload = self._aes_decrypt(payload, b"", decode=False)
         except ReolinkError as err:
             _LOGGER.debug(err)
             return
 
         if len(rec_body) == 0:
-            if len(payload) != 0:
+            if payload_len == 0:
                 _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body", self._host, cmd_id)
             else:
-                _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body but with %s bytes payload", self._host, cmd_id, len(payload))
+                _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body but with %s bytes payload", self._host, cmd_id, payload_len)
             return
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             payload_str = ""
-            if (payload_len := len(payload)) != 0:
+            if payload_len != 0:
                 payload_str = f" with payload length {payload_len}"
             _LOGGER.debug("Baichuan host %s: received push cmd_id %s%s:\n%s", self._host, cmd_id, payload_str, self._hide_password(rec_body))
 
-        self._parse_xml(cmd_id, rec_body)
+        self._parse_xml(cmd_id, rec_body, payload, channel)
 
     def _close_callback(self) -> None:
         """Callback for when the connection is closed"""
@@ -561,7 +584,7 @@ class Baichuan:
         rec_body = await self.send(cmd_id=cmd_id, channel=channel)
         self._parse_xml(cmd_id, rec_body)
 
-    def _parse_xml(self, cmd_id: int, xml: str) -> None:
+    def _parse_xml(self, cmd_id: int, xml: str, payload: bytes = b"", channel: int | None = None) -> None:
         """parce received xml"""
         root = XML.fromstring(xml)
 
@@ -696,6 +719,20 @@ class Baichuan:
                         if f"TCP_event_tag_{event.tag}" not in self._log_once:
                             self._log_once.add(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
+
+        elif cmd_id == 109:  # Snapshot
+            image_future = self._image_future.get(channel)
+            image_future_data = self._image_future_data.get(channel)
+            image_future_size = self._image_future_size.get(channel)
+            if image_future is None or image_future_data is None:
+                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s received without image_future", self.http_api.nvr_name, channel)
+                return
+            image_future_data = image_future_data + payload
+            if image_future_size is not None and len(image_future_data) >= image_future_size:
+                image_future.set_result(image_future_data)
+                return
+            self._image_future_data[channel] = image_future_data
+            return
 
         elif cmd_id == 145:  # ChannelInfoList: Sleep status
             for event in root.findall(".//ChannelInfo"):
@@ -1897,6 +1934,51 @@ class Baichuan:
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
             await self.send(cmd_id=297, channel=channel, body=xml)
+
+    async def snapshot(self, channel: int, iLogicChannel: int = 0, snapType: str = "sub", **_kwargs) -> bytes:
+        """Get a JPEG snapshot image"""
+        # check for simultaneous snapshot requests
+        if (image_future := self._image_future.get(channel)) is not None:
+            try:
+                async with asyncio.timeout(TIMEOUT):
+                    try:
+                        await image_future
+                    except Exception:
+                        pass
+                    while self._image_future.get(channel) is not None:
+                        await asyncio.sleep(0.010)
+            except asyncio.TimeoutError as err:
+                raise ReolinkError(
+                    f"Baichuan host {self._host}: image future is already set " "and timeout waiting for it to finish, cannot receive multiple snapshots simultaneously"
+                ) from err
+
+        self._image_future[channel] = self._loop.create_future()
+        self._image_future_data[channel] = b""
+        xml = xmls.Snap.format(channel=channel, logicChannel=iLogicChannel, stream=snapType)
+
+        try:
+            mess = await self.send(cmd_id=109, channel=channel, body=xml)
+            image_size = self._get_value_from_xml_element(XML.fromstring(mess), "pictureSize", int)
+            if image_size is None:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: Did not receive image size for snapshot channel {channel}")
+
+            self._image_future_size[channel] = image_size
+            if len(self._image_future_data[channel]) < image_size:
+                async with asyncio.timeout(TIMEOUT):
+                    image = await self._image_future[channel]
+            else:
+                image = self._image_future_data[channel]
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for snapshot channel {channel}") from err
+        finally:
+            self._image_future_data.pop(channel, None)
+            self._image_future_size.pop(channel, None)
+            if (image_future := self._image_future[channel]) is not None:
+                if not image_future.done():
+                    image_future.cancel()
+                self._image_future.pop(channel, None)
+
+        return image
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
