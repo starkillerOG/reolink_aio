@@ -39,7 +39,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         self.time_connect = time_now()
         _LOGGER.debug("Baichuan host %s: opened connection", self._host)
 
-    def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None, mess_id: int | None = None) -> None:
+    def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None, ch_id: int | None = None) -> None:
         """Set a error message to the future or log the error"""
         self._data = b""
         if self.receive_futures and (cmd_id is None or cmd_id in self.receive_futures):
@@ -48,11 +48,11 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 for val in self.receive_futures.values():
                     for receive_future in val.values():
                         receive_future.set_exception(exc)
-            elif mess_id is None or mess_id not in self.receive_futures[cmd_id]:
+            elif ch_id is None or ch_id not in self.receive_futures[cmd_id]:
                 for receive_future in self.receive_futures[cmd_id].values():
                     receive_future.set_exception(exc)
             else:
-                self.receive_futures[cmd_id][mess_id].set_exception(exc)
+                self.receive_futures[cmd_id][ch_id].set_exception(exc)
         else:
             _LOGGER.debug("Baichuan host %s: received unrequested message %s, dropping", self._host, err_mess)
 
@@ -104,7 +104,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         rec_cmd_id = int.from_bytes(self._data[4:8], byteorder="little")
         rec_len_body = int.from_bytes(self._data[8:12], byteorder="little")
         rec_payload_offset = 0
-        rec_mess_id = int.from_bytes(self._data[12:16], byteorder="little")  # mess_id = enc_offset: 0/251 = push, 250 = host, 1-100 = channel
+        rec_ch_id = int.from_bytes(self._data[12:13], byteorder="little")  # ch_id: 0/251 = push, 250 = host, 1-100 = channel
 
         mess_class = self._data[18:20].hex()
 
@@ -120,10 +120,10 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             rec_payload_offset = int.from_bytes(self._data[20:24], byteorder="little")
         elif mess_class == "1465":  # legacy 20 byte header
             len_header = 20
-            self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
+            self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_ch_id)
             return
         else:
-            self._set_error(f"with unknown message class '{mess_class}'", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
+            self._set_error(f"with unknown message class '{mess_class}'", InvalidContentTypeError, rec_cmd_id, rec_ch_id)
             return
 
         # check message length
@@ -149,7 +149,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             self._data = b""
 
         # extract receive future
-        receive_future = self.receive_futures.get(rec_cmd_id, {}).get(rec_mess_id)
+        receive_future = self.receive_futures.get(rec_cmd_id, {}).get(rec_ch_id)
 
         try:
             # check status code
@@ -172,10 +172,10 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 elif self.receive_futures:
                     expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                     _LOGGER.debug(
-                        "Baichuan host %s: received unrequested message with cmd_id %s mess_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
+                        "Baichuan host %s: received unrequested message with cmd_id %s ch_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
                         self._host,
                         rec_cmd_id,
-                        rec_mess_id,
+                        rec_ch_id,
                         expected_cmd_ids,
                     )
                 else:

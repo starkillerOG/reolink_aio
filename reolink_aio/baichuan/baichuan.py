@@ -132,6 +132,7 @@ class Baichuan:
         self._transport: asyncio.Transport | None = None
         self._protocol: BaichuanTcpClientProtocol | None = None
         self._logged_in: bool = False
+        self._mess_id = 0
 
         # Event subscription
         self._subscribed: bool = False
@@ -224,6 +225,7 @@ class Baichuan:
         extension: str = "",
         enc_type: EncType = EncType.AES,
         message_class: str = "1464",
+        ch_id: int | None = None,
         mess_id: int | None = None,
         retry: int = RETRY_ATTEMPTS,
     ) -> str:
@@ -234,12 +236,12 @@ class Baichuan:
             # not logged in and requesting a non login/logout cmd, first login
             await self.login()
 
-        # mess_id: 0/251 = push, 1-100 = channel, 250 = host
-        if mess_id is None:
+        # ch_id: 0/251 = push, 1-100 = channel, 250 = host
+        if ch_id is None:
             if channel is None:
-                mess_id = 250
+                ch_id = 250
             else:
-                mess_id = channel + 1
+                ch_id = channel + 1
 
         ext = extension  # do not overwrite the original arguments for retries
         if channel is not None:
@@ -249,10 +251,14 @@ class Baichuan:
 
         mess_len = len(ext) + len(body)
         payload_offset = len(ext)
+        if mess_id is None:
+            mess_id = self._mess_id + 1
+        self._mess_id = mess_id % 16777216
 
         cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
         mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
-        mess_id_bytes = (mess_id).to_bytes(4, byteorder="little")
+        mess_id_bytes = (ch_id).to_bytes(1, byteorder="little") + (self._mess_id).to_bytes(3, byteorder="little")
+        full_mess_id = int.from_bytes(mess_id_bytes, byteorder="little")
         payload_offset_bytes = (payload_offset).to_bytes(4, byteorder="little")
 
         if message_class == "1465":
@@ -267,7 +273,7 @@ class Baichuan:
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(ext, mess_id) + encrypt_baichuan(body, mess_id)  # enc_offset = mess_id
+                enc_body_bytes = encrypt_baichuan(ext, ch_id) + encrypt_baichuan(body, ch_id)  # enc_offset = ch_id
             elif enc_type == EncType.AES:
                 enc_body_bytes = self._aes_encrypt(ext) + self._aes_encrypt(body)
             else:
@@ -279,15 +285,15 @@ class Baichuan:
             assert self._protocol is not None
             assert self._transport is not None
 
-        # check for simultaneous cmd_ids with same mess_id
-        if (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
+        # check for simultaneous cmd_ids with same ch_id
+        if (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(ch_id)) is not None:
             try:
                 async with asyncio.timeout(TIMEOUT):
                     try:
                         await receive_future
                     except Exception:
                         pass
-                    while self._protocol.receive_futures.get(cmd_id, {}).get(mess_id) is not None:
+                    while self._protocol.receive_futures.get(cmd_id, {}).get(ch_id) is not None:
                         await asyncio.sleep(0.010)
             except asyncio.TimeoutError as err:
                 raise ReolinkError(
@@ -295,7 +301,7 @@ class Baichuan:
                     "and timeout waiting for it to finish, cannot receive multiple requests simultaneously"
                 ) from err
 
-        self._protocol.receive_futures.setdefault(cmd_id, {})[mess_id] = self._loop.create_future()
+        self._protocol.receive_futures.setdefault(cmd_id, {})[ch_id] = self._loop.create_future()
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
@@ -308,7 +314,7 @@ class Baichuan:
             async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
                     self._transport.write(header + enc_body_bytes)
-                data, len_header, payload = await self._protocol.receive_futures[cmd_id][mess_id]
+                data, len_header, payload = await self._protocol.receive_futures[cmd_id][ch_id]
         except ApiError as err:
             if retry <= 0 or err.rspCode != 400:
                 raise err
@@ -333,16 +339,25 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: cmd_id %s got cancelled", self._host, cmd_id)
             raise
         finally:
-            if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
+            if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(ch_id)) is not None:
                 if not receive_future.done():
                     receive_future.cancel()
-                self._protocol.receive_futures[cmd_id].pop(mess_id, None)
+                self._protocol.receive_futures[cmd_id].pop(ch_id, None)
                 if not self._protocol.receive_futures[cmd_id]:
                     self._protocol.receive_futures.pop(cmd_id, None)
 
+        # check full message id
+        rec_mess_id = int.from_bytes(data[12:16], byteorder="little")
+        if full_mess_id != rec_mess_id:
+            err_str = f"Baichuan host {self._host}: message id error for cmd_id {cmd_id}, send mess_id {full_mess_id} received mess_id {rec_mess_id}"
+            if retry <= 0:
+                raise UnexpectedDataError(err_str)
+            _LOGGER.debug("%s, trying again", str(err_str))
+            retrying = True
+
         if retrying:
             # needed because the receive_future first needs to be cleared.
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, mess_id, retry)
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, retry)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
@@ -387,7 +402,7 @@ class Baichuan:
 
     def _decrypt(self, data: bytes, len_header: int, cmd_id: int, enc_type: EncType = EncType.AES) -> str:
         """Figure out the encryption method and decrypt the message"""
-        rec_enc_offset = int.from_bytes(data[12:16], byteorder="little")  # mess_id = enc_offset
+        rec_enc_offset = int.from_bytes(data[12:13], byteorder="little")  # enc_offset = ch_id
         rec_enc_type = data[16:18].hex()
         enc_body = data[len_header::]
         header = data[0:len_header]
@@ -443,10 +458,7 @@ class Baichuan:
     def _push_callback(self, cmd_id: int, data: bytes, len_header: int, payload: bytes) -> None:
         """Callback to parse a received message that was pushed"""
         payload_len = len(payload)
-        channel: int | None = int.from_bytes(data[12:16], byteorder="little") - 1
-        assert channel is not None
-        if channel < 0 or channel > 100:
-            channel = None
+        mess_id: int = int.from_bytes(data[12:16], byteorder="little")
 
         # decryption
         try:
@@ -470,7 +482,7 @@ class Baichuan:
                 payload_str = f" with payload length {payload_len}"
             _LOGGER.debug("Baichuan host %s: received push cmd_id %s%s:\n%s", self._host, cmd_id, payload_str, self._hide_password(rec_body))
 
-        self._parse_xml(cmd_id, rec_body, payload, channel)
+        self._parse_xml(cmd_id, rec_body, payload, mess_id)
 
     def _close_callback(self) -> None:
         """Callback for when the connection is closed"""
@@ -502,7 +514,7 @@ class Baichuan:
         """Try to reestablish the connection after a connection is closed"""
         time_start = time_now()
         try:
-            await self.send(cmd_id=31, mess_id=251)  # Subscribe to events
+            await self.send(cmd_id=31, ch_id=251)  # Subscribe to events
         except Exception as err:
             _LOGGER.error("Baichuan host %s: lost event subscription after %.2f s and failed to reestablished connection", self._host, time_since_recv)
             _LOGGER.debug("Baichuan host %s: failed to reestablished connection: %s", self._host, str(err))
@@ -586,7 +598,7 @@ class Baichuan:
         rec_body = await self.send(cmd_id=cmd_id, channel=channel)
         self._parse_xml(cmd_id, rec_body)
 
-    def _parse_xml(self, cmd_id: int, xml: str, payload: bytes = b"", channel: int | None = None) -> None:
+    def _parse_xml(self, cmd_id: int, xml: str, payload: bytes = b"", mess_id: int | None = None) -> None:
         """parce received xml"""
         root = XML.fromstring(xml)
 
@@ -723,8 +735,9 @@ class Baichuan:
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
         elif cmd_id == 109:  # Snapshot
-            image_future = self._image_future.get(channel)
-            image_future_data = self._image_future_data.get(channel)
+            channel = mess_id % 256 - 1
+            image_future = self._image_future.get(mess_id)
+            image_future_data = self._image_future_data.get(mess_id)
             if image_future is None:
                 _LOGGER.warning("Reolink %s baichaun push snapshot channel %s received without image_future", self.http_api.nvr_name, channel)
                 return
@@ -738,9 +751,9 @@ class Baichuan:
                 data_len = 0
             if data_len <= 0:
                 image_future.set_result(image_future_data)
-                self._image_future_data[channel] =  b''
+                self._image_future_data[mess_id] =  b''
                 return
-            self._image_future_data[channel] = image_future_data
+            self._image_future_data[mess_id] = image_future_data
             return
 
         elif cmd_id == 145:  # ChannelInfoList: Sleep status
@@ -1050,7 +1063,7 @@ class Baichuan:
                     if self._events_active:
                         await self.send(cmd_id=93)  # LinkType is used as keepalive
                     else:
-                        await self.send(cmd_id=31, mess_id=251)  # Subscribe to events
+                        await self.send(cmd_id=31, ch_id=251)  # Subscribe to events
                 except Exception as err:
                     _LOGGER.debug("Baichuan host %s: error while sending keepalive for event subscription: %s", self._host, str(err))
 
@@ -1077,7 +1090,7 @@ class Baichuan:
         self._subscribed = True
         self._time_keepalive_loop = time_now()
         try:
-            await self.send(cmd_id=31, mess_id=251)
+            await self.send(cmd_id=31, ch_id=251)
         except Exception as err:
             _LOGGER.debug("Baichuan host %s: error while subscribing: %s", self._host, str(err))
         if self._keepalive_task is None:
@@ -1949,41 +1962,45 @@ class Baichuan:
 
     async def snapshot(self, channel: int, iLogicChannel: int = 0, snapType: str = "sub", **_kwargs) -> bytes:
         """Get a JPEG snapshot image"""
+        mess_id = (self._mess_id + 1 ) % 16777216
+        ch_id = channel + 1
+        full_mess_id = (mess_id << 8) + ch_id
+        
         # check for simultaneous snapshot requests
-        if (image_future := self._image_future.get(channel)) is not None:
+        if (image_future := self._image_future.get(full_mess_id)) is not None:
             try:
                 async with asyncio.timeout(TIMEOUT):
                     try:
                         await image_future
                     except Exception:
                         pass
-                    while self._image_future.get(channel) is not None:
+                    while self._image_future.get(full_mess_id) is not None:
                         await asyncio.sleep(0.010)
             except asyncio.TimeoutError as err:
                 raise ReolinkError(
-                    f"Baichuan host {self._host}: image future is already set " "and timeout waiting for it to finish, cannot receive multiple snapshots simultaneously"
+                    f"Baichuan host {self._host}: image future is already set and timeout waiting for it to finish, cannot receive multiple snapshots simultaneously"
                 ) from err
 
-        self._image_future[channel] = self._loop.create_future()
-        self._image_future_data[channel] = b""
+        self._image_future[full_mess_id] = self._loop.create_future()
+        self._image_future_data[full_mess_id] = b""
         xml = xmls.Snap.format(channel=channel, logicChannel=iLogicChannel, stream=snapType)
 
         try:
-            mess = await self.send(cmd_id=109, channel=channel, body=xml)
+            mess = await self.send(cmd_id=109, channel=channel, body=xml, mess_id=mess_id)
             image_size = self._get_value_from_xml_element(XML.fromstring(mess), "pictureSize", int)
             if image_size is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: Did not receive image size for snapshot channel {channel}")
 
             async with asyncio.timeout(TIMEOUT):
-                image = await self._image_future[channel]
+                image = await self._image_future[full_mess_id]
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for snapshot channel {channel}") from err
         finally:
-            self._image_future_data.pop(channel, None)
-            if (image_future := self._image_future.get(channel)) is not None:
+            self._image_future_data.pop(full_mess_id, None)
+            if (image_future := self._image_future.get(full_mess_id)) is not None:
                 if not image_future.done():
                     image_future.cancel()
-            self._image_future.pop(channel, None)
+            self._image_future.pop(full_mess_id, None)
 
         if image_size != len(image):
             raise UnexpectedDataError(f"Baichuan host {self._host}: received snapshot image size {len(image)} does not match expected size {image_size} for channel {channel}")
