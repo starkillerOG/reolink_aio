@@ -1288,11 +1288,14 @@ class Baichuan:
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
         # Stream capabilities
+        RtspVersion = self.api_version("rtsp")
         for channel in self.http_api._stream_channels:
             self.capabilities.setdefault(channel, set())
 
-            if self.api_version("rtsp") > 0:
+            if RtspVersion > 0:
                 self.capabilities[channel].add("stream")
+            if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0:
+                self.capabilities[channel].add("snapshot")
 
         # Channel capabilities
         coroutines: list[tuple[Any, int, Coroutine]] = []
