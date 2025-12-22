@@ -330,6 +330,9 @@ class Baichuan:
                 raise ReolinkConnectionError(err_str) from err
             _LOGGER.debug("%s, trying again", err_str)
             retrying = True
+        except asyncio.CancelledError:
+            _LOGGER.debug("Baichuan host %s: cmd_id %s got cancelled", self._host, cmd_id)
+            raise
         finally:
             if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(mess_id)) is not None:
                 if not receive_future.done():
