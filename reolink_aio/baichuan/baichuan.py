@@ -286,15 +286,15 @@ class Baichuan:
             assert self._protocol is not None
             assert self._transport is not None
 
-        # check for simultaneous cmd_ids with same ch_id
-        if (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(ch_id)) is not None:
+        # check for simultaneous cmd_ids with same full_mess_id
+        if (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
             try:
                 async with asyncio.timeout(TIMEOUT):
                     try:
                         await receive_future
                     except Exception:
                         pass
-                    while self._protocol.receive_futures.get(cmd_id, {}).get(ch_id) is not None:
+                    while self._protocol.receive_futures.get(cmd_id, {}).get(full_mess_id) is not None:
                         await asyncio.sleep(0.010)
             except asyncio.TimeoutError as err:
                 raise ReolinkError(
@@ -302,7 +302,7 @@ class Baichuan:
                     "and timeout waiting for it to finish, cannot receive multiple requests simultaneously"
                 ) from err
 
-        self._protocol.receive_futures.setdefault(cmd_id, {})[ch_id] = self._loop.create_future()
+        self._protocol.receive_futures.setdefault(cmd_id, {})[full_mess_id] = self._loop.create_future()
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
@@ -315,7 +315,7 @@ class Baichuan:
             async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
                     self._transport.write(header + enc_body_bytes)
-                data, len_header, payload = await self._protocol.receive_futures[cmd_id][ch_id]
+                data, len_header, payload = await self._protocol.receive_futures[cmd_id][full_mess_id]
         except ApiError as err:
             if retry <= 0 or err.rspCode != 400:
                 raise err
@@ -337,13 +337,13 @@ class Baichuan:
             _LOGGER.debug("%s, trying again", err_str)
             retrying = True
         except asyncio.CancelledError:
-            _LOGGER.debug("Baichuan host %s: cmd_id %s got cancelled", self._host, cmd_id)
+            _LOGGER.debug("Baichuan host %s: cmd_id %s mess_id %s got cancelled", self._host, cmd_id, full_mess_id)
             raise
         finally:
-            if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(ch_id)) is not None:
+            if self._protocol is not None and (receive_future := self._protocol.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
                 if not receive_future.done():
                     receive_future.cancel()
-                self._protocol.receive_futures[cmd_id].pop(ch_id, None)
+                self._protocol.receive_futures[cmd_id].pop(full_mess_id, None)
                 if not self._protocol.receive_futures[cmd_id]:
                     self._protocol.receive_futures.pop(cmd_id, None)
 
