@@ -252,8 +252,9 @@ class Baichuan:
         mess_len = len(ext) + len(body)
         payload_offset = len(ext)
         if mess_id is None:
-            mess_id = self._mess_id + 1
-        self._mess_id = mess_id % 16777216
+            self._mess_id = (self._mess_id + 1) % 16777216
+        else:
+            self._mess_id = mess_id
 
         cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
         mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
@@ -346,6 +347,10 @@ class Baichuan:
                 if not self._protocol.receive_futures[cmd_id]:
                     self._protocol.receive_futures.pop(cmd_id, None)
 
+        if retrying:
+            # needed because the receive_future first needs to be cleared.
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+
         # check full message id
         rec_mess_id = int.from_bytes(data[12:16], byteorder="little")
         if full_mess_id != rec_mess_id:
@@ -353,11 +358,7 @@ class Baichuan:
             if retry <= 0:
                 raise UnexpectedDataError(err_str)
             _LOGGER.debug("%s, trying again", str(err_str))
-            retrying = True
-
-        if retrying:
-            # needed because the receive_future first needs to be cleared.
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, retry)
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
