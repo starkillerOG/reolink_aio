@@ -402,7 +402,7 @@ class VOD_file:
     @property
     def size(self) -> int:
         """file size of the recording."""
-        return self.data["size"]
+        return int(self.data["size"])  # in the JSON it's a string literal
 
     @property
     def triggers(self) -> VOD_trigger:
