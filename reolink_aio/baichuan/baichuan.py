@@ -186,7 +186,6 @@ class Baichuan:
         # futures
         self._image_future: dict[int | None, asyncio.Future] = {}
         self._image_future_data: dict[int | None, bytes] = {}
-        self._image_future_size: dict[int | None, int] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -726,13 +725,20 @@ class Baichuan:
         elif cmd_id == 109:  # Snapshot
             image_future = self._image_future.get(channel)
             image_future_data = self._image_future_data.get(channel)
-            image_future_size = self._image_future_size.get(channel)
-            if image_future is None or image_future_data is None:
+            if image_future is None:
                 _LOGGER.warning("Reolink %s baichaun push snapshot channel %s received without image_future", self.http_api.nvr_name, channel)
                 return
+            if image_future_data is None:
+                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s received without image_future_data", self.http_api.nvr_name, channel)
+                return
             image_future_data = image_future_data + payload
-            if image_future_size is not None and len(image_future_data) >= image_future_size:
+            data_len = self._get_value_from_xml_element(root, "encryptLen", int)
+            if data_len is None or data_len != len(payload):
+                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s encryptLen %s != payloadLen %s", self.http_api.nvr_name, channel, data_len, len(payload))
+                data_len = 0
+            if data_len <= 0:
                 image_future.set_result(image_future_data)
+                self._image_future_data[channel] =  b''
                 return
             self._image_future_data[channel] = image_future_data
             return
@@ -1968,21 +1974,19 @@ class Baichuan:
             if image_size is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: Did not receive image size for snapshot channel {channel}")
 
-            self._image_future_size[channel] = image_size
-            if len(self._image_future_data[channel]) < image_size:
-                async with asyncio.timeout(TIMEOUT):
-                    image = await self._image_future[channel]
-            else:
-                image = self._image_future_data[channel]
+            async with asyncio.timeout(TIMEOUT):
+                image = await self._image_future[channel]
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for snapshot channel {channel}") from err
         finally:
             self._image_future_data.pop(channel, None)
-            self._image_future_size.pop(channel, None)
-            if (image_future := self._image_future[channel]) is not None:
+            if (image_future := self._image_future.get(channel)) is not None:
                 if not image_future.done():
                     image_future.cancel()
-                self._image_future.pop(channel, None)
+            self._image_future.pop(channel, None)
+
+        if image_size != len(image):
+            raise UnexpectedDataError(f"Baichuan host {self._host}: received snapshot image size {len(image)} does not match expected size {image_size} for channel {channel}")
 
         return image
 
