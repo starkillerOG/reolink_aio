@@ -740,10 +740,10 @@ class Baichuan:
             image_future = self._image_future.get(mess_id)
             image_future_data = self._image_future_data.get(mess_id)
             if image_future is None:
-                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s received without image_future", self.http_api.nvr_name, channel)
+                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s mess_id %s received without image_future", self.http_api.nvr_name, channel, mess_id)
                 return
             if image_future_data is None:
-                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s received without image_future_data", self.http_api.nvr_name, channel)
+                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s mess_id %s received without image_future_data", self.http_api.nvr_name, channel, mess_id)
                 return
             image_future_data = image_future_data + payload
             data_len = self._get_value_from_xml_element(root, "encryptLen", int)
@@ -1964,6 +1964,7 @@ class Baichuan:
     async def snapshot(self, channel: int, iLogicChannel: int = 0, snapType: str = "sub", **_kwargs) -> bytes:
         """Get a JPEG snapshot image"""
         mess_id = (self._mess_id + 1 ) % 16777216
+        self._mess_id = mess_id
         ch_id = channel + 1
         full_mess_id = (mess_id << 8) + ch_id
         
