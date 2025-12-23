@@ -1995,6 +1995,9 @@ class Baichuan:
                 image = await self._image_future[channel][full_mess_id]
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for snapshot channel {channel}") from err
+        except asyncio.CancelledError:
+            _LOGGER.debug("Baichuan host %s: snapshot channel %s mess_id %s got cancelled", self._host, channel, full_mess_id)
+            raise
         finally:
             self._image_future_data.pop(full_mess_id, None)
             if (image_future := self._image_future[channel].get(full_mess_id)) is not None:
