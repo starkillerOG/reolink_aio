@@ -739,11 +739,8 @@ class Baichuan:
             channel = mess_id % 256 - 1
             image_future = self._image_future.get(mess_id)
             image_future_data = self._image_future_data.get(mess_id)
-            if image_future is None:
-                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s mess_id %s received without image_future", self.http_api.nvr_name, channel, mess_id)
-                return
-            if image_future_data is None:
-                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s mess_id %s received without image_future_data", self.http_api.nvr_name, channel, mess_id)
+            if image_future is None or image_future_data is None:
+                _LOGGER.debug("Reolink %s baichaun push snapshot channel %s mess_id %s received without image_future", self.http_api.nvr_name, channel, mess_id)
                 return
             image_future_data = image_future_data + payload
             data_len = self._get_value_from_xml_element(root, "encryptLen", int)
