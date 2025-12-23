@@ -185,7 +185,7 @@ class Baichuan:
         self._io_input: dict[int | None, dict[int, bool]] = {}
 
         # futures
-        self._image_future: dict[int | None, asyncio.Future] = {}
+        self._image_future: dict[int | None, dict[int, asyncio.Future]] = {}
         self._image_future_data: dict[int | None, bytes] = {}
 
     async def _connect_if_needed(self):
@@ -737,7 +737,7 @@ class Baichuan:
 
         elif cmd_id == 109:  # Snapshot
             channel = mess_id % 256 - 1
-            image_future = self._image_future.get(mess_id)
+            image_future = self._image_future.get(channel, {}).get(mess_id)
             image_future_data = self._image_future_data.get(mess_id)
             if image_future is None or image_future_data is None:
                 _LOGGER.debug("Reolink %s baichaun push snapshot channel %s mess_id %s received without image_future", self.http_api.nvr_name, channel, mess_id)
@@ -1964,23 +1964,24 @@ class Baichuan:
         self._mess_id = mess_id
         ch_id = channel + 1
         full_mess_id = (mess_id << 8) + ch_id
-        
-        # check for simultaneous snapshot requests
-        if (image_future := self._image_future.get(full_mess_id)) is not None:
-            try:
-                async with asyncio.timeout(TIMEOUT):
+
+        # check for simultaneous snapshot requests of the same channel
+        try:
+            async with asyncio.timeout(TIMEOUT):
+                while image_future_dict := self._image_future.get(channel, {}):
                     try:
-                        await image_future
+                        for image_future in image_future_dict.values():
+                            await image_future
                     except Exception:
                         pass
-                    while self._image_future.get(full_mess_id) is not None:
+                    if self._image_future.get(channel, {}):
                         await asyncio.sleep(0.010)
-            except asyncio.TimeoutError as err:
-                raise ReolinkError(
-                    f"Baichuan host {self._host}: image future is already set and timeout waiting for it to finish, cannot receive multiple snapshots simultaneously"
-                ) from err
+        except asyncio.TimeoutError as err:
+            raise ReolinkError(
+                f"Baichuan host {self._host}: image future is already set and timeout waiting for it to finish, cannot receive multiple snapshots simultaneously"
+            ) from err
 
-        self._image_future[full_mess_id] = self._loop.create_future()
+        self._image_future.setdefault(channel, {})[full_mess_id] = self._loop.create_future()
         self._image_future_data[full_mess_id] = b""
         xml = xmls.Snap.format(channel=channel, logicChannel=iLogicChannel, stream=snapType)
 
@@ -1991,15 +1992,15 @@ class Baichuan:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: Did not receive image size for snapshot channel {channel}")
 
             async with asyncio.timeout(TIMEOUT):
-                image = await self._image_future[full_mess_id]
+                image = await self._image_future[channel][full_mess_id]
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for snapshot channel {channel}") from err
         finally:
             self._image_future_data.pop(full_mess_id, None)
-            if (image_future := self._image_future.get(full_mess_id)) is not None:
+            if (image_future := self._image_future[channel].get(full_mess_id)) is not None:
                 if not image_future.done():
                     image_future.cancel()
-            self._image_future.pop(full_mess_id, None)
+            self._image_future[channel].pop(full_mess_id, None)
 
         if image_size != len(image):
             raise UnexpectedDataError(f"Baichuan host {self._host}: received snapshot image size {len(image)} does not match expected size {image_size} for channel {channel}")
