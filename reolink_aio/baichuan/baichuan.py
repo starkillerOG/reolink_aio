@@ -736,6 +736,9 @@ class Baichuan:
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
         elif cmd_id == 109:  # Snapshot
+            if mess_id is None:
+                _LOGGER.warning("Reolink %s baichaun snapshot received without mess_id", self.http_api.nvr_name)
+                return
             channel = mess_id % 256 - 1
             image_future = self._image_future.get(channel, {}).get(mess_id)
             image_future_data = self._image_future_data.get(mess_id)
@@ -749,7 +752,7 @@ class Baichuan:
                 data_len = 0
             if data_len <= 0:
                 image_future.set_result(image_future_data)
-                self._image_future_data[mess_id] =  b''
+                self._image_future_data[mess_id] = b""
                 return
             self._image_future_data[mess_id] = image_future_data
             return
@@ -1960,7 +1963,7 @@ class Baichuan:
 
     async def snapshot(self, channel: int, iLogicChannel: int = 0, snapType: str = "sub", **_kwargs) -> bytes:
         """Get a JPEG snapshot image"""
-        mess_id = (self._mess_id + 1 ) % 16777216
+        mess_id = (self._mess_id + 1) % 16777216
         self._mess_id = mess_id
         ch_id = channel + 1
         full_mess_id = (mess_id << 8) + ch_id
@@ -2000,9 +2003,9 @@ class Baichuan:
             raise
         finally:
             self._image_future_data.pop(full_mess_id, None)
-            if (image_future := self._image_future[channel].get(full_mess_id)) is not None:
-                if not image_future.done():
-                    image_future.cancel()
+            if (im_future := self._image_future[channel].get(full_mess_id)) is not None:
+                if not im_future.done():
+                    im_future.cancel()
             self._image_future[channel].pop(full_mess_id, None)
 
         if image_size != len(image):
