@@ -465,7 +465,11 @@ class Baichuan:
         try:
             rec_body = self._decrypt(data, len_header, cmd_id)
             if payload_len != 0:
-                payload = self._aes_decrypt(payload, b"", decode=False)
+                encryptLen = self._get_value_from_xml_element(XML.fromstring(rec_body), "EncryptLen", int)
+                if encryptLen is not None:
+                    payload = self._aes_decrypt(payload[0:encryptLen], b"", decode=False) + payload[encryptLen::]
+                else:
+                    payload = self._aes_decrypt(payload, b"", decode=False)
         except ReolinkError as err:
             _LOGGER.debug(err)
             return
