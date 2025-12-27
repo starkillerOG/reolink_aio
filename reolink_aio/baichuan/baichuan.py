@@ -465,7 +465,7 @@ class Baichuan:
         try:
             rec_body = self._decrypt(data, len_header, cmd_id)
             if payload_len != 0:
-                encryptLen = self._get_value_from_xml_element(XML.fromstring(rec_body), "EncryptLen", int)
+                encryptLen = self._get_value_from_xml_element(XML.fromstring(rec_body.lower()), "encryptlen", int)
                 if encryptLen is not None:
                     payload = self._aes_decrypt(payload[0:encryptLen], b"", decode=False) + payload[encryptLen::]
                 else:
@@ -739,26 +739,21 @@ class Baichuan:
                             self._log_once.add(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
-        elif cmd_id == 109:  # Snapshot
+        elif cmd_id in [109, 298]:  # 109=Snapshot, 298=CoverPreview
             if mess_id is None:
-                _LOGGER.warning("Reolink %s baichaun snapshot received without mess_id", self.http_api.nvr_name)
+                _LOGGER.warning("Reolink %s baichaun push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
                 return
             channel = mess_id % 256 - 1
             payload_future = self._payload_future.get(channel, {}).get(mess_id)
             payload_future_data = self._payload_future_data.get(mess_id)
             if payload_future is None or payload_future_data is None:
-                _LOGGER.debug("Reolink %s baichaun push snapshot channel %s mess_id %s received without payload_future", self.http_api.nvr_name, channel, mess_id)
+                _LOGGER.debug("Reolink %s baichaun push cmd_id %s channel %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, channel, mess_id)
                 return
-            payload_future_data = payload_future_data + payload
-            data_len = self._get_value_from_xml_element(root, "encryptLen", int)
-            if data_len is None or data_len != len(payload):
-                _LOGGER.warning("Reolink %s baichaun push snapshot channel %s encryptLen %s != payloadLen %s", self.http_api.nvr_name, channel, data_len, len(payload))
-                data_len = 0
-            if data_len <= 0:
+            if len(payload) <= 0:
                 payload_future.set_result(payload_future_data)
                 self._payload_future_data[mess_id] =  b''
                 return
-            self._payload_future_data[mess_id] = payload_future_data
+            self._payload_future_data[mess_id] = payload_future_data + payload
             return
 
         elif cmd_id == 145:  # ChannelInfoList: Sleep status
