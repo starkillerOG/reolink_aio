@@ -383,33 +383,39 @@ class Baichuan:
         """Generic send method which expects a binary payload as return."""
         mess_id = (self._mess_id + 1) % 16777216
         self._mess_id = mess_id
-        ch_id = channel + 1
+
+        # ch_id: 0/251 = push, 1-100 = channel, 250 = host
+        if channel is None:
+            ch_id = 250
+        else:
+            ch_id = channel + 1
+
         full_mess_id = (mess_id << 8) + ch_id
 
         # check for simultaneous payload requests of the same channel
         try:
             async with asyncio.timeout(TIMEOUT):
-                while payload_future_dict := self._payload_future.get(channel, {}):
+                while payload_future_dict := self._payload_future.get(ch_id, {}):
                     try:
                         for payload_future in payload_future_dict.values():
                             await payload_future
                     except Exception:
                         pass
-                    if self._payload_future.get(channel, {}):
+                    if self._payload_future.get(ch_id, {}):
                         await asyncio.sleep(0.010)
         except asyncio.TimeoutError as err:
             raise ReolinkError(
                 f"Baichuan host {self._host}: payload future is already set and timeout waiting for it to finish, cannot receive multiple payloads simultaneously"
             ) from err
 
-        self._payload_future.setdefault(channel, {})[full_mess_id] = self._loop.create_future()
+        self._payload_future.setdefault(ch_id, {})[full_mess_id] = self._loop.create_future()
         self._payload_future_data[full_mess_id] = b""
 
         try:
             rec_body = await self.send(cmd_id=cmd_id, channel=channel, body=body, mess_id=mess_id)
 
             async with asyncio.timeout(TIMEOUT):
-                payload = await self._payload_future[channel][full_mess_id]
+                payload = await self._payload_future[ch_id][full_mess_id]
         except asyncio.TimeoutError as err:
             raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error waiting on payload for cmd_id {cmd_id} channel {channel}") from err
         except asyncio.CancelledError:
@@ -417,10 +423,10 @@ class Baichuan:
             raise
         finally:
             self._payload_future_data.pop(full_mess_id, None)
-            if (pay_future := self._payload_future[channel].get(full_mess_id)) is not None:
+            if (pay_future := self._payload_future[ch_id].get(full_mess_id)) is not None:
                 if not pay_future.done():
                     pay_future.cancel()
-            self._payload_future[channel].pop(full_mess_id, None)
+            self._payload_future[ch_id].pop(full_mess_id, None)
 
         return (rec_body, payload)
 
@@ -790,15 +796,15 @@ class Baichuan:
                             self._log_once.add(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
-        elif cmd_id in [109, 298]:  # 109=Snapshot, 298=CoverPreview
+        elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
             if mess_id is None:
                 _LOGGER.warning("Reolink %s baichaun push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
                 return
-            channel = mess_id % 256 - 1
-            payload_future = self._payload_future.get(channel, {}).get(mess_id)
+            ch_id = mess_id % 256
+            payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
             payload_future_data = self._payload_future_data.get(mess_id)
             if payload_future is None or payload_future_data is None:
-                _LOGGER.debug("Reolink %s baichaun push cmd_id %s channel %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, channel, mess_id)
+                _LOGGER.debug("Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id)
                 return
             if len(payload) <= 0:
                 payload_future.set_result(payload_future_data)
