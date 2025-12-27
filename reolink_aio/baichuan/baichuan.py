@@ -373,6 +373,57 @@ class Baichuan:
 
         return rec_body
 
+    async def send_payload(
+        self,
+        cmd_id: int,
+        channel: int | None = None,
+        body: str = "",
+        extension: str = "",
+    ) -> tuple[str, bytes]:
+        """Generic send method which expects a binary payload as return."""
+        mess_id = (self._mess_id + 1) % 16777216
+        self._mess_id = mess_id
+        ch_id = channel + 1
+        full_mess_id = (mess_id << 8) + ch_id
+
+        # check for simultaneous payload requests of the same channel
+        try:
+            async with asyncio.timeout(TIMEOUT):
+                while payload_future_dict := self._payload_future.get(channel, {}):
+                    try:
+                        for payload_future in payload_future_dict.values():
+                            await payload_future
+                    except Exception:
+                        pass
+                    if self._payload_future.get(channel, {}):
+                        await asyncio.sleep(0.010)
+        except asyncio.TimeoutError as err:
+            raise ReolinkError(
+                f"Baichuan host {self._host}: payload future is already set and timeout waiting for it to finish, cannot receive multiple payloads simultaneously"
+            ) from err
+
+        self._payload_future.setdefault(channel, {})[full_mess_id] = self._loop.create_future()
+        self._payload_future_data[full_mess_id] = b""
+
+        try:
+            rec_body = await self.send(cmd_id=cmd_id, channel=channel, body=body, mess_id=mess_id)
+
+            async with asyncio.timeout(TIMEOUT):
+                payload = await self._payload_future[channel][full_mess_id]
+        except asyncio.TimeoutError as err:
+            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error waiting on payload for cmd_id {cmd_id} channel {channel}") from err
+        except asyncio.CancelledError:
+            _LOGGER.debug("Baichuan host %s: cmd_id %s channel %s mess_id %s got cancelled", self._host, cmd_id, channel, full_mess_id)
+            raise
+        finally:
+            self._payload_future_data.pop(full_mess_id, None)
+            if (pay_future := self._payload_future[channel].get(full_mess_id)) is not None:
+                if not pay_future.done():
+                    pay_future.cancel()
+            self._payload_future[channel].pop(full_mess_id, None)
+
+        return (rec_body, payload)
+
     def _aes_encrypt(self, body: str) -> bytes:
         """Encrypt a message using AES encryption"""
         if not body:
@@ -1962,50 +2013,12 @@ class Baichuan:
 
     async def snapshot(self, channel: int, iLogicChannel: int = 0, snapType: str = "sub", **_kwargs) -> bytes:
         """Get a JPEG snapshot image"""
-        mess_id = (self._mess_id + 1) % 16777216
-        self._mess_id = mess_id
-        ch_id = channel + 1
-        full_mess_id = (mess_id << 8) + ch_id
-
-        # check for simultaneous snapshot requests of the same channel
-        try:
-            async with asyncio.timeout(TIMEOUT):
-                while payload_future_dict := self._payload_future.get(channel, {}):
-                    try:
-                        for payload_future in payload_future_dict.values():
-                            await payload_future
-                    except Exception:
-                        pass
-                    if self._payload_future.get(channel, {}):
-                        await asyncio.sleep(0.010)
-        except asyncio.TimeoutError as err:
-            raise ReolinkError(
-                f"Baichuan host {self._host}: image future is already set and timeout waiting for it to finish, cannot receive multiple snapshots simultaneously"
-            ) from err
-
-        self._payload_future.setdefault(channel, {})[full_mess_id] = self._loop.create_future()
-        self._payload_future_data[full_mess_id] = b""
         xml = xmls.Snap.format(channel=channel, logicChannel=iLogicChannel, stream=snapType)
+        mess, image = await self.send_payload(cmd_id=109, channel=channel, body=xml)
 
-        try:
-            mess = await self.send(cmd_id=109, channel=channel, body=xml, mess_id=mess_id)
-            image_size = self._get_value_from_xml_element(XML.fromstring(mess), "pictureSize", int)
-            if image_size is None:
-                raise UnexpectedDataError(f"Baichuan host {self._host}: Did not receive image size for snapshot channel {channel}")
-
-            async with asyncio.timeout(TIMEOUT):
-                image = await self._payload_future[channel][full_mess_id]
-        except asyncio.TimeoutError as err:
-            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error for snapshot channel {channel}") from err
-        except asyncio.CancelledError:
-            _LOGGER.debug("Baichuan host %s: snapshot channel %s mess_id %s got cancelled", self._host, channel, full_mess_id)
-            raise
-        finally:
-            self._payload_future_data.pop(full_mess_id, None)
-            if (pay_future := self._payload_future[channel].get(full_mess_id)) is not None:
-                if not pay_future.done():
-                    pay_future.cancel()
-            self._payload_future[channel].pop(full_mess_id, None)
+        image_size = self._get_value_from_xml_element(XML.fromstring(mess), "pictureSize", int)
+        if image_size is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: Did not receive image size for snapshot channel {channel}")
 
         if image_size != len(image):
             raise UnexpectedDataError(f"Baichuan host {self._host}: received snapshot image size {len(image)} does not match expected size {image_size} for channel {channel}")
