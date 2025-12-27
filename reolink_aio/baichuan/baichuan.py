@@ -533,9 +533,17 @@ class Baichuan:
 
         if len(rec_body) == 0:
             if payload_len == 0:
-                _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body", self._host, cmd_id)
+                _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body", self._host, cmd_id)
+                if (payload_future_data := self._payload_future_data.get(mess_id)) is not None:
+                    ch_id = mess_id % 256
+                    payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
+                    if payload_future is None:
+                        _LOGGER.debug("Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id)
+                        return
+                    payload_future.set_result(payload_future_data)
+                    self._payload_future_data[mess_id] =  b''
             else:
-                _LOGGER.debug("Baichuan host %s: received push cmd_id %s withouth body but with %s bytes payload", self._host, cmd_id, payload_len)
+                _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body but with %s bytes payload", self._host, cmd_id, payload_len)
             return
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
