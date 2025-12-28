@@ -412,7 +412,7 @@ class Baichuan:
         self._payload_future_data[full_mess_id] = b""
 
         try:
-            rec_body = await self.send(cmd_id=cmd_id, channel=channel, body=body, mess_id=mess_id)
+            rec_body = await self.send(cmd_id=cmd_id, channel=channel, body=body, extension=extension, mess_id=mess_id)
 
             async with asyncio.timeout(TIMEOUT):
                 payload = await self._payload_future[ch_id][full_mess_id]
@@ -536,10 +536,16 @@ class Baichuan:
                     ch_id = mess_id % 256
                     payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
                     if payload_future is None:
-                        _LOGGER.debug("Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id)
+                        _LOGGER.debug(
+                            "Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future",
+                            self.http_api.nvr_name,
+                            cmd_id,
+                            ch_id,
+                            mess_id,
+                        )
                         return
                     payload_future.set_result(payload_future_data)
-                    self._payload_future_data[mess_id] =  b''
+                    self._payload_future_data[mess_id] = b""
             else:
                 _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body but with %s bytes payload", self._host, cmd_id, payload_len)
             return
@@ -810,11 +816,13 @@ class Baichuan:
             payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
             payload_future_data = self._payload_future_data.get(mess_id)
             if payload_future is None or payload_future_data is None:
-                _LOGGER.debug("Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id)
+                _LOGGER.debug(
+                    "Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id
+                )
                 return
             if len(payload) <= 0:
                 payload_future.set_result(payload_future_data)
-                self._payload_future_data[mess_id] =  b''
+                self._payload_future_data[mess_id] = b""
                 return
             self._payload_future_data[mess_id] = payload_future_data + payload
             return
