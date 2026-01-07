@@ -398,3 +398,32 @@ Snap = """
 <streamType>{stream}</streamType>
 </Snap>
 </body>"""
+
+CoverPreview = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<CoverPreview version="1.1">
+<channelId>{channel}</channelId>
+<desc>0</desc>
+<streamType>{stream}Stream</streamType>
+<startTime>
+<year>{start_year}</year>
+<month>{start_month}</month>
+<day>{start_day}</day>
+<hour>{start_hour}</hour>
+<minute>{start_minute}</minute>
+<second>{start_second}</second>
+</startTime>
+<endTime>
+<year>{end_year}</year>
+<month>{end_month}</month>
+<day>{end_day}</day>
+<hour>{end_hour}</hour>
+<minute>{end_minute}</minute>
+<second>{end_second}</second>
+</endTime>
+<frameList>
+<frameNo>1</frameNo>
+</frameList>
+</CoverPreview>
+</body>"""

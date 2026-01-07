@@ -61,6 +61,7 @@ from .util import (
     decrypt_baichuan,
     encrypt_baichuan,
     http_cmd,
+    i_frame_to_jpeg,
     md5_str_modern,
 )
 
@@ -2042,6 +2043,68 @@ class Baichuan:
 
         if image_size != len(image):
             raise UnexpectedDataError(f"Baichuan host {self._host}: received snapshot image size {len(image)} does not match expected size {image_size} for channel {channel}")
+
+        return image
+
+    async def snapshot_past(self, channel: int, time: datetime, snapType: str = "sub", ffmpeg: str = "ffmpeg") -> bytes:
+        """Get a JPEG image from a past recording (thumbnail)"""
+        end = time + timedelta(seconds=10)
+        xml = xmls.CoverPreview.format(
+            channel=channel,
+            stream=snapType,
+            start_year=time.year,
+            start_month=time.month,
+            start_day=time.day,
+            start_hour=time.hour,
+            start_minute=time.minute,
+            start_second=time.second,
+            end_year=end.year,
+            end_month=end.month,
+            end_day=end.day,
+            end_hour=end.hour,
+            end_minute=end.minute,
+            end_second=end.second,
+        )
+        _mess, payload = await self.send_payload(cmd_id=298, body=xml)
+
+        # parse stream header
+        stream_header = payload[0:32]
+        magic = stream_header[0:4]
+        # width = int.from_bytes(stream_header[8:12], byteorder="little")
+        # height = int.from_bytes(stream_header[12:16], byteorder="little")
+        # frame_rate = stream_header[17]
+        # start_year = 1900 + stream_header[18]
+        if magic != b"1001":
+            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past payload did not start with stream header magic b'1001' but with {magic!r}")
+
+        # search magic
+        try:
+            # search magic
+            start = payload[32::].index(b"00dc")
+        except ValueError as err:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past frame magic b'00dc' not found, first bytes: {payload[32:62]!r}") from err
+        idx = 32 + start
+
+        # parse frame header
+        idx_start = idx + 12
+        idx_end = idx_start + 4
+        header_len = 24 + int.from_bytes(payload[idx_start:idx_end], byteorder="little")
+        idx_end = idx + header_len
+        frame_header = payload[idx:idx_end]
+        idx += header_len
+        # magic = frame_header[0:4]
+        # encoding = frame_header[4:8].decode("utf8")
+        frame_len = int.from_bytes(frame_header[8:12], byteorder="little")
+        # frame_time = int.from_bytes(frame_header[24:28], byteorder="little")
+        # frame_microsecond = int.from_bytes(frame_header[16:20], byteorder="little")
+        # formatted_time = datetime.fromtimestamp(frame_time).strftime("%Y-%m-%d %H:%M:%S")
+
+        # extract frame
+        idx_end = idx + header_len
+        frame = payload[idx:idx_end]
+        idx += frame_len
+
+        image = await i_frame_to_jpeg(frame, ffmpeg)
 
         return image
 

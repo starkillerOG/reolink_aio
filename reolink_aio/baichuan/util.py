@@ -1,10 +1,11 @@
 """Reolink Baichuan constants and utility functions"""
 
+import asyncio
 from collections.abc import Callable
 from enum import Enum
 from hashlib import md5
 
-from ..exceptions import InvalidParameterError
+from ..exceptions import InvalidParameterError, UnexpectedDataError
 
 DEFAULT_BC_PORT = 9000
 HEADER_MAGIC = "f0debc0a"
@@ -61,6 +62,45 @@ def md5_str_modern(string: str) -> str:
     md5_hex = md5_bytes.hex()[0:31]
     md5_HEX = md5_hex.upper()
     return md5_HEX
+
+
+async def _i_frame_to_jpeg_shielded(frame: bytes, ffmpeg: str) -> bytes:
+    """Convert a i-frame from a Reolink stream to a JPEG image"""
+    command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-f", "image2", "pipe:1"]
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    # feed in the frame
+    assert process.stdin
+    try:
+        process.stdin.write(frame)
+        await process.stdin.drain()
+    finally:
+        if process.stdin:
+            process.stdin.close()
+
+    # read out the image
+    assert process.stdout
+    try:
+        image = await process.stdout.read()
+    finally:
+        # Wait for process termination and check for errors.
+        retcode = await process.wait()
+        if retcode != 0:
+            assert process.stderr
+            stderr_data = await process.stderr.read()
+            raise UnexpectedDataError(f"Unexpected error while converting Reolink frame to JPEG image using ffmpeg: {stderr_data.decode()}")
+
+    return image
+
+
+async def i_frame_to_jpeg(frame: bytes, ffmpeg: str = "ffmpeg") -> bytes:
+    """Convert a i-frame from a Reolink stream to a JPEG image"""
+    return await asyncio.shield(_i_frame_to_jpeg_shielded(frame, ffmpeg))
 
 
 # Decorators
