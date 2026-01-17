@@ -427,3 +427,12 @@ CoverPreview = """
 </frameList>
 </CoverPreview>
 </body>"""
+
+PtzControl = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<PtzControl version="1.1">
+<channelId>{channel}</channelId>
+<command>{command}</command>
+</PtzControl>
+</body>"""

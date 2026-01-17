@@ -2194,6 +2194,20 @@ class Baichuan:
     async def ptz_callibrate(self, channel: int) -> None:
         await self.send(cmd_id=341, channel=channel)
 
+    @http_cmd("PtzCtrl")
+    async def set_ptz_command(self, channel: int, op: str, speed: int | None = None, **kwargs) -> None:
+        xml_base = xmls.PtzControl.format(channel=channel, command=op)
+        xml_body = XML.fromstring(xml_base[1:])
+
+        if speed is not None and (xml_speed := xml_body.find(".//PtzControl")) is not None:
+            XML.SubElement(xml_speed, "speed").text = str(speed)
+        if kwargs.get("id") is not None:
+            raise NotSupportedError("PTZ preset/patrol not yet supported")
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=18, channel=channel, body=xml)
+
     @http_cmd(["GetAlarm", "GetMdAlarm"])
     async def GetMdAlarm(self, channel: int | None = None, **kwargs) -> None:
         """Get the motion sensitivity"""
