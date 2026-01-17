@@ -2190,6 +2190,10 @@ class Baichuan:
         ptz_position = self._get_keys_from_xml(mess, {"pPos": ("Ppos", int), "tPos": ("Tpos", int)})
         self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
 
+    @http_cmd("PtzCheck")
+    async def ptz_callibrate(self, channel: int) -> None:
+        await self.send(cmd_id=341, channel=channel)
+
     @http_cmd(["GetAlarm", "GetMdAlarm"])
     async def GetMdAlarm(self, channel: int | None = None, **kwargs) -> None:
         """Get the motion sensitivity"""
