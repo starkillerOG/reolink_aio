@@ -1041,7 +1041,11 @@ class Baichuan:
                                 if f"TCP_yolo_type_unknown_{new_sub_type}" not in self._log_once:
                                     self._log_once.add(f"TCP_yolo_type_unknown_{new_sub_type}")
                                     _LOGGER.warning(
-                                        "Reolink %s TCP event channel %s, received unknown yolo AI event sub type '%s' of type '%s'", self.http_api.nvr_name, channel, new_sub_type, yolo_type
+                                        "Reolink %s TCP event channel %s, received unknown yolo AI event sub type '%s' of type '%s'",
+                                        self.http_api.nvr_name,
+                                        channel,
+                                        new_sub_type,
+                                        yolo_type,
                                     )
                                 continue
                             if sub_type is None:
