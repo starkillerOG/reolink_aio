@@ -5902,7 +5902,7 @@ class Host:
             if coroutines:
                 results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
                 for i, result in enumerate(results):
-                    (idx, baichuan_cmd, _) = coroutines[i]
+                    idx, baichuan_cmd, _ = coroutines[i]
                     if isinstance(result, ReolinkError):
                         _LOGGER.debug("Baichuan failed for %s: %s", baichuan_cmd, str(result))
                         continue
@@ -6191,7 +6191,7 @@ class Host:
         if coroutines and retry > 0:
             results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
             for i, result in enumerate(results):
-                (idx, cmd, _) = coroutines[i]
+                idx, cmd, _ = coroutines[i]
                 if isinstance(result, ReolinkError):
                     _LOGGER.debug("Baichuan fallback failed for %s: %s", cmd, str(result))
                     json_data[idx]["Baichuan_fallback_succes"] = False
@@ -6239,7 +6239,7 @@ class Host:
         if coroutines:
             results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
             for i, result in enumerate(results):
-                (idx, cmd, _) = coroutines[i]
+                idx, cmd, _ = coroutines[i]
                 if isinstance(result, ReolinkError):
                     json_data[idx]["error"]["detail"] = str(result)
                     if isinstance(result, ApiError):
