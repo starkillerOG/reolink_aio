@@ -642,7 +642,7 @@ class Baichuan:
             if value is None:
                 continue
             if isinstance(keys, dict):
-                (new_key, type_class) = keys[key]
+                new_key, type_class = keys[key]
                 if type_class == bool:
                     value = int(value)
                 result[new_key] = type_class(value)
@@ -1364,7 +1364,7 @@ class Baichuan:
                 _LOGGER.warning("Baichuan host %s: Timeout of 3*%s sec getting host capabilities", self._host, TIMEOUT)
                 results = []
             for i, result in enumerate(results):
-                (cmd_id, _) = host_coroutines[i]
+                cmd_id, _ = host_coroutines[i]
                 if isinstance(result, ReolinkError):
                     _LOGGER.debug("%s, during getting of host capabilities cmd_id %s", result, cmd_id)
                     continue
@@ -1537,7 +1537,7 @@ class Baichuan:
                 _LOGGER.warning("Baichuan host %s: Timeout of 3*%s sec getting channel capabilities", self._host, TIMEOUT)
                 results = []
             for i, result in enumerate(results):
-                (cmd_id, channel, _) = coroutines[i]
+                cmd_id, channel, _ = coroutines[i]
                 if isinstance(result, ReolinkError):
                     _LOGGER.debug("%s, during getting of channel capabilities cmd_id %s", result, cmd_id)
                     continue

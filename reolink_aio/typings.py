@@ -218,7 +218,7 @@ class Reolink_timezone(dtc.tzinfo):
         if __dt is None:
             return self._offset
         __dt = self._normalize(__dt)
-        (start, end) = self._year_cache[__dt.year]
+        start, end = self._year_cache[__dt.year]
         if start <= __dt <= end:
             return self._offset + self._dst
         return self._offset
@@ -230,7 +230,7 @@ class Reolink_timezone(dtc.tzinfo):
         if __dt is None:
             return self._dst
         __dt = self._normalize(__dt)
-        (start, end) = self._year_cache[__dt.year]
+        start, end = self._year_cache[__dt.year]
         if start <= __dt <= end:
             return self._dst
         return dtc.timedelta(0)
@@ -430,7 +430,7 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     # https://github.com/sven337/ReolinkLinux/wiki/Figuring-out-the-file-names
 
     try:
-        (path_name, ext) = file_name.rsplit(".", 1)
+        path_name, ext = file_name.rsplit(".", 1)
     except ValueError:
         _LOGGER.debug("%s does not match known formats, no extension '.'", file_name)
         return None
@@ -445,14 +445,14 @@ def parse_file_name(file_name: str, tzInfo: Optional[dtc.tzinfo] = None) -> Pars
     dev_type = "cam"
     if len(split) == 6:
         # RecM01_20201222_075939_080140_6D28808_1A468F9
-        (_, start_date, start_time, end_time, hex_value, _filesize) = split
+        _, start_date, start_time, end_time, hex_value, _filesize = split
     elif len(split) == 7:
         # RecS07_20250219_111146_111238_0_A714C0A000_21E67C
-        (_, start_date, start_time, end_time, _animal_type, hex_value, _filesize) = split
+        _, start_date, start_time, end_time, _animal_type, hex_value, _filesize = split
     elif len(split) == 9:
         # RecM02_DST20240827_090302_090334_0_800_800_033C820000_61B6F0
         dev_type = "hub"
-        (_, start_date, start_time, end_time, _animal_type, _width, _height, hex_value, _filesize) = split
+        _, start_date, start_time, end_time, _animal_type, _width, _height, hex_value, _filesize = split
     else:
         _LOGGER.debug("%s does not match known formats, unknown length", file_name)
         return None
