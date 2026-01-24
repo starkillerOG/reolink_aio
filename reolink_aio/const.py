@@ -66,9 +66,9 @@ AI_DETECT_CONVERSION = {"person": "people", "pet": "dog_cat"}
 YOLO_CONVERSION = {"person": "people", "motor vehicle": "vehicle", "animal": "dog_cat"}
 YOLO_DETECTS = {"people", "vehicle", "package", "non-motor vehicle", "dog_cat"}
 YOLO_DETECT_TYPES = {
-    "people": ["man", "woman"],
-    "vehicle": ["sedan", "suv", "pickup_truck", "bus", "motorcycle"],
-    "dog_cat": ["dog", "cat"],
+    "people": ["man", "woman", "child"],
+    "vehicle": ["sedan", "suv", "pickup_truck", "bus", "van", "truck", "motorcycle"],
+    "dog_cat": ["dog", "cat", "squirrel", "fox", "bear", "cow"],
     "package": ["package"],
     "non-motor vehicle": ["bicycle"],
 }
