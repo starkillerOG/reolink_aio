@@ -2100,7 +2100,7 @@ class Baichuan:
         # formatted_time = datetime.fromtimestamp(frame_time).strftime("%Y-%m-%d %H:%M:%S")
 
         # extract frame
-        idx_end = idx + header_len
+        idx_end = idx + frame_len
         frame = payload[idx:idx_end]
         idx += frame_len
 
