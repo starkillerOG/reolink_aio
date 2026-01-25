@@ -1478,6 +1478,17 @@ class Baichuan:
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
 
+            ptz_ver = self.api_version("ptzType", channel)
+            if ptz_ver != 0:
+                self.capabilities[channel].add("ptz")
+                if ptz_ver in [2, 3, 5]:
+                    self.capabilities[channel].add("tilt")
+                if ptz_ver in [2, 3, 5, 7]:
+                    self.capabilities[channel].add("pan_tilt")
+                    self.capabilities[channel].add("pan")
+                if ptz_ver in [2, 3]:
+                    self.capabilities[channel].add("ptz_speed")
+
             if self.http_api.api_version("doorbellVersion", channel) > 0:
                 self.http_api._is_doorbell[channel] = True
                 self.http_api._visitor_states.setdefault(channel, False)
