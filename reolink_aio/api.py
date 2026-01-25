@@ -5513,7 +5513,7 @@ class Host:
 
         if contrast is not None:
             if not self.supported(channel, "isp_contrast"):
-                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
+                raise NotSupportedError(f"set_image: contrast on camera {self.camera_name(channel)} is not available")
             if not isinstance(contrast, int):
                 raise InvalidParameterError(f"set_image: contrast '{contrast}' is not integer")
             if contrast < 0 or contrast > 255:
@@ -5522,7 +5522,7 @@ class Host:
 
         if saturation is not None:
             if not self.supported(channel, "isp_satruation"):
-                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
+                raise NotSupportedError(f"set_image: saturation on camera {self.camera_name(channel)} is not available")
             if not isinstance(saturation, int):
                 raise InvalidParameterError(f"set_image: saturation '{saturation}' is not integer")
             if saturation < 0 or saturation > 255:
@@ -5531,7 +5531,7 @@ class Host:
 
         if hue is not None:
             if not self.supported(channel, "isp_hue"):
-                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
+                raise NotSupportedError(f"set_image: hue on camera {self.camera_name(channel)} is not available")
             if not isinstance(hue, int):
                 raise InvalidParameterError(f"set_image: hue '{hue}' is not integer")
             if hue < 0 or hue > 255:
@@ -5540,7 +5540,7 @@ class Host:
 
         if sharpen is not None:
             if not self.supported(channel, "isp_sharpen"):
-                raise NotSupportedError(f"set_image: bright on camera {self.camera_name(channel)} is not available")
+                raise NotSupportedError(f"set_image: sharpen on camera {self.camera_name(channel)} is not available")
             if not isinstance(sharpen, int):
                 raise InvalidParameterError(f"set_image: sharpen '{sharpen}' is not integer")
             if sharpen < 0 or sharpen > 255:
