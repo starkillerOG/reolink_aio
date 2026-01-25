@@ -104,6 +104,10 @@ class PtzEnum(Enum):
     right = "Right"
     up = "Up"
     down = "Down"
+    leftup = "LeftUp"
+    leftdown = "LeftDown"
+    rightup = "RightUp"
+    rightdown = "RightDown"
     zoomin = "ZoomInc"
     zoomout = "ZoomDec"
 
