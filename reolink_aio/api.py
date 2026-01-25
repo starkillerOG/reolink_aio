@@ -6141,6 +6141,8 @@ class Host:
                 raise UnexpectedDataError(
                     f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
                 )
+            # back-off a bit, this is mostly caused by a timeout error because the camera is too busy
+            await asyncio.sleep(5)
             if retry == 1:
                 _LOGGER.debug(
                     "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
