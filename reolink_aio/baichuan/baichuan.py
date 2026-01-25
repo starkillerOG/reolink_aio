@@ -1497,7 +1497,7 @@ class Baichuan:
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
 
-            if self.http_api.supported(channel, "pan_tilt"):
+            if self.supported(channel, "pan_tilt"):
                 coroutines.append(("ptz_position", channel, self.get_ptz_position(channel)))
 
             ledVersion = self.api_version("ledCtrl", channel)
