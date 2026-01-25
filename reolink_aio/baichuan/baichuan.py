@@ -175,6 +175,7 @@ class Baichuan:
         self._cry_sensitivity: dict[int, int] = {}
         self._pre_record_state: dict[int, dict] = {}
         self._siren_state: dict[int, bool] = {}
+        self._siren_play_time: dict[int | None, float] = {}
         self._noise_reduction: dict[int, int] = {}
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
@@ -2603,25 +2604,45 @@ class Baichuan:
     @http_cmd("AudioAlarmPlay")
     async def AudioAlarmPlay(self, channel: int | None = None, alarm_mode: str = "times", **kwargs) -> None:
         """Sound the siren"""
+        enable = kwargs.get("manual_switch", 1)
+        times = kwargs.get("times", 1)
+        now = time_now()
+
         if channel is not None and alarm_mode == "times":
-            xml = xmls.SirenTimes.format(channel=channel, times=kwargs.get("times", 1))
+            xml = xmls.SirenTimes.format(channel=channel, times=times)
         elif channel is not None:  # "manul"
-            xml = xmls.SirenManual.format(channel=channel, enable=kwargs.get("manual_switch", 1))
+            xml = xmls.SirenManual.format(channel=channel, enable=enable)
         elif alarm_mode == "times":
-            xml = xmls.SirenHubTimes.format(times=kwargs.get("times", 1))
+            xml = xmls.SirenHubTimes.format(times=times)
         else:  # "manul"
-            xml = xmls.SirenHubManual.format(enable=kwargs.get("manual_switch", 1))
+            xml = xmls.SirenHubManual.format(enable=enable)
+
+        if alarm_mode == "times":
+            self._siren_play_time[channel] = now + times * 5
+        elif enable == 1:
+            self._siren_play_time[channel] = now
+        elif enable == 0 and now < self._siren_play_time.get(channel, 0):
+            _LOGGER.debug("Baichaun host %s: circumventing reolink firmware limitation stopping siren_play by issuing a manual play first", self._host)
+            if channel is None:
+                xml_man = xmls.SirenHubManual.format(enable=1)
+            else:
+                xml_man = xmls.SirenManual.format(channel=channel, enable=1)
+            try:
+                await self.send(cmd_id=263, channel=channel, body=xml_man)
+            except ReolinkError as err:
+                _LOGGER.debug("Baichaun host %s: AudioAlarmPlay failed to play manual, before trying to stop a siren times play: %s", self._host, err)
 
         try:
             await self.send(cmd_id=263, channel=channel, body=xml)
         except ReolinkError:
-            if alarm_mode != "manul" or kwargs.get("manual_switch") != 1:
+            if alarm_mode != "manul" or enable != 1:
                 raise
             _LOGGER.debug("Baichaun host %s: AudioAlarmPlay failed to play manual, using times 2 instead", self._host)
             if channel is None:
                 xml = xmls.SirenHubTimes.format(times=2)
             else:
                 xml = xmls.SirenTimes.format(channel=channel, times=2)
+            self._siren_play_time[channel] = now + 2 * 5
             await self.send(cmd_id=263, channel=channel, body=xml)
 
     @http_cmd("GetAudioCfg")
