@@ -1486,8 +1486,14 @@ class Baichuan:
                 if ptz_ver in [2, 3, 5, 7]:
                     self.capabilities[channel].add("pan_tilt")
                     self.capabilities[channel].add("pan")
-                if ptz_ver in [2, 3]:
-                    self.capabilities[channel].add("ptz_speed")
+
+            ptz_ctr = self.api_version("ptzControl", channel)
+            if (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
+                self.capabilities[channel].add("ptz_diagonal")
+            if (ptz_ctr >> 3) & 1:  # 4th bit (8), shift 3
+                self.capabilities[channel].add("ptz_callibrate")
+            if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
+                self.capabilities[channel].add("ptz_speed")
 
             if self.http_api.api_version("doorbellVersion", channel) > 0:
                 self.http_api._is_doorbell[channel] = True
