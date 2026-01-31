@@ -1829,6 +1829,8 @@ class Host:
                 if ptz_ver in [2, 3, 5, 7]:
                     self._capabilities[channel].add("pan_tilt")
                     self._capabilities[channel].add("pan")
+                    if self.api_version("ptzPreset", channel) > 0:
+                        self._capabilities[channel].add("ptz_preset_basic")
                     if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
                         self._capabilities[channel].add("ptz_callibrate")
                     if self.api_version("GetPtzGuard", channel) > 0:
@@ -1836,10 +1838,11 @@ class Host:
                 if ptz_ver in [2, 3]:
                     if self.api_version("supportPtzSpeed", channel) > 0:
                         self._capabilities[channel].add("ptz_speed")
-                if channel in self._ptz_presets and len(self._ptz_presets[channel]) != 0:
-                    self._capabilities[channel].add("ptz_presets")
-                if channel in self._ptz_patrols and len(self._ptz_patrols[channel]) != 0:
-                    self._capabilities[channel].add("ptz_patrol")
+
+            if len(self._ptz_presets.get(channel, {})) > 0:
+                self._capabilities[channel].add("ptz_presets")
+            if len(self._ptz_patrols.get(channel, {})) > 0:
+                self._capabilities[channel].add("ptz_patrol")
 
             if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
                 min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
@@ -2468,7 +2471,7 @@ class Host:
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
                 if self.api_version("disableAutoFocus", channel) > 0:
                     ch_body.append({"cmd": "GetAutoFocus", "action": 1, "param": {"channel": channel}})
-            if self.supported(channel, "pan_tilt") and self.api_version("ptzPreset", channel) >= 1:
+            if self.supported(channel, "ptz_preset_basic"):
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})

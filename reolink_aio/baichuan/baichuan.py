@@ -1384,6 +1384,18 @@ class Baichuan:
                     if self.http_api._GetDingDong_present.get(None):
                         self.capabilities[None].add("chime")
 
+        for channel in self.http_api._channels:
+            ptz_ver = self.api_version("ptzType", channel)
+            if ptz_ver != 0:
+                self.capabilities[channel].add("ptz")
+                if ptz_ver in [2, 3, 5]:
+                    self.capabilities[channel].add("tilt")
+                if ptz_ver in [2, 3, 5, 7]:
+                    self.capabilities[channel].add("pan_tilt")
+                    self.capabilities[channel].add("pan")
+                    if self.api_version("ptzPreset", channel) > 0:
+                        self.capabilities[channel].add("ptz_preset_basic")
+
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
         # Stream capabilities
@@ -1477,15 +1489,6 @@ class Baichuan:
                 self.capabilities[channel].add("ai_yolo")
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
-
-            ptz_ver = self.api_version("ptzType", channel)
-            if ptz_ver != 0:
-                self.capabilities[channel].add("ptz")
-                if ptz_ver in [2, 3, 5]:
-                    self.capabilities[channel].add("tilt")
-                if ptz_ver in [2, 3, 5, 7]:
-                    self.capabilities[channel].add("pan_tilt")
-                    self.capabilities[channel].add("pan")
 
             ptz_ctr = self.api_version("ptzControl", channel)
             if (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
@@ -2232,8 +2235,12 @@ class Baichuan:
 
         if speed is not None and (xml_speed := xml_body.find(".//PtzControl")) is not None:
             XML.SubElement(xml_speed, "speed").text = str(speed)
-        if kwargs.get("id") is not None:
-            raise NotSupportedError("PTZ preset/patrol not yet supported")
+        if (id_val := kwargs.get("id")) is not None:
+            if op == "ToPos":  # preset
+                xml = xmls.PtzPreset.format(channel=channel, preset_id=id_val)
+                await self.send(cmd_id=19, channel=channel, body=xml)
+                return
+            raise NotSupportedError("PTZ patrol not yet supported")
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml

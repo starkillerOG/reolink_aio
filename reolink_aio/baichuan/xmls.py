@@ -436,3 +436,17 @@ PtzControl = """
 <command>{command}</command>
 </PtzControl>
 </body>"""
+
+PtzPreset = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<PtzPreset version="1.1">
+<channelId>{channel}</channelId>
+<presetList>
+<preset>
+<id>{preset_id}</id>
+<command>toPos</command>
+</preset>
+</presetList>
+</PtzPreset>
+</body>"""
