@@ -282,7 +282,6 @@ class Host:
         self._webhook_settings: dict[int, dict] = {}
         self._enc_settings: dict[int, dict] = {}
         self._enc_range: dict[int, list[dict]] = {}
-        self._ptz_presets_settings: dict[int, dict] = {}
         self._ptz_patrol_settings: dict[int, dict] = {}
         self._ptz_guard_settings: dict[int, dict] = {}
         self._ptz_position: dict[int, dict] = {}
@@ -4056,7 +4055,6 @@ class Host:
                     self._manual_record_settings[channel] = data["value"]["Rec"]
 
                 elif data["cmd"] == "GetPtzPreset":
-                    self._ptz_presets_settings[channel] = data["value"]
                     self._ptz_presets[channel] = {}
                     for preset in data["value"]["PtzPreset"]:
                         if int(preset["enable"]) == 1:

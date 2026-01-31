@@ -2207,10 +2207,19 @@ class Baichuan:
 
     @http_cmd("GetPtzCurPos")
     async def get_ptz_position(self, channel: int) -> None:
-        """Get the wifi signal of the host"""
+        """Get the current PTZ position"""
         mess = await self.send(cmd_id=433, channel=channel)
         ptz_position = self._get_keys_from_xml(mess, {"pPos": ("Ppos", int), "tPos": ("Tpos", int)})
         self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
+
+    @http_cmd("GetPtzPreset")
+    async def get_ptz_preset(self, channel: int) -> None:
+        """Get the PTZ preset list"""
+        mess = await self.send(cmd_id=190, channel=channel)
+        root = XML.fromstring(mess)
+        for preset in root.findall(".//preset"):
+            data = self._get_keys_from_xml(preset, {"id": ("id", int), "name": ("name", str)})
+            self.http_api._ptz_presets.setdefault(channel, {})[data["name"]] = data["id"]
 
     @http_cmd("PtzCheck")
     async def ptz_callibrate(self, channel: int) -> None:
