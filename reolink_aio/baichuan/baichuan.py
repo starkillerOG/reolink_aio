@@ -1396,6 +1396,16 @@ class Baichuan:
                     if self.api_version("ptzPreset", channel) > 0:
                         self.capabilities[channel].add("ptz_preset_basic")
 
+                    ptz_ctr = self.api_version("ptzControl", channel)
+                    if not (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
+                        self.capabilities[channel].add("ptz_diagonal")
+                    if (ptz_ctr >> 2) & 1:  # 3th bit (4), shift 2
+                        self.capabilities[channel].add("ptz_guard")
+                    if (ptz_ctr >> 3) & 1:  # 4th bit (8), shift 3
+                        self.capabilities[channel].add("ptz_callibrate")
+                    if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
+                        self.capabilities[channel].add("ptz_speed")
+
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
         # Stream capabilities
@@ -1489,14 +1499,6 @@ class Baichuan:
                 self.capabilities[channel].add("ai_yolo")
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
-
-            ptz_ctr = self.api_version("ptzControl", channel)
-            if (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
-                self.capabilities[channel].add("ptz_diagonal")
-            if (ptz_ctr >> 3) & 1:  # 4th bit (8), shift 3
-                self.capabilities[channel].add("ptz_callibrate")
-            if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
-                self.capabilities[channel].add("ptz_speed")
 
             if self.http_api.api_version("doorbellVersion", channel) > 0:
                 self.http_api._is_doorbell[channel] = True
