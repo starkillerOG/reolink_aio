@@ -4473,9 +4473,9 @@ class Host:
 
         if speed:
             body[0]["param"]["speed"] = speed
-        if preset:
+        if preset is not None:
             body[0]["param"]["id"] = preset
-        if patrol:
+        if patrol is not None:
             body[0]["param"]["id"] = patrol
 
         await self.send_setting(body)
