@@ -450,3 +450,16 @@ PtzPreset = """
 </presetList>
 </PtzPreset>
 </body>"""
+
+PtzGuard = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<PtzGuard version="1.1">
+<channelId>{channel}</channelId>
+<benable>{enable}</benable>
+<command>{cmd_str}</command>
+<timeout>{timeout}</timeout>
+<needSetPos>{set_pos}</needSetPos>
+<imageName></imageName>
+</PtzGuard>
+</body>"""
