@@ -2226,6 +2226,13 @@ class Baichuan:
             data = self._get_keys_from_xml(preset, {"id": ("id", int), "name": ("name", str)})
             self.http_api._ptz_presets.setdefault(channel, {})[data["name"]] = data["id"]
 
+    @http_cmd("GetPtzGuard")
+    async def get_ptz_guard(self, channel: int) -> None:
+        """Get the PTZ Guard settings"""
+        mess = await self.send(cmd_id=332, channel=channel)
+        data = self._get_keys_from_xml(mess, {"timeout": ("timeout", int), "benable": ("benable", int), "bvalid": ("bexistPos", int)})
+        self.http_api._ptz_guard_settings.setdefault(channel, {}).update(data)
+
     @http_cmd("PtzCheck")
     async def ptz_callibrate(self, channel: int) -> None:
         await self.send(cmd_id=341, channel=channel)

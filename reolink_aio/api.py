@@ -4075,7 +4075,7 @@ class Host:
                             self._ptz_patrols[channel][patrol_name] = patrol_id
 
                 elif data["cmd"] == "GetPtzGuard":
-                    self._ptz_guard_settings[channel] = data["value"]
+                    self._ptz_guard_settings[channel] = data["value"]["PtzGuard"]
 
                 elif data["cmd"] == "GetPtzCurPos":
                     self._ptz_position[channel] = data["value"].get("PtzCurPos", {})
@@ -4492,15 +4492,12 @@ class Host:
         if channel not in self._ptz_guard_settings:
             return False
 
-        values = self._ptz_guard_settings[channel]["PtzGuard"]
+        values = self._ptz_guard_settings[channel]
         return values["benable"] == 1 and values["bexistPos"] == 1
 
     def ptz_guard_time(self, channel: int) -> int:
         """Guard point return time in seconds"""
-        if channel not in self._ptz_guard_settings:
-            return 60
-
-        return self._ptz_guard_settings[channel]["PtzGuard"]["timeout"]
+        return self._ptz_guard_settings.get(channel, {}).get("timeout", 60)
 
     async def set_ptz_guard(self, channel: int, command: str | None = None, enable: bool | None = None, time: int | None = None) -> None:
         """Send PTZ guard."""
