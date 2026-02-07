@@ -908,6 +908,7 @@ class Baichuan:
             channel = self._get_channel_from_xml_element(root)
             if channel is None:
                 return
+            channels.add(channel)
             data = self._get_keys_from_xml(root, {"stat": ("stat", str), "cur": ("dayNightThreshold", int)})
             self._day_night_state[channel] = data["stat"]
             if (threshold := data.get("dayNightThreshold")) is not None:
