@@ -4350,8 +4350,8 @@ class Host:
             raise InvalidParameterError(f"set_focus: no camera connected to channel '{channel}'")
         if not self.supported(channel, "focus"):
             raise NotSupportedError(f"set_focus: not supported by camera {self.camera_name(channel)}")
-        min_focus = self.zoom_range(channel)["focus"]["pos"]["min"]
-        max_focus = self.zoom_range(channel)["focus"]["pos"]["max"]
+        min_focus = self.zoom_range(channel)["focus"]["min"]
+        max_focus = self.zoom_range(channel)["focus"]["max"]
         if not isinstance(focus, int):
             raise InvalidParameterError(f"set_focus: focus value {focus} not integer")
         if focus not in range(min_focus, max_focus + 1):
@@ -4401,8 +4401,8 @@ class Host:
             raise InvalidParameterError(f"set_zoom: no camera connected to channel '{channel}'")
         if not self.supported(channel, "zoom"):
             raise NotSupportedError(f"set_zoom: not supported by camera {self.camera_name(channel)}")
-        min_zoom = self.zoom_range(channel)["zoom"]["pos"]["min"]
-        max_zoom = self.zoom_range(channel)["zoom"]["pos"]["max"]
+        min_zoom = self.zoom_range(channel)["zoom"]["min"]
+        max_zoom = self.zoom_range(channel)["zoom"]["max"]
         if not isinstance(zoom, int):
             raise InvalidParameterError(f"set_zoom: zoom value {zoom} not integer")
         if zoom not in range(min_zoom, max_zoom + 1):
