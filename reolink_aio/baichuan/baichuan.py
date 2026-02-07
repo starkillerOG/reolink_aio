@@ -3682,6 +3682,9 @@ class Baichuan:
     def cry_sensitivity(self, channel: int) -> int | None:
         return self._cry_sensitivity.get(channel)
 
+    def ptz_running(self, channel: int) -> bool | None:
+        return self._ptz_running.get(channel)
+
     def smart_type_list(self, channel: int) -> list[str]:
         return list(self._ai_detect.get(channel, {}).keys())
 
