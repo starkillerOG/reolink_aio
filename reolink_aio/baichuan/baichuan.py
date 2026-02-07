@@ -673,7 +673,8 @@ class Baichuan:
     async def _send_and_parse(self, cmd_id: int, channel: int | None = None) -> None:
         """Send the command and parse the response"""
         rec_body = await self.send(cmd_id=cmd_id, channel=channel)
-        self._parse_xml(cmd_id, rec_body, mess_id = channel + 1)
+        mess_id = channel + 1 if channel is not None else None
+        self._parse_xml(cmd_id, rec_body, mess_id=mess_id)
 
     def _parse_xml(self, cmd_id: int, xml: str, payload: bytes = b"", mess_id: int | None = None) -> None:
         """parce received xml"""
@@ -905,6 +906,18 @@ class Baichuan:
                         self.http_api._whiteled_settings.setdefault(channel, {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
 
+        elif cmd_id == 294:  # ZoomFocus
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            for zoom in root.findall(".//zoom"):
+                data = self._get_keys_from_xml(zoom, {"curPos": ("pos", int), "minPos": ("min", int), "maxPos": ("max", int)})
+                self.http_api._zoom_focus_settings.setdefault(channel, {}).setdefault("zoom", {}).update(data)
+            for focus in root.findall(".//focus"):
+                data = self._get_keys_from_xml(focus, {"curPos": ("pos", int), "minPos": ("min", int), "maxPos": ("max", int)})
+                self.http_api._zoom_focus_settings.setdefault(channel, {}).setdefault("focus", {}).update(data)
+
         elif cmd_id == 296:  # DayNight
             channel = self._get_channel_from_xml_element(root)
             if channel is None:
@@ -942,7 +955,8 @@ class Baichuan:
             state = self._get_value_from_xml_element(root, "ptzRunning", int)
             if state is not None:
                 self._ptz_running[channel] = state == 1
-                self._loop.create_task(self._send_and_parse(433, channel))
+                self._loop.create_task(self._send_and_parse(433, channel))  # fetch PTZ pos
+                self._loop.create_task(self._send_and_parse(294, channel))  # fetch ZoomFocus
 
         elif cmd_id == 549:  # forgotten item
             self._parse_smart_ai_settings(root, channels, "legacy")
@@ -2238,14 +2252,7 @@ class Baichuan:
     @http_cmd("GetZoomFocus")
     async def get_zoom_focus(self, channel: int) -> None:
         """Get the current PTZ position"""
-        mess = await self.send(cmd_id=294, channel=channel)
-        root = XML.fromstring(mess)
-        for zoom in root.findall(".//zoom"):
-            data = self._get_keys_from_xml(zoom, {"curPos": ("pos", int), "minPos": ("min", int), "maxPos": ("max", int)})
-            self.http_api._zoom_focus_settings.setdefault(channel, {}).setdefault("zoom", {}).update(data)
-        for focus in root.findall(".//focus"):
-            data = self._get_keys_from_xml(focus, {"curPos": ("pos", int), "minPos": ("min", int), "maxPos": ("max", int)})
-            self.http_api._zoom_focus_settings.setdefault(channel, {}).setdefault("focus", {}).update(data)
+        await self._send_and_parse(294, channel)
 
     @http_cmd("GetPtzPreset")
     async def get_ptz_preset(self, channel: int) -> None:
