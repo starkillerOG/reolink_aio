@@ -1430,6 +1430,8 @@ class Baichuan:
                     self.capabilities[channel].add("pan")
                     if self.api_version("ptzPreset", channel) > 0:
                         self.capabilities[channel].add("ptz_preset_basic")
+                    if self.api_version("autoPt", channel) > 0:
+                        self.capabilities[channel].add("ptz_auto")
 
                     ptz_ctr = self.api_version("ptzControl", channel)
                     if not (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
