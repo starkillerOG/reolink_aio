@@ -272,7 +272,6 @@ class Host:
         self._chime_list: dict[int, Chime] = {}
         # Camera-level
         self._zoom_focus_settings: dict[int, dict] = {}
-        self._zoom_focus_range: dict[int, dict] = {}
         self._auto_focus_settings: dict[int, dict] = {}
         self._isp_settings: dict[int, dict] = {}
         self._image_settings: dict[int, dict] = {}
@@ -1242,7 +1241,7 @@ class Host:
         return self._ai_alarm_settings[channel][ai_type]["stay_time"]
 
     def zoom_range(self, channel: int) -> dict:
-        return self._zoom_focus_range[channel]
+        return self._zoom_focus_settings[channel]
 
     def enable_https(self, enable: bool) -> None:
         self._use_https = enable
@@ -1814,8 +1813,8 @@ class Host:
                 self._capabilities[channel].add("ptz")
                 if ptz_ver in [1, 2, 5]:
                     self._capabilities[channel].add("zoom_basic")
-                    min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
-                    max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
+                    min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
+                    max_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
                     if min_zoom is None or max_zoom is None:
                         if warnings:
                             _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
@@ -1845,8 +1844,8 @@ class Host:
                 self._capabilities[channel].add("ptz_patrol")
 
             if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
-                min_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("min")
-                max_zoom = self._zoom_focus_range.get(channel, {}).get("zoom", {}).get("pos", {}).get("max")
+                min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
+                max_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
                     self._capabilities[channel].add("zoom")
                 else:
@@ -4114,9 +4113,15 @@ class Host:
                     self._auto_focus_settings[channel] = data["value"]["AutoFocus"]
 
                 elif data["cmd"] == "GetZoomFocus":
-                    self._zoom_focus_settings[channel] = data["value"]
+                    zoom = self._zoom_focus_settings.setdefault(channel, {}).setdefault("zoom", {})
+                    focus = self._zoom_focus_settings[channel].setdefault("focus", {})
+                    val = data["value"]["ZoomFocus"]
+                    zoom.update(val["zoom"])
+                    focus.update(val["focus"])
                     if "range" in data:
-                        self._zoom_focus_range[channel] = data["range"]["ZoomFocus"]
+                        val = data["range"]["ZoomFocus"]
+                        focus.update(val["focus"]["pos"])
+                        zoom.update(val["zoom"]["pos"])
 
             except Exception as err:
                 _LOGGER.error(
@@ -4335,7 +4340,7 @@ class Host:
         if channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
             raise NotSupportedError(f"get_focus: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
-        return self._zoom_focus_settings[channel]["ZoomFocus"]["focus"]["pos"]
+        return self._zoom_focus_settings[channel]["focus"]["pos"]
 
     async def set_focus(self, channel: int, focus: int) -> None:
         """Set absolute focus value.
@@ -4386,7 +4391,7 @@ class Host:
         if channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
             raise NotSupportedError(f"get_zoom: ZoomFocus on camera {self.camera_name(channel)} is not available")
 
-        return self._zoom_focus_settings[channel]["ZoomFocus"]["zoom"]["pos"]
+        return self._zoom_focus_settings[channel]["zoom"]["pos"]
 
     async def set_zoom(self, channel: int, zoom: int) -> None:
         """Set absolute zoom value.
