@@ -167,6 +167,7 @@ class Baichuan:
         self._dev_info: dict[int | None, dict[str, str]] = {}
         self._network_info: dict[int | None, dict[str, str]] = {}
         self._wifi_connection: dict[int, bool] = {}
+        self._ptz_running: dict[int, bool] = {}
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
@@ -672,7 +673,7 @@ class Baichuan:
     async def _send_and_parse(self, cmd_id: int, channel: int | None = None) -> None:
         """Send the command and parse the response"""
         rec_body = await self.send(cmd_id=cmd_id, channel=channel)
-        self._parse_xml(cmd_id, rec_body)
+        self._parse_xml(cmd_id, rec_body, mess_id = channel + 1)
 
     def _parse_xml(self, cmd_id: int, xml: str, payload: bytes = b"", mess_id: int | None = None) -> None:
         """parce received xml"""
@@ -914,6 +915,14 @@ class Baichuan:
             if (threshold := data.get("dayNightThreshold")) is not None:
                 self.http_api._isp_settings.setdefault(channel, {})["dayNightThreshold"] = threshold
 
+        elif cmd_id == 433:  # PTZ position
+            if mess_id is None:
+                return
+            channel = mess_id % 256 - 1
+            channels.add(channel)
+            ptz_position = self._get_keys_from_xml(root, {"pPos": ("Ppos", int), "tPos": ("Tpos", int)})
+            self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
+
         elif cmd_id == 464:  # network link type wire/wifi
             self._get_value_from_xml_element(root, "net_type")
             if (signal := self._get_value_from_xml_element(root, "signal")) is not None:
@@ -925,6 +934,16 @@ class Baichuan:
             self._parse_smart_ai_settings(root, channels, "intrusion")
         elif cmd_id == 531:  # linger detection
             self._parse_smart_ai_settings(root, channels, "loitering")
+        elif cmd_id == 542:  # PTZ moving
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            state = self._get_value_from_xml_element(root, "ptzRunning", int)
+            if state is not None:
+                self._ptz_running[channel] = state == 1
+                self._loop.create_task(self._send_and_parse(433, channel))
+
         elif cmd_id == 549:  # forgotten item
             self._parse_smart_ai_settings(root, channels, "legacy")
         elif cmd_id == 551:  # taken item
@@ -2214,9 +2233,7 @@ class Baichuan:
     @http_cmd("GetPtzCurPos")
     async def get_ptz_position(self, channel: int) -> None:
         """Get the current PTZ position"""
-        mess = await self.send(cmd_id=433, channel=channel)
-        ptz_position = self._get_keys_from_xml(mess, {"pPos": ("Ppos", int), "tPos": ("Tpos", int)})
-        self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
+        await self._send_and_parse(433, channel)
 
     @http_cmd("GetPtzPreset")
     async def get_ptz_preset(self, channel: int) -> None:
@@ -2504,8 +2521,7 @@ class Baichuan:
     @http_cmd("GetWhiteLed")
     async def get_floodlight(self, channel: int, **_kwargs) -> None:
         """Get the floodlight state"""
-        mess = await self.send(cmd_id=289, channel=channel)
-        self._parse_xml(289, mess)
+        await self._send_and_parse(289, channel)
 
     @http_cmd("SetWhiteLed")
     async def set_floodlight(
