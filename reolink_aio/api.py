@@ -4442,6 +4442,8 @@ class Host:
             cmd = "StopPatrol"
 
         await self.set_ptz_command(channel, command=cmd, patrol=patrol)
+        await asyncio.sleep(1)
+        await self.baichuan.get_ptz_patrol(channel)
 
     async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | str | None = None, speed: int | None = None, patrol: int | None = None) -> None:
         """Send PTZ command to the camera, list of possible commands see PtzEnum."""

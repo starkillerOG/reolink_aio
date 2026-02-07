@@ -169,6 +169,7 @@ class Baichuan:
         self._wifi_connection: dict[int, bool] = {}
         self._ptz_running: dict[int, bool] = {}
         self._ptz_position: dict[int, dict[str, str]] = {}
+        self._ptz_patrol_cruising: dict[int, bool | None] = {}
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
         self._hardwired_chime_settings: dict[int, dict[str, str | int]] = {}
@@ -1802,6 +1803,9 @@ class Baichuan:
             if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
                 coroutines.append(self.get_ptz_position(channel))
 
+            if self.http_api.supported(channel, "ptz_patrol") and inc_cmd("64", channel):
+                coroutines.append(self.get_ptz_patrol(channel))
+
             if self.supported(channel, "pre_record") and inc_cmd("594", channel):
                 coroutines.append(self.get_pre_recording(channel))
 
@@ -2289,6 +2293,15 @@ class Baichuan:
 
         xml = xmls.PtzGuard.format(channel=channel, enable=enable, cmd_str=cmd_str, timeout=timeout, set_pos=set_pos)
         await self.send(cmd_id=331, channel=channel, body=xml)
+
+    async def get_ptz_patrol(self, channel: int) -> None:
+        """Get the PTZ patrol info"""
+        mess = await self.send(cmd_id=64, channel=channel)
+        root = XML.fromstring(mess)
+        cruising = None
+        for cruise in root.findall(".//cruising"):
+            cruising = cruising or cruise.text == "1"
+        self._ptz_patrol_cruising[channel] = cruising
 
     @http_cmd("PtzCheck")
     async def ptz_callibrate(self, channel: int) -> None:
@@ -3684,6 +3697,9 @@ class Baichuan:
 
     def ptz_running(self, channel: int) -> bool | None:
         return self._ptz_running.get(channel)
+
+    def ptz_patrol_cruising(self, channel: int) -> bool | None:
+        return self._ptz_patrol_cruising.get(channel)
 
     def smart_type_list(self, channel: int) -> list[str]:
         return list(self._ai_detect.get(channel, {}).keys())
