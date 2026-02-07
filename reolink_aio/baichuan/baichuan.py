@@ -2235,6 +2235,18 @@ class Baichuan:
         """Get the current PTZ position"""
         await self._send_and_parse(433, channel)
 
+    @http_cmd("GetZoomFocus")
+    async def get_zoom_focus(self, channel: int) -> None:
+        """Get the current PTZ position"""
+        mess = await self.send(cmd_id=294, channel=channel)
+        root = XML.fromstring(mess)
+        for zoom in root.findall(".//zoom"):
+            data = self._get_keys_from_xml(zoom, {"curPos": ("pos", int), "minPos": ("min", int), "maxPos": ("max", int)})
+            self.http_api._zoom_focus_settings.setdefault(channel, {}).setdefault("zoom", {}).update(data)
+        for focus in root.findall(".//focus"):
+            data = self._get_keys_from_xml(focus, {"curPos": ("pos", int), "minPos": ("min", int), "maxPos": ("max", int)})
+            self.http_api._zoom_focus_settings.setdefault(channel, {}).setdefault("focus", {}).update(data)
+
     @http_cmd("GetPtzPreset")
     async def get_ptz_preset(self, channel: int) -> None:
         """Get the PTZ preset list"""
