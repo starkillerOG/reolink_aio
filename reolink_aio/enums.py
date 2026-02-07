@@ -110,6 +110,7 @@ class PtzEnum(Enum):
     rightdown = "RightDown"
     zoomin = "ZoomInc"
     zoomout = "ZoomDec"
+    auto = "Auto"
 
 
 class GuardEnum(Enum):
