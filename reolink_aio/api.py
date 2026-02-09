@@ -1835,7 +1835,7 @@ class Host:
                     if self.api_version("GetPtzGuard", channel) > 0:
                         self._capabilities[channel].add("ptz_guard")
                 if ptz_ver in [2, 3]:
-                    if self.api_version("supportPtzSpeed", channel) > 0:
+                    if self.api_version("supportPtzSpeed", channel, no_key_return=1) > 0:
                         self._capabilities[channel].add("ptz_speed")
 
             if len(self._ptz_presets.get(channel, {})) > 0:
