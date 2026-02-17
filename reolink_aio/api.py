@@ -3542,6 +3542,12 @@ class Host:
                 cmd = VodRequestType.DOWNLOAD.value
 
             url = f"{self._url}?cmd={cmd}&source={filename.replace(' ', '%20')}&output=ha_playback_{time_start}.mp4{start_time}"
+        elif request_type == VodRequestType.RTSP:
+            # RTSP playback URL – supported on select Reolink cameras/NVRs.
+            # The credentials are embedded in the URL (same as live RTSP streams).
+            safe_filename = filename.replace(" ", "%20")
+            rtsp_url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/vod/{safe_filename}"
+            return ("video/mp4", rtsp_url)
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
@@ -5355,6 +5361,58 @@ class Host:
             ]
 
         await self.send_setting(body)
+
+    # -------------------------------------------------------------------------
+    # Two-way audio (talk) public API
+    # -------------------------------------------------------------------------
+
+    def two_way_audio_support(self, channel: int) -> bool:
+        """Return True if the camera channel supports two-way audio (talk)."""
+        return self.supported(channel, "two_way_audio")
+
+    async def start_talk(self, channel: int) -> dict:
+        """Start a two-way audio (talk) session on the camera channel.
+
+        Returns a dict describing the audio format the camera expects:
+          - audio_type (str): codec name, e.g. "adpcm"
+          - sample_rate (int): samples per second, e.g. 8000 or 16000
+          - sample_precision (int): bit depth, e.g. 16
+          - length_per_encoder (int): samples per block, e.g. 320 or 640
+          - sound_track (str): channel layout, e.g. "mono"
+          - duplex (str): duplex mode, e.g. "FDX"
+          - audio_stream_mode (str): e.g. "followVideoStream"
+
+        The caller should encode microphone audio as IMA ADPCM blocks with the
+        parameters above, wrap each block using
+        ``Baichuan.build_bcmedia_adpcm([block])``, and send the result with
+        ``send_talk_data()``.  Call ``stop_talk()`` when finished.
+
+        Raises NotSupportedError if two-way audio is not supported.
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"start_talk: no camera connected to channel '{channel}'")
+        if not self.two_way_audio_support(channel):
+            raise NotSupportedError(f"start_talk: Two-way audio is not supported on {self.camera_name(channel)}")
+
+        return await self.baichuan.start_talk(channel)
+
+    async def send_talk_data(self, channel: int, bcmedia_data: bytes) -> None:
+        """Send BcMedia-framed IMA ADPCM audio data to the camera.
+
+        ``bcmedia_data`` must be produced by ``Baichuan.build_bcmedia_adpcm()``.
+        Call ``start_talk()`` before the first call to this method.
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"send_talk_data: no camera connected to channel '{channel}'")
+
+        await self.baichuan.send_talk_data(channel, bcmedia_data)
+
+    async def stop_talk(self, channel: int) -> None:
+        """Stop the two-way audio (talk) session on the camera channel."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"stop_talk: no camera connected to channel '{channel}'")
+
+        await self.baichuan.stop_talk(channel)
 
     async def set_siren(self, channel: int | None = None, enable: bool = True, duration: int | None = 2) -> None:
         if channel not in self._channels and channel is not None:
