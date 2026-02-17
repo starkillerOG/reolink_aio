@@ -9,7 +9,7 @@ import logging
 import re
 import ssl
 import traceback
-from datetime import datetime, timedelta, tzinfo
+from datetime import date, datetime, timedelta, tzinfo
 from io import BytesIO
 from math import ceil
 from os.path import basename
@@ -5850,6 +5850,95 @@ class Host:
             file.bc_triggers = trigger_dict.get(file.start_time_id)
 
         return statuses, vod_files
+
+    async def get_recording_days(self, channel: int, year: int, month: int) -> set[int]:
+        """Return the set of day-numbers (1–31) in *year*/*month* that have recordings.
+
+        Convenience wrapper around request_vod_files(status_only=True).
+        Useful for populating a calendar view in Home Assistant's media browser.
+
+        Example::
+
+            days = await host.get_recording_days(0, 2024, 6)
+            # {1, 3, 14, 15, 28}  → recordings exist on those days
+        """
+        if channel not in self._stream_channels:
+            raise InvalidParameterError(f"get_recording_days: no camera connected to channel '{channel}'")
+
+        import calendar
+
+        last_day = calendar.monthrange(year, month)[1]
+        start = datetime(year, month, 1, 0, 0, 0)
+        end = datetime(year, month, last_day, 23, 59, 59)
+
+        statuses, _ = await self.request_vod_files(channel, start, end, status_only=True)
+
+        days: set[int] = set()
+        for status in statuses:
+            if status.year == year and status.month == month:
+                days.update(status.days)
+        return days
+
+    async def get_recordings_for_day(
+        self,
+        channel: int,
+        day: date,
+        stream: Optional[str] = None,
+        trigger: typings.VOD_trigger | None = None,
+    ) -> list[typings.VOD_file]:
+        """Return recordings for *channel* on the given *day*, sorted by start time.
+
+        Recordings are deduplicated so that the same file only appears once
+        even when it matches multiple detection triggers.
+
+        Parameters
+        ----------
+        channel:
+            Camera channel index.
+        day:
+            The calendar date to query (e.g. ``date(2024, 6, 14)``).
+        stream:
+            Stream type (``"main"``, ``"sub"``, …).  Defaults to the host default.
+        trigger:
+            Optional filter.  When given only recordings matching that
+            ``VOD_trigger`` flag are returned.
+
+        Returns
+        -------
+        list[VOD_file]
+            Sorted (by start_time), deduplicated list.  Each item exposes:
+
+            * ``file.start_time`` / ``file.end_time`` – datetime with tz
+            * ``file.duration`` – timedelta
+            * ``file.triggers`` – VOD_trigger flags (motion, person, …)
+            * ``file.file_name`` – filename for use with get_vod_source()
+            * ``file.size`` – file size in bytes
+
+            Obtain a playback URL with::
+
+                mime, url = await host.get_vod_source(channel, file.file_name)
+        """
+        if channel not in self._stream_channels:
+            raise InvalidParameterError(f"get_recordings_for_day: no camera connected to channel '{channel}'")
+
+        start = datetime(day.year, day.month, day.day, 0, 0, 0)
+        end = datetime(day.year, day.month, day.day, 23, 59, 59)
+
+        _, vod_files = await self.request_vod_files(
+            channel, start, end, status_only=False, stream=stream, trigger=trigger
+        )
+
+        # Deduplicate by file_name then sort chronologically
+        seen: set[str] = set()
+        unique: list[typings.VOD_file] = []
+        for f in vod_files:
+            key = f.file_name
+            if key not in seen:
+                seen.add(key)
+                unique.append(f)
+
+        unique.sort(key=lambda f: f.start_time)
+        return unique
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
         command = body[0]["cmd"]
