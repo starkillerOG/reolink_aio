@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
-from datetime import datetime, timedelta
+from collections.abc import AsyncIterator, Callable
+from datetime import date, datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, TypeVar, overload
@@ -3609,31 +3609,409 @@ class Baichuan:
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
-        # xml = xmls.FileInfoListOpen.format(
-        #    channel=channel,
-        #    uid=uid,
-        #    stream_type=stream_type,
-        #    start_year=start.year,
-        #    start_month=start.month,
-        #    start_day=start.day,
-        #    start_hour=start.hour,
-        #    start_minute=start.minute,
-        #    start_second=start.second,
-        #    end_year=end.year,
-        #    end_month=end.month,
-        #    end_day=end.day,
-        #    end_hour=end.hour,
-        #    end_minute=end.minute,
-        #    end_second=end.second,
-        # )
-        # mess = await self.send(cmd_id=14, body=xml)
-        # handle = self._get_value_from_xml(mess, "handle")
-
-        # xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
-        # await self.send(cmd_id=15, body=xml_file_info)
-        # await self.send(cmd_id=16, body=xml_file_info)
-
         return vod_type_dict, vod_dict
+
+    async def search_recording_days_bc(self, channel: int, year: int, month: int) -> set[int]:
+        """Return the set of day numbers (1–31) that have recordings in year/month via Baichuan MSG 142.
+
+        Used as a fallback when baichuan_only=True (no HTTP API available).
+        """
+        import calendar as cal
+
+        last_day = cal.monthrange(year, month)[1]
+        xml = xmls.DayRecords.format(year=year, month=month, last_day=last_day, channel=channel)
+        mess = await self.send(cmd_id=142, channel=channel, body=xml)
+        root = XML.fromstring(mess)
+
+        days: set[int] = set()
+        for day_type in root.findall(".//dayType"):
+            index = self._get_value_from_xml_element(day_type, "index", int)
+            if index is not None:
+                # index is 0-based offset from day 1 of the queried month
+                days.add(1 + index)
+        return days
+
+    async def search_recordings_for_day_bc(self, channel: int, day: date, stream: str | None = None) -> list[VOD_file]:
+        """Return all recordings for *day* on *channel* via Baichuan MSG 14 + MSG 15.
+
+        Used as a fallback when baichuan_only=True (no HTTP API available).
+        """
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+
+        if stream == "sub":
+            stream_type = "subStream"
+        elif stream in {"autotrack_sub", "telephoto_sub"}:
+            stream_type = "subStream"
+        else:
+            stream_type = "mainStream"
+
+        # MSG 14: get file list handle for this day
+        xml = xmls.FileInfoListOpen.format(
+            uid=uid,
+            channel=channel,
+            stream_type=stream_type,
+            start_year=day.year,
+            start_month=day.month,
+            start_day=day.day,
+            start_hour=0,
+            start_minute=0,
+            start_second=0,
+            end_year=day.year,
+            end_month=day.month,
+            end_day=day.day,
+            end_hour=23,
+            end_minute=59,
+            end_second=59,
+        )
+        mess = await self.send(cmd_id=14, channel=channel, body=xml)
+        handle = self._get_value_from_xml(mess, "handle")
+        if handle is None:
+            _LOGGER.debug("Baichuan host %s: search_recordings_for_day_bc: MSG 14 returned no handle for channel %s day %s", self._host, channel, day)
+            return []
+
+        # MSG 15: fetch the file list using the handle
+        xml = xmls.FileInfoList.format(channel=channel, uid=uid, handle=handle)
+        mess = await self.send(cmd_id=15, channel=channel, body=xml)
+        root = XML.fromstring(mess)
+
+        vod_files: list[VOD_file] = []
+        for fi in root.findall(".//FileInfo"):
+            name = self._get_value_from_xml_element(fi, "name")
+            start_time_el = fi.find("startTime")
+            end_time_el = fi.find("endTime")
+            size_l = self._get_value_from_xml_element(fi, "sizeL", int)
+            size_h = self._get_value_from_xml_element(fi, "sizeH", int)
+            record_type = self._get_value_from_xml_element(fi, "recordType")
+
+            if name is None or start_time_el is None:
+                continue
+
+            start_dt = self._xml_time_to_datetime(start_time_el)
+            end_dt = self._xml_time_to_datetime(end_time_el)
+            if start_dt is None:
+                continue
+
+            size = (size_h or 0) * (2**32) + (size_l or 0)
+            data: dict = {
+                "type": stream or self.http_api._stream,
+                "StartTime": datetime_to_reolink_time(start_dt),
+                "EndTime": datetime_to_reolink_time(end_dt or start_dt),
+                "PlaybackTime": datetime_to_reolink_time(start_dt),
+                "name": name,
+                "size": str(size),
+            }
+            vod_file = VOD_file(data, self.http_api.timezone())
+
+            triggers = VOD_trigger.NONE
+            if record_type:
+                for part in record_type.replace(",", " ").split():
+                    if part in ("md", "pir", "other"):
+                        triggers |= VOD_trigger.MOTION
+                    elif part == "people":
+                        triggers |= VOD_trigger.PERSON
+                    elif part == "vehicle":
+                        triggers |= VOD_trigger.VEHICLE
+                    elif part == "dog_cat":
+                        triggers |= VOD_trigger.ANIMAL
+                    elif part == "visitor":
+                        triggers |= VOD_trigger.DOORBELL
+                    elif part == "face":
+                        triggers |= VOD_trigger.FACE
+                    elif part == "package":
+                        triggers |= VOD_trigger.PACKAGE
+                    elif part in ("normal", "sched", "manual", "timer", "io"):
+                        triggers |= VOD_trigger.TIMER
+            vod_file.bc_triggers = triggers
+            vod_files.append(vod_file)
+
+        return vod_files
+
+    async def replay_seek_bc(self, channel: int, seek_dt: datetime) -> None:
+        """Send ReplaySeek (MSG 123) to prepare camera for VOD playback."""
+        seq = int(time_now())
+        xml = xmls.ReplaySeek.format(
+            channel=channel,
+            seq=seq,
+            year=seek_dt.year,
+            month=seek_dt.month,
+            day=seek_dt.day,
+            hour=seek_dt.hour,
+            minute=seek_dt.minute,
+            second=seek_dt.second,
+        )
+        await self.send(cmd_id=123, channel=channel, body=xml)
+
+    async def _send_streaming(self, cmd_id: int, channel: int, body: str) -> tuple[asyncio.Queue, int]:
+        """Send *cmd_id* and register a streaming queue for all its responses.
+
+        Returns (queue, full_mess_id).  The caller is responsible for removing
+        the queue from self._protocol.streaming_queues when done.
+        """
+        if not self._logged_in and cmd_id > 2:
+            await self.login()
+
+        ch_id = channel + 1 if channel is not None else 250
+        ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel) if channel is not None else ""
+
+        mess_len = len(ext) + len(body)
+        payload_offset = len(ext)
+
+        self._mess_id = (self._mess_id + 1) % 16777216
+        mess_id_bytes = ch_id.to_bytes(1, "little") + self._mess_id.to_bytes(3, "little")
+        full_mess_id = int.from_bytes(mess_id_bytes, "little")
+
+        cmd_id_bytes = cmd_id.to_bytes(4, "little")
+        mess_len_bytes = mess_len.to_bytes(4, "little")
+        payload_offset_bytes = payload_offset.to_bytes(4, "little")
+        header = (
+            bytes.fromhex(HEADER_MAGIC)
+            + cmd_id_bytes
+            + mess_len_bytes
+            + mess_id_bytes
+            + bytes.fromhex("0000" + "1464")
+            + payload_offset_bytes
+        )
+        enc_body = self._aes_encrypt(ext) + self._aes_encrypt(body)
+
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._protocol is not None
+            assert self._transport is not None
+
+        q: asyncio.Queue = asyncio.Queue(maxsize=512)
+        self._protocol.streaming_queues[(cmd_id, full_mess_id)] = q
+
+        _LOGGER.debug("Baichuan host %s: streaming send cmd_id %s full_mess_id %s", self._host, cmd_id, full_mess_id)
+        async with self._mutex:
+            self._transport.write(header + enc_body)
+
+        return q, full_mess_id
+
+    @staticmethod
+    async def parse_bcmedia_frames(
+        raw_stream: AsyncIterator[bytes],
+    ) -> AsyncIterator[tuple[int, bytes]]:
+        """Parse a raw Reolink BcMedia byte stream and yield (microseconds, h264_bytes) per video frame.
+
+        BcMedia magic layout (4 bytes, LE):
+          byte[0]: frame counter, '0'-'9' (0x30-0x39), cycles 0-9
+          byte[1]: frame type, '0'=IFrame (0x30) or '1'=PFrame (0x31)
+          byte[2]: 'd' (0x64)
+          byte[3]: 'c' (0x63)
+        Audio and info frames (different magic) are skipped.
+        """
+        buf = bytearray()
+
+        def _find_bcmedia_magic(data: bytearray, start: int) -> int | None:
+            """Return index of the next BcMedia frame (video or audio) at an 8-byte-aligned position, or None.
+
+            Recognises:
+              - Video I-frame: byte[0]='0'-'9', byte[1]='0', byte[2]='d', byte[3]='c'
+              - Video P-frame: byte[0]='0'-'9', byte[1]='1', byte[2]='d', byte[3]='c'
+              - Audio AAC:     byte[0]='0'-'9', byte[1]='5', byte[2]='w', byte[3]='b'
+              - Audio ADPCM:   byte[0]='0'-'9', byte[1]='1', byte[2]='w', byte[3]='b'
+
+            BcMedia frames are always 8-byte padded so all frame starts lie at 8-byte-aligned
+            stream offsets.  Scanning only aligned positions avoids false positives that can
+            appear inside H.264 or encrypted-audio payloads.
+            """
+            i = (start + 7) & ~7 if start % 8 != 0 else start
+            while i + 4 <= len(data):
+                b0, b1, b2, b3 = data[i], data[i + 1], data[i + 2], data[i + 3]
+                if 0x30 <= b0 <= 0x39:
+                    if b2 == 0x64 and b3 == 0x63 and b1 in (0x30, 0x31):
+                        return i  # video I/P-frame
+                    if b2 == 0x77 and b3 == 0x62 and b1 in (0x31, 0x35):
+                        return i  # audio ADPCM / AAC
+                i += 8
+            return None
+
+        scan_from = 0
+        async for chunk in raw_stream:
+            buf.extend(chunk)
+            while True:
+                magic_idx = _find_bcmedia_magic(buf, scan_from)
+                if magic_idx is None:
+                    # Back up to last 8-byte-aligned position so a magic spanning a chunk boundary is rechecked
+                    scan_from = max(0, len(buf) - 7) & ~7
+                    break
+
+                b2 = buf[magic_idx + 2]
+
+                if b2 == 0x77:
+                    # Audio frame (AAC or ADPCM): 4-byte magic + 2-byte payload_size + 2-byte payload_size_b + payload + padding
+                    if magic_idx + 8 > len(buf):
+                        scan_from = magic_idx
+                        break
+                    audio_payload_size = int.from_bytes(buf[magic_idx + 4: magic_idx + 6], "little")
+                    audio_pad = (8 - audio_payload_size % 8) % 8
+                    audio_total = 8 + audio_payload_size + audio_pad
+                    if magic_idx + audio_total > len(buf):
+                        scan_from = magic_idx
+                        break
+                    del buf[: magic_idx + audio_total]
+                    scan_from = 0
+                    continue  # skip audio, look for next frame
+
+                # Video frame (I or P)
+                # Need at least 24 bytes for the fixed header fields
+                if magic_idx + 24 > len(buf):
+                    scan_from = magic_idx
+                    break
+
+                payload_size = int.from_bytes(buf[magic_idx + 8: magic_idx + 12], "little")
+                additional_header_size = int.from_bytes(buf[magic_idx + 12: magic_idx + 16], "little")
+                microseconds = int.from_bytes(buf[magic_idx + 16: magic_idx + 20], "little")
+
+                hdr_size = 24 + additional_header_size
+                pad_size = (8 - payload_size % 8) % 8
+                total_size = hdr_size + payload_size + pad_size
+
+                if magic_idx + total_size > len(buf):
+                    # Frame not yet complete — wait for more data
+                    scan_from = magic_idx
+                    break
+
+                h264_bytes = bytes(buf[magic_idx + hdr_size: magic_idx + hdr_size + payload_size])
+                del buf[: magic_idx + total_size]
+                scan_from = 0
+
+                if h264_bytes:
+                    yield microseconds, h264_bytes
+
+    async def stream_replay_bc(
+        self,
+        channel: int,
+        file_name: str,
+        start_time: datetime,
+        stream_type: str = "mainStream",
+    ) -> AsyncIterator[bytes]:
+        """Async generator: stream a recorded VOD file via Baichuan MSG 5/8.
+
+        Yields raw (decrypted) binary chunks of video data.
+        Sends ReplaySeek (MSG 123) first, then MSG 5 (falls back to MSG 8 on 400),
+        skips the 32-byte replay header, and yields each subsequent binary packet.
+        Sends ReplayStop (MSG 7) in cleanup.
+        """
+        await self.replay_seek_bc(channel, start_time)
+
+        support_sub = 1 if stream_type == "subStream" else 0
+        body = xmls.ReplayStart.format(
+            name=file_name,
+            channel=channel,
+            support_sub=support_sub,
+            stream_type=stream_type,
+            start_year=start_time.year,
+            start_month=start_time.month,
+            start_day=start_time.day,
+            start_hour=start_time.hour,
+            start_minute=start_time.minute,
+            start_second=start_time.second,
+        )
+
+        accepted_cmd_id: int = 0
+        full_mess_id: int = 0
+        q: asyncio.Queue | None = None
+
+        for try_cmd_id in (5, 8):
+            q, full_mess_id = await self._send_streaming(try_cmd_id, channel, body)
+            try:
+                status_code, data_chunk, len_hdr, payload = await asyncio.wait_for(q.get(), timeout=TIMEOUT)
+            except asyncio.TimeoutError:
+                if self._protocol is not None:
+                    self._protocol.streaming_queues.pop((try_cmd_id, full_mess_id), None)
+                raise ReolinkTimeoutError(f"Baichuan host {self._host}: timeout waiting for replay start (MSG {try_cmd_id})")
+
+            if status_code == 400:
+                if self._protocol is not None:
+                    self._protocol.streaming_queues.pop((try_cmd_id, full_mess_id), None)
+                if try_cmd_id == 8:
+                    raise ReolinkError(f"Baichuan host {self._host}: replay start rejected by camera (MSG 5 and MSG 8 both returned 400)")
+                _LOGGER.debug("Baichuan host %s: replay MSG 5 rejected (400), trying MSG 8", self._host)
+                continue
+
+            if status_code != 200:
+                if self._protocol is not None:
+                    self._protocol.streaming_queues.pop((try_cmd_id, full_mess_id), None)
+                raise ReolinkError(f"Baichuan host {self._host}: unexpected replay start response code {status_code} from MSG {try_cmd_id}")
+
+            _LOGGER.debug("Baichuan host %s: replay accepted (200) via MSG %s", self._host, try_cmd_id)
+            accepted_cmd_id = try_cmd_id
+            break
+
+        assert q is not None
+
+        STREAM_TIMEOUT = 15.0
+        packet_count = 0
+        try:
+            while True:
+                try:
+                    status_code, data_chunk, len_hdr, payload = await asyncio.wait_for(q.get(), timeout=STREAM_TIMEOUT)
+                except asyncio.TimeoutError:
+                    _LOGGER.debug("Baichuan host %s: replay stream: no data for %.0fs, stopping", self._host, STREAM_TIMEOUT)
+                    break
+
+                if status_code in (300, 331):
+                    _LOGGER.debug("Baichuan host %s: replay stream ended (response %s)", self._host, status_code)
+                    break
+
+                packet_count += 1
+
+                # Continuation packets (no extension, payload_offset=0) carry plaintext video data in the body.
+                # Packets with an extension (payload non-empty) may have an encrypted region.
+                binary: bytes = payload if payload else data_chunk[len_hdr:]
+                if not binary:
+                    continue
+
+                # First packet: 32-byte replay header — skip it
+                if packet_count == 1 and len(binary) == 32:
+                    _LOGGER.debug("Baichuan host %s: replay: skipping 32-byte stream header", self._host)
+                    continue
+
+                if payload and self._aes_key is not None:
+                    # Packet has an extension section — try XML-based decryption first (encryptLen in Extension XML).
+                    enc_pos = 0
+                    enc_len: int | None = None
+                    xml_enc = data_chunk[len_hdr:]
+                    if xml_enc:
+                        try:
+                            xml_str = self._aes_decrypt(xml_enc, data_chunk[:len_hdr])
+                            if xml_str.startswith("<?xml"):
+                                root = XML.fromstring(xml_str.lower())
+                                enc_len = self._get_value_from_xml_element(root, "encryptlen", int)
+                                enc_pos = self._get_value_from_xml_element(root, "encryptpos", int) or 0
+                        except Exception:
+                            pass
+
+                    if enc_len is None or enc_len == 0:
+                        # Extension was not parseable XML (e.g. binary struct on E1) — probe the payload.
+                        # Per neolink: the first 32 bytes of the payload are typically the encrypted region.
+                        if len(payload) >= 8:
+                            probe = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128).decrypt(payload[:8])
+                            if probe[:4] == b"00dc":
+                                enc_len = 32
+                                enc_pos = 0
+
+                    if enc_len and enc_len > 0:
+                        end = enc_pos + enc_len
+                        decrypted_region = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128).decrypt(payload[enc_pos:end])
+                        binary = payload[:enc_pos] + decrypted_region + payload[end:]
+
+                if packet_count <= 3 or packet_count % 100 == 0:
+                    _LOGGER.debug("Baichuan host %s: replay pkt %s: %s bytes", self._host, packet_count, len(binary))
+
+                yield binary
+
+        finally:
+            if self._protocol is not None:
+                self._protocol.streaming_queues.pop((accepted_cmd_id, full_mess_id), None)
+            stop_xml = xmls.ReplayStop.format(channel=channel, name=file_name)
+            try:
+                await self.send(cmd_id=7, channel=channel, body=stop_xml)
+                _LOGGER.debug("Baichuan host %s: replay stop (MSG 7) sent", self._host)
+            except Exception as err:
+                _LOGGER.debug("Baichuan host %s: replay stop (MSG 7) error: %s", self._host, err)
 
     @property
     def events_active(self) -> bool:

@@ -190,6 +190,35 @@ SetScene = """
 </sceneModeCfg>
 </body>"""
 
+DayRecords = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<DayRecords version="1.1">
+<startTime>
+<year>{year}</year>
+<month>{month}</month>
+<day>1</day>
+<hour>0</hour>
+<minute>0</minute>
+<second>0</second>
+</startTime>
+<endTime>
+<year>{year}</year>
+<month>{month}</month>
+<day>{last_day}</day>
+<hour>23</hour>
+<minute>59</minute>
+<second>59</second>
+</endTime>
+<DayRecordList>
+<DayRecord>
+<index>0</index>
+<channelId>{channel}</channelId>
+</DayRecord>
+</DayRecordList>
+</DayRecords>
+</body>"""
+
 FileInfoListOpen = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
@@ -199,7 +228,7 @@ FileInfoListOpen = """
 <searchAITrack>1</searchAITrack>
 <channelId>{channel}</channelId>
 <logicChnBitmap>255</logicChnBitmap>
-<streamType>mainStream</streamType>
+<streamType>{stream_type}</streamType>
 <recordType>manual, sched, io, md, people, face, vehicle, dog_cat, visitor, other, package</recordType>
 <startTime>
 <year>{start_year}</year>
@@ -499,4 +528,51 @@ PtzGuard = """
 <needSetPos>{set_pos}</needSetPos>
 <imageName></imageName>
 </PtzGuard>
+</body>"""
+
+ReplaySeek = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<ReplaySeek version="1.1">
+<channelId>{channel}</channelId>
+<seq>{seq}</seq>
+<seekTime>
+<year>{year}</year>
+<month>{month}</month>
+<day>{day}</day>
+<hour>{hour}</hour>
+<minute>{minute}</minute>
+<second>{second}</second>
+</seekTime>
+</ReplaySeek>
+</body>"""
+
+ReplayStart = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<uid>0</uid>
+<name>{name}</name>
+<channelId>{channel}</channelId>
+<supportSub>{support_sub}</supportSub>
+<streamType>{stream_type}</streamType>
+<startTime>
+<year>{start_year}</year>
+<month>{start_month}</month>
+<day>{start_day}</day>
+<hour>{start_hour}</hour>
+<minute>{start_minute}</minute>
+<second>{start_second}</second>
+</startTime>
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+ReplayStop = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<channelId>{channel}</channelId>
+<name>{name}</name>
+</FileInfo>
+</FileInfoList>
 </body>"""

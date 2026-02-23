@@ -9,6 +9,7 @@ import logging
 import re
 import ssl
 import traceback
+from collections.abc import AsyncIterator
 from datetime import date, datetime, timedelta, tzinfo
 from io import BytesIO
 from math import ceil
@@ -5865,6 +5866,9 @@ class Host:
         if channel not in self._stream_channels:
             raise InvalidParameterError(f"get_recording_days: no camera connected to channel '{channel}'")
 
+        if self.baichuan_only:
+            return await self.baichuan.search_recording_days_bc(channel, year, month)
+
         import calendar
 
         last_day = calendar.monthrange(year, month)[1]
@@ -5921,6 +5925,13 @@ class Host:
         if channel not in self._stream_channels:
             raise InvalidParameterError(f"get_recordings_for_day: no camera connected to channel '{channel}'")
 
+        if self.baichuan_only:
+            vod_files = await self.baichuan.search_recordings_for_day_bc(channel, day, stream)
+            if trigger is not None:
+                vod_files = [f for f in vod_files if f.bc_triggers is not None and bool(f.bc_triggers & trigger)]
+            vod_files.sort(key=lambda f: f.start_time)
+            return vod_files
+
         start = datetime(day.year, day.month, day.day, 0, 0, 0)
         end = datetime(day.year, day.month, day.day, 23, 59, 59)
 
@@ -5939,6 +5950,41 @@ class Host:
 
         unique.sort(key=lambda f: f.start_time)
         return unique
+
+    def stream_recording_bc(
+        self,
+        channel: int,
+        file_name: str,
+        start_time: datetime,
+        stream_type: str = "mainStream",
+    ) -> AsyncIterator[tuple[int, bytes]]:
+        """Async generator: stream a VOD recording via the Baichuan protocol.
+
+        Yields ``(microseconds, h264_bytes)`` tuples for each video frame.
+        ``microseconds`` is the camera-relative timestamp (u32, wraps at ~71 min).
+        ``h264_bytes`` is the raw H.264 Annex-B NAL data for the frame.
+
+        Use this for baichuan_only cameras where HTTP download is unavailable.
+
+        Parameters
+        ----------
+        channel:
+            Camera channel index.
+        file_name:
+            Recording filename from ``get_recordings_for_day()``.
+        start_time:
+            Recording start time (from ``VOD_file.start_time``).
+        stream_type:
+            ``"mainStream"`` (default) or ``"subStream"``.
+
+        Usage::
+
+            async for microseconds, h264_bytes in host.stream_recording_bc(ch, name, start_time):
+                ...
+        """
+        return self.baichuan.parse_bcmedia_frames(
+            self.baichuan.stream_replay_bc(channel, file_name, start_time, stream_type)
+        )
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
         command = body[0]["cmd"]
