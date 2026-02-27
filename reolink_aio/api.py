@@ -1825,7 +1825,7 @@ class Host:
                             self._capabilities[channel].add("auto_focus")
                 if ptz_ver in [2, 3, 5]:
                     self._capabilities[channel].add("tilt")
-                if ptz_ver in [2, 3, 5, 7]:
+                if ptz_ver in [2, 3, 5, 6, 7]:
                     self._capabilities[channel].add("pan_tilt")
                     self._capabilities[channel].add("pan")
                     if self.api_version("ptzPreset", channel) > 0:
