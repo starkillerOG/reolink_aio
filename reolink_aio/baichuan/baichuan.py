@@ -1423,9 +1423,9 @@ class Baichuan:
             ptz_ver = self.api_version("ptzType", channel)
             if ptz_ver != 0:
                 self.capabilities[channel].add("ptz")
-                if ptz_ver in [2, 3, 5]:
+                if ptz_ver in [2, 3, 5, 6]:
                     self.capabilities[channel].add("tilt")
-                if ptz_ver in [2, 3, 5, 7]:
+                if ptz_ver in [2, 3, 5, 6, 7]:
                     self.capabilities[channel].add("pan_tilt")
                     self.capabilities[channel].add("pan")
                     if self.api_version("ptzPreset", channel) > 0:
