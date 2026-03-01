@@ -33,6 +33,13 @@ CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </Extension>
 """
 
+CHANNEL_BINARY_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<binaryData>1</binaryData>
+<channelId>{channel}</channelId>
+</Extension>
+"""
+
 DingDongOpt_1_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
@@ -396,12 +403,6 @@ GetRule = """
 <IFTTTList version="1.1">
 <id>{rule_id}</id>
 </IFTTTList>
-</body>"""
-
-TalkAbilityGet = """<?xml version="1.0" encoding="UTF-8" ?>
-<body>
-<TalkAbility version="1.1">
-</TalkAbility>
 </body>"""
 
 TalkConfigSet = """<?xml version="1.0" encoding="UTF-8" ?>
