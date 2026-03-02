@@ -2424,6 +2424,12 @@ class Host:
 
         body = []
         channels = []
+        for channel in self._channels:
+            # Put the GetChnTypeInfo check in the first chunck to check camera online
+            ch_body = [{"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}}]
+            body.extend(ch_body)
+            channels.extend([channel] * len(ch_body))
+
         for channel in self._stream_channels:
             ch_body = [
                 {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
@@ -2434,7 +2440,6 @@ class Host:
 
         for channel in self._channels:
             ch_body = [
-                {"cmd": "GetChnTypeInfo", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
                 {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
@@ -6187,10 +6192,15 @@ class Host:
                 cmd_body = body[idx]
                 cmd = cmd_body.get("cmd", "")
                 rsp_code = cmd_data.get("error", {}).get("rspCode", 0)
+                args = cmd_body.get("param", {})
+                channel = args.get("channel")
+                if channel is not None and not self.camera_online(channel) and cmd != "GetChnTypeInfo":
+                    # GetChnTypeInfo needed to check camera_online
+                    _LOGGER.debug("Host %s: skipping baichuan fallback for %s of channel %s because it is offline", self._host, cmd, channel)
+                    continue
                 # check if baichuan has a fallback function
                 if cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
                     func = self.baichuan.cmd_funcs[cmd]
-                    args = cmd_body.get("param", {})
                     coroutines.append((idx, cmd, func(**args)))
                 elif rsp_code in [-12, -13, -17]:
                     # add to the list of cmds to retry
