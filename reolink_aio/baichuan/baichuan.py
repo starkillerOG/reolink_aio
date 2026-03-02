@@ -1704,7 +1704,7 @@ class Baichuan:
             for info_ch in info.findall("subModule"):
                 channel = self._get_channel_from_xml_element(info_ch)
                 if channel is None:
-                    raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
+                    continue
                 ability = self._get_value_from_xml_element(info_ch, "abilityValue")
                 if ability is None:
                     raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
