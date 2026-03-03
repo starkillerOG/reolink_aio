@@ -3438,7 +3438,7 @@ class Host:
             return url
 
         # return the first tried URL (based on camera capabilities as above)
-        _LOGGER.error("Host %s:%s, could not verify a working RTSP url for channel %s, stream %s", self._host, self._port, channel, stream)
+        _LOGGER.warning("Host %s:%s, could not verify a working RTSP url for channel %s, stream %s", self._host, self._port, channel, stream)
         return self._rtsp_verified[channel][stream]
 
     async def get_stream_source(self, channel: int, stream: Optional[str] = None, check: bool = True) -> Optional[str]:
