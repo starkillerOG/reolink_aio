@@ -37,7 +37,7 @@ class PortType(Enum):
 
 
 def decrypt_baichuan(buf: bytes, offset: int) -> str:
-    """Decrypt a received message using the baichuan protocol"""
+    """Decrypt a received message using the baichuan TCP protocol"""
     offset = offset % 256
     decrypted = ""
     for idx, byte in enumerate(buf):
@@ -48,7 +48,7 @@ def decrypt_baichuan(buf: bytes, offset: int) -> str:
 
 
 def encrypt_baichuan(buf: str, offset: int) -> bytes:
-    """Encrypt a message using the baichuan protocol before sending"""
+    """Encrypt a message using the baichuan TCP protocol before sending"""
     if offset > 255:
         raise InvalidParameterError(f"Baichuan encryption offset {offset} can not be larger than 255")
 
@@ -61,9 +61,15 @@ def encrypt_baichuan(buf: str, offset: int) -> bytes:
 
 
 def decrypt_udp_baichuan(buf: bytes) -> str:
-    """Decrypt a received message using the UDP baichuan protocol"""
+    """Decrypt a received message using the baichuan UDP protocol"""
     # Use cycle to repeat the UDP_KEY indefinetly and XOR with the buffer
     return bytes(byte ^ k_byte for byte, k_byte in zip(buf, cycle(UDP_KEY))).decode("utf8")
+
+
+def encrypt_udp_baichuan(buf: str) -> bytes:
+    """Encrypt a message using the baichuan UDP protocol before sending"""
+    # Use cycle to repeat the UDP_KEY indefinetly and XOR with the buffer
+    return bytes(byte ^ k_byte for byte, k_byte in zip(buf.encode("utf8"), cycle(UDP_KEY)))
 
 
 def md5_str_modern(string: str) -> str:
