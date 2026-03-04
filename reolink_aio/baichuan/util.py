@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Callable
 from enum import Enum
 from hashlib import md5
+from itertools import cycle
 
 from ..exceptions import InvalidParameterError, UnexpectedDataError
 
@@ -11,6 +12,10 @@ DEFAULT_BC_PORT = 9000
 HEADER_MAGIC = "f0debc0a"
 
 XML_KEY = [0x1F, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0xFF]
+UDP_KEY = [
+    0x40, 0x40, 0x2D, 0x1F, 0x82, 0x83, 0x6C, 0x5A, 0x40, 0x32, 0x17, 0x38, 0x4F, 0x67, 0x71, 0x82,
+    0x20, 0x1E, 0x3F, 0x86, 0xCD, 0xFB, 0xC6, 0xA5, 0xA9, 0xE5, 0x71, 0x83, 0x9A, 0xD7, 0xF2, 0x17,
+]  # fmt: skip
 AES_IV = b"0123456789abcdef"
 
 
@@ -53,6 +58,12 @@ def encrypt_baichuan(buf: str, offset: int) -> bytes:
         byte = ord(char) ^ key ^ (offset)
         encrypt += byte.to_bytes(1, "big")
     return encrypt
+
+
+def decrypt_udp_baichuan(buf: bytes) -> str:
+    """Decrypt a received message using the UDP baichuan protocol"""
+    # Use cycle to repeat the UDP_KEY indefinetly and XOR with the buffer
+    return bytes(byte ^ k_byte for byte, k_byte in zip(buf, cycle(UDP_KEY))).decode("utf8")
 
 
 def md5_str_modern(string: str) -> str:
