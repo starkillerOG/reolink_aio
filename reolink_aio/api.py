@@ -921,10 +921,10 @@ class Host:
         return self._whiteled_settings.get(channel, {}).get("state", 0) == 1
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
-        if channel not in self._whiteled_settings:
-            return None
-
-        return self._whiteled_settings[channel].get("mode")
+        mode = self._whiteled_settings.get(channel, {}).get("mode")
+        if mode == 6:
+            return SpotlightModeEnum.adaptive.value  # Elite Floodlight WiFi uses 6 as adaptive mode, sending 5 will also set it to 6, so no need for a change there.
+        return mode
 
     def whiteled_mode_list(self, channel: int) -> list[str]:
         mode_values = [SpotlightModeEnum.off]
