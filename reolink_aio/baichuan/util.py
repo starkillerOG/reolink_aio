@@ -72,6 +72,23 @@ def encrypt_udp_baichuan(buf: str) -> bytes:
     return bytes(byte ^ k_byte for byte, k_byte in zip(buf.encode("utf8"), cycle(UDP_KEY)))
 
 
+def calc_crc(data: bytes) -> bytes:
+    """
+    CRC32 checksum for the baichuan UDP protocol
+    Poly=0xEDB88320, Init=0x00, XorOut=0x00
+    This is the little endian variant of the Poly=0x04C11DB7
+    """
+    crc = 0x00
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xEDB88320
+            else:
+                crc >>= 1
+    return crc.to_bytes(4, byteorder="little")
+
+
 def md5_str_modern(string: str) -> str:
     """Get the MD5 hex hash of a string according to the baichuan protocol"""
     enc_str = string.encode("utf8")
