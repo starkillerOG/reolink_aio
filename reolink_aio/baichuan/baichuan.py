@@ -1444,6 +1444,10 @@ class Baichuan:
                     if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
                         self.capabilities[channel].add("ptz_speed")
 
+                if self.api_version("supportPtz3DLocation", channel) > 0:
+                    self.capabilities[channel].add("ptz_3d_zoom")
+
+
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
         # Stream capabilities
@@ -2305,6 +2309,22 @@ class Baichuan:
         for cruise in root.findall(".//cruising"):
             cruising = cruising or cruise.text == "1"
         self._ptz_patrol_cruising[channel] = cruising
+
+    @http_cmd("Set3DPos")
+    async def set_ptz_3d_zoom(self, **kwargs) -> None:
+        params = kwargs.get("3DPos", kwargs)
+        channel = params.get("channel", 0)
+        xml = xmls.Ptz3DLocation.format(
+            channel=channel,
+            pos_x=params["posX"],
+            pos_y=params["posY"],
+            pos_width=params["posWidth"],
+            pos_height=params["posHeight"],
+            speed=params.get("speed", 20),
+            width=params["width"],
+            height=params["height"],
+        )
+        await self.send(cmd_id=445, channel=channel, body=xml)
 
     @http_cmd("PtzCheck")
     async def ptz_callibrate(self, channel: int) -> None:
