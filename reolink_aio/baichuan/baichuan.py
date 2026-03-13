@@ -1444,6 +1444,9 @@ class Baichuan:
                     if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
                         self.capabilities[channel].add("ptz_speed")
 
+                if self.api_version("supportPtz3DLocation", channel) > 0:
+                    self.capabilities[channel].add("ptz_3d_zoom")
+
 
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
