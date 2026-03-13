@@ -1853,7 +1853,7 @@ class Host:
                     if warnings:
                         _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
 
-            if self.api_version("supportPtz3DLocation", channel) > 0:
+            if ptz_ver != 0 and not self.baichuan_only and self.api_version("supportPtz3DLocation", channel) > 0:
                 self._capabilities[channel].add("ptz_3d_zoom")
 
             if self.api_version("aiTrack", channel) > 0:
@@ -4489,6 +4489,15 @@ class Host:
                     "provide stream_width and stream_height explicitly"
                 )
 
+        for name, val in [("pos_x", pos_x), ("pos_y", pos_y), ("pos_width", pos_width), ("pos_height", pos_height)]:
+            if not isinstance(val, int):
+                raise InvalidParameterError(f"set_ptz_3d_zoom: {name} value {val} is not an integer")
+        if pos_width <= 0 or pos_height <= 0:
+            raise InvalidParameterError(f"set_ptz_3d_zoom: pos_width ({pos_width}) and pos_height ({pos_height}) must be positive")
+        if not (0 <= pos_x <= stream_width):
+            raise InvalidParameterError(f"set_ptz_3d_zoom: pos_x ({pos_x}) out of range 0..{stream_width}")
+        if not (0 <= pos_y <= stream_height):
+            raise InvalidParameterError(f"set_ptz_3d_zoom: pos_y ({pos_y}) out of range 0..{stream_height}")
         if not 1 <= speed <= 64:
             raise InvalidParameterError(f"set_ptz_3d_zoom: speed {speed} not in range 1..64")
 
