@@ -2310,6 +2310,21 @@ class Baichuan:
             cruising = cruising or cruise.text == "1"
         self._ptz_patrol_cruising[channel] = cruising
 
+    @http_cmd("Set3DPos")
+    async def set_ptz_3d_zoom(self, channel: int, **kwargs) -> None:
+        params = kwargs.get("3DPos", {})
+        xml = xmls.Ptz3DZoom.format(
+            channel=params.get("channel", channel),
+            pos_x=params["posX"],
+            pos_y=params["posY"],
+            pos_width=params["posWidth"],
+            pos_height=params["posHeight"],
+            speed=params.get("speed", 20),
+            width=params["width"],
+            height=params["height"],
+        )
+        await self.send(cmd_id=445, channel=channel, body=xml)
+
     @http_cmd("PtzCheck")
     async def ptz_callibrate(self, channel: int) -> None:
         await self.send(cmd_id=341, channel=channel)
