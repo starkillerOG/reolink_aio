@@ -451,10 +451,10 @@ PtzPreset = """
 </PtzPreset>
 </body>"""
 
-Ptz3DZoom = """
+Ptz3DLocation = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
-<Ptz3DZoom version="1.1">
+<Ptz3DLocation version="1.1">
 <channelId>{channel}</channelId>
 <posX>{pos_x}</posX>
 <posY>{pos_y}</posY>
@@ -463,7 +463,7 @@ Ptz3DZoom = """
 <speed>{speed}</speed>
 <width>{width}</width>
 <height>{height}</height>
-</Ptz3DZoom>
+</Ptz3DLocation>
 </body>"""
 
 PtzGuard = """

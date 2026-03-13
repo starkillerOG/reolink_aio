@@ -2311,10 +2311,11 @@ class Baichuan:
         self._ptz_patrol_cruising[channel] = cruising
 
     @http_cmd("Set3DPos")
-    async def set_ptz_3d_zoom(self, channel: int, **kwargs) -> None:
-        params = kwargs.get("3DPos", {})
-        xml = xmls.Ptz3DZoom.format(
-            channel=params.get("channel", channel),
+    async def set_ptz_3d_zoom(self, **kwargs) -> None:
+        params = kwargs.get("3DPos", kwargs)
+        channel = params.get("channel", 0)
+        xml = xmls.Ptz3DLocation.format(
+            channel=channel,
             pos_x=params["posX"],
             pos_y=params["posY"],
             pos_width=params["posWidth"],
