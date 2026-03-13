@@ -284,6 +284,7 @@ class Host:
         self._ptz_patrol_settings: dict[int, dict] = {}
         self._ptz_guard_settings: dict[int, dict] = {}
         self._ptz_position: dict[int, dict] = {}
+        self._ptz_3d_zoom_range: dict[int, dict] = {}
         self._email_settings: dict[int, dict] = {}
         self._ir_settings: dict[int, dict] = {}
         self._status_led_settings: dict[int, dict] = {}
@@ -1852,6 +1853,9 @@ class Host:
                     if warnings:
                         _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
 
+            if self.api_version("supportPtz3DLocation", channel) > 0:
+                self._capabilities[channel].add("ptz_3d_zoom")
+
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].add("auto_track")
                 track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
@@ -2002,6 +2006,8 @@ class Host:
                 ch_body = [{"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzCurPos" and self.supported(channel, "ptz_position"):
                 ch_body = [{"cmd": "GetPtzCurPos", "action": 0, "param": {"PtzCurPos": {"channel": channel}}}]
+            elif cmd == "Get3DPos" and self.supported(channel, "ptz_3d_zoom"):
+                ch_body = [{"cmd": "Get3DPos", "action": 1, "param": {"channel": channel}}]
             elif cmd == "GetAiCfg" and self.supported(channel, "auto_track"):
                 ch_body = [{"cmd": "GetAiCfg", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzTraceSection" and self.supported(channel, "auto_track_limit"):
@@ -2479,6 +2485,8 @@ class Host:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "ptz_3d_zoom"):
+                ch_body.append({"cmd": "Get3DPos", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
             if self.api_version("mask", channel) > 0 or self.supported(channel, "privacy_mask_basic"):
@@ -4117,6 +4125,9 @@ class Host:
                 elif data["cmd"] == "GetAutoFocus":
                     self._auto_focus_settings[channel] = data["value"]["AutoFocus"]
 
+                elif data["cmd"] == "Get3DPos":
+                    self._ptz_3d_zoom_range[channel] = data["value"]["3d_pos"]
+
                 elif data["cmd"] == "GetZoomFocus":
                     zoom = self._zoom_focus_settings.setdefault(channel, {}).setdefault("zoom", {})
                     focus = self._zoom_focus_settings[channel].setdefault("focus", {})
@@ -4422,6 +4433,85 @@ class Host:
         ]
 
         await self.send_setting(body, getcmd="GetZoomFocus", wait_before_get=3)
+
+    def ptz_3d_zoom_range(self, channel: int) -> dict:
+        """Get the stream resolutions for 3D zoom (from Get3DPos).
+
+        Returns dict with mainStream/subStream/extStream, each containing width/height.
+        These values are used as the width/height parameters when calling set_ptz_3d_zoom.
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"ptz_3d_zoom_range: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "ptz_3d_zoom"):
+            raise NotSupportedError(f"ptz_3d_zoom_range: 3D zoom on camera {self.camera_name(channel)} is not available")
+
+        return self._ptz_3d_zoom_range.get(channel, {})
+
+    async def set_ptz_3d_zoom(
+        self,
+        channel: int,
+        pos_x: int,
+        pos_y: int,
+        pos_width: int,
+        pos_height: int,
+        stream_width: int | None = None,
+        stream_height: int | None = None,
+        speed: int = 20,
+    ) -> None:
+        """Send a 3D zoom (area zoom) command to the PTZ camera.
+
+        The camera will pan, tilt, and zoom in a single motion to frame the specified rectangle.
+
+        Parameters:
+        pos_x (int): X coordinate of the center of the zoom box, in stream pixel coordinates.
+        pos_y (int): Y coordinate of the center of the zoom box, in stream pixel coordinates.
+        pos_width (int): Width of the zoom box in pixels. Smaller values = more zoom.
+        pos_height (int): Height of the zoom box in pixels. Smaller values = more zoom.
+        stream_width (int): Width of the video stream (default: mainStream width from Get3DPos).
+        stream_height (int): Height of the video stream (default: mainStream height from Get3DPos).
+        speed (int): Movement speed, 1-64 (default: 20).
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_ptz_3d_zoom: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "ptz_3d_zoom"):
+            raise NotSupportedError(f"set_ptz_3d_zoom: 3D zoom on camera {self.camera_name(channel)} is not available")
+
+        if stream_width is None or stream_height is None:
+            range_data = self._ptz_3d_zoom_range.get(channel, {})
+            main_stream = range_data.get("mainStream", {})
+            if stream_width is None:
+                stream_width = main_stream.get("width")
+            if stream_height is None:
+                stream_height = main_stream.get("height")
+            if stream_width is None or stream_height is None:
+                raise InvalidParameterError(
+                    f"set_ptz_3d_zoom: stream resolution not available for camera {self.camera_name(channel)}, "
+                    "provide stream_width and stream_height explicitly"
+                )
+
+        if not 1 <= speed <= 64:
+            raise InvalidParameterError(f"set_ptz_3d_zoom: speed {speed} not in range 1..64")
+
+        body: typings.reolink_json = [
+            {
+                "cmd": "Set3DPos",
+                "action": 0,
+                "param": {
+                    "3DPos": {
+                        "channel": channel,
+                        "posX": pos_x,
+                        "posY": pos_y,
+                        "posWidth": pos_width,
+                        "posHeight": pos_height,
+                        "speed": speed,
+                        "width": stream_width,
+                        "height": stream_height,
+                    }
+                },
+            }
+        ]
+
+        await self.send_setting(body)
 
     def ptz_presets(self, channel: int) -> dict:
         if channel not in self._ptz_presets:
