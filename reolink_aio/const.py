@@ -1,5 +1,7 @@
 """Constants for Reolink"""
 
+TIMEOUT = 30  # seconds
+
 WAKING_COMMANDS = {
     "GetEnc",
     "GetWhiteLed",

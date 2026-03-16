@@ -1,13 +1,114 @@
 """Base TCP/UDP protocol and transport for the Reolink Baichuan API"""
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from abc import abstractmethod
 from collections.abc import Callable
 from time import time as time_now
 
+from ..const import TIMEOUT
 from ..exceptions import ReolinkConnectionError, ReolinkError
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class BaichuanBaseConnection:
+    """Reolink Baichuan base connection."""
+
+    def __init__(self, host: str, port: int, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+        self._loop = asyncio.get_event_loop()
+        self._host = host
+        self._port = port
+        self._push_callback = push_callback
+        self._close_callback = close_callback
+
+        # Connection
+        self._mutex = asyncio.Lock()
+        self._transport: asyncio.BaseTransport | None = None
+        self._protocol: BaichuanBaseClientProtocol | None = None
+
+    async def connect(self):
+        """Initialize the protocol and make the connection if needed."""
+        if self._transport is not None and self._protocol is not None and not self._transport.is_closing():
+            return  # connection is open
+
+        if self._protocol is not None and self._protocol.receive_futures:
+            # Ensure all previous receive futures get the change to throw their exceptions
+            _LOGGER.debug("Baichuan host %s: waiting for previous receive futures to finish before opening a new connection", self._host)
+            try:
+                async with asyncio.timeout(TIMEOUT + 5):
+                    while self._protocol.receive_futures:
+                        await asyncio.sleep(0)
+            except asyncio.TimeoutError:
+                _LOGGER.warning("Baichuan host %s: Previous receive futures did not finish before opening a new connection", self._host)
+
+        try:
+            async with asyncio.timeout(TIMEOUT):
+                async with self._mutex:
+                    if self._transport is not None and self._protocol is not None and not self._transport.is_closing():
+                        return  # connection already opened in the meantime
+
+                    self._transport, self._protocol = await self._create_connection()
+        except asyncio.TimeoutError as err:
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
+        except (ConnectionResetError, OSError) as err:
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
+
+    @abstractmethod
+    async def _create_connection(self) -> tuple[asyncio.BaseTransport, BaichuanBaseClientProtocol]:
+        """create the connection"""
+
+    @abstractmethod
+    def _write(self, data: bytes) -> None:
+        """Write data over the transport"""
+
+    async def write(self, data: bytes) -> None:
+        """Write data over the connection"""
+        async with self._mutex:
+            self._write(data)
+
+    async def close(self) -> None:
+        """close the connection and wait untill close is complete"""
+        if self._transport is not None and self._protocol is not None:
+            self._transport.close()
+            await self._protocol.close_future
+
+    async def wait_for_simultaneous_send(self, cmd_id: int, full_mess_id: int) -> None:
+        # check for simultaneous cmd_ids with same full_mess_id
+        if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
+            try:
+                async with asyncio.timeout(TIMEOUT):
+                    try:
+                        await receive_future
+                    except Exception:
+                        pass
+                    while self.receive_futures.get(cmd_id, {}).get(full_mess_id) is not None:
+                        await asyncio.sleep(0.010)
+            except asyncio.TimeoutError as err:
+                raise ReolinkError(
+                    f"Baichuan host {self._host}: receive future is already set for cmd_id {cmd_id} "
+                    "and timeout waiting for it to finish, cannot receive multiple requests simultaneously"
+                ) from err
+
+    @property
+    def receive_futures(self) -> dict[int, dict[int, asyncio.Future]]:
+        if self._protocol is None:
+            return {}
+        return self._protocol.receive_futures
+
+    @property
+    def time_recv(self) -> float:
+        if self._protocol is None:
+            return 0
+        return self._protocol.time_recv
+
+    @property
+    def time_connect(self) -> float:
+        if self._protocol is None:
+            return time_now()
+        return self._protocol.time_connect
 
 
 class BaichuanBaseClientProtocol(asyncio.BaseProtocol):

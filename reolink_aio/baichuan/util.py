@@ -1,10 +1,13 @@
 """Reolink Baichuan constants and utility functions"""
 
 import asyncio
+import logging
 from collections.abc import Callable
 from enum import Enum
 from hashlib import md5
 from itertools import cycle
+from typing import Any, TypeVar, overload
+from xml.etree import ElementTree as XML
 
 from ..exceptions import InvalidParameterError, UnexpectedDataError
 
@@ -17,6 +20,10 @@ UDP_KEY = [
     0x863f1a2b, 0xa5c6f7d8, 0x8371e1b4, 0x17f2d3a5,
 ]  # fmt: skip
 AES_IV = b"0123456789abcdef"
+
+
+T = TypeVar("T")
+_LOGGER = logging.getLogger(__name__)
 
 
 class EncType(Enum):
@@ -106,6 +113,58 @@ def md5_str_modern(string: str) -> str:
     md5_hex = md5_bytes.hex()[0:31]
     md5_HEX = md5_hex.upper()
     return md5_HEX
+
+
+@overload
+def get_value_from_xml_element(xml_element: XML.Element, key: str) -> str | None: ...
+@overload
+def get_value_from_xml_element(xml_element: XML.Element, key: str, type_class: type[T]) -> T | None: ...
+@overload
+def get_value_from_xml_element(xml_element: XML.Element, key: str, type_class: type[T], recursive: bool) -> T | None: ...
+
+
+def get_value_from_xml_element(xml_element: XML.Element, key: str, type_class=str, recursive: bool = True):
+    """Get a value for a key in a xml element"""
+    xml_value = xml_element.find(f".//{key}" if recursive else key)
+    if xml_value is None:
+        return None
+    value: str | int | None = xml_value.text
+    if value is None:
+        return None
+    try:
+        if type_class == bool:
+            value = int(value)
+        return type_class(value)
+    except ValueError as err:
+        _LOGGER.debug(err)
+        return None
+
+
+def get_keys_from_xml(xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, type]], recursive: bool = True) -> dict[str, Any]:
+    """Get multiple keys from a xml and return as a dict"""
+    if isinstance(xml, str):
+        root = XML.fromstring(xml)
+    else:
+        root = xml
+    result: dict[str, Any] = {}
+    for key in keys:
+        value: str | int | None = get_value_from_xml_element(root, key, str, recursive)
+        if value is None:
+            continue
+        if isinstance(keys, dict):
+            new_key, type_class = keys[key]
+            if type_class == bool:
+                value = int(value)
+            result[new_key] = type_class(value)
+        else:
+            result[key] = value
+
+    return result
+
+
+def get_value_from_xml(xml: str, key: str) -> str | None:
+    """Get the value of a single key in a xml"""
+    return get_keys_from_xml(xml, [key]).get(key)
 
 
 async def _i_frame_to_jpeg_shielded(frame: bytes, ffmpeg: str) -> bytes:

@@ -1,17 +1,81 @@
 """UDP protocol and transport for the Reolink Baichuan API"""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from collections.abc import Callable
+from random import randint
+from socket import AF_INET, IPPROTO_UDP
 from time import time as time_now
 
 from ..exceptions import UnexpectedDataError
-from .base_protocol import BaichuanBaseClientProtocol
-from .util import calc_crc
+from .base_protocol import BaichuanBaseClientProtocol, BaichuanBaseConnection
+from .util import calc_crc, decrypt_udp_baichuan, encrypt_udp_baichuan
 
 HEADER_MAGIC_UDP_CON = "3acf872a"
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class BaichuanUdpConnection(BaichuanBaseConnection):
+    """Reolink Baichuan UDP connection."""
+
+    _transport: asyncio.DatagramTransport
+
+    def __init__(
+        self, host: str, port: int = 0, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None
+    ) -> None:
+        remote_port = 2015
+        super().__init__(host, remote_port, push_callback, close_callback)
+        self._local_port: int = port
+        self._udp_mess_id: int = randint(1000, 1000000)
+
+    async def _init_protocol(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
+        transport, protocol = await self._loop.create_datagram_endpoint(
+            lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback),
+            local_addr=("0.0.0.0", self._local_port),
+            reuse_port=False,
+            family=AF_INET,
+            proto=IPPROTO_UDP,
+        )
+
+        _, self._local_port = transport.get_extra_info("sockname")
+        _LOGGER.debug("Baichuan host %s: using local UDP port %s", self._host, self._local_port)
+        return transport, protocol
+
+    async def _create_connection(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
+        return await self._init_protocol()
+
+    async def send_udp(self, body: str) -> str:
+        self._udp_mess_id += 1
+        mess_id = self._udp_mess_id
+
+        payload = encrypt_udp_baichuan(body, mess_id)
+
+        mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
+        mess_len_bytes = len(payload).to_bytes(4, byteorder="little")
+        checksum = calc_crc(payload)
+
+        header = bytes.fromhex(HEADER_MAGIC_UDP_CON) + mess_len_bytes + bytes.fromhex("01000000") + mess_id_bytes + checksum
+
+        self.receive_futures.setdefault(-1, {})[mess_id] = self._loop.create_future()
+
+        _LOGGER.debug("Baichuan host %s:%s>%s: send UDP message: %s", self._host, self._local_port, self._port, body)
+        await self.write(header + payload)
+
+        recv_payload = await self.receive_futures[-1][mess_id]
+        self.receive_futures.get(-1, {}).pop(mess_id, None)
+        if not self.receive_futures.get(-1):
+            self.receive_futures.pop(-1, None)
+        
+        recv_mess = decrypt_udp_baichuan(recv_payload, mess_id)
+        _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, recv_mess)
+        return recv_mess
+
+    def _write(self, data: bytes) -> None:
+        """Write data over the transport"""
+        self._transport.sendto(data, (self._host, self._port))
 
 
 class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProtocol):
@@ -113,16 +177,18 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 return
 
             if receive_future is None or receive_future.done():
+                mess = decrypt_udp_baichuan(payload, rec_mess_id)
                 if self.receive_futures:
                     expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                     _LOGGER.debug(
-                        "Baichuan host %s: received unrequested UDP message with mess_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
+                        "Baichuan host %s: received unrequested UDP message with mess_id %s, while waiting on cmd_id%s, dropping and waiting for next data:\n%s",
                         self._host,
                         rec_mess_id,
                         expected_cmd_ids,
+                        mess,
                     )
                 else:
-                    _LOGGER.debug("Baichuan host %s: received unrequested UDP message with mess_id %s, dropping", self._host, rec_mess_id)
+                    _LOGGER.debug("Baichuan host %s: received unrequested UDP message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
                 return
 
             receive_future.set_result(payload)
