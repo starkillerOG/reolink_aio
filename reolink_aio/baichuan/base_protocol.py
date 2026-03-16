@@ -5,14 +5,7 @@ import logging
 from collections.abc import Callable
 from time import time as time_now
 
-from ..exceptions import (
-    ApiError,
-    InvalidContentTypeError,
-    ReolinkConnectionError,
-    ReolinkError,
-    UnexpectedDataError,
-)
-from .util import HEADER_MAGIC
+from ..exceptions import ReolinkConnectionError, ReolinkError
 
 _LOGGER = logging.getLogger(__name__)
 

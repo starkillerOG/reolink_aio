@@ -5,15 +5,9 @@ import logging
 from collections.abc import Callable
 from time import time as time_now
 
-from ..exceptions import (
-    ApiError,
-    InvalidContentTypeError,
-    ReolinkConnectionError,
-    ReolinkError,
-    UnexpectedDataError,
-)
-
+from ..exceptions import UnexpectedDataError
 from .base_protocol import BaichuanBaseClientProtocol
+from .util import calc_crc
 
 HEADER_MAGIC_UDP_CON = "3acf872a"
 
@@ -57,17 +51,15 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 self.parse_udp_connection()
             elif len(self._udp_data) < 4 and bytes.fromhex(HEADER_MAGIC_UDP_CON).startswith(self._data):
                 # do not clear self._data, wait for the rest of the data
-                _LOGGER.debug(
-                    "Baichuan host %s: received start of UDP magic header but less then 4 bytes, waiting for the rest", self._host
-                )
+                _LOGGER.debug("Baichuan host %s: received start of UDP magic header but less then 4 bytes, waiting for the rest", self._host)
                 return
             else:
-                LOGGER.debug("Baichuan host %s: received unknown magic header %s, dropping data", self._host, self._udp_data[0:4].hex())
+                _LOGGER.debug("Baichuan host %s: received unknown magic header %s, dropping data", self._host, self._udp_data[0:4].hex())
                 self._udp_data = b""
                 return
         except Exception as exc:
-            if f"parse_data" not in self._log_once:
-                self._log_once.append(f"parse_data")
+            if "parse_data" not in self._log_once:
+                self._log_once.append("parse_data")
                 header = self._udp_data[0:20].hex()
                 _LOGGER.exception("Baichuan host %s: error during parsing of received data, header %s: %s", self._host, header, str(exc))
             self._udp_data = b""
@@ -79,9 +71,9 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             _LOGGER.debug("Baichuan host %s: received start of header but less then 20 bytes, waiting for the rest", self._host)
             return
 
-        rec_len_body = int.from_bytes(self_udp_data[4:8], byteorder="little")
+        rec_len_body = int.from_bytes(self._udp_data[4:8], byteorder="little")
         rec_mess_id = int.from_bytes(self._udp_data[12:16], byteorder="little")
-        rec_checksum = int.from_bytes(self._udp_data[16:20], byteorder="little")
+        rec_checksum = self._udp_data[16:20]
 
         # check message length
         len_body = len(self._udp_data) - 20
@@ -107,10 +99,17 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             checksum = calc_crc(payload)
             if checksum != rec_checksum:
                 if receive_future is not None and not receive_future.done():
-                    exc = UnexpectedDataError(f"Baichuan host {self._host}: received message with header checksum {rec_checksum} and calculated checksum {checksum}")
+                    exc = UnexpectedDataError(
+                        f"Baichuan host {self._host}: received message with header checksum {rec_checksum.hex()} and calculated checksum {checksum.hex()}"
+                    )
                     receive_future.set_exception(exc)
                 else:
-                    _LOGGER.debug("Baichuan host %s: received unrequested message with header checksum %s and calculated checksum %s, dropping", self._host, rec_checksum, checksum)
+                    _LOGGER.debug(
+                        "Baichuan host %s: received unrequested message with header checksum %s and calculated checksum %s, dropping",
+                        self._host,
+                        rec_checksum.hex(),
+                        checksum.hex(),
+                    )
                 return
 
             if receive_future is None or receive_future.done():
@@ -123,16 +122,15 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                         expected_cmd_ids,
                     )
                 else:
-                    _LOGGER.debug("Baichuan host %s: received unrequested UDP message, dropping", self._host)
+                    _LOGGER.debug("Baichuan host %s: received unrequested UDP message with mess_id %s, dropping", self._host, rec_mess_id)
                 return
 
-            receive_future.set_result(payloay)
+            receive_future.set_result(payload)
         finally:
             # if multiple messages received, parse the next also
             if self._udp_data:
-                parse_udp_data();
+                self.parse_udp_data()
 
     def error_received(self, exc: Exception | None):
         """Error callback, normally packets are silently dropped by UDP"""
         _LOGGER.warning("Baichuan host %s: received UDP error %s", self._host, exc)
-
