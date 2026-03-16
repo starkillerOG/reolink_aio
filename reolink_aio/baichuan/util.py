@@ -13,8 +13,8 @@ HEADER_MAGIC = "f0debc0a"
 
 XML_KEY = [0x1F, 0x2D, 0x3C, 0x4B, 0x5A, 0x69, 0x78, 0xFF]
 UDP_KEY = [
-    0x40, 0x40, 0x2D, 0x1F, 0x82, 0x83, 0x6C, 0x5A, 0x40, 0x32, 0x17, 0x38, 0x4F, 0x67, 0x71, 0x82,
-    0x20, 0x1E, 0x3F, 0x86, 0xCD, 0xFB, 0xC6, 0xA5, 0xA9, 0xE5, 0x71, 0x83, 0x9A, 0xD7, 0xF2, 0x17,
+    0x1f2d3c4b, 0x5a6c7f8d, 0x38172e4b, 0x8271635a,
+    0x863f1a2b, 0xa5c6f7d8, 0x8371e1b4, 0x17f2d3a5,
 ]  # fmt: skip
 AES_IV = b"0123456789abcdef"
 
@@ -60,16 +60,26 @@ def encrypt_baichuan(buf: str, offset: int) -> bytes:
     return encrypt
 
 
-def decrypt_udp_baichuan(buf: bytes) -> str:
+def decrypt_udp_baichuan(buf: bytes, offset: int) -> str:
     """Decrypt a received message using the baichuan UDP protocol"""
     # Use cycle to repeat the UDP_KEY indefinetly and XOR with the buffer
-    return bytes(byte ^ k_byte for byte, k_byte in zip(buf, cycle(UDP_KEY))).decode("utf8")
+    key_bytes = []
+    for key_byte in UDP_KEY:
+        shift_k_byte = (key_byte + offset) & 0xFFFFFFFF  # chop to uint32 size
+        key_bytes.extend(shift_k_byte.to_bytes(4, "little"))
+
+    return bytes(byte ^ k_byte for byte, k_byte in zip(buf, cycle(key_bytes))).decode("utf8")
 
 
-def encrypt_udp_baichuan(buf: str) -> bytes:
+def encrypt_udp_baichuan(buf: str, offset: int) -> bytes:
     """Encrypt a message using the baichuan UDP protocol before sending"""
     # Use cycle to repeat the UDP_KEY indefinetly and XOR with the buffer
-    return bytes(byte ^ k_byte for byte, k_byte in zip(buf.encode("utf8"), cycle(UDP_KEY)))
+    key_bytes = []
+    for key_byte in UDP_KEY:
+        shift_k_byte = (key_byte + offset) & 0xFFFFFFFF  # chop to uint32 size
+        key_bytes.extend(shift_k_byte.to_bytes(4, "little"))
+
+    return bytes(byte ^ k_byte for byte, k_byte in zip(buf.encode("utf8"), cycle(key_bytes)))
 
 
 def calc_crc(data: bytes) -> bytes:
