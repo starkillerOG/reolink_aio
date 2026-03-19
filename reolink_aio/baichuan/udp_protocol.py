@@ -31,7 +31,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         self._local_port: int = port
         self._udp_mess_id: int = randint(1000, 1000000)
 
-    async def _init_protocol(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
+    async def _create_connection(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
         transport, protocol = await self._loop.create_datagram_endpoint(
             lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback),
             local_addr=("0.0.0.0", self._local_port),
@@ -43,9 +43,6 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         _, self._local_port = transport.get_extra_info("sockname")
         _LOGGER.debug("Baichuan host %s: using local UDP port %s", self._host, self._local_port)
         return transport, protocol
-
-    async def _create_connection(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
-        return await self._init_protocol()
 
     async def send_udp(self, body: str) -> str:
         self._udp_mess_id += 1
@@ -59,16 +56,10 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
         header = bytes.fromhex(HEADER_MAGIC_UDP_CON) + mess_len_bytes + bytes.fromhex("01000000") + mess_id_bytes + checksum
 
-        self.receive_futures.setdefault(-1, {})[mess_id] = self._loop.create_future()
+        cmd_id = -1
+        log_mess = f"Baichuan host {self._host}:{self._local_port}>{self._port}: send UDP message: {body}"
+        recv_payload, _, _ = await self.send(header + payload, cmd_id, mess_id, log_mess=log_mess)
 
-        _LOGGER.debug("Baichuan host %s:%s>%s: send UDP message: %s", self._host, self._local_port, self._port, body)
-        await self.write(header + payload)
-
-        recv_payload = await self.receive_futures[-1][mess_id]
-        self.receive_futures.get(-1, {}).pop(mess_id, None)
-        if not self.receive_futures.get(-1):
-            self.receive_futures.pop(-1, None)
-        
         recv_mess = decrypt_udp_baichuan(recv_payload, mess_id)
         _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, recv_mess)
         return recv_mess
@@ -191,7 +182,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                     _LOGGER.debug("Baichuan host %s: received unrequested UDP message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
                 return
 
-            receive_future.set_result(payload)
+            receive_future.set_result((payload, 0, b""))
         finally:
             # if multiple messages received, parse the next also
             if self._udp_data:

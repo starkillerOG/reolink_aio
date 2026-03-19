@@ -43,7 +43,6 @@ UDP_GET_UID_XML = """
 </P2P>
 """
 
-
 UDP_CONNECT_XML = """
 <P2P>
 <C2D_C>

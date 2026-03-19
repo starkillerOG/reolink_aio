@@ -265,55 +265,25 @@ class Baichuan:
         if TYPE_CHECKING:
             assert self._connection is not None
 
-        # check for simultaneous cmd_ids with same full_mess_id
-        await self._connection.wait_for_simultaneous_send(cmd_id, full_mess_id)
-
-        self._connection.receive_futures.setdefault(cmd_id, {})[full_mess_id] = self._loop.create_future()
-
+        log_mess = ""
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
-                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, body:\n%s", self._host, cmd_id, self._hide_password(ext + body))
+                log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, body:\n{self._hide_password(ext + body)}"
             else:
-                _LOGGER.debug("Baichuan host %s: writing cmd_id %s, without body", self._host, cmd_id)
+                log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, without body"
 
-        retrying = False
         try:
-            async with asyncio.timeout(TIMEOUT):
-                await self._connection.write(header + enc_body_bytes)
-                data, len_header, payload = await self._connection.receive_futures[cmd_id][full_mess_id]
+            data, len_header, payload = await self._connection.send(header + enc_body_bytes, cmd_id, full_mess_id, channel, log_mess)
         except ApiError as err:
             if retry <= 0 or err.rspCode != 400:
                 raise err
             _LOGGER.debug("%s, trying again in 1.5 s", str(err))
             await asyncio.sleep(1.5)  # give the battery cam time to wake
-            retrying = True
-        except asyncio.TimeoutError as err:
-            ch_str = f", ch {channel}" if channel is not None else ""
-            err_str = f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}{ch_str}"
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+        except (ReolinkTimeoutError, ReolinkConnectionError) as err:
             if retry <= 0 or cmd_id == 2:
-                raise ReolinkTimeoutError(err_str) from err
-            _LOGGER.debug("%s, trying again", err_str)
-            retrying = True
-        except (ConnectionResetError, OSError) as err:
-            ch_str = f", ch {channel}" if channel is not None else ""
-            err_str = f"Baichuan host {self._host}: Connection error during read/write of cmd_id {cmd_id}{ch_str}: {str(err)}"
-            if retry <= 0 or cmd_id == 2:
-                raise ReolinkConnectionError(err_str) from err
-            _LOGGER.debug("%s, trying again", err_str)
-            retrying = True
-        except asyncio.CancelledError:
-            _LOGGER.debug("Baichuan host %s: cmd_id %s mess_id %s got cancelled", self._host, cmd_id, full_mess_id)
-            raise
-        finally:
-            if self._connection is not None and (receive_future := self._connection.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
-                if not receive_future.done():
-                    receive_future.cancel()
-                self._connection.receive_futures[cmd_id].pop(full_mess_id, None)
-                if not self._connection.receive_futures[cmd_id]:
-                    self._connection.receive_futures.pop(cmd_id, None)
-
-        if retrying:
-            # needed because the receive_future first needs to be cleared.
+                raise
+            _LOGGER.debug("%s, trying again", err)
             return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
 
         # check full message id

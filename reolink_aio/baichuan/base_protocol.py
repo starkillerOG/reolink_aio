@@ -9,7 +9,7 @@ from collections.abc import Callable
 from time import time as time_now
 
 from ..const import TIMEOUT
-from ..exceptions import ReolinkConnectionError, ReolinkError
+from ..exceptions import ReolinkConnectionError, ReolinkError, ReolinkTimeoutError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,18 +64,14 @@ class BaichuanBaseConnection:
     def _write(self, data: bytes) -> None:
         """Write data over the transport"""
 
-    async def write(self, data: bytes) -> None:
-        """Write data over the connection"""
-        async with self._mutex:
-            self._write(data)
-
     async def close(self) -> None:
         """close the connection and wait untill close is complete"""
         if self._transport is not None and self._protocol is not None:
             self._transport.close()
             await self._protocol.close_future
 
-    async def wait_for_simultaneous_send(self, cmd_id: int, full_mess_id: int) -> None:
+    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> tuple:
+        """Send a message and wait for the response"""
         # check for simultaneous cmd_ids with same full_mess_id
         if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
             try:
@@ -92,8 +88,40 @@ class BaichuanBaseConnection:
                     "and timeout waiting for it to finish, cannot receive multiple requests simultaneously"
                 ) from err
 
+        # set the receive future
+        self.receive_futures.setdefault(cmd_id, {})[full_mess_id] = self._loop.create_future()
+
+        if log_mess:
+            _LOGGER.debug(log_mess)
+
+        try:
+            async with asyncio.timeout(TIMEOUT):
+                async with self._mutex:
+                    self._write(data)
+                response = await self.receive_futures[cmd_id][full_mess_id]
+        except asyncio.TimeoutError as err:
+            ch_str = f", ch {channel}" if channel is not None else ""
+            err_str = f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}{ch_str}"
+            raise ReolinkTimeoutError(err_str) from err
+        except (ConnectionResetError, OSError) as err:
+            ch_str = f", ch {channel}" if channel is not None else ""
+            err_str = f"Baichuan host {self._host}: Connection error during read/write of cmd_id {cmd_id}{ch_str}: {str(err)}"
+            raise ReolinkConnectionError(err_str) from err
+        except asyncio.CancelledError:
+            _LOGGER.debug("Baichuan host %s: cmd_id %s mess_id %s got cancelled", self._host, cmd_id, full_mess_id)
+            raise
+        finally:
+            if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
+                if not receive_future.done():
+                    receive_future.cancel()
+                self.receive_futures[cmd_id].pop(full_mess_id, None)
+                if not self.receive_futures[cmd_id]:
+                    self.receive_futures.pop(cmd_id, None)
+
+        return response
+
     @property
-    def receive_futures(self) -> dict[int, dict[int, asyncio.Future]]:
+    def receive_futures(self) -> dict[int, dict[int, asyncio.Future[tuple[bytes, int, bytes]]]]:
         if self._protocol is None:
             return {}
         return self._protocol.receive_futures
@@ -120,7 +148,7 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         self._data: bytes = b""
         self._data_chunk: bytes = b""
 
-        self.receive_futures: dict[int, dict[int, asyncio.Future]] = {}  # expected_cmd_id: rec_future
+        self.receive_futures: dict[int, dict[int, asyncio.Future[tuple[bytes, int, bytes]]]] = {}  # expected_cmd_id: rec_future
         self.close_future: asyncio.Future = loop.create_future()
         self._close_callback = close_callback
         self._push_callback = push_callback
