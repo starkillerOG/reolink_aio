@@ -13,6 +13,8 @@ from ..exceptions import ReolinkConnectionError, ReolinkError, ReolinkTimeoutErr
 
 _LOGGER = logging.getLogger(__name__)
 
+send_response_t = tuple[bytes, int, bytes]
+
 
 class BaichuanBaseConnection:
     """Reolink Baichuan base connection."""
@@ -70,7 +72,7 @@ class BaichuanBaseConnection:
             self._transport.close()
             await self._protocol.close_future
 
-    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> tuple:
+    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
         """Send a message and wait for the response"""
         # check for simultaneous cmd_ids with same full_mess_id
         if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
@@ -125,7 +127,7 @@ class BaichuanBaseConnection:
         return self._transport is not None and self._protocol is not None and not self._transport.is_closing()
 
     @property
-    def receive_futures(self) -> dict[int, dict[int, asyncio.Future[tuple[bytes, int, bytes]]]]:
+    def receive_futures(self) -> dict[int, dict[int, asyncio.Future[send_response_t]]]:
         if self._protocol is None:
             return {}
         return self._protocol.receive_futures
@@ -152,7 +154,9 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         self._data: bytes = b""
         self._data_chunk: bytes = b""
 
-        self.receive_futures: dict[int, dict[int, asyncio.Future[tuple[bytes, int, bytes]]]] = {}  # expected_cmd_id: rec_future
+        self._transport: asyncio.BaseTransport | None = None
+
+        self.receive_futures: dict[int, dict[int, asyncio.Future[send_response_t]]] = {}  # expected_cmd_id: rec_future
         self.close_future: asyncio.Future = loop.create_future()
         self._close_callback = close_callback
         self._push_callback = push_callback
@@ -164,6 +168,7 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Connection callback"""
         self.time_connect = time_now()
+        self._transport = transport
         _LOGGER.debug("Baichuan host %s: opened %s connection", self._host, self._type)
 
     def connection_lost(self, exc: Exception | None) -> None:
