@@ -31,7 +31,7 @@ class BaichuanBaseConnection:
 
     async def connect(self):
         """Initialize the protocol and make the connection if needed."""
-        if self._transport is not None and self._protocol is not None and not self._transport.is_closing():
+        if self.connection_open:
             return  # connection is open
 
         if self._protocol is not None and self._protocol.receive_futures:
@@ -47,7 +47,7 @@ class BaichuanBaseConnection:
         try:
             async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
-                    if self._transport is not None and self._protocol is not None and not self._transport.is_closing():
+                    if self.connection_open:
                         return  # connection already opened in the meantime
 
                     self._transport, self._protocol = await self._create_connection()
@@ -119,6 +119,10 @@ class BaichuanBaseConnection:
                     self.receive_futures.pop(cmd_id, None)
 
         return response
+
+    @property
+    def connection_open(self) -> bool:
+        return self._transport is not None and self._protocol is not None and not self._transport.is_closing()
 
     @property
     def receive_futures(self) -> dict[int, dict[int, asyncio.Future[tuple[bytes, int, bytes]]]]:

@@ -9,11 +9,19 @@ from random import randint
 from socket import AF_INET, IPPROTO_UDP
 from time import time as time_now
 
-from ..exceptions import UnexpectedDataError
+from ..exceptions import ReolinkConnectionError, ReolinkError, UnexpectedDataError
+from . import xmls
 from .base_protocol import BaichuanBaseClientProtocol, BaichuanBaseConnection
-from .util import calc_crc, decrypt_udp_baichuan, encrypt_udp_baichuan
+from .util import (
+    calc_crc,
+    decrypt_udp_baichuan,
+    encrypt_udp_baichuan,
+    get_value_from_xml,
+)
 
 HEADER_MAGIC_UDP_CON = "3acf872a"
+UDP_CONNECT_PORT = 2015
+MTU = 1350  # The maximum transmission unit of the connection. Which is the largest packet size in bytes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,10 +34,13 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
     def __init__(
         self, host: str, port: int = 0, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None
     ) -> None:
-        remote_port = 2015
-        super().__init__(host, remote_port, push_callback, close_callback)
+        super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
         self._local_port: int = port
+        self.uid: str | None = None
+        self._client_id: int = randint(10000, 99999)
+        self._host_id: int | None = None
         self._udp_mess_id: int = randint(1000, 1000000)
+        self._connect_mutex = asyncio.Lock()
 
     async def _create_connection(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
         transport, protocol = await self._loop.create_datagram_endpoint(
@@ -43,6 +54,44 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         _, self._local_port = transport.get_extra_info("sockname")
         _LOGGER.debug("Baichuan host %s: using local UDP port %s", self._host, self._local_port)
         return transport, protocol
+
+    async def connect(self):
+        """Initialize the protocol and make the connection if needed."""
+        if self.connection_open and self._port != UDP_CONNECT_PORT:
+            return  # connection is open
+
+        async with self._connect_mutex:
+            await super().connect()
+
+            if self.connection_open and self._port != UDP_CONNECT_PORT:
+                return  # connection already opened in the meantime
+
+            self._port = UDP_CONNECT_PORT
+
+            try:
+                # Get the UID of the camera
+                if self.uid is None:
+                    body = xmls.UDP_GET_UID_XML.format(port=self._local_port)
+                    mess = await self.send_udp(body)
+                    self.uid = get_value_from_xml(mess, "uid")
+
+                # Make the UDP connection
+                body = xmls.UDP_CONNECT_XML.format(uid=self.uid, port=self._local_port, client_id=self._client_id, mtu=MTU)
+                mess = await self.send_udp(body)
+            except ReolinkError as err:
+                raise ReolinkConnectionError(f"{err} during UDP connection") from err
+
+            recv_client_id = get_value_from_xml(mess, "cid")
+            if self._client_id != recv_client_id:
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: received client_id {recv_client_id} did not match send client_id {self._client_id}")
+            self._host_id = get_value_from_xml(mess, "did")
+            self._port = self._protocol.remote_port
+            _LOGGER.debug("Baichuan host %s: using remote UDP port %s", self._host, self._port)
+
+    async def close(self) -> None:
+        """close the connection and wait untill close is complete"""
+        await super().close()
+        self._port = UDP_CONNECT_PORT
 
     async def send_udp(self, body: str) -> str:
         self._udp_mess_id += 1
@@ -76,8 +125,9 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         super().__init__(loop, host, push_callback, close_callback)
         self._type: str = "UDP"
         self._udp_data: bytes = b""
+        self.remote_port: int = UDP_CONNECT_PORT
 
-    def datagram_received(self, data, addr):
+    def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Data received callback"""
         # parse received header
         if data[0:4].hex() in {HEADER_MAGIC_UDP_CON}:
@@ -97,13 +147,13 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 self._set_error(f"with invalid magic header: {data[0:4].hex()}", UnexpectedDataError)
                 return
 
-        self.parse_udp_data()
+        self.parse_udp_data(addr)
 
-    def parse_udp_data(self) -> None:
+    def parse_udp_data(self, addr: tuple[str, int]) -> None:
         """Parse received UDP data"""
         try:
             if self._udp_data[0:4].hex() == HEADER_MAGIC_UDP_CON:
-                self.parse_udp_connection()
+                self.parse_udp_connection(addr)
             elif len(self._udp_data) < 4 and bytes.fromhex(HEADER_MAGIC_UDP_CON).startswith(self._data):
                 # do not clear self._data, wait for the rest of the data
                 _LOGGER.debug("Baichuan host %s: received start of UDP magic header but less then 4 bytes, waiting for the rest", self._host)
@@ -119,7 +169,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 _LOGGER.exception("Baichuan host %s: error during parsing of received data, header %s: %s", self._host, header, str(exc))
             self._udp_data = b""
 
-    def parse_udp_connection(self) -> None:
+    def parse_udp_connection(self, addr: tuple[str, int]) -> None:
         """Parse received UDP data"""
         if len(self._udp_data) < 20:
             # do not clear self._udp_data, wait for the rest of the data
@@ -182,11 +232,12 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                     _LOGGER.debug("Baichuan host %s: received unrequested UDP message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
                 return
 
+            _, self.remote_port = addr
             receive_future.set_result((payload, 0, b""))
         finally:
             # if multiple messages received, parse the next also
             if self._udp_data:
-                self.parse_udp_data()
+                self.parse_udp_data(addr)
 
     def error_received(self, exc: Exception | None):
         """Error callback, normally packets are silently dropped by UDP"""
