@@ -63,7 +63,6 @@ from .util import (
     encrypt_baichuan,
     get_keys_from_xml,
     get_value_from_xml,
-    get_value_from_xml_element,
     http_cmd,
     i_frame_to_jpeg,
     md5_str_modern,
@@ -457,7 +456,7 @@ class Baichuan:
         try:
             rec_body = self._decrypt(data, len_header, cmd_id)
             if payload_len != 0:
-                encryptLen = get_value_from_xml_element(XML.fromstring(rec_body.lower()), "encryptlen", int)
+                encryptLen = get_value_from_xml(rec_body.lower(), "encryptlen", int)
                 if encryptLen is not None:
                     payload = self._aes_decrypt(payload[0:encryptLen], b"", decode=False) + payload[encryptLen::]
         except ReolinkError as err:
@@ -536,7 +535,7 @@ class Baichuan:
                 _LOGGER.debug("Baichuan host %s: reducing keepalive interval from %.2f to %.2f s", self._host, origianal_keepalive, self._keepalive_interval)
 
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
-        channel = get_value_from_xml_element(xml_element, key, int)
+        channel = get_value_from_xml(xml_element, key, int)
         if channel not in self.http_api._channels:
             return None
         return channel
@@ -588,7 +587,7 @@ class Baichuan:
 
             isp = self.http_api._isp_settings.setdefault(channel, {})
             if (DayNight := root.find(".//DayNight")) is not None:
-                value = get_value_from_xml_element(DayNight, "mode")
+                value = get_value_from_xml(DayNight, "mode")
                 if value is not None:
                     value = value.replace("And", "&")
                     value = value[0].upper() + value[1:]
@@ -596,7 +595,7 @@ class Baichuan:
 
             data = get_keys_from_xml(root, {"hdrSwitch": ("hdr", int), "binning_mode": ("binningMode", int)})
             data["channel"] = channel
-            exposure = get_value_from_xml_element(root, "InputAdvanceCfg/Exposure/mode", str, recursive=False)
+            exposure = get_value_from_xml(root, "InputAdvanceCfg/Exposure/mode", str, recursive=False)
             for val in ExposureEnum:
                 if val.value.lower() == exposure:  # ensure the proper upper-case
                     data["exposure"] = val.value
@@ -611,8 +610,8 @@ class Baichuan:
                     channels.add(channel)
 
                     if event.tag == "AlarmEvent":
-                        states = get_value_from_xml_element(event, "status")
-                        ai_types = get_value_from_xml_element(event, "AItype")
+                        states = get_value_from_xml(event, "status")
+                        ai_types = get_value_from_xml(event, "AItype")
                         if not self._events_active and self._subscribed:
                             self._events_active = True
 
@@ -655,7 +654,7 @@ class Baichuan:
                         smart_list = event.find("smartAiTypeList")
                         if smart_list is not None:
                             for smart_ai in smart_list.findall(".//smartAiType"):
-                                smart_type = get_value_from_xml_element(smart_ai, "type")
+                                smart_type = get_value_from_xml(smart_ai, "type")
                                 if smart_type is None:
                                     continue
                                 sub_list = smart_ai.findall("subList")
@@ -687,7 +686,7 @@ class Baichuan:
                                     )
 
                     elif event.tag == "DayNightEvent":
-                        state = get_value_from_xml_element(event, "mode")
+                        state = get_value_from_xml(event, "mode")
                         if state is not None:
                             self._day_night_state[channel] = state
                             _LOGGER.debug("Reolink %s TCP event channel %s, day night state: %s", self.http_api.nvr_name, channel, state)
@@ -721,7 +720,7 @@ class Baichuan:
                 if channel is None:
                     continue
                 channels.add(channel)
-                state = get_value_from_xml_element(event, "loginState") == "standby"
+                state = get_value_from_xml(event, "loginState") == "standby"
                 if state != self.http_api._sleep.get(channel):
                     _LOGGER.debug("Reolink %s TCP event channel %s, sleeping: %s", self.http_api.nvr_name, channel, state)
                 self.http_api._sleep[channel] = state
@@ -785,7 +784,7 @@ class Baichuan:
                     if channel is None:
                         continue
                     channels.add(channel)
-                    state = get_value_from_xml_element(event, "status", int)
+                    state = get_value_from_xml(event, "status", int)
                     if state is not None:
                         self.http_api._whiteled_settings.setdefault(channel, {})["state"] = state
                         _LOGGER.debug("Reolink %s TCP event channel %s, Floodlight: %s", self.http_api.nvr_name, channel, state)
@@ -821,8 +820,8 @@ class Baichuan:
             self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
 
         elif cmd_id == 464:  # network link type wire/wifi
-            get_value_from_xml_element(root, "net_type")
-            if (signal := get_value_from_xml_element(root, "signal")) is not None:
+            get_value_from_xml(root, "net_type")
+            if (signal := get_value_from_xml(root, "signal")) is not None:
                 self.http_api._wifi_signal[None] = int(signal)
 
         elif cmd_id == 527:  # crossline detection
@@ -836,7 +835,7 @@ class Baichuan:
             if channel is None:
                 return
             channels.add(channel)
-            state = get_value_from_xml_element(root, "ptzRunning", int)
+            state = get_value_from_xml(root, "ptzRunning", int)
             if state is not None:
                 self._ptz_running[channel] = state == 1
                 self._loop.create_task(self._send_and_parse(433, channel))  # fetch PTZ pos
@@ -850,7 +849,7 @@ class Baichuan:
         elif cmd_id == 547:  # siren status
             for item in root.findall(".//SirenStatus"):
                 channel = self._get_channel_from_xml_element(item, "channel")
-                state = get_value_from_xml_element(item, "status", int)
+                state = get_value_from_xml(item, "status", int)
                 if channel is None or state is None:
                     continue
                 channels.add(channel)
@@ -859,7 +858,7 @@ class Baichuan:
 
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
-            cmd_id_modified = get_value_from_xml_element(root, "cmdId", int)
+            cmd_id_modified = get_value_from_xml(root, "cmdId", int)
             if cmd_id_modified not in {26, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
@@ -871,7 +870,7 @@ class Baichuan:
                 if channel is None:
                     continue
                 channels.add(channel)
-                state = get_value_from_xml_element(item, "stat", int)
+                state = get_value_from_xml(item, "stat", int)
                 if state is not None:
                     self.http_api._manual_record_settings.setdefault(channel, {})["enable"] = state
                     _LOGGER.debug("Reolink %s TCP event channel %s, Manual record: %s", self.http_api.nvr_name, channel, state)
@@ -890,7 +889,7 @@ class Baichuan:
                     channels.add(channel)
 
                     for event_type in event.findall("YoloWorldType"):
-                        yolo_type = get_value_from_xml_element(event_type, "type")
+                        yolo_type = get_value_from_xml(event_type, "type")
                         if yolo_type is None:
                             continue
                         if not self._events_active and self._subscribed:
@@ -912,8 +911,8 @@ class Baichuan:
                     continue
                 channels.add(channel)
                 for event in event_list.findall(".//ioItem"):
-                    index = get_value_from_xml_element(event, "index", int)
-                    state = get_value_from_xml_element(event, "result", bool)
+                    index = get_value_from_xml(event, "index", int)
+                    state = get_value_from_xml(event, "result", bool)
                     if index is None or state is None:
                         continue
                     self._io_input.setdefault(channel, {})[index] = state
@@ -935,7 +934,7 @@ class Baichuan:
                         sub_type_dict[key] = None
 
                     for event_type in event.findall("YoloWorldType"):
-                        yolo_type = get_value_from_xml_element(event_type, "type")
+                        yolo_type = get_value_from_xml(event_type, "type")
                         if yolo_type is None:
                             continue
                         if not self._events_active and self._subscribed:
@@ -952,7 +951,7 @@ class Baichuan:
 
                         sub_type = None
                         for type_item in event_type.findall("subTypeList"):
-                            new_sub_type = get_value_from_xml_element(type_item, "subType")
+                            new_sub_type = get_value_from_xml(type_item, "subType")
                             if new_sub_type is None:
                                 continue
                             new_sub_type = new_sub_type.replace(" ", "_")
@@ -987,7 +986,7 @@ class Baichuan:
                 if channel is None:
                     channel = 0
                 channels.add(channel)
-                state = get_value_from_xml_element(item, "sleep", bool)
+                state = get_value_from_xml(item, "sleep", bool)
                 if state is not None:
                     self._privacy_mode[channel] = state
                     _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, state)
@@ -1012,19 +1011,19 @@ class Baichuan:
 
         index_dict = {}
         for item in root.findall(f".//{smart_type}DetectItem"):
-            location = get_value_from_xml_element(item, "location", int)
+            location = get_value_from_xml(item, "location", int)
             if location is None:
                 continue
             smart_ai = self._ai_detect.setdefault(channel, {}).setdefault(smart_type, {}).setdefault(location, {})
-            smart_ai["name"] = get_value_from_xml_element(item, "name", str)
-            smart_ai["sensitivity"] = get_value_from_xml_element(item, "sesensitivity", int)
-            if (delay := get_value_from_xml_element(item, "stayTime", int)) is not None:
+            smart_ai["name"] = get_value_from_xml(item, "name", str)
+            smart_ai["sensitivity"] = get_value_from_xml(item, "sesensitivity", int)
+            if (delay := get_value_from_xml(item, "stayTime", int)) is not None:
                 smart_ai["delay"] = delay
-            if (delay := get_value_from_xml_element(item, "timeThresh", int)) is not None:
+            if (delay := get_value_from_xml(item, "timeThresh", int)) is not None:
                 smart_ai["delay"] = delay
-            smart_ai["index"] = get_value_from_xml_element(item, "index", int)
+            smart_ai["index"] = get_value_from_xml(item, "index", int)
             smart_ai.setdefault("state", False)
-            if (ai_types := get_value_from_xml_element(item, "aiType", str)) is not None:
+            if (ai_types := get_value_from_xml(item, "aiType", str)) is not None:
                 ai_type_list = ai_types.split(",")
                 for ai_type in ai_type_list:
                     smart_ai.setdefault(ai_type, False)
@@ -1164,7 +1163,7 @@ class Baichuan:
 
         self.http_api._enc_range = {}
         for info in root.findall(".//StreamInfo"):
-            channelBits = get_value_from_xml_element(info, "channelBits", int)
+            channelBits = get_value_from_xml(info, "channelBits", int)
             if channelBits is None:
                 continue
             for ch in range(0, channelBits.bit_length(), 1):
@@ -1173,14 +1172,14 @@ class Baichuan:
                 enc_range = self.http_api._enc_range.setdefault(ch, [])
                 enc_data: dict[str, Any] = {"chnBit": channelBits}
                 for encoding in info.findall(".//encodeTable"):
-                    stream_type = get_value_from_xml_element(encoding, "type", str)
+                    stream_type = get_value_from_xml(encoding, "type", str)
                     if stream_type is None:
                         continue
                     enc_data[stream_type] = get_keys_from_xml(encoding, {"width": ("width", int), "height": ("height", int)})
-                    framerateTable = get_value_from_xml_element(encoding, "framerateTable", str)
+                    framerateTable = get_value_from_xml(encoding, "framerateTable", str)
                     if framerateTable is not None:
                         enc_data[stream_type]["frameRate"] = [int(val) for val in framerateTable.split(",")]
-                    bitrateTable = get_value_from_xml_element(encoding, "bitrateTable", str)
+                    bitrateTable = get_value_from_xml(encoding, "bitrateTable", str)
                     if bitrateTable is not None:
                         enc_data[stream_type]["bitRate"] = [int(val) for val in bitrateTable.split(",")]
                 enc_range.append(enc_data)
@@ -1556,7 +1555,7 @@ class Baichuan:
         if channel not in self._abilities:
             return no_key_return
 
-        value = get_value_from_xml_element(self._abilities[channel], capability, int)
+        value = get_value_from_xml(self._abilities[channel], capability, int)
         if value is None:
             return no_key_return
 
@@ -1586,7 +1585,7 @@ class Baichuan:
                 channel = self._get_channel_from_xml_element(info_ch)
                 if channel is None:
                     continue
-                ability = get_value_from_xml_element(info_ch, "abilityValue")
+                ability = get_value_from_xml(info_ch, "abilityValue")
                 if ability is None:
                     raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
                 for key, value in capability.items():
@@ -1828,10 +1827,10 @@ class Baichuan:
     @http_cmd("GetEnc")
     async def GetEnc(self, channel: int) -> None:
         """Get the encoding info of a channel"""
-        root = await self.send(cmd_id=56, channel=channel)
-        mess = XML.fromstring(root)
+        mess = await self.send(cmd_id=56, channel=channel)
+        root = XML.fromstring(mess)
         audio = 1
-        if (main := mess.find(".//mainStream")) is not None:
+        if (main := root.find(".//mainStream")) is not None:
             data = get_keys_from_xml(
                 main,
                 {
@@ -1846,7 +1845,7 @@ class Baichuan:
             data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
             self.http_api._enc_settings.setdefault(channel, {}).setdefault("mainStream", {}).update(data)
             audio = audio and data.get("audio", 0)
-        if (sub := mess.find(".//subStream")) is not None:
+        if (sub := root.find(".//subStream")) is not None:
             data = get_keys_from_xml(
                 sub,
                 {
@@ -1985,7 +1984,7 @@ class Baichuan:
         xml = xmls.Snap.format(channel=channel, logicChannel=iLogicChannel, stream=snapType)
         mess, image = await self.send_payload(cmd_id=109, channel=channel, body=xml)
 
-        image_size = get_value_from_xml_element(XML.fromstring(mess), "pictureSize", int)
+        image_size = get_value_from_xml(mess, "pictureSize", int)
         if image_size is None:
             raise UnexpectedDataError(f"Baichuan host {self._host}: Did not receive image size for snapshot channel {channel}")
 
@@ -2059,9 +2058,8 @@ class Baichuan:
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
         """Get the UID of the host"""
-        root = await self.send(cmd_id=114)
-        mess = XML.fromstring(root)
-        value = get_value_from_xml_element(mess, "uid")
+        mess = await self.send(cmd_id=114)
+        value = get_value_from_xml(mess, "uid")
         if value is not None:
             self.http_api._uid[None] = value
 
@@ -2105,10 +2103,10 @@ class Baichuan:
     async def GetUser(self) -> None:
         """Get the user list"""
         xml = xmls.UserList.format(username=self._username)
-        root = await self.send(cmd_id=58, extension=xml)
-        mess = XML.fromstring(root)
+        mess = await self.send(cmd_id=58, extension=xml)
+        root = XML.fromstring(mess)
         self.http_api._users = []
-        for user in mess.findall(".//User"):
+        for user in root.findall(".//User"):
             values = get_keys_from_xml(user, ["userName", "userLevel"])
 
             if values.get("userLevel") == "1":
@@ -2120,14 +2118,12 @@ class Baichuan:
     async def get_wifi_ssid(self, channel: int) -> None:
         """Get the wifi ssid and link type"""
         mess = await self.send(cmd_id=116, channel=channel, body=xmls.WifiSSID)
-        root = XML.fromstring(mess)
-        get_value_from_xml_element(root, "ssid", str)
+        get_value_from_xml(mess, "ssid", str)
 
     async def get_wifi_signal(self, channel: int | None = None) -> None:
         """Get the wifi signal of the host"""
         mess = await self.send(cmd_id=115, channel=channel)
-        root = XML.fromstring(mess)
-        value = get_value_from_xml_element(root, "signal")
+        value = get_value_from_xml(mess, "signal")
         if value is not None:
             self.http_api._wifi_signal[channel] = int(value)
 
@@ -2218,7 +2214,7 @@ class Baichuan:
         info = root.find(".//sensInfoNew")
         if info is None:
             raise UnexpectedDataError(f"Baichuan host {self._host}: GetMdAlarm fallback channel {channel} got unexpected data")
-        sens = get_value_from_xml_element(info, "sensitivityDefault", int)
+        sens = get_value_from_xml(info, "sensitivityDefault", int)
         if sens is None:
             raise UnexpectedDataError(f"Baichuan host {self._host}: GetMdAlarm fallback channel {channel} got unexpected data")
         if self.http_api.baichuan_only:
@@ -2322,7 +2318,7 @@ class Baichuan:
         xml_body = XML.fromstring(mess)
 
         for conf in xml_body.findall(".//YoloWorldCfg"):
-            conf_ai_type = get_value_from_xml_element(conf, "type")
+            conf_ai_type = get_value_from_xml(conf, "type")
             if conf_ai_type is None:
                 continue
             conf_ai_type = YOLO_CONVERSION.get(conf_ai_type, conf_ai_type)
@@ -2378,7 +2374,7 @@ class Baichuan:
     async def get_privacy_mode(self, channel: int = 0) -> bool | None:
         """Get the privacy mode state"""
         mess = await self.send(cmd_id=574, channel=channel)
-        sleep = get_value_from_xml_element(XML.fromstring(mess), "sleep", bool)
+        sleep = get_value_from_xml(mess, "sleep", bool)
         if sleep is None:
             return None
         self._privacy_mode[channel] = sleep
@@ -2785,7 +2781,7 @@ class Baichuan:
                 continue
             data["type"] = {}
             for ringtone in chime.findall(".//alarminCfg"):
-                tone_type = get_value_from_xml_element(ringtone, "type")
+                tone_type = get_value_from_xml(ringtone, "type")
                 if tone_type is None:
                     continue
                 data["type"][tone_type.lower()] = get_keys_from_xml(ringtone, {"valid": ("switch", int), "musicId": ("musicId", int)})
@@ -2875,8 +2871,7 @@ class Baichuan:
     async def GetRec(self, channel: int, **_kwargs) -> None:
         """Get the recording info"""
         mess = await self.send(cmd_id=81, channel=channel)
-        root = XML.fromstring(mess)
-        enable = get_value_from_xml_element(root, "enable", int)
+        enable = get_value_from_xml(mess, "enable", int)
 
         rec_set = self.http_api._recording_settings.setdefault(channel, {})
         rec_set.setdefault("schedule", {})["enable"] = enable
@@ -3106,11 +3101,11 @@ class Baichuan:
         mess = await self.send(cmd_id=601)
         root = XML.fromstring(mess)
 
-        if get_value_from_xml_element(root, "enable", int) != 1:
+        if get_value_from_xml(root, "enable", int) != 1:
             self._active_scene = -1
             return -1  # scene mode off
 
-        cur_scene = get_value_from_xml_element(root, "curSceneId", int)
+        cur_scene = get_value_from_xml(root, "curSceneId", int)
         if cur_scene is None:
             self._active_scene = -1
         else:
@@ -3147,7 +3142,7 @@ class Baichuan:
         if (main_ob := main.find("op")) is not None:
             main_ob.text = "modify"  # add/delete/modify
         for item in main.findall(f"{smart_type}DetectItem"):
-            loc = get_value_from_xml_element(item, "location", int)
+            loc = get_value_from_xml(item, "location", int)
             if loc != location:
                 main.remove(item)
                 continue
@@ -3255,12 +3250,12 @@ class Baichuan:
     def _xml_time_to_datetime(self, xml_time: XML.Element | None) -> datetime | None:
         if xml_time is None:
             return None
-        year = get_value_from_xml_element(xml_time, "year", int)
-        month = get_value_from_xml_element(xml_time, "month", int)
-        day = get_value_from_xml_element(xml_time, "day", int)
-        hour = get_value_from_xml_element(xml_time, "hour", int)
-        minute = get_value_from_xml_element(xml_time, "minute", int)
-        second = get_value_from_xml_element(xml_time, "second", int)
+        year = get_value_from_xml(xml_time, "year", int)
+        month = get_value_from_xml(xml_time, "month", int)
+        day = get_value_from_xml(xml_time, "day", int)
+        hour = get_value_from_xml(xml_time, "hour", int)
+        minute = get_value_from_xml(xml_time, "minute", int)
+        second = get_value_from_xml(xml_time, "second", int)
         if year is None or month is None or day is None or hour is None or minute is None or second is None:
             return None
         return datetime(year=year, month=month, day=day, hour=hour, minute=minute, second=second)
@@ -3320,7 +3315,7 @@ class Baichuan:
             if main is None:
                 await self.send(cmd_id=274, channel=channel, body=xml)
                 break
-            finished = get_value_from_xml_element(main, "bFinished", int)
+            finished = get_value_from_xml(main, "bFinished", int)
             vod_list = main.find("alarmVideoList")
             if vod_list is None:
                 await self.send(cmd_id=274, channel=channel, body=xml)
@@ -3328,8 +3323,8 @@ class Baichuan:
 
             time_event: datetime | None = None
             for item in vod_list.findall(".//alarmVideo"):
-                file_name = get_value_from_xml_element(item, "fileName")
-                trigger = get_value_from_xml_element(item, "alarmType")
+                file_name = get_value_from_xml(item, "fileName")
+                trigger = get_value_from_xml(item, "alarmType")
                 if file_name is None or trigger is None:
                     continue
                 start_time_file = file_name[2:]

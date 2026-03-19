@@ -116,15 +116,19 @@ def md5_str_modern(string: str) -> str:
 
 
 @overload
-def get_value_from_xml_element(xml_element: XML.Element, key: str) -> str | None: ...
+def get_value_from_xml(xml: str | XML.Element, key: str) -> str | None: ...
 @overload
-def get_value_from_xml_element(xml_element: XML.Element, key: str, type_class: type[T]) -> T | None: ...
+def get_value_from_xml(xml: str | XML.Element, key: str, type_class: type[T]) -> T | None: ...
 @overload
-def get_value_from_xml_element(xml_element: XML.Element, key: str, type_class: type[T], recursive: bool) -> T | None: ...
+def get_value_from_xml(xml: str | XML.Element, key: str, type_class: type[T], recursive: bool) -> T | None: ...
 
 
-def get_value_from_xml_element(xml_element: XML.Element, key: str, type_class=str, recursive: bool = True):
-    """Get a value for a key in a xml element"""
+def get_value_from_xml(xml: str | XML.Element, key: str, type_class=str, recursive: bool = True):
+    """Get a value for a single key in a xml (element)"""
+    if isinstance(xml, str):
+        xml_element = XML.fromstring(xml)
+    else:
+        xml_element = xml
     xml_value = xml_element.find(f".//{key}" if recursive else key)
     if xml_value is None:
         return None
@@ -148,7 +152,7 @@ def get_keys_from_xml(xml: str | XML.Element, keys: list[str] | dict[str, tuple[
         root = xml
     result: dict[str, Any] = {}
     for key in keys:
-        value: str | int | None = get_value_from_xml_element(root, key, str, recursive)
+        value: str | int | None = get_value_from_xml(root, key, str, recursive)
         if value is None:
             continue
         if isinstance(keys, dict):
@@ -160,11 +164,6 @@ def get_keys_from_xml(xml: str | XML.Element, keys: list[str] | dict[str, tuple[
             result[key] = value
 
     return result
-
-
-def get_value_from_xml(xml: str, key: str) -> str | None:
-    """Get the value of a single key in a xml"""
-    return get_keys_from_xml(xml, [key]).get(key)
 
 
 async def _i_frame_to_jpeg_shielded(frame: bytes, ffmpeg: str) -> bytes:

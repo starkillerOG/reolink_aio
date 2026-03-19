@@ -81,10 +81,10 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             except ReolinkError as err:
                 raise ReolinkConnectionError(f"{err} during UDP connection") from err
 
-            recv_client_id = get_value_from_xml(mess, "cid")
+            recv_client_id = get_value_from_xml(mess, "cid", int)
             if self._client_id != recv_client_id:
                 raise ReolinkConnectionError(f"Baichuan host {self._host}: received client_id {recv_client_id} did not match send client_id {self._client_id}")
-            self._host_id = get_value_from_xml(mess, "did")
+            self._host_id = get_value_from_xml(mess, "did", int)
             self._port = self._protocol.remote_port
             _LOGGER.debug("Baichuan host %s: using remote UDP port %s", self._host, self._port)
 
