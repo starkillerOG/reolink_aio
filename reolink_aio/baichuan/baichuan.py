@@ -820,7 +820,7 @@ class Baichuan:
             self.http_api._ptz_position.setdefault(channel, {}).update(ptz_position)
 
         elif cmd_id == 464:  # network link type wire/wifi
-            get_value_from_xml(root, "net_type")
+            # get_value_from_xml(root, "net_type")
             if (signal := get_value_from_xml(root, "signal")) is not None:
                 self.http_api._wifi_signal[None] = int(signal)
 
