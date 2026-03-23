@@ -8,9 +8,9 @@ from collections.abc import Callable
 from random import randint
 from socket import AF_INET, IPPROTO_UDP
 from time import time as time_now
-from typing import TYPE_CHECKING
-
+from typing import TYPE_CHECKING, Coroutine
 from xml.etree import ElementTree as XML
+
 from ..exceptions import ReolinkConnectionError, ReolinkError, UnexpectedDataError
 from . import xmls
 from .base_protocol import (
@@ -39,6 +39,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
     """Reolink Baichuan UDP connection."""
 
     _transport: asyncio.DatagramTransport
+    _protocol: BaichuanUdpClientProtocol
 
     def __init__(
         self, host: str, port: int = 0, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None
@@ -46,8 +47,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
         self._local_port: int = port
         self.uid: str | None = None
-        self._client_id: int = 0
-        self._host_id: int | None = None
+        self._client_id: int | None = None
         self._udp_mess_id: int = 0
         self._connect_mutex = asyncio.Lock()
 
@@ -95,16 +95,24 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             recv_client_id = get_value_from_xml(mess, "cid", int)
             if self._client_id != recv_client_id:
                 raise ReolinkConnectionError(f"Baichuan host {self._host}: received client_id {recv_client_id} did not match send client_id {self._client_id}")
-            self._host_id = get_value_from_xml(mess, "did", int)
+            self._protocol.host_id = get_value_from_xml(mess, "did", int)
             self._port = self._protocol.remote_port
-            self._protocol.host_id = self._host_id
             _LOGGER.debug("Baichuan host %s: using remote UDP port %s", self._host, self._port)
 
     async def close(self) -> None:
         """close the connection and wait untill close is complete"""
+        # send close message
+        if self._client_id is not None and self._protocol is not None and self._protocol.host_id is not None:
+            body = xmls.UDP_DISCONNECT_XML.format(client_id=self._client_id, host_id=self._protocol.host_id)
+            mess, _ = self._construct_udp_mess(body)
+            _LOGGER.debug("Baichuan host %s:%s>%s: send UDP disconnect message: %s", self._host, self._local_port, self._port, body)
+            self._write(mess)
+
         await super().close()
         self._port = UDP_CONNECT_PORT
-        self._host_id = None
+        self._client_id = None
+        if self._protocol is not None:
+            self._protocol.host_id = None
 
     def _write(self, data: bytes) -> None:
         """Write data over the transport"""
@@ -116,16 +124,16 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
     async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
         """Wrap the BC message in a UDP header, send the message and wait for the response"""
-        if self._host_id is None:
+        if self._protocol is None or self._protocol.host_id is None:
             await self.connect()
             if TYPE_CHECKING:
-                assert self._host_id is not None
+                assert self._protocol.host_id is not None
 
         mess_id = self._udp_mess_id
         self._udp_mess_id += 1
         self._protocol.send_mess_ids.add(mess_id)
 
-        host_id_bytes = self._host_id.to_bytes(4, byteorder="little")
+        host_id_bytes = self._protocol.host_id.to_bytes(4, byteorder="little")
         mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
         mess_len_bytes = len(data).to_bytes(4, byteorder="little")
 
@@ -133,7 +141,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
         return await self._send(udp_header + data, cmd_id, full_mess_id, channel, log_mess)
 
-    async def send_udp(self, body: str) -> str:
+    def _construct_udp_mess(self, body: str) -> tuple[bytes, int]:
         trans_id = randint(1000, 1000000)
 
         payload = encrypt_udp_baichuan(body, trans_id)
@@ -143,10 +151,14 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         checksum = calc_crc(payload)
 
         header = bytes.fromhex(MAGIC_UDP_CON) + mess_len_bytes + bytes.fromhex("01000000") + mess_id_bytes + checksum
+        return header + payload, trans_id
+
+    async def send_udp(self, body: str) -> str:
+        mess, trans_id = self._construct_udp_mess(body)
 
         cmd_id = -1
         log_mess = f"Baichuan host {self._host}:{self._local_port}>{self._port}: send UDP message: {body}"
-        recv_payload, _, _ = await self._send(header + payload, cmd_id, trans_id, log_mess=log_mess)
+        recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess)
 
         recv_mess = decrypt_udp_baichuan(recv_payload, trans_id)
         _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, recv_mess)
@@ -154,7 +166,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
     @property
     def udp_connected(self) -> bool:
-        return self.connection_open and self._port != UDP_CONNECT_PORT and self._host_id is not None
+        return self.connection_open and self._port != UDP_CONNECT_PORT and self._protocol.host_id is not None
 
 
 class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProtocol):
@@ -162,7 +174,14 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
 
     _transport: asyncio.DatagramTransport
 
-    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None, close_coroutine: asyncio.coroutine | None = None) -> None:
+    def __init__(
+        self,
+        loop,
+        host: str,
+        push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
+        close_callback: Callable[[], None] | None = None,
+        close_coroutine: Coroutine | None = None,
+    ) -> None:
         super().__init__(loop, host, push_callback, close_callback)
         self._close_coroutine = close_coroutine
         self._loop = loop
@@ -172,28 +191,28 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         self.host_id: int | None = None
 
         self.send_mess_ids: set[int] = set()
-        self._last_dev_mess_id: int = -1
+        self._last_host_mess_id: int = -1
         self._last_ack: float = 0
 
     def send_ack(self) -> None:
         """Send an acknowledgement that a BC message was received"""
         if self._transport is None or self.host_id is None:
-            _LOGGER.warning("Baichuan host %s: can not send acknowledgement without a transport and host_id", self._host, mess_id)
+            _LOGGER.warning("Baichuan host %s: can not send acknowledgement without a transport and host_id", self._host)
             return
         host_id_bytes = self.host_id.to_bytes(4, byteorder="little")
-        mess_id = self._last_dev_mess_id
+        mess_id = self._last_host_mess_id
         payload = b""
         if self.send_mess_ids:
             mess_id = min(self.send_mess_ids) - 1
-            for j in range(mess_id+1, max(self.send_mess_ids)):
+            for j in range(mess_id + 1, max(self.send_mess_ids)):
                 if j in self.send_mess_ids:
-                    payload += b'\x00'
+                    payload += b"\x00"
                 else:
-                    payload += b'\x01'
+                    payload += b"\x01"
 
         if mess_id < 0:
             return
-        if _LOGGER.isEnabledFor(logging.DEBUG): 
+        if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("Baichuan host %s:send UDP ACK, mess_id %s  %s", self._host, mess_id, payload.hex())
 
         mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
@@ -267,14 +286,14 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
 
     def parse_udp_ack(self, port: int) -> None:
         """Parse received UDP acknowledgement"""
-        client_id = int.from_bytes(self._udp_data[4:8], byteorder="little")
+        # client_id = int.from_bytes(self._udp_data[4:8], byteorder="little")
         last_mess_id = int.from_bytes(self._udp_data[16:20], byteorder="little")
         payload_size = int.from_bytes(self._udp_data[24:28], byteorder="little")
         mess_len = 28 + payload_size
         payload = self._udp_data[28:mess_len]
-        if(last_mess_id != self._last_dev_mess_id):
+        if last_mess_id != self._last_host_mess_id:
             _LOGGER.debug("Baichuan host %s:received UDP ACK, mess_id %s  %s", self._host, last_mess_id, payload.hex())
-        self._last_dev_mess_id = last_mess_id
+        self._last_host_mess_id = last_mess_id
 
         now = time_now()
         if now - self._last_ack > 10.0:
@@ -342,9 +361,9 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 for child in root:
                     if child.tag == "D2C_C_R":
                         _LOGGER.debug("Baichuan host %s: received UDP connection message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
-                        continue
                     elif child.tag == "D2C_DISC":
                         _LOGGER.debug("Baichuan host %s: received UDP disconnect message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
+                        self.host_id = None  # Prevent sending another close message which will block
                         if self._close_coroutine is not None:
                             self._loop.create_task(self._close_coroutine)
                     else:

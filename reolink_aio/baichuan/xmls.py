@@ -58,6 +58,15 @@ UDP_CONNECT_XML = """
 </P2P>
 """
 
+UDP_DISCONNECT_XML = """
+<P2P>
+<C2D_DISC>
+<cid>{client_id}</cid>
+<did>{host_id}</did>
+</C2D_DISC>
+</P2P>
+"""
+
 DingDongOpt_1_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
