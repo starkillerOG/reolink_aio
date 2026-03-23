@@ -10,6 +10,7 @@ from socket import AF_INET, IPPROTO_UDP
 from time import time as time_now
 from typing import TYPE_CHECKING
 
+from xml.etree import ElementTree as XML
 from ..exceptions import ReolinkConnectionError, ReolinkError, UnexpectedDataError
 from . import xmls
 from .base_protocol import (
@@ -45,14 +46,14 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
         self._local_port: int = port
         self.uid: str | None = None
-        self._client_id: int = randint(10000, 99999)
+        self._client_id: int = 0
         self._host_id: int | None = None
         self._udp_mess_id: int = 0
         self._connect_mutex = asyncio.Lock()
 
     async def _create_connection(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
         transport, protocol = await self._loop.create_datagram_endpoint(
-            lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback),
+            lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback, self.close()),
             local_addr=("0.0.0.0", self._local_port),
             reuse_port=False,
             family=AF_INET,
@@ -76,6 +77,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
             self._udp_mess_id = 0
             self._port = UDP_CONNECT_PORT
+            self._client_id = randint(10000, 99999)
 
             try:
                 # Get the UID of the camera
@@ -160,12 +162,15 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
 
     _transport: asyncio.DatagramTransport
 
-    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None, close_coroutine: asyncio.coroutine | None = None) -> None:
         super().__init__(loop, host, push_callback, close_callback)
+        self._close_coroutine = close_coroutine
+        self._loop = loop
         self._type: str = "UDP"
         self._udp_data: bytes = b""
         self.remote_port: int = UDP_CONNECT_PORT
         self.host_id: int | None = None
+
         self.send_mess_ids: set[int] = set()
         self._last_dev_mess_id: int = -1
         self._last_ack: float = 0
@@ -330,17 +335,20 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
 
             if receive_future is None or receive_future.done():
                 mess = decrypt_udp_baichuan(payload, rec_mess_id)
-                if self.receive_futures:
-                    expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
-                    _LOGGER.debug(
-                        "Baichuan host %s: received unrequested UDP message with mess_id %s, while waiting on cmd_id %s, dropping and waiting for next data:\n%s",
-                        self._host,
-                        rec_mess_id,
-                        expected_cmd_ids,
-                        mess,
-                    )
-                else:
-                    _LOGGER.debug("Baichuan host %s: received unrequested UDP message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
+                root = XML.fromstring(mess)
+                if root.tag != "P2P":
+                    _LOGGER.debug("Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
+                    return
+                for child in root:
+                    if child.tag == "D2C_C_R":
+                        _LOGGER.debug("Baichuan host %s: received UDP connection message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
+                        continue
+                    elif child.tag == "D2C_DISC":
+                        _LOGGER.debug("Baichuan host %s: received UDP disconnect message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
+                        if self._close_coroutine is not None:
+                            self._loop.create_task(self._close_coroutine)
+                    else:
+                        _LOGGER.debug("Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
                 return
 
             self.remote_port = port
