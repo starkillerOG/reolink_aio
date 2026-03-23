@@ -121,6 +121,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
         mess_id = self._udp_mess_id
         self._udp_mess_id += 1
+        self._protocol.send_mess_ids.add(mess_id)
 
         host_id_bytes = self._host_id.to_bytes(4, byteorder="little")
         mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
@@ -165,17 +166,35 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         self._udp_data: bytes = b""
         self.remote_port: int = UDP_CONNECT_PORT
         self.host_id: int | None = None
-        self._recv_mess_id: int = -1
+        self.send_mess_ids: set[int] = set()
+        self._last_dev_mess_id: int = -1
+        self._last_ack: float = 0
 
-    def send_ack(self, mess_id: int) -> None:
-        """Send an acknoladgement that a BC message was received"""
+    def send_ack(self) -> None:
+        """Send an acknowledgement that a BC message was received"""
         if self._transport is None or self.host_id is None:
-            _LOGGER.warning("Baichuan host %s: can not send acknoladgement of mess_id %s without a transport and host_id", self._host, mess_id)
+            _LOGGER.warning("Baichuan host %s: can not send acknowledgement without a transport and host_id", self._host, mess_id)
             return
         host_id_bytes = self.host_id.to_bytes(4, byteorder="little")
+        mess_id = self._last_dev_mess_id
+        payload = b""
+        if self.send_mess_ids:
+            mess_id = min(self.send_mess_ids) - 1
+            for j in range(mess_id+1, max(self.send_mess_ids)):
+                if j in self.send_mess_ids:
+                    payload += b'\x00'
+                else:
+                    payload += b'\x01'
+
+        if mess_id < 0:
+            return
+        if _LOGGER.isEnabledFor(logging.DEBUG): 
+            _LOGGER.debug("Baichuan host %s:send UDP ACK, mess_id %s  %s", self._host, mess_id, payload.hex())
+
         mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
-        udp_header = bytes.fromhex(MAGIC_UDP_ACK) + host_id_bytes + bytes.fromhex("0000000000000000") + mess_id_bytes + bytes.fromhex("0000000000000000")
-        self._transport.sendto(udp_header, (self._host, self.remote_port))
+        payload_len_bytes = len(payload).to_bytes(4, byteorder="little")
+        udp_header = bytes.fromhex(MAGIC_UDP_ACK) + host_id_bytes + bytes.fromhex("0000000000000000") + mess_id_bytes + bytes.fromhex("00000000") + payload_len_bytes
+        self._transport.sendto(udp_header + payload, (self._host, self.remote_port))
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Data received callback"""
@@ -184,7 +203,6 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             if self._udp_data:
                 _LOGGER.debug("Baichuan host %s: received UDP magic header while there is still data in the buffer, clearing old data", self._host)
             self._udp_data = data
-            self.time_recv = time_now()
         else:
             if self._udp_data:
                 # was waiting on more data so append
@@ -204,6 +222,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         """Select parsing logic for the UDP packet"""
         try:
             if self._udp_data[0:4].hex() == MAGIC_UDP_BC:
+                self.time_recv = time_now()
                 self.parse_udp_bc(port)
             elif self._udp_data[0:4].hex() == MAGIC_UDP_ACK:
                 self.parse_udp_ack(port)
@@ -230,9 +249,14 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         mess_id = int.from_bytes(self._udp_data[12:16], byteorder="little")
         payload_size = int.from_bytes(self._udp_data[16:20], byteorder="little")
         mess_len = 20 + payload_size
+
         print(f"received UDP BC: {client_id}, {mess_id}, {payload_size}")
+
+        # Send acknowledgement
+        self.send_mess_ids.discard(mess_id)
+        self.send_ack()
+
         self._udp_data = self._udp_data[mess_len::]
-        self._recv_mess_id = mess_id
         if self._udp_data:
             self.parse_udp_data(port)
 
@@ -243,12 +267,16 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         payload_size = int.from_bytes(self._udp_data[24:28], byteorder="little")
         mess_len = 28 + payload_size
         payload = self._udp_data[28:mess_len]
-        print(f"received UDP ACK, {client_id}, {last_mess_id}, {payload_size}, {payload.hex()}")
+        if(last_mess_id != self._last_dev_mess_id):
+            _LOGGER.debug("Baichuan host %s:received UDP ACK, mess_id %s  %s", self._host, last_mess_id, payload.hex())
+        self._last_dev_mess_id = last_mess_id
+
+        now = time_now()
+        if now - self._last_ack > 10.0:
+            self._last_ack = now
+            self.send_ack()
+
         self._udp_data = self._udp_data[mess_len::]
-
-        if last_mess_id <= self._recv_mess_id:
-            self.send_ack(last_mess_id)
-
         if self._udp_data:
             self.parse_udp_data(port)
 
