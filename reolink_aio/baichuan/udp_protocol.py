@@ -246,7 +246,6 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         """Select parsing logic for the UDP packet"""
         try:
             if self._udp_data[0:4].hex() == MAGIC_UDP_BC:
-                self.time_recv = time_now()
                 self.parse_udp_bc(port)
             elif self._udp_data[0:4].hex() == MAGIC_UDP_ACK:
                 self.parse_udp_ack(port)
@@ -269,67 +268,99 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
 
     def parse_udp_bc(self, port: int) -> None:
         """Parse received UDP BC message"""
-        client_id = int.from_bytes(self._udp_data[4:8], byteorder="little")
+        data_len = len(self._udp_data)
+        if data_len < 20:
+            # do not clear self._udp_data, wait for the rest of the data
+            _LOGGER.debug("Baichuan host %s: received start of UDP BC header but less then 20 bytes, waiting for the rest", self._host)
+            return
+
+        # client_id = int.from_bytes(self._udp_data[4:8], byteorder="little")
         mess_id = int.from_bytes(self._udp_data[12:16], byteorder="little")
         payload_size = int.from_bytes(self._udp_data[16:20], byteorder="little")
         mess_len = 20 + payload_size
 
-        print(f"received UDP BC: {client_id}, {mess_id}, {payload_size}")
+        # check message length
+        if data_len < mess_len:
+            # do not clear self._udp_data, wait for the rest of the data
+            _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while UDP BC header specified %s bytes, waiting for the rest", self._host, data_len, mess_len)
+            return
 
-        # Send acknowledgement
-        self.send_mess_ids.discard(mess_id)
-        self.send_ack()
-
+        # Extract data chunk from buffer
+        data_chunk = self._udp_data[20::mess_len]
         self._udp_data = self._udp_data[mess_len::]
-        if self._udp_data:
-            self.parse_udp_data(port)
+
+        try:
+            # process the data
+            self.bc_data_received(data_chunk)
+        finally:
+            try:
+                # Send acknowledgement
+                self.send_mess_ids.discard(mess_id)
+                self.send_ack()
+            finally:
+                if self._udp_data:
+                    _LOGGER.debug("Baichuan host %s: received %s bytes while UDP BC header specified %s bytes, parsing multiple messages", self._host, data_len, mess_len)
+                    self.parse_udp_data(port)
 
     def parse_udp_ack(self, port: int) -> None:
         """Parse received UDP acknowledgement"""
+        data_len = len(self._udp_data)
+        if data_len < 28:
+            # do not clear self._udp_data, wait for the rest of the data
+            _LOGGER.debug("Baichuan host %s: received start of UDP ACK header but less then 28 bytes, waiting for the rest", self._host)
+            return
+
         # client_id = int.from_bytes(self._udp_data[4:8], byteorder="little")
         last_mess_id = int.from_bytes(self._udp_data[16:20], byteorder="little")
         payload_size = int.from_bytes(self._udp_data[24:28], byteorder="little")
         mess_len = 28 + payload_size
+
+        # check message length
+        if data_len < mess_len:
+            # do not clear self._udp_data, wait for the rest of the data
+            _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while UDP ACK header specified %s bytes, waiting for the rest", self._host, data_len, mess_len)
+            return
+
+        # Extract payload from buffer
         payload = self._udp_data[28:mess_len]
+        self._udp_data = self._udp_data[mess_len::]
+
         if last_mess_id != self._last_host_mess_id:
             _LOGGER.debug("Baichuan host %s:received UDP ACK, mess_id %s  %s", self._host, last_mess_id, payload.hex())
         self._last_host_mess_id = last_mess_id
 
-        now = time_now()
-        if now - self._last_ack > 10.0:
-            self._last_ack = now
-            self.send_ack()
-
-        self._udp_data = self._udp_data[mess_len::]
-        if self._udp_data:
-            self.parse_udp_data(port)
+        try:
+            now = time_now()
+            if now - self._last_ack > 10.0:
+                self._last_ack = now
+                self.send_ack()
+        finally:
+            if self._udp_data:
+                _LOGGER.debug("Baichuan host %s: received %s bytes while UDP ACK header specified %s bytes, parsing multiple messages", self._host, data_len, mess_len)
+                self.parse_udp_data(port)
 
     def parse_udp_connection(self, port: int) -> None:
         """Parse received UDP connection data"""
-        if len(self._udp_data) < 20:
+        data_len = len(self._udp_data)
+        if data_len < 20:
             # do not clear self._udp_data, wait for the rest of the data
-            _LOGGER.debug("Baichuan host %s: received start of header but less then 20 bytes, waiting for the rest", self._host)
+            _LOGGER.debug("Baichuan host %s: received start of UDP CON header but less then 20 bytes, waiting for the rest", self._host)
             return
 
         rec_len_body = int.from_bytes(self._udp_data[4:8], byteorder="little")
         rec_mess_id = int.from_bytes(self._udp_data[12:16], byteorder="little")
         rec_checksum = self._udp_data[16:20]
+        mess_len = 20 + rec_len_body
 
         # check message length
-        len_body = len(self._udp_data) - 20
-        if len_body < rec_len_body:
+        if data_len < mess_len:
             # do not clear self._udp_data, wait for the rest of the data
-            _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while UDP header specified %s bytes, waiting for the rest", self._host, len_body, rec_len_body)
+            _LOGGER.debug("Baichuan host %s: received %s bytes in the body, while UDP CON header specified %s bytes, waiting for the rest", self._host, data_len, mess_len)
             return
 
         # extract data chunk
-        len_chunk = rec_len_body + 20
-        payload = self._udp_data[20:len_chunk]
-        if len_body > rec_len_body:
-            _LOGGER.debug("Baichuan host %s: received %s bytes while UDP header specified %s bytes, parsing multiple messages", self._host, len_body, rec_len_body)
-            self._udp_data = self._udp_data[len_chunk::]
-        else:  # len_body == rec_len_body
-            self._udp_data = b""
+        payload = self._udp_data[20:mess_len]
+        self._udp_data = self._udp_data[mess_len::]
 
         # extract receive future
         receive_future = self.receive_futures.get(-1, {}).get(rec_mess_id)
@@ -373,8 +404,8 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             self.remote_port = port
             receive_future.set_result((payload, 0, b""))
         finally:
-            # if multiple messages received, parse the next also
             if self._udp_data:
+                _LOGGER.debug("Baichuan host %s: received %s bytes while UDP CON header specified %s bytes, parsing multiple messages", self._host, data_len, mess_len)
                 self.parse_udp_data(port)
 
     def error_received(self, exc: Exception | None):
