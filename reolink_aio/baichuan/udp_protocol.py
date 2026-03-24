@@ -286,7 +286,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             return
 
         # Extract data chunk from buffer
-        data_chunk = self._udp_data[20::mess_len]
+        data_chunk = self._udp_data[20:mess_len]
         self._udp_data = self._udp_data[mess_len::]
 
         try:
