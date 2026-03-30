@@ -228,8 +228,11 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
             ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
 
-        mess_len = len(ext) + len(body)
-        payload_offset = len(ext)
+        body_bytes = body.encode("utf8")
+        ext_bytes = ext.encode("utf8")
+        ext_len = len(ext_bytes)
+        mess_len = ext_len + len(body_bytes)
+        payload_offset = ext_len
         if mess_id is None:
             self._mess_id = (self._mess_id + 1) % 16777216
         else:
@@ -253,9 +256,9 @@ class Baichuan:
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(ext, ch_id) + encrypt_baichuan(body, ch_id)  # enc_offset = ch_id
+                enc_body_bytes = encrypt_baichuan(ext_bytes, ch_id) + encrypt_baichuan(body_bytes, ch_id)  # enc_offset = ch_id
             elif enc_type == EncType.AES:
-                enc_body_bytes = self._aes_encrypt(ext) + self._aes_encrypt(body)
+                enc_body_bytes = self._aes_encrypt(ext_bytes) + self._aes_encrypt(body_bytes)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
@@ -364,7 +367,7 @@ class Baichuan:
 
         return (rec_body, payload)
 
-    def _aes_encrypt(self, body: str) -> bytes:
+    def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
         if not body:
             return b""
@@ -372,7 +375,7 @@ class Baichuan:
             raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES encryption")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
-        return cipher.encrypt(body.encode("utf8"))
+        return cipher.encrypt(body)
 
     @overload
     def _aes_decrypt(self, data: bytes, header: bytes) -> str: ...
@@ -657,6 +660,7 @@ class Baichuan:
                                 smart_type = get_value_from_xml(smart_ai, "type")
                                 if smart_type is None:
                                     continue
+                                smart_ai_locs = self._ai_detect.setdefault(channel, {}).setdefault(smart_type, {})
                                 sub_list = smart_ai.findall("subList")
                                 index_bit_ob = smart_ai.find("index")
                                 if index_bit_ob is not None and index_bit_ob.text is not None:
@@ -666,7 +670,7 @@ class Baichuan:
                                     while index_bit >= loop_bit:
                                         location = loop_bit.bit_length() - 1
                                         detected = index_bit & loop_bit > 0
-                                        smart_ai_dict = self._ai_detect[channel][smart_type][location]
+                                        smart_ai_dict = smart_ai_locs.setdefault(location, {})
                                         smart_ai_dict["state"] = detected
                                         if not sub_list and detected:
                                             _LOGGER.debug("Reolink %s TCP event channel %s, %s location %s detected", self.http_api.nvr_name, channel, smart_type, location)
@@ -680,7 +684,7 @@ class Baichuan:
                                         continue
                                     location = int(location_ob.text)
                                     ai_type = ai_type_ob.text
-                                    self._ai_detect[channel][smart_type][location][ai_type] = True
+                                    smart_ai_locs.setdefault(location, {})[ai_type] = True
                                     _LOGGER.debug(
                                         "Reolink %s TCP event channel %s, %s location %s detected %s", self.http_api.nvr_name, channel, smart_type, location, ai_type
                                     )

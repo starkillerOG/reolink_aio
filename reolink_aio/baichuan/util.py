@@ -46,24 +46,27 @@ class PortType(Enum):
 def decrypt_baichuan(buf: bytes, offset: int) -> str:
     """Decrypt a received message using the baichuan TCP protocol"""
     offset = offset % 256
-    decrypted = ""
+    decrypted = b""
     for idx, byte in enumerate(buf):
         key = XML_KEY[(offset + idx) % len(XML_KEY)]
         char = byte ^ key ^ (offset)
-        decrypted += chr(char)
-    return decrypted
+        decrypted += char.to_bytes()
+    return decrypted.decode("utf8")
 
 
-def encrypt_baichuan(buf: str, offset: int) -> bytes:
-    """Encrypt a message using the baichuan TCP protocol before sending"""
+def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
+    """Encrypt a message using the baichuan protocol before sending"""
     if offset > 255:
         raise InvalidParameterError(f"Baichuan encryption offset {offset} can not be larger than 255")
+
+    if isinstance(buf, str):
+        buf = buf.encode("utf8")
 
     encrypt = b""
     for idx, char in enumerate(buf):
         key = XML_KEY[(offset + idx) % len(XML_KEY)]
-        byte = ord(char) ^ key ^ (offset)
-        encrypt += byte.to_bytes(1, "big")
+        byte = char ^ key ^ (offset)
+        encrypt += byte.to_bytes()
     return encrypt
 
 
