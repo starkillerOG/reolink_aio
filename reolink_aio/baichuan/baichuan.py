@@ -253,8 +253,11 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
             ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
 
-        mess_len = len(ext) + len(body)
-        payload_offset = len(ext)
+        body_bytes = body.encode("utf8")
+        ext_bytes = ext.encode("utf8")
+        ext_len = len(ext_bytes)
+        mess_len = ext_len + len(body_bytes)
+        payload_offset = ext_len
         if mess_id is None:
             self._mess_id = (self._mess_id + 1) % 16777216
         else:
@@ -278,9 +281,9 @@ class Baichuan:
         enc_body_bytes = b""
         if mess_len > 0:
             if enc_type == EncType.BC:
-                enc_body_bytes = encrypt_baichuan(ext, ch_id) + encrypt_baichuan(body, ch_id)  # enc_offset = ch_id
+                enc_body_bytes = encrypt_baichuan(ext_bytes, ch_id) + encrypt_baichuan(body_bytes, ch_id)  # enc_offset = ch_id
             elif enc_type == EncType.AES:
-                enc_body_bytes = self._aes_encrypt(ext) + self._aes_encrypt(body)
+                enc_body_bytes = self._aes_encrypt(ext_bytes) + self._aes_encrypt(body_bytes)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
@@ -434,7 +437,7 @@ class Baichuan:
 
         return (rec_body, payload)
 
-    def _aes_encrypt(self, body: str) -> bytes:
+    def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
         if not body:
             return b""
@@ -442,7 +445,7 @@ class Baichuan:
             raise InvalidParameterError(f"Baichuan host {self._host}: first login before using AES encryption")
 
         cipher = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128)
-        return cipher.encrypt(body.encode("utf8"))
+        return cipher.encrypt(body)
 
     @overload
     def _aes_decrypt(self, data: bytes, header: bytes) -> str: ...

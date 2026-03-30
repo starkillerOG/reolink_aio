@@ -39,7 +39,7 @@ def decrypt_baichuan(buf: bytes, offset: int) -> str:
         key = XML_KEY[(offset + idx) % len(XML_KEY)]
         char = byte ^ key ^ (offset)
         decrypted += char.to_bytes()
-    return decrypted.decode("utf-8")
+    return decrypted.decode("utf8")
 
 
 def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
@@ -48,7 +48,7 @@ def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
         raise InvalidParameterError(f"Baichuan encryption offset {offset} can not be larger than 255")
 
     if isinstance(buf, str):
-        buf = buf.encode("utf-8")
+        buf = buf.encode("utf8")
 
     encrypt = b""
     for idx, char in enumerate(buf):
