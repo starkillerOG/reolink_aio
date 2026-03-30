@@ -1824,6 +1824,8 @@ class Host:
                         self._capabilities[channel].add("focus")
                         if self.api_version("disableAutoFocus", channel) > 0 and channel in self._auto_focus_settings:
                             self._capabilities[channel].add("auto_focus")
+                    if self.api_version("supportPtz3DLocation", channel) > 0:
+                        self._capabilities[channel].add("ptz_3d_zoom")
                 if ptz_ver in [2, 3, 5, 6]:
                     self._capabilities[channel].add("tilt")
                 if ptz_ver in [2, 3, 5, 6, 7]:
@@ -1852,9 +1854,6 @@ class Host:
                 else:
                     if warnings:
                         _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
-
-            if ptz_ver != 0 and self.api_version("supportPtz3DLocation", channel) > 0:
-                self._capabilities[channel].add("ptz_3d_zoom")
 
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].add("auto_track")
