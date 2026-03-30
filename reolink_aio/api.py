@@ -4484,8 +4484,7 @@ class Host:
                 stream_height = main_stream.get("height")
             if stream_width is None or stream_height is None:
                 raise InvalidParameterError(
-                    f"set_ptz_3d_zoom: stream resolution not available for camera {self.camera_name(channel)}, "
-                    "provide stream_width and stream_height explicitly"
+                    f"set_ptz_3d_zoom: stream resolution not available for camera {self.camera_name(channel)}, provide stream_width and stream_height explicitly"
                 )
 
         for name, val in [("pos_x", pos_x), ("pos_y", pos_y), ("pos_width", pos_width), ("pos_height", pos_height)]:
@@ -4493,9 +4492,9 @@ class Host:
                 raise InvalidParameterError(f"set_ptz_3d_zoom: {name} value {val} is not an integer")
         if pos_width <= 0 or pos_height <= 0:
             raise InvalidParameterError(f"set_ptz_3d_zoom: pos_width ({pos_width}) and pos_height ({pos_height}) must be positive")
-        if not (0 <= pos_x <= stream_width):
+        if pos_x < 0 or pos_x > stream_width:
             raise InvalidParameterError(f"set_ptz_3d_zoom: pos_x ({pos_x}) out of range 0..{stream_width}")
-        if not (0 <= pos_y <= stream_height):
+        if pos_y < 0 or pos_y > stream_height:
             raise InvalidParameterError(f"set_ptz_3d_zoom: pos_y ({pos_y}) out of range 0..{stream_height}")
         if not 1 <= speed <= 64:
             raise InvalidParameterError(f"set_ptz_3d_zoom: speed {speed} not in range 1..64")
