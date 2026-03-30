@@ -253,8 +253,10 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
             ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
 
-        mess_len = len(ext) + len(body)
-        payload_offset = len(ext)
+        ext_len = len(ext.encode("utf-8"))
+        body_len = len(body.encode("utf-8"))
+        mess_len = ext_len + body_len
+        payload_offset = ext_len
         if mess_id is None:
             self._mess_id = (self._mess_id + 1) % 16777216
         else:
