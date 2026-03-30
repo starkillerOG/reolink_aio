@@ -2355,7 +2355,7 @@ class Host:
 
     def get_raw_host_data(self) -> str:
         """Get the cache of the host data as a string."""
-        return json_dumps(self._host_data_raw).decode("utf-8")
+        return json_dumps(self._host_data_raw).decode("utf8")
 
     def set_raw_host_data(self, data: str) -> None:
         """Set the cache of the host data using a string."""
@@ -6030,7 +6030,7 @@ class Host:
                 err_mess = f"Expected type '{expected_content_type[0]}' but received '{response.content_type}'"
                 if response.content_type == "text/html":
                     if isinstance(data, bytes):
-                        data = data.decode("utf-8")
+                        data = data.decode("utf8")
                     err_mess = f"{err_mess}, response: {data}"
                 raise InvalidContentTypeError(err_mess)
 
