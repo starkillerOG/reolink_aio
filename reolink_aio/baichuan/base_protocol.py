@@ -80,6 +80,25 @@ class BaichuanBaseConnection:
             self._transport.close()
             await self._protocol.close_future
 
+    async def send_without_wait(self, data: bytes, cmd_id: int | None = None) -> None:
+        """Send a message without waiting"""
+        try:
+            async with asyncio.timeout(TIMEOUT):
+                async with self._mutex:
+                    self._write(data)
+        except asyncio.TimeoutError as err:
+            cmd_str = f"cmd_id {cmd_id}" if cmd_id is not None else "message"
+            err_str = f"Baichuan host {self._host}: Timeout sending {cmd_str} without waiting"
+            raise ReolinkTimeoutError(err_str) from err
+        except (ConnectionResetError, OSError) as err:
+            cmd_str = f"cmd_id {cmd_id}" if cmd_id is not None else "message"
+            err_str = f"Baichuan host {self._host}: Connection error during write of {cmd_str}: {str(err)}"
+            raise ReolinkConnectionError(err_str) from err
+        except asyncio.CancelledError:
+            cmd_str = f"cmd_id {cmd_id}" if cmd_id is not None else "message"
+            _LOGGER.debug("Baichuan host %s: writing %s without waiting got cancelled", self._host, cmd_str)
+            raise
+
     async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
         """Send a message and wait for the response"""
         # check for simultaneous cmd_ids with same full_mess_id
@@ -129,6 +148,23 @@ class BaichuanBaseConnection:
                     self.receive_futures.pop(cmd_id, None)
 
         return response
+
+    async def _send_heartbeat_response(self, mess_id: int) -> None:
+        """Send a heartbear response header"""
+        cmd_id = 234
+        cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
+        mess_id_bytes = (mess_id).to_bytes(4, byteorder="little")
+        message_class = "1464"
+        mess_len = "00000000"
+        payload_offset = "00000000"
+        status_code = "0000"
+        header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + bytes.fromhex(mess_len) + mess_id_bytes + bytes.fromhex(status_code + message_class + payload_offset)
+        _LOGGER.debug("Baichuan host %s: received UDP heartbeat cmd_id %s, sending keepalive", self._host, cmd_id)
+        await self.send_without_wait(header, cmd_id)
+
+    def send_heartbeat_response(self, mess_id: int) -> None:
+        """Schedule a heartbear response"""
+        self._loop.create_task(self._send_heartbeat_response(mess_id))
 
     @property
     def connection_open(self) -> bool:

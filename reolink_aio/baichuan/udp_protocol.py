@@ -116,12 +116,8 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         """Write data over the transport"""
         self._transport.sendto(data, (self._host, self._port))
 
-    async def _send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
-        """Send a message and wait for the response"""
-        return await super().send(data, cmd_id, full_mess_id, channel, log_mess)
-
-    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
-        """Wrap the BC message in a UDP header, send the message and wait for the response"""
+    async def _construct_udp_header(self, data_len: int) -> bytes:
+        """Construct the BC UDP header"""
         if self._protocol is None or self._protocol.host_id is None:
             await self.connect()
             if TYPE_CHECKING:
@@ -132,11 +128,23 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
         host_id_bytes = self._protocol.host_id.to_bytes(4, byteorder="little")
         mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
-        mess_len_bytes = len(data).to_bytes(4, byteorder="little")
+        mess_len_bytes = data_len.to_bytes(4, byteorder="little")
 
-        udp_header = bytes.fromhex(MAGIC_UDP_BC) + host_id_bytes + bytes.fromhex("00000000") + mess_id_bytes + mess_len_bytes
+        return bytes.fromhex(MAGIC_UDP_BC) + host_id_bytes + bytes.fromhex("00000000") + mess_id_bytes + mess_len_bytes
 
+    async def _send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
+        """Send a message and wait for the response"""
+        return await super().send(data, cmd_id, full_mess_id, channel, log_mess)
+
+    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
+        """Wrap the BC message in a UDP header, send the message and wait for the response"""
+        udp_header = await self._construct_udp_header(len(data))
         return await self._send(udp_header + data, cmd_id, full_mess_id, channel, log_mess)
+
+    async def send_without_wait(self, data: bytes, cmd_id: int | None = None) -> None:
+        """Wrap the BC message in a UDP header, send a message without waiting"""
+        udp_header = await self._construct_udp_header(len(data))
+        return await super().send_without_wait(udp_header + data, cmd_id)
 
     def _construct_udp_mess(self, body: str) -> tuple[bytes, int]:
         trans_id = randint(1000, 1000000)

@@ -468,6 +468,9 @@ class Baichuan:
 
         if len(rec_body) == 0:
             if payload_len == 0:
+                if cmd_id == 234:  # UDP heartbeat
+                    self._connection.send_heartbeat_response(mess_id)
+                    return
                 _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body", self._host, cmd_id)
                 if (payload_future_data := self._payload_future_data.get(mess_id)) is not None:
                     ch_id = mess_id % 256
