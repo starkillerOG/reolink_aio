@@ -1748,10 +1748,11 @@ class Baichuan:
         def inc_host_cmd(cmd: str, no_wake_check=False) -> bool:
             return (cmd in cmd_list or not cmd_list) and (no_wake_check or (all_wake or not any_battery or cmd in NONE_WAKING_COMMANDS))
 
+        def channel_wake(cmd: str, channel: int) -> bool:
+            return wake[channel] or cmd in NONE_WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
+
         def inc_cmd(cmd: str, channel: int) -> bool:
-            return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and (
-                wake[channel] or cmd in NONE_WAKING_COMMANDS or not self.http_api.supported(channel, "battery")
-            )
+            return (channel in cmd_list.get(cmd, []) or not cmd_list or len(cmd_list.get(cmd, [])) == 1) and channel_wake(cmd, channel)
 
         def inc_ch_wake_cmd(cmd: str, channel: int | None = None):
             if channel is None:
@@ -1779,7 +1780,8 @@ class Baichuan:
                 coroutines.append(self.get_wifi_signal(channel))
 
             if self.supported(channel, "rules"):
-                coroutines.append(self.get_rule_ids(channel))
+                if channel_wake("rules", channel):
+                    coroutines.append(self.get_rule_ids(channel))
                 if inc_cmd("rules", channel):
                     for rule_id in self.rule_ids(channel):
                         coroutines.append(self.get_rule(rule_id, channel))
@@ -1792,6 +1794,8 @@ class Baichuan:
 
             if self.supported(channel, "hardwired_chime") and channel in cmd_list.get("483", []) and channel not in self._hardwired_chime_settings:
                 # only get the state if not known yet, cmd_id 483 can make the hardwired chime rattle a bit
+                # Do not check for waking, this command will not be included in the first get_states when cmd_list is still empty (otherwise there always is a rattle there).
+                # It will be retrieved once on the second get_states when the cmd_list is set, after the initial retrieval it will not be set anymore.
                 coroutines.append(self.get_ding_dong_ctrl(channel))
 
             if self.supported(channel, "ir_brightness") and inc_cmd("208", channel):
