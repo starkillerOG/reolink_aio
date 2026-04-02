@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import logging
 import struct
 from collections.abc import AsyncIterator, Callable
@@ -3618,9 +3619,7 @@ class Baichuan:
 
         Used as a fallback when baichuan_only=True (no HTTP API available).
         """
-        import calendar as cal
-
-        last_day = cal.monthrange(year, month)[1]
+        last_day = calendar.monthrange(year, month)[1]
         xml = xmls.DayRecords.format(year=year, month=month, last_day=last_day, channel=channel)
         mess = await self.send(cmd_id=142, channel=channel, body=xml)
         root = XML.fromstring(mess)
@@ -3766,14 +3765,7 @@ class Baichuan:
         cmd_id_bytes = cmd_id.to_bytes(4, "little")
         mess_len_bytes = mess_len.to_bytes(4, "little")
         payload_offset_bytes = payload_offset.to_bytes(4, "little")
-        header = (
-            bytes.fromhex(HEADER_MAGIC)
-            + cmd_id_bytes
-            + mess_len_bytes
-            + mess_id_bytes
-            + bytes.fromhex("0000" + "1464")
-            + payload_offset_bytes
-        )
+        header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex("0000" + "1464") + payload_offset_bytes
         enc_body = self._aes_encrypt(ext) + self._aes_encrypt(body)
 
         await self._connect_if_needed()
@@ -3846,7 +3838,7 @@ class Baichuan:
                     if magic_idx + 8 > len(buf):
                         scan_from = magic_idx
                         break
-                    audio_payload_size = int.from_bytes(buf[magic_idx + 4: magic_idx + 6], "little")
+                    audio_payload_size = int.from_bytes(buf[magic_idx + 4 : magic_idx + 6], "little")
                     audio_pad = (8 - audio_payload_size % 8) % 8
                     audio_total = 8 + audio_payload_size + audio_pad
                     if magic_idx + audio_total > len(buf):
@@ -3862,9 +3854,9 @@ class Baichuan:
                     scan_from = magic_idx
                     break
 
-                payload_size = int.from_bytes(buf[magic_idx + 8: magic_idx + 12], "little")
-                additional_header_size = int.from_bytes(buf[magic_idx + 12: magic_idx + 16], "little")
-                microseconds = int.from_bytes(buf[magic_idx + 16: magic_idx + 20], "little")
+                payload_size = int.from_bytes(buf[magic_idx + 8 : magic_idx + 12], "little")
+                additional_header_size = int.from_bytes(buf[magic_idx + 12 : magic_idx + 16], "little")
+                microseconds = int.from_bytes(buf[magic_idx + 16 : magic_idx + 20], "little")
 
                 hdr_size = 24 + additional_header_size
                 pad_size = (8 - payload_size % 8) % 8
@@ -3875,7 +3867,7 @@ class Baichuan:
                     scan_from = magic_idx
                     break
 
-                h264_bytes = bytes(buf[magic_idx + hdr_size: magic_idx + hdr_size + payload_size])
+                h264_bytes = bytes(buf[magic_idx + hdr_size : magic_idx + hdr_size + payload_size])
                 del buf[: magic_idx + total_size]
                 scan_from = 0
 
@@ -3920,10 +3912,10 @@ class Baichuan:
             q, full_mess_id = await self._send_streaming(try_cmd_id, channel, body)
             try:
                 status_code, data_chunk, len_hdr, payload = await asyncio.wait_for(q.get(), timeout=TIMEOUT)
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as err:
                 if self._protocol is not None:
                     self._protocol.streaming_queues.pop((try_cmd_id, full_mess_id), None)
-                raise ReolinkTimeoutError(f"Baichuan host {self._host}: timeout waiting for replay start (MSG {try_cmd_id})")
+                raise ReolinkTimeoutError(f"Baichuan host {self._host}: timeout waiting for replay start (MSG {try_cmd_id})") from err
 
             if status_code == 400:
                 if self._protocol is not None:
@@ -4342,13 +4334,7 @@ class Baichuan:
             data_len = len(block)
             payload_size = data_len + 4
             pad_size = (8 - payload_size % 8) % 8
-            payload += (
-                Baichuan.BCMEDIA_ADPCM_MAGIC
-                + struct.pack("<HH", payload_size, payload_size)
-                + struct.pack("<HH", 0x0100, 2)
-                + block
-                + b"\x00" * pad_size
-            )
+            payload += Baichuan.BCMEDIA_ADPCM_MAGIC + struct.pack("<HH", payload_size, payload_size) + struct.pack("<HH", 0x0100, 2) + block + b"\x00" * pad_size
         return payload
 
     async def send_talk_data(self, channel: int, bcmedia_data: bytes) -> None:

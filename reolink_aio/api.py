@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import calendar
 import hashlib
 import logging
 import re
@@ -5869,8 +5870,6 @@ class Host:
         if self.baichuan_only:
             return await self.baichuan.search_recording_days_bc(channel, year, month)
 
-        import calendar
-
         last_day = calendar.monthrange(year, month)[1]
         start = datetime(year, month, 1, 0, 0, 0)
         end = datetime(year, month, last_day, 23, 59, 59)
@@ -5935,9 +5934,7 @@ class Host:
         start = datetime(day.year, day.month, day.day, 0, 0, 0)
         end = datetime(day.year, day.month, day.day, 23, 59, 59)
 
-        _, vod_files = await self.request_vod_files(
-            channel, start, end, status_only=False, stream=stream, trigger=trigger
-        )
+        _, vod_files = await self.request_vod_files(channel, start, end, status_only=False, stream=stream, trigger=trigger)
 
         # Deduplicate by file_name then sort chronologically
         seen: set[str] = set()
@@ -5982,9 +5979,7 @@ class Host:
             async for microseconds, h264_bytes in host.stream_recording_bc(ch, name, start_time):
                 ...
         """
-        return self.baichuan.parse_bcmedia_frames(
-            self.baichuan.stream_replay_bc(channel, file_name, start_time, stream_type)
-        )
+        return self.baichuan.parse_bcmedia_frames(self.baichuan.stream_replay_bc(channel, file_name, start_time, stream_type))
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
         command = body[0]["cmd"]
