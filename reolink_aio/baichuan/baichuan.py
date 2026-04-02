@@ -3754,9 +3754,11 @@ class Baichuan:
 
         ch_id = channel + 1 if channel is not None else 250
         ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel) if channel is not None else ""
+        ext_bytes = ext.encode("utf-8")
+        body_bytes = body.encode("utf-8")
 
-        mess_len = len(ext) + len(body)
-        payload_offset = len(ext)
+        mess_len = len(ext_bytes) + len(body_bytes)
+        payload_offset = len(ext_bytes)
 
         self._mess_id = (self._mess_id + 1) % 16777216
         mess_id_bytes = ch_id.to_bytes(1, "little") + self._mess_id.to_bytes(3, "little")
@@ -3766,7 +3768,7 @@ class Baichuan:
         mess_len_bytes = mess_len.to_bytes(4, "little")
         payload_offset_bytes = payload_offset.to_bytes(4, "little")
         header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex("0000" + "1464") + payload_offset_bytes
-        enc_body = self._aes_encrypt(ext) + self._aes_encrypt(body)
+        enc_body = self._aes_encrypt(ext_bytes) + self._aes_encrypt(body_bytes)
 
         await self._connect_if_needed()
         if TYPE_CHECKING:
