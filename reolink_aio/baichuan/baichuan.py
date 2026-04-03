@@ -179,6 +179,7 @@ class Baichuan:
         self._siren_state: dict[int, bool] = {}
         self._siren_play_time: dict[int | None, float] = {}
         self._noise_reduction: dict[int, int] = {}
+        self._talk_config: dict[int, dict] = {}
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
@@ -436,6 +437,58 @@ class Baichuan:
             self._payload_future[ch_id].pop(full_mess_id, None)
 
         return (rec_body, payload)
+
+    async def _send_talk_frame(self, channel: int, raw_payload: bytes) -> None:
+        """Send a talk audio frame with AES-encrypted extension + raw binary payload.
+
+        Unlike send(), this method does NOT await a response — talk frames
+        (cmd_id=202) are fire-and-forget. The extension XML is AES-encrypted
+        but the audio payload is sent as raw (unencrypted) binary data.
+
+        Args:
+            channel: Camera channel number.
+            raw_payload: BcMedia frame(s) containing ADPCM audio data.
+        """
+        if not self._logged_in:
+            await self.login()
+
+        ch_id = channel + 1
+        self._mess_id = (self._mess_id + 1) % 16777216
+
+        # Build extension XML with binaryData flag
+        ext = xmls.BINARY_EXTENSION_XML.format(channel=channel)
+        ext_bytes = ext.encode("utf8")
+
+        # Encrypt extension only — audio payload stays raw
+        enc_ext = self._aes_encrypt(ext_bytes)
+
+        # Header fields
+        ext_len = len(enc_ext)
+        mess_len = ext_len + len(raw_payload)
+        payload_offset = ext_len
+
+        cmd_id_bytes = (202).to_bytes(4, byteorder="little")
+        mess_len_bytes = mess_len.to_bytes(4, byteorder="little")
+        mess_id_bytes = ch_id.to_bytes(1, byteorder="little") + self._mess_id.to_bytes(3, byteorder="little")
+        payload_offset_bytes = payload_offset.to_bytes(4, byteorder="little")
+        status_code = "0000"
+        message_class = "1464"
+
+        header = (
+            bytes.fromhex(HEADER_MAGIC)
+            + cmd_id_bytes
+            + mess_len_bytes
+            + mess_id_bytes
+            + bytes.fromhex(status_code + message_class)
+            + payload_offset_bytes
+        )
+
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._transport is not None
+
+        async with self._mutex:
+            self._transport.write(header + enc_ext + raw_payload)
 
     def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
@@ -1620,6 +1673,15 @@ class Baichuan:
                     for audio in root.findall(".//audioStreamMode"):
                         if audio.text == "mixAudioStream":
                             self.capabilities[channel].add("two_way_audio")
+                    # Store audio config for talk()
+                    audio_cfg = root.find(".//audioConfig")
+                    if audio_cfg is not None:
+                        self._talk_config[channel] = {
+                            "sample_rate": int(audio_cfg.findtext("sampleRate", "8000")),
+                            "block_size": int(audio_cfg.findtext("lengthPerEncoder", "1024")),
+                            "duplex": root.findtext(".//duplex", "FDX"),
+                            "stream_mode": root.findtext(".//audioStreamMode", "followVideoStream"),
+                        }
                 if cmd_id == 483:  # hardwired chime
                     self.capabilities[channel].add("hardwired_chime")
                 if cmd_id == 527:  # crossline detection
@@ -2856,6 +2918,93 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=440, channel=channel, body=xml)
         await self.GetAudioNoise(channel)
+
+    async def talk(
+        self,
+        channel: int,
+        audio_data: bytes,
+        sample_rate: int | None = None,
+        block_size: int | None = None,
+    ) -> None:
+        """Send PCM audio to camera speaker via two-way audio (Baichuan talk).
+
+        Starts a talk session, encodes PCM to ADPCM, sends audio frames,
+        and ends the session. Handles 422 (session busy) by resetting first.
+
+        Args:
+            channel: Camera channel (0 for standalone cameras, 0+ for hub).
+            audio_data: Raw PCM audio — 16-bit signed little-endian, mono,
+                at the target sample rate (default 8000 Hz).
+            sample_rate: Override sample rate. Default: from TalkAbility.
+            block_size: Override ADPCM block size (lengthPerEncoder).
+                Default: from TalkAbility.
+
+        Raises:
+            NotSupportedError: If camera doesn't support two-way audio.
+            ReolinkError: If talk session cannot be started.
+        """
+        from .audio import build_bc_media_frame, encode_pcm_to_adpcm
+
+        # Get talk config (from TalkAbility, queried during capability discovery)
+        cfg = self._talk_config.get(channel, {})
+        sr = sample_rate or cfg.get("sample_rate", 8000)
+        bs = block_size or cfg.get("block_size", 1024)
+        duplex = cfg.get("duplex", "FDX")
+        stream_mode = cfg.get("stream_mode", "followVideoStream")
+
+        # Build TalkConfig body
+        talk_config_body = xmls.TALK_CONFIG_XML.format(
+            channel=channel,
+            duplex=duplex,
+            stream_mode=stream_mode,
+            sample_rate=sr,
+            block_size=bs,
+        )
+
+        # Start talk session (cmd_id=201: TalkConfig)
+        try:
+            await self.send(cmd_id=201, channel=channel, body=talk_config_body)
+        except ApiError as err:
+            if err.rspCode == 422:
+                # Another talk session active — reset and retry
+                _LOGGER.debug("Baichuan host %s: talk session busy (422), resetting", self._host)
+                try:
+                    await self.send(cmd_id=11, channel=channel)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
+                await self.send(cmd_id=201, channel=channel, body=talk_config_body)
+            else:
+                raise
+
+        try:
+            # Encode PCM to ADPCM blocks
+            adpcm_blocks = encode_pcm_to_adpcm(audio_data, samples_per_block=bs)
+
+            # Calculate inter-frame delay based on audio duration
+            # Each block encodes `bs` samples at `sr` Hz
+            block_duration = bs / sr  # seconds per block
+
+            # Send audio frames (cmd_id=202: Talk)
+            # Pack up to 4 blocks per message for efficiency
+            blocks_per_message = 4
+            for i in range(0, len(adpcm_blocks), blocks_per_message):
+                batch = adpcm_blocks[i : i + blocks_per_message]
+                payload = b"".join(build_bc_media_frame(block) for block in batch)
+                await self._send_talk_frame(channel, payload)
+
+                # Pace sending to match audio playback rate
+                await asyncio.sleep(block_duration * len(batch))
+
+            # Wait for camera to finish playing the last frames
+            await asyncio.sleep(1.0)
+
+        finally:
+            # End talk session (cmd_id=11: TalkReset)
+            try:
+                await self.send(cmd_id=11, channel=channel)
+            except Exception as err:
+                _LOGGER.debug("Baichuan host %s: TalkReset failed: %s", self._host, err)
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int | None = None, retry: int = 3, **_kwargs) -> None:
