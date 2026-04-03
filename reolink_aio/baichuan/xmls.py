@@ -82,6 +82,30 @@ WEBHOOK_PUSH = """
 </HaCfg>
 </body>"""
 
+BINARY_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<channelId>{channel}</channelId>
+<binaryData>1</binaryData>
+</Extension>
+"""
+
+TALK_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<TalkConfig version="1.1">
+<channelId>{channel}</channelId>
+<duplex>{duplex}</duplex>
+<audioStreamMode>{stream_mode}</audioStreamMode>
+<audioConfig>
+<audioType>adpcm</audioType>
+<sampleRate>{sample_rate}</sampleRate>
+<samplePrecision>16</samplePrecision>
+<lengthPerEncoder>{block_size}</lengthPerEncoder>
+<soundTrack>mono</soundTrack>
+</audioConfig>
+</TalkConfig>
+</body>
+"""
+
 DingDongOpt_1_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
