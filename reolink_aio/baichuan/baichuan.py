@@ -123,6 +123,8 @@ class Baichuan:
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
+        # Login rsp status (neolink codex): 0xDD12 = FullAes (encrypts replay/live binary); 0xDD02 etc. = Aes (binary plaintext).
+        self._baichuan_crypto_tier: Literal["aes", "full_aes"] | None = None
         self._log_once: set[str] = set()
         self._log_error: bool = True
         self.last_privacy_check: float = 0
@@ -368,6 +370,15 @@ class Baichuan:
                 raise UnexpectedDataError(err_str)
             _LOGGER.debug("%s, trying again", str(err_str))
             return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+
+        # Baichuan login (cmd_id 1): capture negotiated encryption tier from header status word (bytes 16–17, LE).
+        # High byte 0xDD, low 0x12 = FullAes; other 0xDD** = Aes-style (control encrypted, replay binary plaintext).
+        if cmd_id == 1 and len(data) >= 18:
+            status_u16 = int.from_bytes(data[16:18], "little")
+            if (status_u16 >> 8) & 0xFF == 0xDD:
+                low = status_u16 & 0xFF
+                self._baichuan_crypto_tier = "full_aes" if low == 0x12 else "aes"
+                _LOGGER.debug("Baichuan host %s: cmd_id 1 encryption tier %s (status 0x%04x)", self._host, self._baichuan_crypto_tier, status_u16)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
@@ -1372,6 +1383,7 @@ class Baichuan:
         self._protocol = None
         self._nonce = None
         self._aes_key = None
+        self._baichuan_crypto_tier = None
         self._user_hash = None
         self._password_hash = None
 
@@ -3879,6 +3891,10 @@ class Baichuan:
         Sends ReplaySeek (MSG 123) first, then MSG 5 (falls back to MSG 8 on 400),
         skips the 32-byte replay header, and yields each subsequent binary packet.
         Sends ReplayStop (MSG 7) in cleanup.
+
+        Replay binary handling follows the negotiated Baichuan login tier (header status on cmd_id 1):
+        FullAes (0xDD12) may encrypt payload (partial via Extension encryptLen, else full AES-CFB);
+        Aes (0xDD02, etc.) leaves binary as plaintext BcMedia. If tier was not parsed, defaults to FullAes.
         """
         await self.replay_seek_bc(channel, start_time)
 
@@ -3956,33 +3972,35 @@ class Baichuan:
                     continue
 
                 if payload and self._aes_key is not None:
-                    # Packet has an extension section — try XML-based decryption first (encryptLen in Extension XML).
-                    enc_pos = 0
-                    enc_len: int | None = None
-                    xml_enc = data_chunk[len_hdr:]
-                    if xml_enc:
-                        try:
-                            xml_str = self._aes_decrypt(xml_enc, data_chunk[:len_hdr])
-                            if xml_str.startswith("<?xml"):
-                                root = XML.fromstring(xml_str.lower())
-                                enc_len = self._get_value_from_xml_element(root, "encryptlen", int)
-                                enc_pos = self._get_value_from_xml_element(root, "encryptpos", int) or 0
-                        except Exception:
-                            pass
+                    # Aes (0xDD02): only control/XML is encrypted; binary BcMedia is plaintext — never AES-decrypt it
+                    # (neolink PR #396 / de.rs). Default to full_aes when tier unknown so E1-style devices keep working.
+                    # FullAes (0xDD12): binary may be partially encrypted per encryptLen/encryptPos from the Extension XML.
+                    # SDK behavior (handleResponseV20): when encryptLen is absent from the Extension, it stays at
+                    # init 0xFFFFFFFF; the check `0 < (int)encryptLen` fails (-1 signed) → decrypt is skipped → plaintext.
+                    # Only decrypt when encryptLen is explicitly present and > 0.
+                    tier = self._baichuan_crypto_tier or "full_aes"
+                    if tier == "aes":
+                        binary = payload
+                    else:
+                        enc_pos = 0
+                        enc_len: int | None = None
+                        xml_enc = data_chunk[len_hdr:]
+                        if xml_enc:
+                            try:
+                                xml_str = self._aes_decrypt(xml_enc, data_chunk[:len_hdr])
+                                if xml_str.startswith("<?xml"):
+                                    root = XML.fromstring(xml_str.lower())
+                                    enc_len = self._get_value_from_xml_element(root, "encryptlen", int)
+                                    enc_pos = self._get_value_from_xml_element(root, "encryptpos", int) or 0
+                            except Exception:
+                                pass
 
-                    if enc_len is None or enc_len == 0:
-                        # Extension was not parseable XML (e.g. binary struct on E1) — probe the payload.
-                        # Per neolink: the first 32 bytes of the payload are typically the encrypted region.
-                        if len(payload) >= 8:
-                            probe = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128).decrypt(payload[:8])
-                            if probe[:4] == b"00dc":
-                                enc_len = 32
-                                enc_pos = 0
-
-                    if enc_len and enc_len > 0:
-                        end = enc_pos + enc_len
-                        decrypted_region = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128).decrypt(payload[enc_pos:end])
-                        binary = payload[:enc_pos] + decrypted_region + payload[end:]
+                        if enc_len is not None and enc_len > 0:
+                            end = enc_pos + enc_len
+                            decrypted_region = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128).decrypt(payload[enc_pos:end])
+                            binary = payload[:enc_pos] + decrypted_region + payload[end:]
+                        else:
+                            binary = payload
 
                 if packet_count <= 3 or packet_count % 100 == 0:
                     _LOGGER.debug("Baichuan host %s: replay pkt %s: %s bytes", self._host, packet_count, len(binary))
