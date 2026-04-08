@@ -81,7 +81,7 @@ class BaichuanBaseConnection:
             try:
                 async with asyncio.timeout(5):
                     await self._protocol.close_future
-            except asyncio.TimeoutError as err:
+            except asyncio.TimeoutError:
                 _LOGGER.warning("Baichuan host %s: Timeout waiting on connection close", self._host)
                 self._protocol.connection_lost()
 

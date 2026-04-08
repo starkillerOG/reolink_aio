@@ -11,6 +11,7 @@ from time import time as time_now
 from typing import TYPE_CHECKING, Coroutine
 from xml.etree import ElementTree as XML
 
+from ..const import TIMEOUT
 from ..exceptions import ReolinkConnectionError, ReolinkError, UnexpectedDataError
 from . import xmls
 from .base_protocol import (
@@ -47,7 +48,6 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
         self._local_port: int = port
         self.uid: str | None = None
-        self._client_id: int | None = None
         self._udp_mess_id: int = 0
         self._connect_mutex = asyncio.Lock()
 
@@ -77,7 +77,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
             self._udp_mess_id = 0
             self._port = UDP_CONNECT_PORT
-            self._client_id = randint(10000, 99999)
+            self._protocol.client_id = randint(10000, 99999)
 
             try:
                 # Get the UID of the camera
@@ -87,14 +87,14 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
                     self.uid = get_value_from_xml(mess, "uid")
 
                 # Make the UDP connection
-                body = xmls.UDP_CONNECT_XML.format(uid=self.uid, port=self._local_port, client_id=self._client_id, mtu=MTU)
+                body = xmls.UDP_CONNECT_XML.format(uid=self.uid, port=self._local_port, client_id=self._protocol.client_id, mtu=MTU)
                 mess = await self.send_udp(body)
             except ReolinkError as err:
                 raise ReolinkConnectionError(f"{err} during UDP connection") from err
 
             recv_client_id = get_value_from_xml(mess, "cid", int)
-            if self._client_id != recv_client_id:
-                raise ReolinkConnectionError(f"Baichuan host {self._host}: received client_id {recv_client_id} did not match send client_id {self._client_id}")
+            if self._protocol.client_id != recv_client_id:
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: received client_id {recv_client_id} did not match send client_id {self._protocol.client_id}")
             self._protocol.host_id = get_value_from_xml(mess, "did", int)
             self._port = self._protocol.remote_port
             _LOGGER.debug("Baichuan host %s: using remote UDP port %s", self._host, self._port)
@@ -102,15 +102,14 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
     async def close(self) -> None:
         """close the connection and wait untill close is complete"""
         # send close message
-        if self._client_id is not None and self._protocol is not None and self._protocol.host_id is not None:
-            body = xmls.UDP_DISCONNECT_XML.format(client_id=self._client_id, host_id=self._protocol.host_id)
+        if self._protocol is not None and self._protocol.client_id is not None and self._protocol.host_id is not None:
+            body = xmls.UDP_DISCONNECT_XML.format(client_id=self._protocol.client_id, host_id=self._protocol.host_id)
             mess, _ = self._construct_udp_mess(body)
             _LOGGER.debug("Baichuan host %s:%s>%s: send UDP disconnect message: %s", self._host, self._local_port, self._port, body)
             await super().send_without_wait(mess, timeout=5)
 
         await super().close()
         self._port = UDP_CONNECT_PORT
-        self._client_id = None
 
     def _write(self, data: bytes) -> None:
         """Write data over the transport"""
@@ -141,7 +140,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         udp_header = await self._construct_udp_header(len(data))
         return await self._send(udp_header + data, cmd_id, full_mess_id, channel, log_mess)
 
-    async def send_without_wait(self, data: bytes, cmd_id: int | None = None) -> None:
+    async def send_without_wait(self, data: bytes, cmd_id: int | None = None, timeout: int | float = TIMEOUT) -> None:
         """Wrap the BC message in a UDP header, send a message without waiting"""
         udp_header = await self._construct_udp_header(len(data))
         return await super().send_without_wait(udp_header + data, cmd_id)
@@ -194,13 +193,14 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         self._udp_data: bytes = b""
         self.remote_port: int = UDP_CONNECT_PORT
         self.host_id: int | None = None
+        self.client_id: int | None = None
 
         self._seq_data: dict[int, bytes] = {}
         self._recv_seq_id: int = -1
         self._send_seq_id: int = -1
         self._last_ack: float = 0
 
-    def connection_lost(self, exc: Exception | None) -> None:
+    def connection_lost(self, exc: Exception | None = None) -> None:
         """Connection lost callback"""
         self._seq_data.clear()
         self._recv_seq_id = -1
@@ -208,6 +208,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         self._last_ack = 0
         super().connection_lost(exc)
         self.host_id = None
+        self.client_id = None
         self.remote_port = UDP_CONNECT_PORT
 
     def send_ack(self) -> None:
