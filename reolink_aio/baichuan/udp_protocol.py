@@ -29,7 +29,7 @@ from .util import (
 MAGIC_UDP_CON = "3acf872a"
 MAGIC_UDP_BC = "10cf872a"
 MAGIC_UDP_ACK = "20cf872a"
-MAGICS_RECV = [MAGIC_UDP_BC, MAGIC_UDP_ACK, MAGIC_UDP_CON]
+MAGICS_UDP = [MAGIC_UDP_BC, MAGIC_UDP_ACK, MAGIC_UDP_CON]
 UDP_CONNECT_PORT = 2015
 MTU = 1350  # The maximum transmission unit of the connection. Which is the largest packet size in bytes
 
@@ -238,21 +238,12 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Data received callback"""
         # parse received header
-        if data[0:4].hex() in MAGICS_RECV:
+        if data[0:4].hex() in MAGICS_UDP:
             if self._udp_data:
                 _LOGGER.debug("Baichuan host %s: received UDP magic header while there is still data in the buffer, clearing old data", self._host)
             self._udp_data = data
         else:
-            if self._udp_data:
-                # was waiting on more data so append
-                self._udp_data = self._udp_data + data
-            elif len(data) < 4 and any(bytes.fromhex(magic).startswith(data) for magic in MAGICS_RECV):
-                self._udp_data = data
-                _LOGGER.debug("Baichuan host %s: received start of UDP magic header but less then 4 bytes, waiting for the rest", self._host)
-                return
-            else:
-                self._set_error(f"with invalid magic header: {data[0:4].hex()}", UnexpectedDataError)
-                return
+            self._udp_data = self._udp_data + data
 
         _, port = addr
         self.parse_udp_data(port)
@@ -266,12 +257,12 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 self.parse_udp_ack(port)
             elif self._udp_data[0:4].hex() == MAGIC_UDP_CON:
                 self.parse_udp_connection(port)
-            elif len(self._udp_data) < 4 and any(bytes.fromhex(magic).startswith(self._data) for magic in MAGICS_RECV):
+            elif len(self._udp_data) < 4 and any(bytes.fromhex(magic).startswith(self._data) for magic in MAGICS_UDP):
                 # do not clear self._data, wait for the rest of the data
                 _LOGGER.debug("Baichuan host %s: received start of UDP magic header but less then 4 bytes, waiting for the rest", self._host)
                 return
             else:
-                _LOGGER.debug("Baichuan host %s: received unknown magic header %s, dropping data", self._host, self._udp_data[0:4].hex())
+                self._set_error(f"with invalid magic header: {self._udp_data[0:4].hex()}, dropping data", UnexpectedDataError)
                 self._udp_data = b""
                 return
         except Exception as exc:
