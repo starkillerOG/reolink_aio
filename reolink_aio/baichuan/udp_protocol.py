@@ -281,7 +281,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             return
 
         header = self._udp_data[0:20]
-        # client_id = int.from_bytes(header[4:8], byteorder="little")
+        client_id = int.from_bytes(header[4:8], byteorder="little")
         seq_id = int.from_bytes(header[12:16], byteorder="little")
         payload_size = int.from_bytes(header[16:20], byteorder="little")
         mess_len = 20 + payload_size
@@ -297,6 +297,11 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         self._udp_data = self._udp_data[mess_len::]
 
         try:
+            # check client_id
+            if client_id != self.client_id:
+                _LOGGER.warning("Baichuan host %s: received client_id %s in UDP BC header while connection client_id is %s, ignoring", self._host, client_id, self.client_id)
+                return
+
             # check seq_id
             if seq_id != self._recv_seq_id + 1:
                 if seq_id <= self._recv_seq_id:
@@ -344,7 +349,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             _LOGGER.debug("Baichuan host %s: received start of UDP ACK header but less then 28 bytes, waiting for the rest", self._host)
             return
 
-        # client_id = int.from_bytes(self._udp_data[4:8], byteorder="little")
+        client_id = int.from_bytes(self._udp_data[4:8], byteorder="little")
         seq_id = int.from_bytes(self._udp_data[16:20], byteorder="little")
         payload_size = int.from_bytes(self._udp_data[24:28], byteorder="little")
         mess_len = 28 + payload_size
@@ -358,6 +363,11 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         # Extract payload from buffer
         payload = self._udp_data[28:mess_len]
         self._udp_data = self._udp_data[mess_len::]
+
+        # check client_id
+        if client_id != self.client_id:
+            _LOGGER.debug("Baichuan host %s: received client_id %s in UDP ACK header while connection client_id is %s, ignoring", self._host, client_id, self.client_id)
+            return
 
         if seq_id != self._send_seq_id:
             _LOGGER.debug("Baichuan host %s:received UDP ACK, send_seq_id %s  %s", self._host, seq_id, payload.hex())
