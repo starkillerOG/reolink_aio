@@ -5232,8 +5232,9 @@ class Host:
         if doorbell_button_sound is not None:
             params["visitorLoudspeaker"] = 1 if doorbell_button_sound else 0
 
-        body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
-        await self.baichuan.SetAudioCfg(**body[0]["param"])
+        # body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
+        param = {"AudioCfg": params}
+        await self.baichuan.SetAudioCfg(**param)
         await self.baichuan.GetAudioCfg(channel)
 
     async def set_hub_audio(
@@ -7157,18 +7158,13 @@ class Chime:
                 tone_id = current_tone_id
             state = 0
 
-        param = {"ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}
+        params = {"ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}
         if self.channel is not None:
-            param["channel"] = self.channel
+            params["channel"] = self.channel
 
-        body = [
-            {
-                "cmd": "SetDingDongCfg",
-                "action": 0,
-                "param": {"DingDongCfg": param},
-            }
-        ]
-        await self.host.baichuan.SetDingDongCfg(**body[0]["param"])
+        # body = [{"cmd": "SetDingDongCfg", "action": 0, "param": {"DingDongCfg": param}}]
+        param = {"DingDongCfg": params}
+        await self.host.baichuan.SetDingDongCfg(**param)
         await self.host.baichuan.GetDingDongCfg(self.channel)
 
     async def remove(self) -> None:
