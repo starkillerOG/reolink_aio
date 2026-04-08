@@ -78,12 +78,17 @@ class BaichuanBaseConnection:
         """close the connection and wait untill close is complete"""
         if self._transport is not None and self._protocol is not None:
             self._transport.close()
-            await self._protocol.close_future
+            try:
+                async with asyncio.timeout(5):
+                    await self._protocol.close_future
+            except asyncio.TimeoutError as err:
+                _LOGGER.warning("Baichuan host %s: Timeout waiting on connection close", self._host)
+                self._protocol.connection_lost()
 
-    async def send_without_wait(self, data: bytes, cmd_id: int | None = None) -> None:
+    async def send_without_wait(self, data: bytes, cmd_id: int | None = None, timeout: int | float = TIMEOUT) -> None:
         """Send a message without waiting"""
         try:
-            async with asyncio.timeout(TIMEOUT):
+            async with asyncio.timeout(timeout):
                 async with self._mutex:
                     self._write(data)
         except asyncio.TimeoutError as err:
@@ -215,7 +220,7 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         self._transport = transport
         _LOGGER.debug("Baichuan host %s: opened %s connection", self._host, self._type)
 
-    def connection_lost(self, exc: Exception | None) -> None:
+    def connection_lost(self, exc: Exception | None = None) -> None:
         """Connection lost callback"""
         if self.receive_futures:
             if exc is None:

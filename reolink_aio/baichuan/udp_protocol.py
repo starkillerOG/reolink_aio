@@ -106,7 +106,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             body = xmls.UDP_DISCONNECT_XML.format(client_id=self._client_id, host_id=self._protocol.host_id)
             mess, _ = self._construct_udp_mess(body)
             _LOGGER.debug("Baichuan host %s:%s>%s: send UDP disconnect message: %s", self._host, self._local_port, self._port, body)
-            self._write(mess)
+            await super().send_without_wait(mess, timeout=5)
 
         await super().close()
         self._port = UDP_CONNECT_PORT
