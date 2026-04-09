@@ -112,8 +112,25 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         self._port = UDP_CONNECT_PORT
 
     def _write(self, data: bytes) -> None:
-        """Write data over the transport"""
-        self._transport.sendto(data, (self._host, self._port))
+        """Write data over the transport."""
+        if data[0:4].hex() != MAGIC_UDP_BC or len(data) <= MTU:
+            self._transport.sendto(data, (self._host, self._port))
+            return
+
+        header_prefix = data[0:12]
+        seq_id = int.from_bytes(data[12:16], byteorder="little")
+        payload = data[20:]
+        max_payload_size = max(1, MTU - 20)
+        sent_packets = 0
+
+        for offset in range(0, len(payload), max_payload_size):
+            chunk = payload[offset : offset + max_payload_size]
+            chunk_seq_id = seq_id + sent_packets
+            chunk_header = header_prefix + chunk_seq_id.to_bytes(4, byteorder="little") + len(chunk).to_bytes(4, byteorder="little")
+            self._transport.sendto(chunk_header + chunk, (self._host, self._port))
+            sent_packets += 1
+
+        self._udp_mess_id += max(0, sent_packets - 1)
 
     async def _construct_udp_header(self, data_len: int) -> bytes:
         """Construct the BC UDP header"""
