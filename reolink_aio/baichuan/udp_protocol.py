@@ -157,7 +157,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
     async def send_without_wait(self, data: bytes, cmd_id: int | None = None, timeout: int | float = TIMEOUT) -> None:
         """Wrap the BC message in a UDP header, send a message without waiting"""
-        udp_header = await self.(len(data))
+        udp_header = await self._construct_udp_header(len(data))
         return await super().send_without_wait(udp_header + data, cmd_id)
 
     def _construct_udp_mess(self, body: str) -> tuple[bytes, int]:
