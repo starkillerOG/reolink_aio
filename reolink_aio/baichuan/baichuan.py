@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import calendar
 import logging
-import struct
 from collections.abc import AsyncIterator, Callable
 from datetime import date, datetime, timedelta
 from inspect import getmembers
@@ -449,44 +448,6 @@ class Baichuan:
             self._payload_future[ch_id].pop(full_mess_id, None)
 
         return (rec_body, payload)
-
-    async def send_binary_no_reply(
-        self,
-        cmd_id: int,
-        channel: int | None = None,
-        binary_body: bytes = b"",
-    ) -> None:
-        """Send a binary payload without waiting for a reply (used for audio talk data)."""
-        if not self._logged_in and cmd_id > 2:
-            await self.login()
-
-        if channel is None:
-            ch_id = 250
-        else:
-            ch_id = channel + 1
-
-        ext = xmls.CHANNEL_BINARY_EXTENSION_XML.format(channel=channel) if channel is not None else ""
-        # Extension is AES-encrypted; binary body is sent as-is (NOT encrypted)
-        enc_ext = self._aes_encrypt(ext.encode("utf-8"))
-        mess_len = len(enc_ext) + len(binary_body)
-        payload_offset = len(enc_ext)
-
-        self._mess_id = (self._mess_id + 1) % 16777216
-
-        cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
-        mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
-        mess_id_bytes = (ch_id).to_bytes(1, byteorder="little") + (self._mess_id).to_bytes(3, byteorder="little")
-        payload_offset_bytes = (payload_offset).to_bytes(4, byteorder="little")
-        status_code = "0000"
-        header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex(status_code + "1464") + payload_offset_bytes
-
-        await self._connect_if_needed()
-        if TYPE_CHECKING:
-            assert self._transport is not None
-
-        _LOGGER.debug("Baichuan host %s: writing binary no-reply cmd_id %s, binary length %s", self._host, cmd_id, len(binary_body))
-        async with self._mutex:
-            self._transport.write(header + enc_ext + binary_body)
 
     def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
@@ -1520,7 +1481,7 @@ class Baichuan:
             if self.http_api.is_nvr and self.http_api.wifi_connection(channel) and (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
                 coroutines.append(("wifi", channel, self.get_wifi_signal(channel)))
 
-            if self.http_api.api_version("talk", channel) > 0 or self.http_api.baichuan_only:
+            if self.http_api.api_version("talk", channel) > 0:
                 coroutines.append((10, channel, self.send(cmd_id=10, channel=channel)))
 
             if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
@@ -1667,18 +1628,11 @@ class Baichuan:
                 if isinstance(result, BaseException):
                     raise result
 
-                if cmd_id == 10:  # two way audio: check for duplex or mixAudioStream
+                if cmd_id == 10:  # two way audio
                     root = XML.fromstring(result)
-                    if root.find(".//duplex") is not None:
-                        self.capabilities[channel].add("two_way_audio")
-                    else:
-                        for audio in root.findall(".//audioStreamMode"):
-                            if audio.text == "mixAudioStream":
-                                self.capabilities[channel].add("two_way_audio")
-                if cmd_id == 201:  # TalkAbility (cmd_id=201) – authoritative two_way_audio check
-                    # result is already a dict returned by get_talk_ability()
-                    if isinstance(result, dict) and result.get("duplex"):
-                        self.capabilities[channel].add("two_way_audio")
+                    for audio in root.findall(".//audioStreamMode"):
+                        if audio.text == "mixAudioStream":
+                            self.capabilities[channel].add("two_way_audio")
                 if cmd_id == 483:  # hardwired chime
                     self.capabilities[channel].add("hardwired_chime")
                 if cmd_id == 527:  # crossline detection
@@ -4212,146 +4166,3 @@ class Baichuan:
     def audio_noise_reduction(self, channel: int) -> int | None:
         return self._noise_reduction.get(channel)
 
-    # -------------------------------------------------------------------------
-    # Two-way audio (talk) support  (confirmed via Ghidra / neolink)
-    # cmd_id  10 = TalkAbility (query, confirmed: contextGet(..., 10, 0))
-    # cmd_id  11 = TalkReset   (stop,  confirmed: simpleSndFuncCH(..., 0xb, ...))
-    # cmd_id 201 = TalkConfig  (start, confirmed: xmlSndFuncCH(..., 0xc9, ...))
-    # cmd_id 202 = Talk        (send ADPCM audio data, no reply expected)
-    # -------------------------------------------------------------------------
-
-    BCMEDIA_ADPCM_MAGIC = struct.pack("<I", 0x62773130)  # bytes: 30 31 77 62 (little-endian u32)
-
-    async def get_talk_ability(self, channel: int) -> dict:
-        """Query the camera's talk (2-way audio) capability via cmd_id=10.
-
-        Returns a dict with keys:
-          - duplex: str (e.g. "FDX")
-          - audio_stream_mode: str (e.g. "followVideoStream" or "mixAudioStream")
-          - audio_type: str (e.g. "adpcm")
-          - sample_rate: int (e.g. 8000 or 16000)
-          - sample_precision: int (e.g. 16)
-          - length_per_encoder: int (samples per block, e.g. 320 or 640)
-          - sound_track: str (e.g. "mono")
-        """
-        mess = await self.send(cmd_id=10, channel=channel)
-        root = XML.fromstring(mess)
-
-        ability: dict = {}
-
-        # Duplex mode
-        for elem in root.findall(".//duplex"):
-            if elem.text:
-                ability["duplex"] = elem.text
-                break
-
-        # Audio stream mode
-        for elem in root.findall(".//audioStreamMode"):
-            if elem.text:
-                ability["audio_stream_mode"] = elem.text
-                break
-
-        # Audio config (take first supported entry)
-        for cfg in root.findall(".//audioConfig"):
-            audio_type_elem = cfg.find("audioType")
-            sample_rate_elem = cfg.find("sampleRate")
-            sample_precision_elem = cfg.find("samplePrecision")
-            lpe_elem = cfg.find("lengthPerEncoder")
-            sound_track_elem = cfg.find("soundTrack")
-
-            if audio_type_elem is not None and audio_type_elem.text:
-                ability.setdefault("audio_type", audio_type_elem.text)
-            if sample_rate_elem is not None and sample_rate_elem.text:
-                ability.setdefault("sample_rate", int(sample_rate_elem.text))
-            if sample_precision_elem is not None and sample_precision_elem.text:
-                ability.setdefault("sample_precision", int(sample_precision_elem.text))
-            if lpe_elem is not None and lpe_elem.text:
-                ability.setdefault("length_per_encoder", int(lpe_elem.text))
-            if sound_track_elem is not None and sound_track_elem.text:
-                ability.setdefault("sound_track", sound_track_elem.text)
-
-        return ability
-
-    async def start_talk(self, channel: int) -> dict:
-        """Start a 2-way audio talk session via Baichuan cmd_id=201 (TalkConfig).
-
-        Queries the camera's TalkAbility, then sends a TalkConfig message to
-        initiate the session.  Returns the audio configuration dict (same
-        structure as get_talk_ability) so the caller knows which format to use
-        when encoding audio for send_talk_data().
-
-        Audio format used: ADPCM (DVI-4 / IMA ADPCM), 16-bit, mono.
-        Block size in bytes = (length_per_encoder // 2) + 4
-        """
-        ability = await self.get_talk_ability(channel)
-
-        duplex = ability.get("duplex", "FDX")
-        audio_stream_mode = ability.get("audio_stream_mode", "followVideoStream")
-        audio_type = ability.get("audio_type", "adpcm")
-        sample_rate = ability.get("sample_rate", 8000)
-        sample_precision = ability.get("sample_precision", 16)
-        length_per_encoder = ability.get("length_per_encoder", 320)
-        sound_track = ability.get("sound_track", "mono")
-
-        xml = xmls.TalkConfigSet.format(
-            channel=channel,
-            duplex=duplex,
-            audio_stream_mode=audio_stream_mode,
-            audio_type=audio_type,
-            sample_rate=sample_rate,
-            sample_precision=sample_precision,
-            length_per_encoder=length_per_encoder,
-            sound_track=sound_track,
-        )
-        await self.send(cmd_id=201, channel=channel, body=xml)
-
-        _LOGGER.debug(
-            "Baichuan host %s ch %s: talk session started, audio_type=%s sample_rate=%s length_per_encoder=%s",
-            self._host,
-            channel,
-            audio_type,
-            sample_rate,
-            length_per_encoder,
-        )
-        return ability
-
-    async def stop_talk(self, channel: int) -> None:
-        """Stop the 2-way audio talk session via Baichuan cmd_id=11 (TalkReset)."""
-        await self.send(cmd_id=11, channel=channel)
-        _LOGGER.debug("Baichuan host %s ch %s: talk session stopped", self._host, channel)
-
-    @staticmethod
-    def build_bcmedia_adpcm(adpcm_blocks: list[bytes]) -> bytes:
-        """Wrap one or more raw IMA-ADPCM blocks in BcMedia ADPCM framing.
-
-        Each block must be a complete DVI-4 (IMA ADPCM) block:
-          - 4-byte block header (initial predictor LE-16, step index, reserved)
-          - followed by (length_per_encoder // 2) nibble-packed sample bytes.
-
-        Up to 4 blocks may be combined into one BcMedia message.
-        The returned bytes can be passed directly to send_talk_data().
-        """
-        # BcMedia ADPCM frame layout (confirmed from pcap + Ghidra audioTalkSendStream):
-        #   4 bytes  magic (0x62773130 = "bw10")
-        #   2 bytes  payload_size = len(block) + 4  (LE u16, duplicated in next 2 bytes)
-        #   2 bytes  payload_size (duplicate)
-        #   2 bytes  sub-magic 0x0100  (MAGIC_HEADER_BCMEDIA_ADPCM_DATA)
-        #   2 bytes  half_block = 2  (always 2; Ghidra: (sample_count>>1)+2 where sample_count=0)
-        #   N bytes  raw IMA ADPCM block (4-byte header + nibble data)
-        #   P bytes  zero padding to 8-byte boundary (based on payload_size; 0 for typical 520)
-        payload = b""
-        for block in adpcm_blocks:
-            data_len = len(block)
-            payload_size = data_len + 4
-            pad_size = (8 - payload_size % 8) % 8
-            payload += Baichuan.BCMEDIA_ADPCM_MAGIC + struct.pack("<HH", payload_size, payload_size) + struct.pack("<HH", 0x0100, 2) + block + b"\x00" * pad_size
-        return payload
-
-    async def send_talk_data(self, channel: int, bcmedia_data: bytes) -> None:
-        """Send BcMedia-framed ADPCM audio data to the camera (cmd_id=202).
-
-        bcmedia_data should be the output of build_bcmedia_adpcm().
-        The audio payload is sent WITHOUT encryption as required by the protocol.
-        This method does not wait for a reply.
-        """
-        await self.send_binary_no_reply(cmd_id=202, channel=channel, binary_body=bcmedia_data)
