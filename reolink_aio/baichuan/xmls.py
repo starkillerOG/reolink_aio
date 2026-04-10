@@ -561,3 +561,36 @@ ReplayStop = """<?xml version="1.0" encoding="UTF-8" ?>
 </FileInfo>
 </FileInfoList>
 </body>"""
+
+FindAlarmVideoOpen = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<findAlarmVideo version="1.1">
+<channelId>{channel}</channelId>
+<streamType>{stream_type}</streamType>
+<notSearchVideo>0</notSearchVideo>
+<startTime>
+<year>{start_year}</year>
+<month>{start_month}</month>
+<day>{start_day}</day>
+<hour>{start_hour}</hour>
+<minute>{start_minute}</minute>
+<second>{start_second}</second>
+</startTime>
+<endTime>
+<year>{end_year}</year>
+<month>{end_month}</month>
+<day>{end_day}</day>
+<hour>{end_hour}</hour>
+<minute>{end_minute}</minute>
+<second>{end_second}</second>
+</endTime>
+<alarmType>{alarm_type}</alarmType>
+</findAlarmVideo>
+</body>"""
+
+FindAlarmVideoNext = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<findAlarmVideo version="1.1">
+<fileHandle>{file_handle}</fileHandle>
+</findAlarmVideo>
+</body>"""

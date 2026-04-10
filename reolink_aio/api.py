@@ -5906,12 +5906,14 @@ class Host:
         file_name: str,
         start_time: datetime,
         stream_type: str = "mainStream",
-    ) -> AsyncIterator[tuple[int, bytes]]:
+    ) -> AsyncIterator[tuple[int, bytes, str]]:
         """Async generator: stream a VOD recording via the Baichuan protocol.
 
-        Yields ``(microseconds, h264_bytes)`` tuples for each video frame.
+        Yields ``(microseconds, video_bytes, codec)`` tuples for each video frame.
         ``microseconds`` is the camera-relative timestamp (u32, wraps at ~71 min).
-        ``h264_bytes`` is the raw H.264 Annex-B NAL data for the frame.
+        ``video_bytes`` is the raw video NAL data for the frame.
+        ``codec`` is ``"H264"`` or ``"H265"`` — detected from the BcMedia header and
+        overridden by NAL-level analysis when a firmware bug causes mislabelling.
 
         Use this for baichuan_only cameras where HTTP download is unavailable.
 
@@ -5928,7 +5930,7 @@ class Host:
 
         Usage::
 
-            async for microseconds, h264_bytes in host.stream_recording_bc(ch, name, start_time):
+            async for microseconds, video_bytes, codec in host.stream_recording_bc(ch, name, start_time):
                 ...
         """
         return self.baichuan.parse_bcmedia_frames(self.baichuan.stream_replay_bc(channel, file_name, start_time, stream_type))
