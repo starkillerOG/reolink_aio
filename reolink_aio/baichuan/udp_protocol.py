@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from math import ceil
 from random import randint
 from socket import AF_INET, IPPROTO_UDP
 from time import time as time_now
@@ -112,8 +113,22 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         self._port = UDP_CONNECT_PORT
 
     def _write(self, data: bytes) -> None:
-        """Write data over the transport"""
-        self._transport.sendto(data, (self._host, self._port))
+        """Write data over the transport."""
+        if data[0:4].hex() != MAGIC_UDP_BC or len(data) <= MTU-20:
+            self._transport.sendto(data, (self._host, self._port))
+            return
+
+        # data bigger then MTU, split BC message in several UDP packets
+        header_prefix = data[0:12]
+        seq_id = int.from_bytes(data[12:16], byteorder="little")
+        payload = data[20:]
+        max_payload_size = max(1, MTU - 20)
+
+        for offset in range(0, len(payload), max_payload_size):
+            chunk = payload[offset : offset + max_payload_size]
+            chunk_header = header_prefix + seq_id.to_bytes(4, byteorder="little") + len(chunk).to_bytes(4, byteorder="little")
+            self._transport.sendto(chunk_header + chunk, (self._host, self._port))
+            seq_id += 1
 
     async def _construct_udp_header(self, data_len: int) -> bytes:
         """Construct the BC UDP header"""
@@ -123,7 +138,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
                 assert self._protocol.host_id is not None
 
         mess_id = self._udp_mess_id
-        self._udp_mess_id += 1
+        self._udp_mess_id += max(1, ceil(data_len/(MTU-20)))  # messages bigger then the MTU will be split up inside the _write function
 
         host_id_bytes = self._protocol.host_id.to_bytes(4, byteorder="little")
         mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
