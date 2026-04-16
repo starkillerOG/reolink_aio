@@ -57,6 +57,22 @@ TALK_CONFIG_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </body>
 """
 
+TalkConfigSet = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<TalkConfig version="1.1">
+<channelId>{channel}</channelId>
+<duplex>{duplex}</duplex>
+<audioStreamMode>{audio_stream_mode}</audioStreamMode>
+<audioConfig>
+<audioType>{audio_type}</audioType>
+<sampleRate>{sample_rate}</sampleRate>
+<samplePrecision>{sample_precision}</samplePrecision>
+<lengthPerEncoder>{length_per_encoder}</lengthPerEncoder>
+<soundTrack>{sound_track}</soundTrack>
+</audioConfig>
+</TalkConfig>
+</body>"""
+
 DingDongOpt_1_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
