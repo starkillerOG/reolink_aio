@@ -39,6 +39,7 @@ from ..exceptions import (
     CredentialsInvalidError,
     InvalidContentTypeError,
     InvalidParameterError,
+    LoginError,
     NotSupportedError,
     ReolinkConnectionError,
     ReolinkError,
@@ -131,6 +132,7 @@ class Baichuan:
         self._login_mutex = asyncio.Lock()
         self._loop = asyncio.get_event_loop()
         self._logged_in: bool = False
+        self._last_login: float = 0
         self._mess_id = 0
 
         # Event subscription
@@ -1127,20 +1129,27 @@ class Baichuan:
             if self._logged_in:
                 return
 
-            nonce = await self._get_nonce()
-
-            # modern login
-            self._user_hash = md5_str_modern(f"{self._username}{nonce}")
-            self._password_hash = md5_str_modern(f"{self._password}{nonce}")
-            xml = xmls.LOGIN_XML.format(userName=self._user_hash, password=self._password_hash)
+            # protect against continues login attempts
+            if time_now() - self._last_login < 15:
+                raise LoginError(f"Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
 
             try:
-                mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
-            except ApiError as err:
-                if err.rspCode == 401:
-                    raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login") from err
-                raise
-            self._logged_in = True
+                nonce = await self._get_nonce()
+
+                # modern login
+                self._user_hash = md5_str_modern(f"{self._username}{nonce}")
+                self._password_hash = md5_str_modern(f"{self._password}{nonce}")
+                xml = xmls.LOGIN_XML.format(userName=self._user_hash, password=self._password_hash)
+
+                try:
+                    mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
+                except ApiError as err:
+                    if err.rspCode == 401:
+                        raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login") from err
+                    raise
+                self._logged_in = True
+            finally:
+                self._last_login = time_now()
 
         # parse response
         root = XML.fromstring(mess)
@@ -1214,6 +1223,7 @@ class Baichuan:
                 _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
 
         self._logged_in = False
+        self._last_login = 0  # rest to allow direct new login
         self._events_active = False
         self._connection = None
         self._nonce = None
