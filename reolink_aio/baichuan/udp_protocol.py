@@ -178,12 +178,20 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         header = bytes.fromhex(MAGIC_UDP_CON) + mess_len_bytes + bytes.fromhex("01000000") + mess_id_bytes + checksum
         return header + payload, trans_id
 
-    async def send_udp(self, body: str) -> str:
+    async def send_udp(self, body: str, retry: int = RETRY_ATTEMPTS) -> str:
+        retry = retry - 1
         mess, trans_id = self._construct_udp_mess(body)
 
         cmd_id = -1
         log_mess = f"Baichuan host {self._host}:{self._local_port}>{self._port}: send UDP message: {body}"
-        recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess)
+
+        try:
+            recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess)
+        except (ReolinkTimeoutError, ReolinkConnectionError) as err:
+            if retry <= 0:
+                raise
+            _LOGGER.debug("%s, trying again", err)
+            return await self.send_udp(body, retry)
 
         recv_mess = decrypt_udp_baichuan(recv_payload, trans_id)
         _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, recv_mess)
