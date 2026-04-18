@@ -1,6 +1,7 @@
 """Constants for Reolink"""
 
 TIMEOUT = 30  # seconds
+RETRY_ATTEMPTS = 3
 
 WAKING_COMMANDS = {
     "GetEnc",

@@ -18,6 +18,7 @@ from ..const import (
     MAX_COLOR_TEMP,
     MIN_COLOR_TEMP,
     NONE_WAKING_COMMANDS,
+    RETRY_ATTEMPTS,
     TIMEOUT,
     UNKNOWN,
     YOLO_CONVERSION,
@@ -73,7 +74,6 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-RETRY_ATTEMPTS = 3
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 
