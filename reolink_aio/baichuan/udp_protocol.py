@@ -12,8 +12,13 @@ from time import time as time_now
 from typing import TYPE_CHECKING, Coroutine
 from xml.etree import ElementTree as XML
 
-from ..const import TIMEOUT
-from ..exceptions import ReolinkConnectionError, ReolinkError, UnexpectedDataError
+from ..const import RETRY_ATTEMPTS, TIMEOUT
+from ..exceptions import (
+    ReolinkConnectionError,
+    ReolinkError,
+    ReolinkTimeoutError,
+    UnexpectedDataError,
+)
 from . import xmls
 from .base_protocol import (
     BaichuanBaseClientProtocol,
@@ -114,7 +119,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
     def _write(self, data: bytes) -> None:
         """Write data over the transport."""
-        if data[0:4].hex() != MAGIC_UDP_BC or len(data) <= MTU-20:
+        if data[0:4].hex() != MAGIC_UDP_BC or len(data) <= MTU - 20:
             self._transport.sendto(data, (self._host, self._port))
             return
 
@@ -125,7 +130,8 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         max_payload_size = max(1, MTU - 20)
 
         for offset in range(0, len(payload), max_payload_size):
-            chunk = payload[offset : offset + max_payload_size]
+            chunk_end = offset + max_payload_size
+            chunk = payload[offset:chunk_end]
             chunk_header = header_prefix + seq_id.to_bytes(4, byteorder="little") + len(chunk).to_bytes(4, byteorder="little")
             self._transport.sendto(chunk_header + chunk, (self._host, self._port))
             seq_id += 1
@@ -138,7 +144,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
                 assert self._protocol.host_id is not None
 
         mess_id = self._udp_mess_id
-        self._udp_mess_id += max(1, ceil(data_len/(MTU-20)))  # messages bigger then the MTU will be split up inside the _write function
+        self._udp_mess_id += max(1, ceil(data_len / (MTU - 20)))  # messages bigger then the MTU will be split up inside the _write function
 
         host_id_bytes = self._protocol.host_id.to_bytes(4, byteorder="little")
         mess_id_bytes = mess_id.to_bytes(4, byteorder="little")
