@@ -70,7 +70,7 @@ def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
     return encrypt
 
 
-def decrypt_udp_baichuan(buf: bytes, offset: int) -> str:
+def decrypt_udp_baichuan(buf: bytes, offset: int) -> bytes:
     """Decrypt a received message using the baichuan UDP protocol"""
     # Use cycle to repeat the UDP_KEY indefinetly and XOR with the buffer
     key_bytes: list[int] = []
@@ -78,7 +78,7 @@ def decrypt_udp_baichuan(buf: bytes, offset: int) -> str:
         shift_k_byte = (key_byte + offset) & 0xFFFFFFFF  # chop to uint32 size
         key_bytes.extend(shift_k_byte.to_bytes(4, "little"))
 
-    return bytes(byte ^ k_byte for byte, k_byte in zip(buf, cycle(key_bytes))).decode("utf8")
+    return bytes(byte ^ k_byte for byte, k_byte in zip(buf, cycle(key_bytes)))
 
 
 def encrypt_udp_baichuan(buf: str, offset: int) -> bytes:

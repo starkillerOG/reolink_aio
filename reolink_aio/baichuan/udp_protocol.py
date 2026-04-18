@@ -193,7 +193,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             _LOGGER.debug("%s, trying again", err)
             return await self.send_udp(body, retry)
 
-        recv_mess = decrypt_udp_baichuan(recv_payload, trans_id)
+        recv_mess = recv_payload.decode("utf8")
         _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, recv_mess)
         return recv_mess
 
@@ -456,8 +456,10 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                     )
                 return
 
+            decrypted_payload = decrypt_udp_baichuan(payload, rec_mess_id)
+
             if receive_future is None or receive_future.done():
-                mess = decrypt_udp_baichuan(payload, rec_mess_id)
+                mess = decrypted_payload.decode("utf8")
                 root = XML.fromstring(mess)
                 if root.tag != "P2P":
                     _LOGGER.debug("Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
@@ -493,7 +495,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 return
 
             self.remote_port = port
-            receive_future.set_result((payload, 0, b""))
+            receive_future.set_result((decrypted_payload, 0, b""))
         finally:
             if self._udp_data:
                 _LOGGER.debug("Baichuan host %s: received %s bytes while UDP CON header specified %s bytes, parsing multiple messages", self._host, data_len, mess_len)
