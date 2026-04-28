@@ -3629,7 +3629,6 @@ class Host:
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
-        _LOGGER.error("total file size: %s", total_length)
         full_url = f"{url}{credentials}"
         if include_total_length:
             return mime, full_url, total_length
