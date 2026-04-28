@@ -3476,7 +3476,8 @@ class Host:
         filename: str,
         stream: Optional[str] = None,
         request_type: VodRequestType = VodRequestType.FLV,
-    ) -> tuple[str, str]:
+        include_total_length: bool = False,
+    ) -> tuple[str, str] | tuple[str, str, int | None]:
         """Return the VOD source url."""
         if channel not in self._stream_channels:
             raise InvalidParameterError(f"get_vod_source: no camera connected to channel '{channel}'")
@@ -3486,6 +3487,23 @@ class Host:
 
         if stream is None:
             stream = self._stream
+
+        # Check VOD source cache for rapid re-requests (e.g., WebKit range requests)
+        cache_key = (channel, filename, stream, request_type.value, include_total_length)
+        cached_entry = self._vod_source_cache.get(cache_key)
+        if cached_entry is not None:
+            mime, url, total_length, cache_time = cached_entry
+            if time_now() - cache_time < self._vod_cache_ttl_seconds:
+                _LOGGER.debug(
+                    "get_vod_source: using cached result for %s (%.1f sec old)",
+                    filename,
+                    time_now() - cache_time,
+                )
+                if include_total_length:
+                    return mime, url, total_length
+                return mime, url
+            else:
+                del self._vod_source_cache[cache_key]
 
         if self._is_nvr and request_type in [VodRequestType.RTMP]:
             _LOGGER.warning("get_vod_source: NVRs do not yet support '%s' vod requests, using FLV instead", request_type.value)
@@ -3509,10 +3527,76 @@ class Host:
             mime = "video/mp4"
             credentials = f"&token={self._token}"
 
+        total_length: int | None = None
+
         if request_type == VodRequestType.NVR_DOWNLOAD:
             # prepare the file for downloading and overwrite the new filename
             start_time, end_time = filename.split("_", 1)
-            filename = await self._generate_NVR_download_vod(start_time, end_time, channel, stream)
+            filename, max_filesize = await self._generate_NVR_download_vod(
+                start_time, end_time, channel, stream
+            )
+            if include_total_length:
+                total_length = max_filesize
+
+        # If this is a direct DOWNLOAD (camera) request, attempt to query the
+        # device for the file list covering the recording and use the device-
+        # reported fileSize as the total length hint. This avoids unreliable
+        # filename parsing and mirrors the NVR approach.
+        if request_type == VodRequestType.DOWNLOAD and include_total_length:
+            parsed = typings.parse_file_name(filename)
+            if parsed is None:
+                _LOGGER.debug(
+                    "get_vod_source: unable to parse DOWNLOAD filename for size lookup: %s",
+                    filename,
+                )
+            else:
+                start_dt = datetime.combine(parsed.date, parsed.start)
+                end_dt = datetime.combine(parsed.date, parsed.end)
+                if end_dt < start_dt:
+                    end_dt += timedelta(days=1)
+
+                search_start = start_dt - timedelta(minutes=1)
+                search_end = end_dt + timedelta(minutes=1)
+                try:
+                    _status_list, file_list = await self.request_vod_files(
+                        channel,
+                        search_start,
+                        search_end,
+                        status_only=False,
+                        stream=stream,
+                    )
+                except ReolinkError as err:
+                    _LOGGER.debug(
+                        "get_vod_source: failed to resolve DOWNLOAD file size using Search API: %s",
+                        err,
+                    )
+                else:
+                    if file_list:
+                        _LOGGER.debug(
+                            "get_vod_source: DOWNLOAD Search API sample file keys: %s",
+                            sorted(file_list[0].data.keys()),
+                        )
+                    filename_base = basename(filename)
+                    matched_size: int | None = None
+                    for file in file_list:
+                        file_name = file.data.get("name")
+                        if (
+                            file_name is not None
+                            and basename(file_name) == filename_base
+                        ):
+                            matched_size = file.size
+                            break
+
+                    if matched_size is None:
+                        matched_size = max((file.size for file in file_list), default=0)
+
+                    if matched_size > 0:
+                        total_length = matched_size
+                        _LOGGER.debug(
+                            "get_vod_source: resolved DOWNLOAD total_length=%s bytes from %s candidate files",
+                            total_length,
+                            len(file_list),
+                        )
 
         if request_type == VodRequestType.RTMP:
             # RTMP port needs to be enabled for playback to work
@@ -3545,7 +3629,11 @@ class Host:
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
-        return (mime, f"{url}{credentials}")
+        _LOGGER.error("total file size: %s", total_length)
+        full_url = f"{url}{credentials}"
+        if include_total_length:
+            return mime, full_url, total_length
+        return mime, full_url
 
     async def _generate_NVR_download_vod(
         self,
@@ -3553,7 +3641,7 @@ class Host:
         end_time: str,
         channel: int,
         stream: str,
-    ) -> str:
+    ) -> tuple[str, int | None]:
         start = datetime_to_reolink_time(start_time)
         end = datetime_to_reolink_time(end_time)
         iLogicChannel = 0
@@ -3588,17 +3676,17 @@ class Host:
         if json_data[0].get("code") != 0:
             raise ApiError(f"Host: {self._host}:{self._port}: Request NvrDownload: API returned error code {json_data[0].get('code', -1)}, response: {json_data}")
 
-        max_filesize = 0
+        max_filesize: int | None = None
         filename = ""
         for file in json_data[0]["value"]["fileList"]:
-            filesize = int(file["fileSize"])
-            if filesize > max_filesize:
+            filesize = int(file.get("fileSize", 0))
+            if max_filesize is None or filesize > max_filesize:
                 max_filesize = filesize
                 filename = file["fileName"]
 
         _LOGGER.debug("NVR prepared file %s", filename)
 
-        return filename
+        return filename, max_filesize
 
     async def download_vod(
         self,
