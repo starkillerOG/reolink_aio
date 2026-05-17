@@ -41,6 +41,7 @@ from .enums import (
     BatteryEnum,
     BinningModeEnum,
     ChimeToneEnum,
+    ConnectionEnum,
     DayNightEnum,
     EncodingEnum,
     ExposureEnum,
@@ -145,6 +146,7 @@ class Host:
         aiohttp_get_session_callback=None,
         bc_port: int = DEFAULT_BC_PORT,
         bc_only: bool = False,
+        bc_connection: ConnectionEnum = ConnectionEnum.unknown,
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -186,7 +188,7 @@ class Host:
 
         ##############################################################################
         # Baichuan protocol (port 9000)
-        self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, http_api=self)
+        self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, connection_type=bc_connection, http_api=self)
         self.baichuan_only: bool = bc_only
         self.baichuan_cmds: set[str] = set()
 

@@ -27,6 +27,7 @@ from ..const import (
 )
 from ..enums import (
     BatteryEnum,
+    ConnectionEnum,
     DayNightEnum,
     EncodingEnum,
     ExposureEnum,
@@ -55,6 +56,7 @@ from ..utils import (
 )
 from . import xmls
 from .tcp_protocol import BaichuanTcpConnection
+from .udp_protocol import BaichuanUdpConnection
 from .util import (
     AES_IV,
     DEFAULT_BC_PORT,
@@ -111,6 +113,7 @@ class Baichuan:
         password: str,
         http_api: Host,
         port: int = DEFAULT_BC_PORT,
+        connection_type: ConnectionEnum = ConnectionEnum.unknown,
     ) -> None:
         self.http_api = http_api
 
@@ -128,7 +131,8 @@ class Baichuan:
         self.last_privacy_on: float = 0
 
         # TCP connection
-        self._connection: BaichuanTcpConnection | None = None
+        self._connection: BaichuanTcpConnection | BaichuanUdpConnection | None = None
+        self._connection_type: ConnectionEnum = connection_type
         self._login_mutex = asyncio.Lock()
         self._loop = asyncio.get_event_loop()
         self._logged_in: bool = False
@@ -195,7 +199,10 @@ class Baichuan:
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
         if self._connection is None:
-            self._connection = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
+            if self._connection_type == ConnectionEnum.udp:
+                self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback)
+            else:
+                self._connection = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
         await self._connection.connect()
 
     async def send(
@@ -1133,8 +1140,25 @@ class Baichuan:
             if time_now() - self._last_login < 15:
                 raise LoginError(f"Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
 
+            try_connections = self._connection_type == ConnectionEnum.unknown
+            if try_connections:
+                self._connection_type = ConnectionEnum.tcp
+
             try:
-                nonce = await self._get_nonce()
+                # get nonce and try tcp/udp connection
+                try:
+                    nonce = await self._get_nonce()
+                except ReolinkError as err:
+                    if not try_connections:
+                        raise
+                    _LOGGER.debug("%s, TCP connection failed, trying UDP connection...", err)
+                    await self.logout()
+                    self._connection_type = ConnectionEnum.udp
+                    try:
+                        nonce = await self._get_nonce()
+                    except ReolinkError:
+                        self._connection_type = ConnectionEnum.unknown
+                        raise
 
                 # modern login
                 self._user_hash = md5_str_modern(f"{self._username}{nonce}")
