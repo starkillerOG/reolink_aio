@@ -1370,6 +1370,12 @@ class Baichuan:
             if self.http_api.api_version("supportIfttt", channel) > 0 or self.api_version("linkages", channel) > 0:
                 coroutines.append(("rules", channel, self.get_rule_ids(channel)))
 
+            if self.api_version("battery", channel) > 0:
+                self.capabilities[channel].add("battery")
+                if self.http_api.baichuan_only:
+                    self.capabilities[channel].add("sleep")
+                    self.capabilities[None].add("sleep")
+
             SmartaiVersion = self.api_version("smartAI", channel)
             if (SmartaiVersion >> 1) & 1:  # 2th bit (2), shift 1
                 coroutines.append((527, channel, self.send(cmd_id=527, channel=channel)))  # crossline

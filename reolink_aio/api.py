@@ -1870,8 +1870,7 @@ class Host:
                 self._capabilities[channel].add("battery")
                 if channel in self._sleep:
                     self._capabilities[channel].add("sleep")
-                    if "sleep" not in self._capabilities["Host"]:
-                        self._capabilities["Host"].add("sleep")
+                    self._capabilities["Host"].add("sleep")
             if self.api_version("mdWithPir", channel) > 0:
                 self._capabilities[channel].add("PIR")
 
