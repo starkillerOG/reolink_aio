@@ -196,6 +196,7 @@ class Host:
         # NVR (host-level) attributes
         self._is_nvr: bool = False
         self._is_hub: bool = False
+        self._is_battery: bool = False
         self._num_channels: int = 0
 
         ##############################################################################
@@ -426,6 +427,10 @@ class Host:
     @property
     def is_hub(self) -> bool:
         return self._is_hub
+
+    @property
+    def is_battery(self) -> bool:
+        return self._is_battery
 
     @property
     def nvr_name(self) -> str:
@@ -2576,6 +2581,8 @@ class Host:
         self._api_version["GetMdAlarm"] = check_command_exists("GetMdAlarm")
 
         self.construct_capabilities()
+
+        self._is_battery = not self.is_nvr and self.supported(0, "battery")
 
         for channel in self._channels:
             # fix for manual record firmware bug, it should be 0 or 1, other values are a bug and cause battery drain

@@ -2198,7 +2198,7 @@ class Baichuan:
         root = XML.fromstring(mess)
         for preset in root.findall(".//preset"):
             data = get_keys_from_xml(preset, {"id": ("id", int), "name": ("name", str)})
-            if "name" in data and "id" in data: 
+            if "name" in data and "id" in data:
                 self.http_api._ptz_presets.setdefault(channel, {})[data["name"]] = data["id"]
 
     @http_cmd("GetPtzGuard")
