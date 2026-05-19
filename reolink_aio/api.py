@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import calendar
 import hashlib
 import logging
 import re
 import ssl
 import traceback
-from datetime import datetime, timedelta, tzinfo
+from collections.abc import AsyncIterator
+from datetime import date, datetime, timedelta, tzinfo
 from io import BytesIO
 from math import ceil
 from os.path import basename
@@ -3542,6 +3544,12 @@ class Host:
                 cmd = VodRequestType.DOWNLOAD.value
 
             url = f"{self._url}?cmd={cmd}&source={filename.replace(' ', '%20')}&output=ha_playback_{time_start}.mp4{start_time}"
+        elif request_type == VodRequestType.RTSP:
+            # RTSP playback URL – supported on select Reolink cameras/NVRs.
+            # The credentials are embedded in the URL (same as live RTSP streams).
+            safe_filename = filename.replace(" ", "%20")
+            rtsp_url = f"rtsp://{self._username}:{self._enc_password}@{self._host}:{self._rtsp_port}/vod/{safe_filename}"
+            return ("video/mp4", rtsp_url)
         else:
             raise InvalidParameterError(f"get_vod_source: unsupported request_type '{request_type.value}'")
 
@@ -5357,6 +5365,58 @@ class Host:
 
         await self.send_setting(body)
 
+    # -------------------------------------------------------------------------
+    # Two-way audio (talk) public API
+    # -------------------------------------------------------------------------
+
+    def two_way_audio_support(self, channel: int) -> bool:
+        """Return True if the camera channel supports two-way audio (talk)."""
+        return self.supported(channel, "two_way_audio")
+
+    async def start_talk(self, channel: int) -> dict:
+        """Start a two-way audio (talk) session on the camera channel.
+
+        Returns a dict describing the audio format the camera expects:
+          - audio_type (str): codec name, e.g. "adpcm"
+          - sample_rate (int): samples per second, e.g. 8000 or 16000
+          - sample_precision (int): bit depth, e.g. 16
+          - length_per_encoder (int): samples per block, e.g. 320 or 640
+          - sound_track (str): channel layout, e.g. "mono"
+          - duplex (str): duplex mode, e.g. "FDX"
+          - audio_stream_mode (str): e.g. "followVideoStream"
+
+        The caller should encode microphone audio as IMA ADPCM blocks with the
+        parameters above, wrap each block using
+        ``Baichuan.build_bcmedia_adpcm([block])``, and send the result with
+        ``send_talk_data()``.  Call ``stop_talk()`` when finished.
+
+        Raises NotSupportedError if two-way audio is not supported.
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"start_talk: no camera connected to channel '{channel}'")
+        if not self.two_way_audio_support(channel):
+            raise NotSupportedError(f"start_talk: Two-way audio is not supported on {self.camera_name(channel)}")
+
+        return await self.baichuan.start_talk(channel)
+
+    async def send_talk_data(self, channel: int, bcmedia_data: bytes) -> None:
+        """Send BcMedia-framed IMA ADPCM audio data to the camera.
+
+        ``bcmedia_data`` must be produced by ``Baichuan.build_bcmedia_adpcm()``.
+        Call ``start_talk()`` before the first call to this method.
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"send_talk_data: no camera connected to channel '{channel}'")
+
+        await self.baichuan.send_talk_data(channel, bcmedia_data)
+
+    async def stop_talk(self, channel: int) -> None:
+        """Stop the two-way audio (talk) session on the camera channel."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"stop_talk: no camera connected to channel '{channel}'")
+
+        await self.baichuan.stop_talk(channel)
+
     async def set_siren(self, channel: int | None = None, enable: bool = True, duration: int | None = 2) -> None:
         if channel not in self._channels and channel is not None:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
@@ -5793,6 +5853,134 @@ class Host:
             file.bc_triggers = trigger_dict.get(file.start_time_id)
 
         return statuses, vod_files
+
+    async def get_recording_days(self, channel: int, year: int, month: int) -> set[int]:
+        """Return the set of day-numbers (1–31) in *year*/*month* that have recordings.
+
+        Convenience wrapper around request_vod_files(status_only=True).
+        Useful for populating a calendar view in Home Assistant's media browser.
+
+        Example::
+
+            days = await host.get_recording_days(0, 2024, 6)
+            # {1, 3, 14, 15, 28}  → recordings exist on those days
+        """
+        if channel not in self._stream_channels:
+            raise InvalidParameterError(f"get_recording_days: no camera connected to channel '{channel}'")
+
+        if self.baichuan_only:
+            return await self.baichuan.search_recording_days_bc(channel, year, month)
+
+        last_day = calendar.monthrange(year, month)[1]
+        start = datetime(year, month, 1, 0, 0, 0)
+        end = datetime(year, month, last_day, 23, 59, 59)
+
+        statuses, _ = await self.request_vod_files(channel, start, end, status_only=True)
+
+        days: set[int] = set()
+        for status in statuses:
+            if status.year == year and status.month == month:
+                days.update(status.days)
+        return days
+
+    async def get_recordings_for_day(
+        self,
+        channel: int,
+        day: date,
+        stream: Optional[str] = None,
+        trigger: typings.VOD_trigger | None = None,
+    ) -> list[typings.VOD_file]:
+        """Return recordings for *channel* on the given *day*, sorted by start time.
+
+        Recordings are deduplicated so that the same file only appears once
+        even when it matches multiple detection triggers.
+
+        Parameters
+        ----------
+        channel:
+            Camera channel index.
+        day:
+            The calendar date to query (e.g. ``date(2024, 6, 14)``).
+        stream:
+            Stream type (``"main"``, ``"sub"``, …).  Defaults to the host default.
+        trigger:
+            Optional filter.  When given only recordings matching that
+            ``VOD_trigger`` flag are returned.
+
+        Returns
+        -------
+        list[VOD_file]
+            Sorted (by start_time), deduplicated list.  Each item exposes:
+
+            * ``file.start_time`` / ``file.end_time`` – datetime with tz
+            * ``file.duration`` – timedelta
+            * ``file.triggers`` – VOD_trigger flags (motion, person, …)
+            * ``file.file_name`` – filename for use with get_vod_source()
+            * ``file.size`` – file size in bytes
+
+            Obtain a playback URL with::
+
+                mime, url = await host.get_vod_source(channel, file.file_name)
+        """
+        if channel not in self._stream_channels:
+            raise InvalidParameterError(f"get_recordings_for_day: no camera connected to channel '{channel}'")
+
+        if self.baichuan_only:
+            vod_files = await self.baichuan.search_recordings_for_day_bc(channel, day, stream)
+            if trigger is not None:
+                vod_files = [f for f in vod_files if f.bc_triggers is not None and bool(f.bc_triggers & trigger)]
+            vod_files.sort(key=lambda f: f.start_time)
+            return vod_files
+
+        start = datetime(day.year, day.month, day.day, 0, 0, 0)
+        end = datetime(day.year, day.month, day.day, 23, 59, 59)
+
+        _, vod_files = await self.request_vod_files(channel, start, end, status_only=False, stream=stream, trigger=trigger)
+
+        # Deduplicate by file_name then sort chronologically
+        seen: set[str] = set()
+        unique: list[typings.VOD_file] = []
+        for f in vod_files:
+            key = f.file_name
+            if key not in seen:
+                seen.add(key)
+                unique.append(f)
+
+        unique.sort(key=lambda f: f.start_time)
+        return unique
+
+    def stream_recording_bc(
+        self,
+        channel: int,
+        file_name: str,
+        start_time: datetime,
+        stream_type: str = "mainStream",
+    ) -> AsyncIterator[tuple[int, bytes]]:
+        """Async generator: stream a VOD recording via the Baichuan protocol.
+
+        Yields ``(microseconds, h264_bytes)`` tuples for each video frame.
+        ``microseconds`` is the camera-relative timestamp (u32, wraps at ~71 min).
+        ``h264_bytes`` is the raw H.264 Annex-B NAL data for the frame.
+
+        Use this for baichuan_only cameras where HTTP download is unavailable.
+
+        Parameters
+        ----------
+        channel:
+            Camera channel index.
+        file_name:
+            Recording filename from ``get_recordings_for_day()``.
+        start_time:
+            Recording start time (from ``VOD_file.start_time``).
+        stream_type:
+            ``"mainStream"`` (default) or ``"subStream"``.
+
+        Usage::
+
+            async for microseconds, h264_bytes in host.stream_recording_bc(ch, name, start_time):
+                ...
+        """
+        return self.baichuan.parse_bcmedia_frames(self.baichuan.stream_replay_bc(channel, file_name, start_time, stream_type))
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
         command = body[0]["cmd"]

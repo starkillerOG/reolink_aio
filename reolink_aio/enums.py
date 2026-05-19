@@ -25,6 +25,7 @@ class VodRequestType(Enum):
     FLV = "FLV"
     DOWNLOAD = "Download"
     NVR_DOWNLOAD = "NvrDownload"
+    RTSP = "RTSP"
 
 
 class EncodingEnum(Enum):

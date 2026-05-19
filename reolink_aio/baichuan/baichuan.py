@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 import logging
-from collections.abc import Callable
-from datetime import datetime, timedelta
+import struct
+from collections.abc import AsyncIterator, Callable
+from datetime import date, datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, TypeVar, overload
@@ -122,6 +124,8 @@ class Baichuan:
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
+        # Login rsp status (neolink codex): 0xDD12 = FullAes (encrypts replay/live binary); 0xDD02 etc. = Aes (binary plaintext).
+        self._baichuan_crypto_tier: Literal["aes", "full_aes"] | None = None
         self._log_once: set[str] = set()
         self._log_error: bool = True
         self.last_privacy_check: float = 0
@@ -369,6 +373,15 @@ class Baichuan:
             _LOGGER.debug("%s, trying again", str(err_str))
             return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
 
+        # Baichuan login (cmd_id 1): capture negotiated encryption tier from header status word (bytes 16–17, LE).
+        # High byte 0xDD, low 0x12 = FullAes; other 0xDD** = Aes-style (control encrypted, replay binary plaintext).
+        if cmd_id == 1 and len(data) >= 18:
+            status_u16 = int.from_bytes(data[16:18], "little")
+            if (status_u16 >> 8) & 0xFF == 0xDD:
+                low = status_u16 & 0xFF
+                self._baichuan_crypto_tier = "full_aes" if low == 0x12 else "aes"
+                _LOGGER.debug("Baichuan host %s: cmd_id 1 encryption tier %s (status 0x%04x)", self._host, self._baichuan_crypto_tier, status_u16)
+
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
 
@@ -438,6 +451,44 @@ class Baichuan:
             self._payload_future[ch_id].pop(full_mess_id, None)
 
         return (rec_body, payload)
+
+    async def send_binary_no_reply(
+        self,
+        cmd_id: int,
+        channel: int | None = None,
+        binary_body: bytes = b"",
+    ) -> None:
+        """Send a binary payload without waiting for a reply (used for audio talk data)."""
+        if not self._logged_in and cmd_id > 2:
+            await self.login()
+
+        if channel is None:
+            ch_id = 250
+        else:
+            ch_id = channel + 1
+
+        ext = xmls.CHANNEL_BINARY_EXTENSION_XML.format(channel=channel) if channel is not None else ""
+        # Extension is AES-encrypted; binary body is sent as-is (NOT encrypted)
+        enc_ext = self._aes_encrypt(ext.encode("utf-8"))
+        mess_len = len(enc_ext) + len(binary_body)
+        payload_offset = len(enc_ext)
+
+        self._mess_id = (self._mess_id + 1) % 16777216
+
+        cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
+        mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
+        mess_id_bytes = (ch_id).to_bytes(1, byteorder="little") + (self._mess_id).to_bytes(3, byteorder="little")
+        payload_offset_bytes = (payload_offset).to_bytes(4, byteorder="little")
+        status_code = "0000"
+        header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex(status_code + "1464") + payload_offset_bytes
+
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._transport is not None
+
+        _LOGGER.debug("Baichuan host %s: writing binary no-reply cmd_id %s, binary length %s", self._host, cmd_id, len(binary_body))
+        async with self._mutex:
+            self._transport.write(header + enc_ext + binary_body)
 
     def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
@@ -1342,6 +1393,7 @@ class Baichuan:
         self._protocol = None
         self._nonce = None
         self._aes_key = None
+        self._baichuan_crypto_tier = None
         self._user_hash = None
         self._password_hash = None
 
@@ -1478,7 +1530,7 @@ class Baichuan:
             if self.http_api.is_nvr and self.http_api.wifi_connection(channel) and (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
                 coroutines.append(("wifi", channel, self.get_wifi_signal(channel)))
 
-            if self.http_api.api_version("talk", channel) > 0:
+            if self.http_api.api_version("talk", channel) > 0 or self.http_api.baichuan_only:
                 coroutines.append((10, channel, self.send(cmd_id=10, channel=channel)))
 
             if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
@@ -1625,11 +1677,18 @@ class Baichuan:
                 if isinstance(result, BaseException):
                     raise result
 
-                if cmd_id == 10:  # two way audio
+                if cmd_id == 10:  # two way audio: check for duplex or mixAudioStream
                     root = XML.fromstring(result)
-                    for audio in root.findall(".//audioStreamMode"):
-                        if audio.text == "mixAudioStream":
-                            self.capabilities[channel].add("two_way_audio")
+                    if root.find(".//duplex") is not None:
+                        self.capabilities[channel].add("two_way_audio")
+                    else:
+                        for audio in root.findall(".//audioStreamMode"):
+                            if audio.text == "mixAudioStream":
+                                self.capabilities[channel].add("two_way_audio")
+                if cmd_id == 201:  # TalkAbility (cmd_id=201) – authoritative two_way_audio check
+                    # result is already a dict returned by get_talk_ability()
+                    if isinstance(result, dict) and result.get("duplex"):
+                        self.capabilities[channel].add("two_way_audio")
                 if cmd_id == 483:  # hardwired chime
                     self.capabilities[channel].add("hardwired_chime")
                 if cmd_id == 527:  # crossline detection
@@ -2134,18 +2193,48 @@ class Baichuan:
 
         return image
 
+    def _parse_cover_preview_frame(self, payload: bytes) -> bytes:
+        """Extract the raw H.264 I-frame bytes from a CoverPreview (cmd_id=298) payload.
+
+        The payload starts with a 32-byte stream header (magic b"1001" or b"1002")
+        followed by one BcMedia video frame.  Returns the raw H.264 Annex-B bytes
+        suitable for decoding with ffmpeg, PyAV, or any H.264 decoder.
+        """
+        magic = payload[0:4]
+        if magic not in (b"1001", b"1002"):
+            raise UnexpectedDataError(f"Baichuan host {self._host}: CoverPreview payload has unexpected stream header magic {magic!r}")
+
+        try:
+            start = payload[32:].index(b"00dc")
+        except ValueError as err:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: CoverPreview frame magic b'00dc' not found, first bytes: {payload[32:62]!r}") from err
+        idx = 32 + start
+
+        # Frame header: 24 bytes fixed + ah_size bytes extension
+        ah_size = int.from_bytes(payload[idx + 12 : idx + 16], byteorder="little")
+        header_len = 24 + ah_size
+        frame_len = int.from_bytes(payload[idx + 8 : idx + 12], byteorder="little")
+        frame_start = idx + header_len
+
+        return payload[frame_start : frame_start + frame_len]
+
     async def snapshot_past(self, channel: int, time: datetime, snapType: str = "sub", ffmpeg: str = "ffmpeg") -> bytes:
         """Get a JPEG image from a past recording (thumbnail)"""
-        end = time + timedelta(seconds=10)
+        frame = await self._fetch_cover_preview_frame(channel, time, stream=snapType)
+        return await i_frame_to_jpeg(frame, ffmpeg)
+
+    async def _fetch_cover_preview_frame(self, channel: int, start_time: datetime, stream: str = "sub") -> bytes:
+        """Fetch a single H.264 frame via Baichuan CMD 298 (CoverPreview)."""
+        end = start_time + timedelta(seconds=10)
         xml = xmls.CoverPreview.format(
             channel=channel,
-            stream=snapType,
-            start_year=time.year,
-            start_month=time.month,
-            start_day=time.day,
-            start_hour=time.hour,
-            start_minute=time.minute,
-            start_second=time.second,
+            stream=stream,
+            start_year=start_time.year,
+            start_month=start_time.month,
+            start_day=start_time.day,
+            start_hour=start_time.hour,
+            start_minute=start_time.minute,
+            start_second=start_time.second,
             end_year=end.year,
             end_month=end.month,
             end_day=end.day,
@@ -2153,48 +2242,8 @@ class Baichuan:
             end_minute=end.minute,
             end_second=end.second,
         )
-        _mess, payload = await self.send_payload(cmd_id=298, body=xml)
-
-        # parse stream header
-        stream_header = payload[0:32]
-        magic = stream_header[0:4]
-        # width = int.from_bytes(stream_header[8:12], byteorder="little")
-        # height = int.from_bytes(stream_header[12:16], byteorder="little")
-        # frame_rate = stream_header[17]
-        # start_year = 1900 + stream_header[18]
-        if magic != b"1001":
-            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past payload did not start with stream header magic b'1001' but with {magic!r}")
-
-        # search magic
-        try:
-            # search magic
-            start = payload[32::].index(b"00dc")
-        except ValueError as err:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past frame magic b'00dc' not found, first bytes: {payload[32:62]!r}") from err
-        idx = 32 + start
-
-        # parse frame header
-        idx_start = idx + 12
-        idx_end = idx_start + 4
-        header_len = 24 + int.from_bytes(payload[idx_start:idx_end], byteorder="little")
-        idx_end = idx + header_len
-        frame_header = payload[idx:idx_end]
-        idx += header_len
-        # magic = frame_header[0:4]
-        # encoding = frame_header[4:8].decode("utf8")
-        frame_len = int.from_bytes(frame_header[8:12], byteorder="little")
-        # frame_time = int.from_bytes(frame_header[24:28], byteorder="little")
-        # frame_microsecond = int.from_bytes(frame_header[16:20], byteorder="little")
-        # formatted_time = datetime.fromtimestamp(frame_time).strftime("%Y-%m-%d %H:%M:%S")
-
-        # extract frame
-        idx_end = idx + frame_len
-        frame = payload[idx:idx_end]
-        idx += frame_len
-
-        image = await i_frame_to_jpeg(frame, ffmpeg)
-
-        return image
+        _mess, payload = await self.send_payload(cmd_id=298, channel=channel, body=xml)
+        return self._parse_cover_preview_frame(payload)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
@@ -3576,31 +3625,408 @@ class Baichuan:
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
-        # xml = xmls.FileInfoListOpen.format(
-        #    channel=channel,
-        #    uid=uid,
-        #    stream_type=stream_type,
-        #    start_year=start.year,
-        #    start_month=start.month,
-        #    start_day=start.day,
-        #    start_hour=start.hour,
-        #    start_minute=start.minute,
-        #    start_second=start.second,
-        #    end_year=end.year,
-        #    end_month=end.month,
-        #    end_day=end.day,
-        #    end_hour=end.hour,
-        #    end_minute=end.minute,
-        #    end_second=end.second,
-        # )
-        # mess = await self.send(cmd_id=14, body=xml)
-        # handle = self._get_value_from_xml(mess, "handle")
-
-        # xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
-        # await self.send(cmd_id=15, body=xml_file_info)
-        # await self.send(cmd_id=16, body=xml_file_info)
-
         return vod_type_dict, vod_dict
+
+    async def search_recording_days_bc(self, channel: int, year: int, month: int) -> set[int]:
+        """Return the set of day numbers (1–31) that have recordings in year/month via Baichuan MSG 142.
+
+        Used as a fallback when baichuan_only=True (no HTTP API available).
+        """
+        last_day = calendar.monthrange(year, month)[1]
+        xml = xmls.DayRecords.format(year=year, month=month, last_day=last_day, channel=channel)
+        mess = await self.send(cmd_id=142, channel=channel, body=xml)
+        root = XML.fromstring(mess)
+
+        days: set[int] = set()
+        for day_type in root.findall(".//dayType"):
+            index = self._get_value_from_xml_element(day_type, "index", int)
+            if index is not None:
+                # index is 0-based offset from day 1 of the queried month
+                days.add(1 + index)
+        return days
+
+    async def search_recordings_for_day_bc(self, channel: int, day: date, stream: str | None = None) -> list[VOD_file]:
+        """Return all recordings for *day* on *channel* via Baichuan MSG 14 + MSG 15.
+
+        Used as a fallback when baichuan_only=True (no HTTP API available).
+        """
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+
+        if stream == "sub":
+            stream_type = "subStream"
+        elif stream in {"autotrack_sub", "telephoto_sub"}:
+            stream_type = "subStream"
+        else:
+            stream_type = "mainStream"
+
+        # MSG 14: get file list handle for this day
+        xml = xmls.FileInfoListOpen.format(
+            uid=uid,
+            channel=channel,
+            stream_type=stream_type,
+            start_year=day.year,
+            start_month=day.month,
+            start_day=day.day,
+            start_hour=0,
+            start_minute=0,
+            start_second=0,
+            end_year=day.year,
+            end_month=day.month,
+            end_day=day.day,
+            end_hour=23,
+            end_minute=59,
+            end_second=59,
+        )
+        mess = await self.send(cmd_id=14, channel=channel, body=xml)
+        handle = self._get_value_from_xml(mess, "handle")
+        if handle is None:
+            _LOGGER.debug("Baichuan host %s: search_recordings_for_day_bc: MSG 14 returned no handle for channel %s day %s", self._host, channel, day)
+            return []
+
+        # MSG 15: fetch the file list using the handle
+        xml = xmls.FileInfoList.format(channel=channel, uid=uid, handle=handle)
+        mess = await self.send(cmd_id=15, channel=channel, body=xml)
+        root = XML.fromstring(mess)
+
+        vod_files: list[VOD_file] = []
+        for fi in root.findall(".//FileInfo"):
+            name = self._get_value_from_xml_element(fi, "name")
+            start_time_el = fi.find("startTime")
+            end_time_el = fi.find("endTime")
+            size_l = self._get_value_from_xml_element(fi, "sizeL", int)
+            size_h = self._get_value_from_xml_element(fi, "sizeH", int)
+            record_type = self._get_value_from_xml_element(fi, "recordType")
+
+            if name is None or start_time_el is None:
+                continue
+
+            start_dt = self._xml_time_to_datetime(start_time_el)
+            end_dt = self._xml_time_to_datetime(end_time_el)
+            if start_dt is None:
+                continue
+
+            size = (size_h or 0) * (2**32) + (size_l or 0)
+            data: dict = {
+                "type": stream or self.http_api._stream,
+                "StartTime": datetime_to_reolink_time(start_dt),
+                "EndTime": datetime_to_reolink_time(end_dt or start_dt),
+                "PlaybackTime": datetime_to_reolink_time(start_dt),
+                "name": name,
+                "size": str(size),
+            }
+            vod_file = VOD_file(data, self.http_api.timezone())
+
+            triggers = VOD_trigger.NONE
+            if record_type:
+                for part in record_type.replace(",", " ").split():
+                    if part in ("md", "pir", "other"):
+                        triggers |= VOD_trigger.MOTION
+                    elif part == "people":
+                        triggers |= VOD_trigger.PERSON
+                    elif part == "vehicle":
+                        triggers |= VOD_trigger.VEHICLE
+                    elif part == "dog_cat":
+                        triggers |= VOD_trigger.ANIMAL
+                    elif part == "visitor":
+                        triggers |= VOD_trigger.DOORBELL
+                    elif part == "face":
+                        triggers |= VOD_trigger.FACE
+                    elif part == "package":
+                        triggers |= VOD_trigger.PACKAGE
+                    elif part in ("normal", "sched", "manual", "timer", "io"):
+                        triggers |= VOD_trigger.TIMER
+            vod_file.bc_triggers = triggers
+            vod_files.append(vod_file)
+
+        return vod_files
+
+    async def replay_seek_bc(self, channel: int, seek_dt: datetime) -> None:
+        """Send ReplaySeek (MSG 123) to prepare camera for VOD playback."""
+        seq = int(time_now())
+        xml = xmls.ReplaySeek.format(
+            channel=channel,
+            seq=seq,
+            year=seek_dt.year,
+            month=seek_dt.month,
+            day=seek_dt.day,
+            hour=seek_dt.hour,
+            minute=seek_dt.minute,
+            second=seek_dt.second,
+        )
+        await self.send(cmd_id=123, channel=channel, body=xml)
+
+    async def _send_streaming(self, cmd_id: int, channel: int, body: str) -> tuple[asyncio.Queue, int]:
+        """Send *cmd_id* and register a streaming queue for all its responses.
+
+        Returns (queue, full_mess_id).  The caller is responsible for removing
+        the queue from self._protocol.streaming_queues when done.
+        """
+        if not self._logged_in and cmd_id > 2:
+            await self.login()
+
+        ch_id = channel + 1 if channel is not None else 250
+        ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel) if channel is not None else ""
+        ext_bytes = ext.encode("utf-8")
+        body_bytes = body.encode("utf-8")
+
+        mess_len = len(ext_bytes) + len(body_bytes)
+        payload_offset = len(ext_bytes)
+
+        self._mess_id = (self._mess_id + 1) % 16777216
+        mess_id_bytes = ch_id.to_bytes(1, "little") + self._mess_id.to_bytes(3, "little")
+        full_mess_id = int.from_bytes(mess_id_bytes, "little")
+
+        cmd_id_bytes = cmd_id.to_bytes(4, "little")
+        mess_len_bytes = mess_len.to_bytes(4, "little")
+        payload_offset_bytes = payload_offset.to_bytes(4, "little")
+        header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex("0000" + "1464") + payload_offset_bytes
+        enc_body = self._aes_encrypt(ext_bytes) + self._aes_encrypt(body_bytes)
+
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._protocol is not None
+            assert self._transport is not None
+
+        q: asyncio.Queue = asyncio.Queue(maxsize=512)
+        self._protocol.streaming_queues[(cmd_id, full_mess_id)] = q
+
+        _LOGGER.debug("Baichuan host %s: streaming send cmd_id %s full_mess_id %s", self._host, cmd_id, full_mess_id)
+        async with self._mutex:
+            self._transport.write(header + enc_body)
+
+        return q, full_mess_id
+
+    @staticmethod
+    async def parse_bcmedia_frames(
+        raw_stream: AsyncIterator[bytes],
+    ) -> AsyncIterator[tuple[int, bytes]]:
+        """Parse a raw Reolink BcMedia byte stream and yield (microseconds, h264_bytes) per video frame.
+
+        BcMedia magic layout (4 bytes, LE):
+          byte[0]: frame counter, '0'-'9' (0x30-0x39), cycles 0-9
+          byte[1]: frame type, '0'=IFrame (0x30) or '1'=PFrame (0x31)
+          byte[2]: 'd' (0x64)
+          byte[3]: 'c' (0x63)
+        Audio and info frames (different magic) are skipped.
+        """
+        buf = bytearray()
+
+        def _find_bcmedia_magic(data: bytearray, start: int) -> int | None:
+            """Return index of the next BcMedia frame (video or audio) at an 8-byte-aligned position, or None.
+
+            Recognises:
+              - Video I-frame: byte[0]='0'-'9', byte[1]='0', byte[2]='d', byte[3]='c'
+              - Video P-frame: byte[0]='0'-'9', byte[1]='1', byte[2]='d', byte[3]='c'
+              - Audio AAC:     byte[0]='0'-'9', byte[1]='5', byte[2]='w', byte[3]='b'
+              - Audio ADPCM:   byte[0]='0'-'9', byte[1]='1', byte[2]='w', byte[3]='b'
+
+            BcMedia frames are always 8-byte padded so all frame starts lie at 8-byte-aligned
+            stream offsets.  Scanning only aligned positions avoids false positives that can
+            appear inside H.264 or encrypted-audio payloads.
+            """
+            i = (start + 7) & ~7 if start % 8 != 0 else start
+            while i + 4 <= len(data):
+                b0, b1, b2, b3 = data[i], data[i + 1], data[i + 2], data[i + 3]
+                if 0x30 <= b0 <= 0x39:
+                    if b2 == 0x64 and b3 == 0x63 and b1 in (0x30, 0x31):
+                        return i  # video I/P-frame
+                    if b2 == 0x77 and b3 == 0x62 and b1 in (0x31, 0x35):
+                        return i  # audio ADPCM / AAC
+                i += 8
+            return None
+
+        scan_from = 0
+        async for chunk in raw_stream:
+            buf.extend(chunk)
+            while True:
+                magic_idx = _find_bcmedia_magic(buf, scan_from)
+                if magic_idx is None:
+                    # Back up to last 8-byte-aligned position so a magic spanning a chunk boundary is rechecked
+                    scan_from = max(0, len(buf) - 7) & ~7
+                    break
+
+                b2 = buf[magic_idx + 2]
+
+                if b2 == 0x77:
+                    # Audio frame (AAC or ADPCM): 4-byte magic + 2-byte payload_size + 2-byte payload_size_b + payload + padding
+                    if magic_idx + 8 > len(buf):
+                        scan_from = magic_idx
+                        break
+                    audio_payload_size = int.from_bytes(buf[magic_idx + 4 : magic_idx + 6], "little")
+                    audio_pad = (8 - audio_payload_size % 8) % 8
+                    audio_total = 8 + audio_payload_size + audio_pad
+                    if magic_idx + audio_total > len(buf):
+                        scan_from = magic_idx
+                        break
+                    del buf[: magic_idx + audio_total]
+                    scan_from = 0
+                    continue  # skip audio, look for next frame
+
+                # Video frame (I or P)
+                # Need at least 24 bytes for the fixed header fields
+                if magic_idx + 24 > len(buf):
+                    scan_from = magic_idx
+                    break
+
+                payload_size = int.from_bytes(buf[magic_idx + 8 : magic_idx + 12], "little")
+                additional_header_size = int.from_bytes(buf[magic_idx + 12 : magic_idx + 16], "little")
+                microseconds = int.from_bytes(buf[magic_idx + 16 : magic_idx + 20], "little")
+
+                hdr_size = 24 + additional_header_size
+                pad_size = (8 - payload_size % 8) % 8
+                total_size = hdr_size + payload_size + pad_size
+
+                if magic_idx + total_size > len(buf):
+                    # Frame not yet complete — wait for more data
+                    scan_from = magic_idx
+                    break
+
+                h264_bytes = bytes(buf[magic_idx + hdr_size : magic_idx + hdr_size + payload_size])
+                del buf[: magic_idx + total_size]
+                scan_from = 0
+
+                if h264_bytes:
+                    yield microseconds, h264_bytes
+
+    async def stream_replay_bc(
+        self,
+        channel: int,
+        file_name: str,
+        start_time: datetime,
+        stream_type: str = "mainStream",
+    ) -> AsyncIterator[bytes]:
+        """Async generator: stream a recorded VOD file via Baichuan MSG 5/8.
+
+        Yields raw (decrypted) binary chunks of video data.
+        Sends ReplaySeek (MSG 123) first, then MSG 5 (falls back to MSG 8 on 400),
+        skips the 32-byte replay header, and yields each subsequent binary packet.
+        Sends ReplayStop (MSG 7) in cleanup.
+
+        Replay binary handling follows the negotiated Baichuan login tier (header status on cmd_id 1):
+        FullAes (0xDD12) may encrypt payload (partial via Extension encryptLen, else full AES-CFB);
+        Aes (0xDD02, etc.) leaves binary as plaintext BcMedia. If tier was not parsed, defaults to FullAes.
+        """
+        await self.replay_seek_bc(channel, start_time)
+
+        support_sub = 1 if stream_type == "subStream" else 0
+        body = xmls.ReplayStart.format(
+            name=file_name,
+            channel=channel,
+            support_sub=support_sub,
+            stream_type=stream_type,
+            start_year=start_time.year,
+            start_month=start_time.month,
+            start_day=start_time.day,
+            start_hour=start_time.hour,
+            start_minute=start_time.minute,
+            start_second=start_time.second,
+        )
+
+        accepted_cmd_id: int = 0
+        full_mess_id: int = 0
+        q: asyncio.Queue | None = None
+
+        for try_cmd_id in (5, 8):
+            q, full_mess_id = await self._send_streaming(try_cmd_id, channel, body)
+            try:
+                status_code, data_chunk, len_hdr, payload = await asyncio.wait_for(q.get(), timeout=TIMEOUT)
+            except asyncio.TimeoutError as err:
+                if self._protocol is not None:
+                    self._protocol.streaming_queues.pop((try_cmd_id, full_mess_id), None)
+                raise ReolinkTimeoutError(f"Baichuan host {self._host}: timeout waiting for replay start (MSG {try_cmd_id})") from err
+
+            if status_code == 400:
+                if self._protocol is not None:
+                    self._protocol.streaming_queues.pop((try_cmd_id, full_mess_id), None)
+                if try_cmd_id == 8:
+                    raise ReolinkError(f"Baichuan host {self._host}: replay start rejected by camera (MSG 5 and MSG 8 both returned 400)")
+                _LOGGER.debug("Baichuan host %s: replay MSG 5 rejected (400), trying MSG 8", self._host)
+                continue
+
+            if status_code != 200:
+                if self._protocol is not None:
+                    self._protocol.streaming_queues.pop((try_cmd_id, full_mess_id), None)
+                raise ReolinkError(f"Baichuan host {self._host}: unexpected replay start response code {status_code} from MSG {try_cmd_id}")
+
+            _LOGGER.debug("Baichuan host %s: replay accepted (200) via MSG %s", self._host, try_cmd_id)
+            accepted_cmd_id = try_cmd_id
+            break
+
+        assert q is not None
+
+        STREAM_TIMEOUT = 15.0
+        packet_count = 0
+        try:
+            while True:
+                try:
+                    status_code, data_chunk, len_hdr, payload = await asyncio.wait_for(q.get(), timeout=STREAM_TIMEOUT)
+                except asyncio.TimeoutError:
+                    _LOGGER.debug("Baichuan host %s: replay stream: no data for %.0fs, stopping", self._host, STREAM_TIMEOUT)
+                    break
+
+                if status_code in (300, 331):
+                    _LOGGER.debug("Baichuan host %s: replay stream ended (response %s)", self._host, status_code)
+                    break
+
+                packet_count += 1
+
+                # Continuation packets (no extension, payload_offset=0) carry plaintext video data in the body.
+                # Packets with an extension (payload non-empty) may have an encrypted region.
+                binary: bytes = payload if payload else data_chunk[len_hdr:]
+                if not binary:
+                    continue
+
+                # First packet: 32-byte replay header — skip it
+                if packet_count == 1 and len(binary) == 32:
+                    _LOGGER.debug("Baichuan host %s: replay: skipping 32-byte stream header", self._host)
+                    continue
+
+                if payload and self._aes_key is not None:
+                    # Aes (0xDD02): only control/XML is encrypted; binary BcMedia is plaintext — never AES-decrypt it
+                    # (neolink PR #396 / de.rs). Default to full_aes when tier unknown so E1-style devices keep working.
+                    # FullAes (0xDD12): binary may be partially encrypted per encryptLen/encryptPos from the Extension XML.
+                    # SDK behavior (handleResponseV20): when encryptLen is absent from the Extension, it stays at
+                    # init 0xFFFFFFFF; the check `0 < (int)encryptLen` fails (-1 signed) → decrypt is skipped → plaintext.
+                    # Only decrypt when encryptLen is explicitly present and > 0.
+                    tier = self._baichuan_crypto_tier or "full_aes"
+                    if tier == "aes":
+                        binary = payload
+                    else:
+                        enc_pos = 0
+                        enc_len: int | None = None
+                        xml_enc = data_chunk[len_hdr:]
+                        if xml_enc:
+                            try:
+                                xml_str = self._aes_decrypt(xml_enc, data_chunk[:len_hdr])
+                                if xml_str.startswith("<?xml"):
+                                    root = XML.fromstring(xml_str.lower())
+                                    enc_len = self._get_value_from_xml_element(root, "encryptlen", int)
+                                    enc_pos = self._get_value_from_xml_element(root, "encryptpos", int) or 0
+                            except Exception:
+                                pass
+
+                        if enc_len is not None and enc_len > 0:
+                            end = enc_pos + enc_len
+                            decrypted_region = AES.new(key=self._aes_key, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128).decrypt(payload[enc_pos:end])
+                            binary = payload[:enc_pos] + decrypted_region + payload[end:]
+                        else:
+                            binary = payload
+
+                if packet_count <= 3 or packet_count % 100 == 0:
+                    _LOGGER.debug("Baichuan host %s: replay pkt %s: %s bytes", self._host, packet_count, len(binary))
+
+                yield binary
+
+        finally:
+            if self._protocol is not None:
+                self._protocol.streaming_queues.pop((accepted_cmd_id, full_mess_id), None)
+            stop_xml = xmls.ReplayStop.format(channel=channel, name=file_name)
+            try:
+                await self.send(cmd_id=7, channel=channel, body=stop_xml)
+                _LOGGER.debug("Baichuan host %s: replay stop (MSG 7) sent", self._host)
+            except Exception as err:
+                _LOGGER.debug("Baichuan host %s: replay stop (MSG 7) error: %s", self._host, err)
 
     @property
     def events_active(self) -> bool:
@@ -3796,3 +4222,147 @@ class Baichuan:
 
     def audio_noise_reduction(self, channel: int) -> int | None:
         return self._noise_reduction.get(channel)
+
+    # -------------------------------------------------------------------------
+    # Two-way audio (talk) support  (confirmed via Ghidra / neolink)
+    # cmd_id  10 = TalkAbility (query, confirmed: contextGet(..., 10, 0))
+    # cmd_id  11 = TalkReset   (stop,  confirmed: simpleSndFuncCH(..., 0xb, ...))
+    # cmd_id 201 = TalkConfig  (start, confirmed: xmlSndFuncCH(..., 0xc9, ...))
+    # cmd_id 202 = Talk        (send ADPCM audio data, no reply expected)
+    # -------------------------------------------------------------------------
+
+    BCMEDIA_ADPCM_MAGIC = struct.pack("<I", 0x62773130)  # bytes: 30 31 77 62 (little-endian u32)
+
+    async def get_talk_ability(self, channel: int) -> dict:
+        """Query the camera's talk (2-way audio) capability via cmd_id=10.
+
+        Returns a dict with keys:
+          - duplex: str (e.g. "FDX")
+          - audio_stream_mode: str (e.g. "followVideoStream" or "mixAudioStream")
+          - audio_type: str (e.g. "adpcm")
+          - sample_rate: int (e.g. 8000 or 16000)
+          - sample_precision: int (e.g. 16)
+          - length_per_encoder: int (samples per block, e.g. 320 or 640)
+          - sound_track: str (e.g. "mono")
+        """
+        mess = await self.send(cmd_id=10, channel=channel)
+        root = XML.fromstring(mess)
+
+        ability: dict = {}
+
+        # Duplex mode
+        for elem in root.findall(".//duplex"):
+            if elem.text:
+                ability["duplex"] = elem.text
+                break
+
+        # Audio stream mode
+        for elem in root.findall(".//audioStreamMode"):
+            if elem.text:
+                ability["audio_stream_mode"] = elem.text
+                break
+
+        # Audio config (take first supported entry)
+        for cfg in root.findall(".//audioConfig"):
+            audio_type_elem = cfg.find("audioType")
+            sample_rate_elem = cfg.find("sampleRate")
+            sample_precision_elem = cfg.find("samplePrecision")
+            lpe_elem = cfg.find("lengthPerEncoder")
+            sound_track_elem = cfg.find("soundTrack")
+
+            if audio_type_elem is not None and audio_type_elem.text:
+                ability.setdefault("audio_type", audio_type_elem.text)
+            if sample_rate_elem is not None and sample_rate_elem.text:
+                ability.setdefault("sample_rate", int(sample_rate_elem.text))
+            if sample_precision_elem is not None and sample_precision_elem.text:
+                ability.setdefault("sample_precision", int(sample_precision_elem.text))
+            if lpe_elem is not None and lpe_elem.text:
+                ability.setdefault("length_per_encoder", int(lpe_elem.text))
+            if sound_track_elem is not None and sound_track_elem.text:
+                ability.setdefault("sound_track", sound_track_elem.text)
+
+        return ability
+
+    async def start_talk(self, channel: int) -> dict:
+        """Start a 2-way audio talk session via Baichuan cmd_id=201 (TalkConfig).
+
+        Queries the camera's TalkAbility, then sends a TalkConfig message to
+        initiate the session.  Returns the audio configuration dict (same
+        structure as get_talk_ability) so the caller knows which format to use
+        when encoding audio for send_talk_data().
+
+        Audio format used: ADPCM (DVI-4 / IMA ADPCM), 16-bit, mono.
+        Block size in bytes = (length_per_encoder // 2) + 4
+        """
+        ability = await self.get_talk_ability(channel)
+
+        duplex = ability.get("duplex", "FDX")
+        audio_stream_mode = ability.get("audio_stream_mode", "followVideoStream")
+        audio_type = ability.get("audio_type", "adpcm")
+        sample_rate = ability.get("sample_rate", 8000)
+        sample_precision = ability.get("sample_precision", 16)
+        length_per_encoder = ability.get("length_per_encoder", 320)
+        sound_track = ability.get("sound_track", "mono")
+
+        xml = xmls.TalkConfigSet.format(
+            channel=channel,
+            duplex=duplex,
+            audio_stream_mode=audio_stream_mode,
+            audio_type=audio_type,
+            sample_rate=sample_rate,
+            sample_precision=sample_precision,
+            length_per_encoder=length_per_encoder,
+            sound_track=sound_track,
+        )
+        await self.send(cmd_id=201, channel=channel, body=xml)
+
+        _LOGGER.debug(
+            "Baichuan host %s ch %s: talk session started, audio_type=%s sample_rate=%s length_per_encoder=%s",
+            self._host,
+            channel,
+            audio_type,
+            sample_rate,
+            length_per_encoder,
+        )
+        return ability
+
+    async def stop_talk(self, channel: int) -> None:
+        """Stop the 2-way audio talk session via Baichuan cmd_id=11 (TalkReset)."""
+        await self.send(cmd_id=11, channel=channel)
+        _LOGGER.debug("Baichuan host %s ch %s: talk session stopped", self._host, channel)
+
+    @staticmethod
+    def build_bcmedia_adpcm(adpcm_blocks: list[bytes]) -> bytes:
+        """Wrap one or more raw IMA-ADPCM blocks in BcMedia ADPCM framing.
+
+        Each block must be a complete DVI-4 (IMA ADPCM) block:
+          - 4-byte block header (initial predictor LE-16, step index, reserved)
+          - followed by (length_per_encoder // 2) nibble-packed sample bytes.
+
+        Up to 4 blocks may be combined into one BcMedia message.
+        The returned bytes can be passed directly to send_talk_data().
+        """
+        # BcMedia ADPCM frame layout (confirmed from pcap + Ghidra audioTalkSendStream):
+        #   4 bytes  magic (0x62773130 = "bw10")
+        #   2 bytes  payload_size = len(block) + 4  (LE u16, duplicated in next 2 bytes)
+        #   2 bytes  payload_size (duplicate)
+        #   2 bytes  sub-magic 0x0100  (MAGIC_HEADER_BCMEDIA_ADPCM_DATA)
+        #   2 bytes  half_block = 2  (always 2; Ghidra: (sample_count>>1)+2 where sample_count=0)
+        #   N bytes  raw IMA ADPCM block (4-byte header + nibble data)
+        #   P bytes  zero padding to 8-byte boundary (based on payload_size; 0 for typical 520)
+        payload = b""
+        for block in adpcm_blocks:
+            data_len = len(block)
+            payload_size = data_len + 4
+            pad_size = (8 - payload_size % 8) % 8
+            payload += Baichuan.BCMEDIA_ADPCM_MAGIC + struct.pack("<HH", payload_size, payload_size) + struct.pack("<HH", 0x0100, 2) + block + b"\x00" * pad_size
+        return payload
+
+    async def send_talk_data(self, channel: int, bcmedia_data: bytes) -> None:
+        """Send BcMedia-framed ADPCM audio data to the camera (cmd_id=202).
+
+        bcmedia_data should be the output of build_bcmedia_adpcm().
+        The audio payload is sent WITHOUT encryption as required by the protocol.
+        This method does not wait for a reply.
+        """
+        await self.send_binary_no_reply(cmd_id=202, channel=channel, binary_body=bcmedia_data)

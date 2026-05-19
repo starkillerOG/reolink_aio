@@ -29,6 +29,11 @@ setup(name='reolink_aio',
         'pycryptodomex',
         'typing_extensions'
         ],
+      entry_points={
+          "console_scripts": [
+              "reolink-stream-vod=reolink_aio.scripts.stream_vod:main",
+          ],
+      },
       tests_require=[],
       platforms=['any'],
       zip_safe=False,

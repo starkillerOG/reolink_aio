@@ -26,6 +26,7 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         self._data_chunk: bytes = b""
 
         self.receive_futures: dict[int, dict[int, asyncio.Future]] = {}  # expected_cmd_id: rec_future
+        self.streaming_queues: dict[tuple[int, int], asyncio.Queue] = {}  # (cmd_id, mess_id): queue
         self.close_future: asyncio.Future = loop.create_future()
         self._close_callback = close_callback
         self._push_callback = push_callback
@@ -58,6 +59,12 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
 
     def data_received(self, data: bytes) -> None:
         """Data received callback"""
+        # E1 cameras prepend a 4-byte prefix before each standard Baichuan packet
+        # (neolink bc/codex.rs: "E1 sends 4 bytes then magic").  Strip it transparently.
+        if len(data) >= 8 and data[0:4].hex() != HEADER_MAGIC and data[4:8].hex() == HEADER_MAGIC:
+            _LOGGER.debug("Baichuan host %s: stripping E1 4-byte prefix %s", self._host, data[0:4].hex())
+            data = data[4:]
+
         # parse received header
         if data[0:4].hex() == HEADER_MAGIC:
             if self._data:
@@ -118,13 +125,20 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
                 _LOGGER.debug("Baichuan host %s: received start of modern header with message class %s but less then 24 bytes, waiting for the rest", self._host, mess_class)
                 return
             rec_payload_offset = int.from_bytes(self._data[20:24], byteorder="little")
-        elif mess_class == "1465":  # legacy 20 byte header
+        elif mess_class == "1465":  # legacy 20 byte header — used for streaming on some devices (e.g. E1)
             len_header = 20
-            self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
-            return
+            # Do not error immediately; streaming_queues may handle this packet.
+            # If no streaming queue claims it below, _set_error is called after extraction.
         else:
-            self._set_error(f"with unknown message class '{mess_class}'", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
-            return
+            # Unknown mess_class — check if a streaming queue exists before erroring.
+            # The E1 camera uses mess_class "9a69" for streaming binary data (AES/v2 = 24-byte header).
+            if len(self._data) >= 24 and self.streaming_queues.get((rec_cmd_id, rec_mess_id)) is not None:
+                len_header = 24
+                rec_payload_offset = int.from_bytes(self._data[20:24], byteorder="little")
+                _LOGGER.debug("Baichuan host %s: unknown message class '%s' for streaming cmd_id %s, treating as 24-byte header", self._host, mess_class, rec_cmd_id)
+            else:
+                self._set_error(f"with unknown message class '{mess_class}'", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
+                return
 
         # check message length
         len_body = len(self._data) - len_header
@@ -147,6 +161,21 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
             self._data = self._data[len_chunk::]
         else:  # len_body == rec_len_body
             self._data = b""
+
+        # streaming_queues bypass status-code filtering and receive_future routing
+        stream_q = self.streaming_queues.get((rec_cmd_id, rec_mess_id))
+        if stream_q is not None:
+            rec_status_code_s = int.from_bytes(self._data_chunk[16:18], byteorder="little") if len(self._data_chunk) >= 18 else 200
+            try:
+                stream_q.put_nowait((rec_status_code_s, bytes(self._data_chunk), len_header, bytes(payload)))
+            except asyncio.QueueFull:
+                _LOGGER.warning("Baichuan host %s: streaming queue full for cmd_id %s, dropping packet", self._host, rec_cmd_id)
+            return
+
+        # Legacy "1465" class is only supported via streaming_queues; error for any other use
+        if mess_class == "1465":
+            self._set_error("with legacy message class, parsing not implemented", InvalidContentTypeError, rec_cmd_id, rec_mess_id)
+            return
 
         # extract receive future
         receive_future = self.receive_futures.get(rec_cmd_id, {}).get(rec_mess_id)
@@ -188,6 +217,10 @@ class BaichuanTcpClientProtocol(asyncio.Protocol):
         finally:
             # if multiple messages received, parse the next also
             if self._data:
+                # Strip E1 4-byte prefix between consecutive packets if present
+                if len(self._data) >= 8 and self._data[0:4].hex() != HEADER_MAGIC and self._data[4:8].hex() == HEADER_MAGIC:
+                    _LOGGER.debug("Baichuan host %s: stripping E1 4-byte prefix between messages %s", self._host, self._data[0:4].hex())
+                    self._data = self._data[4:]
                 if self._data[0:4].hex() == HEADER_MAGIC:
                     self.parse_data()
                 elif len(self._data) < 4 and bytes.fromhex(HEADER_MAGIC).startswith(self._data):
