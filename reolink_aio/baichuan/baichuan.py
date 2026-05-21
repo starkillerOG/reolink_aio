@@ -1101,6 +1101,9 @@ class Baichuan:
         if self._subscribed:
             _LOGGER.debug("Baichuan host %s: already subscribed to events", self._host)
             return
+        if self.http_api.is_battery:
+            _LOGGER.debug("Baichuan host %s: battery cameras cannot subscribed to events", self._host)
+            return
         self._subscribed = True
         self._time_keepalive_loop = time_now()
         try:
@@ -1266,7 +1269,7 @@ class Baichuan:
 
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
-        if self._subscribed:
+        if self._subscribed and not self.http_api.is_battery:
             # first call unsubscribe_events
             _LOGGER.debug("Baichuan host %s: logout called while still subscribed, keeping connection", self._host)
             return
