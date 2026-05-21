@@ -38,6 +38,7 @@ class BaichuanBaseConnection:
         self._mutex = asyncio.Lock()
         self._transport: asyncio.BaseTransport | None = None
         self._protocol: BaichuanBaseClientProtocol | None = None
+        self.time_send: float = 0
 
     async def connect(self):
         """Initialize the protocol and make the connection if needed."""
@@ -150,6 +151,7 @@ class BaichuanBaseConnection:
                     receive_future.cancel()
                 self.receive_futures[cmd_id].pop(full_mess_id, None)
                 if not self.receive_futures[cmd_id]:
+                    self.time_send = self.time_recv
                     self.receive_futures.pop(cmd_id, None)
 
         return response

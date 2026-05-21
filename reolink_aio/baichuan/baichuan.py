@@ -79,6 +79,7 @@ _LOGGER = logging.getLogger(__name__)
 
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
+BATTERY_CLOSE_TIME = 5  # seconds
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 SMART_AI = {
@@ -138,6 +139,7 @@ class Baichuan:
         self._logged_in: bool = False
         self._last_login: float = 0
         self._mess_id = 0
+        self._battery_close_task: asyncio.Task | None = None
 
         # Event subscription
         self._subscribed: bool = False
@@ -1130,6 +1132,36 @@ class Baichuan:
                 self._keepalive_task.cancel()
             self._keepalive_task = self._loop.create_task(self._keepalive_loop())
 
+    async def _battery_close_loop(self) -> None:
+        """Loop which closes the battery connection when idle"""
+        while True:
+            try:
+                if self._connection is None:
+                    break
+
+                now = time_now()
+                sleep_t = min(BATTERY_CLOSE_TIME - (now - self._connection.time_send), BATTERY_CLOSE_TIME)
+                if self._connection.receive_futures:
+                    sleep_t = BATTERY_CLOSE_TIME
+                elif sleep_t < 0.05:
+                    _LOGGER.debug("Baichuan host %s: closing connection to preserve battery life", self._host)
+                    break
+
+                await asyncio.sleep(sleep_t)
+            except Exception as err:
+                _LOGGER.exception("Baichuan host %s: error during battery close loop: %s", self._host, str(err))
+
+        self._battery_close_task = None
+        await self.logout()
+
+    def _close_battery_connection(self) -> None:
+        """Start a task to close the battery connenction when idle to preserve battery life"""
+        if not self.http_api.is_battery:
+            return
+        if self._battery_close_task is not None:
+            return
+        self._battery_close_task = self._loop.create_task(self._battery_close_loop())
+
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
         async with self._login_mutex:
@@ -1159,6 +1191,9 @@ class Baichuan:
                     except ReolinkError:
                         self.connection_type = ConnectionEnum.unknown
                         raise
+
+                # start task to close the battery cam connection when idle
+                self._close_battery_connection()
 
                 # modern login
                 self._user_hash = md5_str_modern(f"{self._username}{nonce}")
@@ -1231,6 +1266,10 @@ class Baichuan:
             # first call unsubscribe_events
             _LOGGER.debug("Baichuan host %s: logout called while still subscribed, keeping connection", self._host)
             return
+
+        if self._battery_close_task is not None:
+            self._battery_close_task.cancel()
+            self._battery_close_task = None
 
         if self._logged_in and self._connection is not None:
             try:
