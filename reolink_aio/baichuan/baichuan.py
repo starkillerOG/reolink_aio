@@ -131,12 +131,13 @@ class Baichuan:
         self.last_privacy_check: float = 0
         self.last_privacy_on: float = 0
 
-        # TCP connection
+        # TCP/UDP connection
         self._connection: BaichuanTcpConnection | BaichuanUdpConnection | None = None
         self.connection_type: ConnectionEnum = connection_type
         self._login_mutex = asyncio.Lock()
         self._loop = asyncio.get_event_loop()
         self._logged_in: bool = False
+        self._login_sucess: bool = False
         self._last_login: float = 0
         self._mess_id = 0
         self._battery_close_task: asyncio.Task | None = None
@@ -1207,6 +1208,9 @@ class Baichuan:
                         raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login") from err
                     raise
                 self._logged_in = True
+                self._login_sucess = True
+            except ReolinkError:
+                self._login_sucess = False
             finally:
                 self._last_login = time_now()
 
@@ -3545,6 +3549,11 @@ class Baichuan:
     @property
     def session_active(self) -> bool:
         return self._logged_in or (self._connection is not None and time_now() - self._connection.time_recv < 60)
+
+    @property
+    def login_sucess(self) -> bool:
+        """Indicates if the last login was succesfull, used to indicate if a battery camera is available"""
+        return self._login_sucess
 
     @property
     def http_port(self) -> int | None:
