@@ -2162,6 +2162,9 @@ class Host:
 
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
         all_wake = all(wake.values())
+        if self.is_battery and not all_wake:
+            _LOGGER.debug("Host %s: is a battery camera and wake=False, skipping get_states", self._host)
+            return
         if any_battery and any(wake.values()):
             wake_ch = [ch for ch in wake if wake[ch] and self.supported(ch, "battery")]
             _LOGGER.debug("Host %s:%s: Waking battery camera channels %s for the get_states update", self._host, self._port, wake_ch)

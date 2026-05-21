@@ -1707,6 +1707,10 @@ class Baichuan:
         any_battery = any(self.http_api.supported(ch, "battery") for ch in self.http_api._channels)
         all_wake = all(wake.values())
 
+        if self.http_api.is_battery and not all_wake:
+            _LOGGER.debug("Reolink %s: is a battery camera and wake=False, skipping get_states", self.http_api.nvr_name)
+            return
+
         def inc_host_cmd(cmd: str, no_wake_check=False) -> bool:
             return (cmd in cmd_list or not cmd_list) and (no_wake_check or (all_wake or not any_battery or cmd in NONE_WAKING_COMMANDS))
 
