@@ -34,6 +34,14 @@ class EncodingEnum(Enum):
     h265 = "h265"
 
 
+class ConnectionEnum(Enum):
+    """Connection types"""
+
+    unknown = "unknown"
+    tcp = "tcp"
+    udp = "udp"
+
+
 class ExposureEnum(Enum):
     """Options for exposure mode"""
 

@@ -33,6 +33,40 @@ CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </Extension>
 """
 
+UDP_GET_UID_XML = """
+<P2P>
+<C2D_S>
+<to>
+<port>{port}</port>
+</to>
+</C2D_S>
+</P2P>
+"""
+
+UDP_CONNECT_XML = """
+<P2P>
+<C2D_C>
+<uid>{uid}</uid>
+<cli>
+<port>{port}</port>
+</cli>
+<cid>{client_id}</cid>
+<mtu>{mtu}</mtu>
+<debug>0</debug>
+<p>WIN</p>
+</C2D_C>
+</P2P>
+"""
+
+UDP_DISCONNECT_XML = """
+<P2P>
+<C2D_DISC>
+<cid>{client_id}</cid>
+<did>{host_id}</did>
+</C2D_DISC>
+</P2P>
+"""
+
 DingDongOpt_1_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>

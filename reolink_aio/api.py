@@ -41,6 +41,7 @@ from .enums import (
     BatteryEnum,
     BinningModeEnum,
     ChimeToneEnum,
+    ConnectionEnum,
     DayNightEnum,
     EncodingEnum,
     ExposureEnum,
@@ -145,6 +146,7 @@ class Host:
         aiohttp_get_session_callback=None,
         bc_port: int = DEFAULT_BC_PORT,
         bc_only: bool = False,
+        bc_connection: ConnectionEnum = ConnectionEnum.unknown,
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -186,7 +188,7 @@ class Host:
 
         ##############################################################################
         # Baichuan protocol (port 9000)
-        self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, http_api=self)
+        self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, connection_type=bc_connection, http_api=self)
         self.baichuan_only: bool = bc_only
         self.baichuan_cmds: set[str] = set()
 
@@ -194,6 +196,7 @@ class Host:
         # NVR (host-level) attributes
         self._is_nvr: bool = False
         self._is_hub: bool = False
+        self._is_battery: bool = False
         self._num_channels: int = 0
 
         ##############################################################################
@@ -425,6 +428,10 @@ class Host:
     @property
     def is_hub(self) -> bool:
         return self._is_hub
+
+    @property
+    def is_battery(self) -> bool:
+        return self._is_battery
 
     @property
     def nvr_name(self) -> str:
@@ -1873,8 +1880,7 @@ class Host:
                 self._capabilities[channel].add("battery")
                 if channel in self._sleep:
                     self._capabilities[channel].add("sleep")
-                    if "sleep" not in self._capabilities["Host"]:
-                        self._capabilities["Host"].add("sleep")
+                    self._capabilities["Host"].add("sleep")
             if self.api_version("mdWithPir", channel) > 0:
                 self._capabilities[channel].add("PIR")
 
@@ -2161,6 +2167,9 @@ class Host:
 
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
         all_wake = all(wake.values())
+        if self.is_battery and not all_wake:
+            _LOGGER.debug("Host %s: is a battery camera and wake=False, skipping get_states", self._host)
+            return
         if any_battery and any(wake.values()):
             wake_ch = [ch for ch in wake if wake[ch] and self.supported(ch, "battery")]
             _LOGGER.debug("Host %s:%s: Waking battery camera channels %s for the get_states update", self._host, self._port, wake_ch)
@@ -2582,6 +2591,10 @@ class Host:
         self._api_version["GetMdAlarm"] = check_command_exists("GetMdAlarm")
 
         self.construct_capabilities()
+
+        # start task to close the battery cam connection when idle
+        self._is_battery = not self.is_nvr and self.supported(0, "battery")
+        self.baichuan._close_battery_connection()
 
         for channel in self._channels:
             # fix for manual record firmware bug, it should be 0 or 1, other values are a bug and cause battery drain
