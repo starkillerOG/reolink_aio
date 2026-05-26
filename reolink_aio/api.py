@@ -5935,6 +5935,35 @@ class Host:
         """
         return self.baichuan.parse_bcmedia_frames(self.baichuan.stream_replay_bc(channel, file_name, start_time, stream_type))
 
+    def stream_live_bc(
+        self,
+        channel: int,
+        stream_type: str = "mainStream",
+    ) -> AsyncIterator[tuple[int, bytes, str]]:
+        """Async generator: stream live video via the Baichuan protocol.
+
+        Yields ``(microseconds, video_bytes, codec)`` tuples for each video frame.
+        ``microseconds`` is the camera-relative timestamp (u32, wraps at ~71 min).
+        ``video_bytes`` is the raw video NAL data.
+        ``codec`` is ``"H264"`` or ``"H265"``.
+
+        Break out of the loop to stop the stream — the PreviewStop command is sent
+        automatically on generator close.
+
+        Parameters
+        ----------
+        channel:
+            Camera channel index.
+        stream_type:
+            ``"mainStream"`` (default) or ``"subStream"``.
+
+        Usage::
+
+            async for microseconds, video_bytes, codec in host.stream_live_bc(ch):
+                ...
+        """
+        return self.baichuan.parse_bcmedia_frames(self.baichuan.stream_live_bc(channel, stream_type))
+
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
         command = body[0]["cmd"]
         _LOGGER.debug(

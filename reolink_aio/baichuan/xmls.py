@@ -464,6 +464,23 @@ CoverPreview = """
 </CoverPreview>
 </body>"""
 
+Preview = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<Preview version="1.1">
+<channelId>{channel}</channelId>
+<handle>{handle}</handle>
+<streamType>{stream_type}</streamType>
+</Preview>
+</body>"""
+
+PreviewStop = """<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<Preview version="1.1">
+<channelId>{channel}</channelId>
+<handle>{handle}</handle>
+</Preview>
+</body>"""
+
 PtzControl = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
