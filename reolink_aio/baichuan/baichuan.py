@@ -1214,6 +1214,7 @@ class Baichuan:
                 self._login_sucess = True
             except ReolinkError:
                 self._login_sucess = False
+                raise
             finally:
                 self._last_login = time_now()
 
