@@ -6290,87 +6290,76 @@ class Host:
             await self.expire_session(unsubscribe=False)
             raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
 
-        # Hub returned a single global -8 for the whole batch (firmware bug:
-        # one hung cmd poisons the batch). Split into per-cmd sends so we can
-        # identify and blacklist the broken cmd(s).
+        # Some firmwares collapse a multi-cmd batch into a single error response
+        # (rspCode -8 "timeout" or -10 "protocol") when one cmd misbehaves;
+        # treat that like a mismatch and skip the sleep + batch retry.
         sent_body_len = len(body) - len(baichuan_idxs)
-        if (
+        is_global_timeout = (
             sent_body_len > 1
             and len(json_data) == 1
             and isinstance(json_data[0], dict)
             and json_data[0].get("code") == 1
-            and json_data[0].get("error", {}).get("rspCode") == -8
-        ):
-            _LOGGER.debug(
-                "Host %s:%s: hub returned a single global timeout for a batch of %s commands, retrying each separately",
-                self._host,
-                self._port,
-                sent_body_len,
-            )
-            json_data_sep: typings.reolink_json = []
-            for command in body:
-                cmd_name = command.get("cmd", "")
-                try:
-                    result = await self.send([command], param, "json", retry + 1)
-                except ReolinkError as err:
-                    _LOGGER.debug(
-                        "Host %s:%s: cmd '%s' failed during global-timeout split: %s",
-                        self._host,
-                        self._port,
-                        cmd_name,
-                        err,
-                    )
-                    json_data_sep.append(
-                        {"cmd": cmd_name, "code": 1, "error": {"detail": str(err), "rspCode": -8}}
-                    )
-                    continue
-                json_data_sep.extend(result)
-                if (
-                    cmd_name
-                    and cmd_name not in self._broken_cmds
-                    and result
-                    and isinstance(result[0], dict)
-                    and result[0].get("code") == 1
-                    and result[0].get("error", {}).get("rspCode") == -8
-                ):
-                    _LOGGER.warning(
-                        "Host %s:%s: command '%s' returns timeout (-8) on its own, blacklisting it for this session",
-                        self._host,
-                        self._port,
-                        cmd_name,
-                    )
-                    self._broken_cmds.add(cmd_name)
-            return json_data_sep
+            and json_data[0].get("error", {}).get("rspCode", 0) < 0
+        )
 
         # re-insert baichuan fallbacks
         for idx, cmd in sorted(baichuan_idxs.items()):
             json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
 
         if len(json_data) != len(body) and len(body) != 1:
-            if retry <= 0:
+            if retry <= 0 and not is_global_timeout:
                 raise UnexpectedDataError(
                     f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
                 )
-            # back-off a bit, this is mostly caused by a timeout error because the camera is too busy
-            await asyncio.sleep(5)
-            if retry == 1:
-                _LOGGER.debug(
-                    "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
-                    self._host,
-                    self._port,
-                    len(json_data),
-                    len(body),
-                )
-                json_data_sep = []
+            if not is_global_timeout:
+                # back-off a bit, this is mostly caused by a timeout error because the camera is too busy
+                await asyncio.sleep(5)
+            if is_global_timeout or retry == 1:
+                if is_global_timeout:
+                    _LOGGER.debug(
+                        "Host %s:%s: hub returned a single global timeout for a batch of %s commands, retrying each separately",
+                        self._host,
+                        self._port,
+                        sent_body_len,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
+                        self._host,
+                        self._port,
+                        len(json_data),
+                        len(body),
+                    )
+                json_data_sep: typings.reolink_json = []
                 for command in body:
+                    cmd_name = command.get("cmd", "")
                     try:
                         # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
-                        json_data_sep.extend(await self.send([command], param, "json", retry + 1))
+                        result = await self.send([command], param, "json", retry + 1)
                     except ReolinkError as err:
-                        raise UnexpectedDataError(
-                            f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
-                            f"while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
-                        ) from err
+                        if not is_global_timeout:
+                            raise UnexpectedDataError(
+                                f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
+                                f"while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
+                            ) from err
+                        _LOGGER.debug("Host %s: cmd '%s' failed during global-timeout split: %s", self._host, cmd_name, err)
+                        result = [{"cmd": cmd_name, "code": 1, "error": {"detail": str(err), "rspCode": -8}}]
+                    json_data_sep.extend(result)
+                    if (
+                        cmd_name
+                        and cmd_name not in self._broken_cmds
+                        and result
+                        and isinstance(result[0], dict)
+                        and result[0].get("code") == 1
+                        and result[0].get("error", {}).get("rspCode") == -8
+                    ):
+                        _LOGGER.warning(
+                            "Host %s:%s: command '%s' returns timeout (-8) on its own, blacklisting it for this session",
+                            self._host,
+                            self._port,
+                            cmd_name,
+                        )
+                        self._broken_cmds.add(cmd_name)
                 return json_data_sep
 
             _LOGGER.debug(
