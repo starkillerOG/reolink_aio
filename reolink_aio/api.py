@@ -229,6 +229,7 @@ class Host:
         self._stream_channels: list[int] = []
         self._channel_online: dict[int, bool] = {}
         self._channel_online_check: dict[int, bool] = {}
+        self._broken_cmds: set[str] = set()
         self._is_doorbell: dict[int, bool] = {}
         self._GetDingDong_present: dict[int | None, bool] = {}
 
@@ -5927,15 +5928,50 @@ class Host:
         If a body contains more than MAX_CHUNK_ITEMS requests, split it up in chunks.
         Otherwise you get a 'error': {'detail': 'send failed', 'rspCode': -16} response.
         """
+        # Strip cmds known to hang this firmware (see _broken_cmds). Re-inserted
+        # below as error placeholders so the caller's index mapping is preserved.
+        blacklisted_idxs: dict[int, str] = {}
+
+        def strip_broken(chunk_body: typings.reolink_json, offset: int) -> typings.reolink_json:
+            if expected_response_type != "json" or not self._broken_cmds:
+                return chunk_body
+            kept: typings.reolink_json = []
+            for local_idx, cmd_body in enumerate(chunk_body):
+                cmd = cmd_body.get("cmd", "")
+                if cmd in self._broken_cmds:
+                    blacklisted_idxs[offset + local_idx] = cmd
+                else:
+                    kept.append(cmd_body)
+            return kept
+
         len_body = len(body)
         if len_body <= MAX_CHUNK_ITEMS or expected_response_type != "json":
-            return await self.send_chunk(body, param, expected_response_type, retry)
+            body_to_send = strip_broken(body, 0)
+            if not body_to_send and blacklisted_idxs:
+                response: typings.reolink_json = []
+            else:
+                response = await self.send_chunk(body_to_send, param, expected_response_type, retry)
+        else:
+            response = []
+            for chunk in range(0, len_body, MAX_CHUNK_ITEMS):
+                chunk_end = min(chunk + MAX_CHUNK_ITEMS, len_body)
+                _LOGGER.debug("sending chunks %i:%i of total %i requests", chunk + 1, chunk_end, len_body)
+                # Re-filter per chunk: a previous chunk's retry may have just blacklisted a cmd.
+                chunk_body = strip_broken(body[chunk:chunk_end], chunk)
+                if not chunk_body:
+                    continue
+                response.extend(await self.send_chunk(chunk_body, param, expected_response_type, retry))
 
-        response: typings.reolink_json = []
-        for chunk in range(0, len_body, MAX_CHUNK_ITEMS):
-            chunk_end = min(chunk + MAX_CHUNK_ITEMS, len_body)
-            _LOGGER.debug("sending chunks %i:%i of total %i requests", chunk + 1, chunk_end, len_body)
-            response.extend(await self.send_chunk(body[chunk:chunk_end], param, expected_response_type, retry))
+        if blacklisted_idxs and isinstance(response, list):
+            for idx in sorted(blacklisted_idxs):
+                response.insert(
+                    idx,
+                    {
+                        "cmd": blacklisted_idxs[idx],
+                        "code": 1,
+                        "error": {"detail": "cmd blacklisted on this firmware", "rspCode": -8},
+                    },
+                )
 
         return response
 
@@ -6253,6 +6289,58 @@ class Host:
         if json_data is None:
             await self.expire_session(unsubscribe=False)
             raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
+
+        # Hub returned a single global -8 for the whole batch (firmware bug:
+        # one hung cmd poisons the batch). Split into per-cmd sends so we can
+        # identify and blacklist the broken cmd(s).
+        sent_body_len = len(body) - len(baichuan_idxs)
+        if (
+            sent_body_len > 1
+            and len(json_data) == 1
+            and isinstance(json_data[0], dict)
+            and json_data[0].get("code") == 1
+            and json_data[0].get("error", {}).get("rspCode") == -8
+        ):
+            _LOGGER.debug(
+                "Host %s:%s: hub returned a single global timeout for a batch of %s commands, retrying each separately",
+                self._host,
+                self._port,
+                sent_body_len,
+            )
+            json_data_sep: typings.reolink_json = []
+            for command in body:
+                cmd_name = command.get("cmd", "")
+                try:
+                    result = await self.send([command], param, "json", retry + 1)
+                except ReolinkError as err:
+                    _LOGGER.debug(
+                        "Host %s:%s: cmd '%s' failed during global-timeout split: %s",
+                        self._host,
+                        self._port,
+                        cmd_name,
+                        err,
+                    )
+                    json_data_sep.append(
+                        {"cmd": cmd_name, "code": 1, "error": {"detail": str(err), "rspCode": -8}}
+                    )
+                    continue
+                json_data_sep.extend(result)
+                if (
+                    cmd_name
+                    and cmd_name not in self._broken_cmds
+                    and result
+                    and isinstance(result[0], dict)
+                    and result[0].get("code") == 1
+                    and result[0].get("error", {}).get("rspCode") == -8
+                ):
+                    _LOGGER.warning(
+                        "Host %s:%s: command '%s' returns timeout (-8) on its own, blacklisting it for this session",
+                        self._host,
+                        self._port,
+                        cmd_name,
+                    )
+                    self._broken_cmds.add(cmd_name)
+            return json_data_sep
 
         # re-insert baichuan fallbacks
         for idx, cmd in sorted(baichuan_idxs.items()):
