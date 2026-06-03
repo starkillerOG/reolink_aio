@@ -1176,6 +1176,7 @@ class Baichuan:
             if time_now() - self._last_login < 15:
                 raise LoginError(f"Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
 
+            set_last_login = True
             try_connections = self.connection_type == ConnectionEnum.unknown
             if try_connections:
                 self.connection_type = ConnectionEnum.tcp
@@ -1208,6 +1209,7 @@ class Baichuan:
                     mess = await self.send(cmd_id=1, enc_type=EncType.BC, body=xml)
                 except ApiError as err:
                     if err.rspCode == 401:
+                        set_last_login = False  # Allow direct throwing of the CredentialsInvalidError again
                         raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login") from err
                     raise
                 self._logged_in = True
@@ -1216,7 +1218,8 @@ class Baichuan:
                 self._login_sucess = False
                 raise
             finally:
-                self._last_login = time_now()
+                if set_last_login:
+                    self._last_login = time_now()
 
         # parse response
         root = XML.fromstring(mess)
@@ -1325,6 +1328,8 @@ class Baichuan:
         # Get Baichaun capabilities
         try:
             mess = await self.send(cmd_id=199)
+        except CredentialsInvalidError:
+            raise
         except ReolinkError as err:
             _LOGGER.debug("Baichuan host %s: Could not obtain abilities (cmd_id 199): %s", self._host, str(err).replace(f"Baichuan host {self._host}: ", ""))
         else:
