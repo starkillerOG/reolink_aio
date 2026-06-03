@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://github.com/sponsors/starkillerOG"><img src="https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86" alt="Sponsor"></a>
   <a href="https://www.buymeacoffee.com/starkillerog"><img src="https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png" alt="Buy Me a Coffee" height="21"></a>
+  <a href='https://ko-fi.com/A3O220R062' target='_blank'><img style='border:0px;height:21px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
   <a href="https://reolink.pxf.io/q44QWq"><img src="https://img.shields.io/static/v1?label=Affiliate%20link&message=%E2%9D%A4&color=%23fe8e86" alt="Affiliate link"></a>
   <a href="https://pypi.org/project/reolink-aio"><img src="https://img.shields.io/pypi/dm/reolink-aio"></a>
   <a href="https://github.com/starkillerOG/reolink_aio/releases"><img src="https://img.shields.io/github/v/release/StarkillerOG/reolink_aio?display_name=tag&include_prereleases&sort=semver" alt="Current version"></a>
