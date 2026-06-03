@@ -190,7 +190,6 @@ class Host:
         # Baichuan protocol (port 9000)
         self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, connection_type=bc_connection, http_api=self)
         self.baichuan_only: bool = bc_only
-        self.baichuan_cmds: set[str] = set()
 
         ##############################################################################
         # NVR (host-level) attributes
@@ -229,9 +228,10 @@ class Host:
         self._stream_channels: list[int] = []
         self._channel_online: dict[int, bool] = {}
         self._channel_online_check: dict[int, bool] = {}
-        self._broken_cmds: set[str] = set()
         self._is_doorbell: dict[int, bool] = {}
         self._GetDingDong_present: dict[int | None, bool] = {}
+        self.baichuan_cmds: set[str] = set()
+        self._broken_cmds: set[str] = set()
 
         ##############################################################################
         # API-versions and capabilities
@@ -5928,50 +5928,15 @@ class Host:
         If a body contains more than MAX_CHUNK_ITEMS requests, split it up in chunks.
         Otherwise you get a 'error': {'detail': 'send failed', 'rspCode': -16} response.
         """
-        # Strip cmds known to hang this firmware (see _broken_cmds). Re-inserted
-        # below as error placeholders so the caller's index mapping is preserved.
-        blacklisted_idxs: dict[int, str] = {}
-
-        def strip_broken(chunk_body: typings.reolink_json, offset: int) -> typings.reolink_json:
-            if expected_response_type != "json" or not self._broken_cmds:
-                return chunk_body
-            kept: typings.reolink_json = []
-            for local_idx, cmd_body in enumerate(chunk_body):
-                cmd = cmd_body.get("cmd", "")
-                if cmd in self._broken_cmds:
-                    blacklisted_idxs[offset + local_idx] = cmd
-                else:
-                    kept.append(cmd_body)
-            return kept
-
         len_body = len(body)
         if len_body <= MAX_CHUNK_ITEMS or expected_response_type != "json":
-            body_to_send = strip_broken(body, 0)
-            if not body_to_send and blacklisted_idxs:
-                response: typings.reolink_json = []
-            else:
-                response = await self.send_chunk(body_to_send, param, expected_response_type, retry)
-        else:
-            response = []
-            for chunk in range(0, len_body, MAX_CHUNK_ITEMS):
-                chunk_end = min(chunk + MAX_CHUNK_ITEMS, len_body)
-                _LOGGER.debug("sending chunks %i:%i of total %i requests", chunk + 1, chunk_end, len_body)
-                # Re-filter per chunk: a previous chunk's retry may have just blacklisted a cmd.
-                chunk_body = strip_broken(body[chunk:chunk_end], chunk)
-                if not chunk_body:
-                    continue
-                response.extend(await self.send_chunk(chunk_body, param, expected_response_type, retry))
+            return await self.send_chunk(body, param, expected_response_type, retry)
 
-        if blacklisted_idxs and isinstance(response, list):
-            for idx in sorted(blacklisted_idxs):
-                response.insert(
-                    idx,
-                    {
-                        "cmd": blacklisted_idxs[idx],
-                        "code": 1,
-                        "error": {"detail": "cmd blacklisted on this firmware", "rspCode": -8},
-                    },
-                )
+        response: typings.reolink_json = []
+        for chunk in range(0, len_body, MAX_CHUNK_ITEMS):
+            chunk_end = min(chunk + MAX_CHUNK_ITEMS, len_body)
+            _LOGGER.debug("sending chunks %i:%i of total %i requests", chunk + 1, chunk_end, len_body)
+            response.extend(await self.send_chunk(body[chunk:chunk_end], param, expected_response_type, retry))
 
         return response
 
@@ -6025,7 +5990,7 @@ class Host:
             return await self._baichuan_alternative(body, expected_response_type)
 
         cmds = [cmd.get("cmd", "") for cmd in body]
-        baichuan_idxs: dict[int, str] = {}
+        filtered_idxs: dict[int, tuple[str, int]] = {}
         if expected_response_type in ["image/jpeg", "application/octet-stream"]:
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
@@ -6046,11 +6011,12 @@ class Host:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, self.hide_password(param))
 
-        # filter baichuan fallbacks
+        # filter baichuan fallbacks and broken cmds
         filtered_body = body
-        if expected_response_type == "json" and self.baichuan_cmds:
+        if expected_response_type == "json" and (self.baichuan_cmds or self._broken_cmds):
             filtered_body = body.copy()
             coroutines = []
+            # Strip cmds for which the baichuan fallback succeded
             for baichuan_cmd in self.baichuan_cmds:
                 if baichuan_cmd in cmds:
                     idx = cmds.index(baichuan_cmd)
@@ -6067,12 +6033,18 @@ class Host:
                     if isinstance(result, BaseException):
                         raise result
                     _LOGGER.debug("Used Baichuan for %s successfully", baichuan_cmd)
-                    baichuan_idxs[idx] = baichuan_cmd
-            for idx in sorted(baichuan_idxs, reverse=True):
+                    filtered_idxs[idx] = (baichuan_cmd, -9998)
+            # Strip cmds known to hang this firmware (see _broken_cmds)
+            for broken_cmd in self._broken_cmds:
+                if broken_cmd in cmds:
+                    idx = cmds.index(broken_cmd)
+                    filtered_idxs[idx] = (broken_cmd, -8)
+            # filter the body
+            for idx in sorted(filtered_idxs, reverse=True):
                 filtered_body.pop(idx)
-            if not filtered_body and baichuan_idxs:
-                _LOGGER.debug("No commands left after Baichuan filtering, continuing with parsing")
-                return await self._parse_json("[]", baichuan_idxs, body, param, retry)
+            if not filtered_body and filtered_idxs:
+                _LOGGER.debug("No commands left after Baichuan/Broken cmd filtering, continuing with parsing")
+                return await self._parse_json("[]", filtered_idxs, body, param, retry)
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -6182,7 +6154,7 @@ class Host:
                 raise InvalidContentTypeError(err_mess)
 
             if expected_response_type == "json" and isinstance(data, str):
-                return await self._parse_json(data, baichuan_idxs, body, param, retry)
+                return await self._parse_json(data, filtered_idxs, body, param, retry)
 
             if expected_response_type == "image/jpeg" and isinstance(data, bytes):
                 return data
@@ -6271,7 +6243,7 @@ class Host:
     async def _parse_json(
         self,
         data: str,
-        baichuan_idxs: dict[int, str],
+        filtered_idxs: dict[int, tuple[str, int]],
         body: typings.reolink_json,
         param: dict[str, Any] | None,
         retry: int,
@@ -6290,68 +6262,72 @@ class Host:
             await self.expire_session(unsubscribe=False)
             raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
 
-        # Some firmwares collapse a multi-cmd batch into a single error response
-        # (rspCode -8 "timeout" or -10 "protocol") when one cmd misbehaves;
-        # treat that like a mismatch and skip the sleep + batch retry.
-        sent_body_len = len(body) - len(baichuan_idxs)
-        is_global_timeout = (
-            sent_body_len > 1
-            and len(json_data) == 1
-            and isinstance(json_data[0], dict)
-            and json_data[0].get("code") == 1
-            and json_data[0].get("error", {}).get("rspCode", 0) < 0
-        )
+        def re_insert_filtered(full_json_data: typings.reolink_json, filtered_idxs: dict[int, tuple[str, int]]) -> typings.reolink_json:
+            # Re-inserted as error placeholders so the caller's index mapping is preserved.
+            for idx, tup in sorted(filtered_idxs.items()):
+                cmd, code = tup
+                if code == -8:
+                    full_json_data.insert(idx, {"cmd": cmd, "code": 1, "error": {"detail": "cmd blacklisted on this firmware", "rspCode": code}})
+                else:
+                    full_json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": code}})
+            return full_json_data
 
-        # re-insert baichuan fallbacks
-        for idx, cmd in sorted(baichuan_idxs.items()):
-            json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
-
-        if len(json_data) != len(body) and len(body) != 1:
-            if retry <= 0 and not is_global_timeout:
+        sent_body_len = len(body) - len(filtered_idxs)
+        if len(json_data) != sent_body_len and sent_body_len > 1:
+            # Some firmwares collapse a multi-cmd batch into a single error response
+            # (rspCode -8 "timeout" or -10 "protocol") when one cmd misbehaves;
+            # treat that like a mismatch and skip the sleep + batch retry.
+            is_global_timeout = (
+                len(json_data) == 1 and isinstance(json_data[0], dict) and json_data[0].get("code") == 1 and json_data[0].get("error", {}).get("rspCode", 0) < 0
+            )
+            if retry <= 0:
                 raise UnexpectedDataError(
-                    f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
+                    f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {sent_body_len} responses",
                 )
             if not is_global_timeout:
                 # back-off a bit, this is mostly caused by a timeout error because the camera is too busy
                 await asyncio.sleep(5)
+            # filter out the already succeded baichuan fallbacks/broken cmds
+            for idx in sorted(filtered_idxs, reverse=True):
+                body.pop(idx)
             if is_global_timeout or retry == 1:
                 if is_global_timeout:
                     _LOGGER.debug(
-                        "Host %s:%s: hub returned a single global timeout for a batch of %s commands, retrying each separately",
+                        "Host %s:%s: device returned a single global timeout for a batch of %s commands, retrying each separately",
                         self._host,
                         self._port,
                         sent_body_len,
                     )
                 else:
                     _LOGGER.debug(
-                        "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
+                        "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying each separately",
                         self._host,
                         self._port,
                         len(json_data),
-                        len(body),
+                        sent_body_len,
                     )
                 json_data_sep: typings.reolink_json = []
                 for command in body:
                     cmd_name = command.get("cmd", "")
                     try:
                         # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
-                        result = await self.send([command], param, "json", retry + 1)
+                        res = await self.send([command], param, "json", retry + 1)
                     except ReolinkError as err:
                         if not is_global_timeout:
                             raise UnexpectedDataError(
                                 f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
-                                f"while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
+                                f"while requesting {sent_body_len} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
                             ) from err
                         _LOGGER.debug("Host %s: cmd '%s' failed during global-timeout split: %s", self._host, cmd_name, err)
-                        result = [{"cmd": cmd_name, "code": 1, "error": {"detail": str(err), "rspCode": -8}}]
-                    json_data_sep.extend(result)
+                        res = [{"cmd": cmd_name, "code": 1, "error": {"detail": str(err), "rspCode": -8}}]
+                    json_data_sep.extend(res)
                     if (
                         cmd_name
                         and cmd_name not in self._broken_cmds
-                        and result
-                        and isinstance(result[0], dict)
-                        and result[0].get("code") == 1
-                        and result[0].get("error", {}).get("rspCode") == -8
+                        and res
+                        and isinstance(res[0], dict)
+                        and res[0].get("code") == 1
+                        and res[0].get("error", {}).get("rspCode") == -8
                     ):
                         _LOGGER.warning(
                             "Host %s:%s: command '%s' returns timeout (-8) on its own, blacklisting it for this session",
@@ -6360,17 +6336,23 @@ class Host:
                             cmd_name,
                         )
                         self._broken_cmds.add(cmd_name)
-                return json_data_sep
+                return re_insert_filtered(json_data_sep, filtered_idxs)
 
             _LOGGER.debug(
                 "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, trying again",
                 self._host,
                 self._port,
                 len(json_data),
-                len(body),
+                sent_body_len,
             )
             await self.expire_session(unsubscribe=False)
-            return await self.send(body, param, "json", retry)
+            # re-insert the already succeded baichuan fallbacks/broken cmds in the final response
+            filtered_json_data = await self.send(body, param, "json", retry)
+            return re_insert_filtered(filtered_json_data, filtered_idxs)
+
+        # re-insert baichuan fallbacks/broken cmds
+        re_insert_filtered(json_data, filtered_idxs)
+
         # retry commands that have not been received by the camera (battery cam waking from sleep)
         retry_cmd = []
         retry_idxs = []
