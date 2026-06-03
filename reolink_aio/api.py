@@ -231,7 +231,7 @@ class Host:
         self._is_doorbell: dict[int, bool] = {}
         self._GetDingDong_present: dict[int | None, bool] = {}
         self.baichuan_cmds: set[str] = set()
-        self._broken_cmds: set[str] = set()
+        self.broken_cmds: set[str] = set()
 
         ##############################################################################
         # API-versions and capabilities
@@ -6013,7 +6013,7 @@ class Host:
 
         # filter baichuan fallbacks and broken cmds
         filtered_body = body
-        if expected_response_type == "json" and (self.baichuan_cmds or self._broken_cmds):
+        if expected_response_type == "json" and (self.baichuan_cmds or self.broken_cmds):
             filtered_body = body.copy()
             coroutines = []
             for idx, cmd_i in enumerate(cmds):
@@ -6023,8 +6023,8 @@ class Host:
                     args = body[idx].get("param", {})
                     coroutines.append((idx, cmd_i, func(**args)))
                     continue
-                if cmd_i in self._broken_cmds:
-                    # Strip cmds known to hang this firmware (see _broken_cmds)
+                if cmd_i in self.broken_cmds:
+                    # Strip cmds known to hang this firmware (see broken_cmds)
                     filtered_idxs[idx] = (cmd_i, -8)
             if coroutines:
                 results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
@@ -6321,7 +6321,7 @@ class Host:
                     json_data_sep.extend(res)
                     if (
                         cmd_name
-                        and cmd_name not in self._broken_cmds
+                        and cmd_name not in self.broken_cmds
                         and res
                         and isinstance(res[0], dict)
                         and res[0].get("code") == 1
@@ -6333,7 +6333,7 @@ class Host:
                             self._port,
                             cmd_name,
                         )
-                        self._broken_cmds.add(cmd_name)
+                        self.broken_cmds.add(cmd_name)
                 return re_insert_filtered(json_data_sep, filtered_idxs)
 
             _LOGGER.debug(
