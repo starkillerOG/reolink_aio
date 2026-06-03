@@ -6016,13 +6016,16 @@ class Host:
         if expected_response_type == "json" and (self.baichuan_cmds or self._broken_cmds):
             filtered_body = body.copy()
             coroutines = []
-            # Strip cmds for which the baichuan fallback succeded
-            for baichuan_cmd in self.baichuan_cmds:
-                if baichuan_cmd in cmds:
-                    idx = cmds.index(baichuan_cmd)
-                    func = self.baichuan.cmd_funcs[baichuan_cmd]
+            for idx, cmd_i in enumerate(cmds):
+                if cmd_i in self.baichuan_cmds:
+                    # Strip cmds for which the baichuan fallback succeded
+                    func = self.baichuan.cmd_funcs[cmd_i]
                     args = body[idx].get("param", {})
-                    coroutines.append((idx, baichuan_cmd, func(**args)))
+                    coroutines.append((idx, cmd_i, func(**args)))
+                    continue
+                if cmd_i in self._broken_cmds:
+                    # Strip cmds known to hang this firmware (see _broken_cmds)
+                    filtered_idxs[idx] = (cmd_i, -8)
             if coroutines:
                 results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
                 for i, result in enumerate(results):
@@ -6034,11 +6037,6 @@ class Host:
                         raise result
                     _LOGGER.debug("Used Baichuan for %s successfully", baichuan_cmd)
                     filtered_idxs[idx] = (baichuan_cmd, -9998)
-            # Strip cmds known to hang this firmware (see _broken_cmds)
-            for broken_cmd in self._broken_cmds:
-                if broken_cmd in cmds:
-                    idx = cmds.index(broken_cmd)
-                    filtered_idxs[idx] = (broken_cmd, -8)
             # filter the body
             for idx in sorted(filtered_idxs, reverse=True):
                 filtered_body.pop(idx)
