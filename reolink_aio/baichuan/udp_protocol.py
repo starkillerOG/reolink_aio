@@ -485,12 +485,14 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                             self._loop.create_task(self._close_coroutine)
                     elif child.tag == "D2C_S_R" and len(self.receive_futures.get(-1, {})) == 1 and receive_future is None:
                         exp_mess_id = next(iter(self.receive_futures[-1].keys()))
+                        receive_future = self.receive_futures.get(-1, {}).get(exp_mess_id)
                         _LOGGER.debug(
-                            "Baichuan host %s: received UDP D2C_S_R with mess_id %s, while expecting mess_id %s, likely the camera is entering sleep mode, dropping:\n%s",
+                            "Baichuan host %s: received UDP D2C_S_R with mess_id %s, while expecting mess_id %s, "
+                            "likely the camera is entering sleep mode or there already is a second connection, "
+                            "accepting message",
                             self._host,
                             rec_mess_id,
                             exp_mess_id,
-                            mess,
                         )
                     else:
                         if mess_ids := list(self.receive_futures.get(-1, {}).keys()):
@@ -503,7 +505,8 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                             )
                         else:
                             _LOGGER.debug("Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
-                return
+                if receive_future is None or receive_future.done():
+                    return
 
             self.remote_port = port
             receive_future.set_result((decrypted_payload, 0, b""))
