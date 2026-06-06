@@ -147,6 +147,7 @@ class Host:
         bc_port: int = DEFAULT_BC_PORT,
         bc_only: bool = False,
         bc_connection: ConnectionEnum = ConnectionEnum.unknown,
+        uid: str = UNKNOWN,
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -204,7 +205,7 @@ class Host:
         self._model: dict[int | None, str] = {}
         self._hw_version: dict[int | None, str] = {}
         self._item_number: dict[int | None, str] = {}
-        self._uid: dict[int | None, str] = {}
+        self._uid: dict[int | None, str] = {None: uid}
         self._serial: dict[int | None, str] = {}
         self._sw_version: dict[int | None, str] = {}
         self._sw_version_object: dict[int | None, SoftwareVersion] = {}

@@ -203,7 +203,7 @@ class Baichuan:
         """Initialize the protocol and make the connection if needed."""
         if self._connection is None or self._connection.con_type != self.connection_type:
             if self.connection_type == ConnectionEnum.udp:
-                self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback)
+                self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback, uid=self.http_api.uid)
             elif self.connection_type == ConnectionEnum.tcp:
                 self._connection = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
             else:

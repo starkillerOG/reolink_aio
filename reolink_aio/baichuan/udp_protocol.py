@@ -12,7 +12,7 @@ from time import time as time_now
 from typing import TYPE_CHECKING, Coroutine
 from xml.etree import ElementTree as XML
 
-from ..const import RETRY_ATTEMPTS, TIMEOUT
+from ..const import RETRY_ATTEMPTS, TIMEOUT, UNKNOWN
 from ..enums import ConnectionEnum
 from ..exceptions import (
     ReolinkConnectionError,
@@ -50,13 +50,18 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
     _protocol: BaichuanUdpClientProtocol
 
     def __init__(
-        self, host: str, port: int = 0, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None
+        self,
+        host: str,
+        port: int = 0,
+        push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
+        close_callback: Callable[[], None] | None = None,
+        uid: str = UNKNOWN,
     ) -> None:
         super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
         self.con_type = ConnectionEnum.udp
         self._local_port: int = port
         self._random_local_port: bool = port == 0
-        self.uid: str | None = None
+        self.uid: str = uid
         self._udp_mess_id: int = 0
         self._connect_mutex = asyncio.Lock()
 
@@ -93,7 +98,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
             try:
                 # Get the UID of the camera
-                if self.uid is None:
+                if self.uid == UNKNOWN:
                     body = xmls.UDP_GET_UID_XML.format(port=self._local_port)
                     mess = await self.send_udp(body)
                     self.uid = get_value_from_xml(mess, "uid")
