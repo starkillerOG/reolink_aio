@@ -1892,7 +1892,7 @@ class Host:
             if self.api_version("mdWithPir", channel) > 0:
                 self._capabilities[channel].add("PIR")
 
-            if channel in self._md_alarm_settings and not self.supported(channel, "PIR"):
+            if channel in self._md_alarm_settings and not self.supported(channel, "PIR") and not self.baichuan.supported(channel, "PIR"):
                 self._capabilities[channel].add("md_sensitivity")
 
             if self.api_version("supportAiSensitivity", channel) > 0:

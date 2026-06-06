@@ -1562,11 +1562,11 @@ class Baichuan:
             if self.http_api.api_version("supportAIDenoise", channel) > 0:
                 coroutines.append(("GetAudioNoise", channel, self.GetAudioNoise(channel)))
 
-            if self.http_api.supported(channel, "PIR"):
+            if self.api_version("motion", channel, no_key_return=1) == 0 or self._dev_type == "light":
+                self.capabilities[channel].add("PIR")
+            if self.http_api.supported(channel, "PIR") or self.supported(channel, "PIR"):
                 # check for pir interval compatability
                 coroutines.append(("GetPirInfo", channel, self.GetPirInfo(channel)))
-            if self._dev_type == "light":
-                self.capabilities[channel].add("PIR")  # probably the rfVersion flag
 
             coroutines.append(("network_info", channel, self.get_network_info(channel)))
             # Fallback for missing information
