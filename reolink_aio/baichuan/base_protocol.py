@@ -9,6 +9,7 @@ from collections.abc import Callable
 from time import time as time_now
 
 from ..const import TIMEOUT
+from ..enums import ConnectionEnum
 from ..exceptions import (
     ApiError,
     InvalidContentTypeError,
@@ -28,6 +29,7 @@ class BaichuanBaseConnection:
     """Reolink Baichuan base connection."""
 
     def __init__(self, host: str, port: int, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+        self.con_type = ConnectionEnum.unknown
         self._loop = asyncio.get_event_loop()
         self._host = host
         self._port = port
@@ -85,6 +87,9 @@ class BaichuanBaseConnection:
             except asyncio.TimeoutError:
                 _LOGGER.warning("Baichuan host %s: Timeout waiting on connection close", self._host)
                 self._protocol.connection_lost()
+        self._transport = None
+        self._protocol = None
+        self.time_send = 0
 
     async def send_without_wait(self, data: bytes, cmd_id: int | None = None, timeout: int | float = TIMEOUT) -> None:
         """Send a message without waiting"""

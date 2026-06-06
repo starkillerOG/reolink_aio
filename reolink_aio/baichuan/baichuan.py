@@ -201,11 +201,13 @@ class Baichuan:
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
-        if self._connection is None:
+        if self._connection is None or self._connection.con_type != self.connection_type:
             if self.connection_type == ConnectionEnum.udp:
                 self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback)
-            else:
+            elif self.connection_type == ConnectionEnum.tcp:
                 self._connection = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
+            else:
+                raise ReolinkConnectionError(f"Baichuan host {self._host}: invalid connection type '{self.connection_type}'")
         await self._connection.connect()
 
     async def send(
@@ -1140,7 +1142,7 @@ class Baichuan:
         """Loop which closes the battery connection when idle"""
         while True:
             try:
-                if self._connection is None:
+                if self._connection is None or not self._logged_in:
                     break
 
                 now = time_now()
@@ -1197,9 +1199,6 @@ class Baichuan:
                         self.connection_type = ConnectionEnum.unknown
                         raise
 
-                # start task to close the battery cam connection when idle
-                self._close_battery_connection()
-
                 # modern login
                 self._user_hash = md5_str_modern(f"{self._username}{nonce}")
                 self._password_hash = md5_str_modern(f"{self._password}{nonce}")
@@ -1220,6 +1219,8 @@ class Baichuan:
             finally:
                 if set_last_login:
                     self._last_login = time_now()
+                # start task to close the battery cam connection when idle
+                self._close_battery_connection()
 
         # parse response
         root = XML.fromstring(mess)
@@ -1299,7 +1300,6 @@ class Baichuan:
         self._logged_in = False
         self._last_login = 0  # rest to allow direct new login
         self._events_active = False
-        self._connection = None
         self._nonce = None
         self._aes_key = None
         self._user_hash = None

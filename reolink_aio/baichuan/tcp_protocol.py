@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
+from ..enums import ConnectionEnum
 from .base_protocol import BaichuanBaseClientProtocol, BaichuanBaseConnection
 
 
@@ -12,6 +13,10 @@ class BaichuanTcpConnection(BaichuanBaseConnection):
     """Reolink Baichuan TCP connection."""
 
     _transport: asyncio.Transport
+
+    def __init__(self, host: str, port: int, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+        super().__init__(host, port, push_callback, close_callback)
+        self.con_type = ConnectionEnum.tcp
 
     async def _create_connection(self) -> tuple[asyncio.Transport, BaichuanTcpClientProtocol]:
         """create the connection"""

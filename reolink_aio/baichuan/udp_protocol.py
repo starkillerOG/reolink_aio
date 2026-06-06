@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Coroutine
 from xml.etree import ElementTree as XML
 
 from ..const import RETRY_ATTEMPTS, TIMEOUT
+from ..enums import ConnectionEnum
 from ..exceptions import (
     ReolinkConnectionError,
     ReolinkError,
@@ -52,12 +53,17 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         self, host: str, port: int = 0, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None
     ) -> None:
         super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
+        self.con_type = ConnectionEnum.udp
         self._local_port: int = port
+        self._random_local_port: bool = port == 0
         self.uid: str | None = None
         self._udp_mess_id: int = 0
         self._connect_mutex = asyncio.Lock()
 
     async def _create_connection(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
+        if self._random_local_port:
+            self._local_port = 0
+
         transport, protocol = await self._loop.create_datagram_endpoint(
             lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback, self.close()),
             local_addr=("0.0.0.0", self._local_port),
