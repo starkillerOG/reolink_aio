@@ -45,6 +45,7 @@ from ..exceptions import (
     ReolinkConnectionError,
     ReolinkError,
     ReolinkTimeoutError,
+    SubscriptionError,
     UnexpectedDataError,
 )
 from ..software_version import SoftwareVersion
@@ -144,6 +145,7 @@ class Baichuan:
 
         # Event subscription
         self._subscribed: bool = False
+        self._webhook_subscribed: bool = False
         self._events_active: bool = False
         self._keepalive_task: asyncio.Task | None = None
         self._keepalive_interval: float = KEEP_ALLIVE_INTERVAL
@@ -1117,6 +1119,7 @@ class Baichuan:
 
     async def unsubscribe_events(self) -> None:
         """Unsubscribe from the baichuan push events"""
+        await self.unsubscribe_webhook()
         self._subscribed = False
         self._events_active = False
         if self._keepalive_task is not None:
@@ -1168,6 +1171,31 @@ class Baichuan:
             return
         self._battery_close_task = self._loop.create_task(self._battery_close_loop())
 
+    async def subscribe_webhook(self, url: str) -> None:
+        """Subscribe to baichuan webhook"""
+        if self._webhook_subscribed:
+            return
+        xml = xmls.WEBHOOK_PUSH.format(enable=1, url=url)
+        await self.send(cmd_id=807, body=xml)
+
+        mess = await self.send(cmd_id=806)
+        data = get_keys_from_xml(mess, ["enable", "url"])
+        if data.get("enable") != "1" or data.get("url") != url:
+            raise SubscriptionError(f"Baichuan host {self._host}: set webhook subscribtion URL '{url}' did not match response '{data.get('url')}'")
+        self._webhook_subscribed = True
+
+    async def unsubscribe_webhook(self) -> None:
+        """Unsubscribe to baichuan webhook"""
+        if not self._webhook_subscribed:
+            return
+        xml = xmls.WEBHOOK_PUSH.format(enable=0, url="")
+        try:
+            await self.send(cmd_id=807, body=xml)
+        except ReolinkError as err:
+            _LOGGER.error("Baichuan host %s: failed to unsubscribe webhook: %s", self._host, err)
+            return
+        self._webhook_subscribed = False
+
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
         async with self._login_mutex:
@@ -1176,7 +1204,7 @@ class Baichuan:
 
             # protect against continues login attempts
             if time_now() - self._last_login < 15:
-                raise LoginError(f"Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
+                raise LoginError(f"Baichuan host {self._host}: Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
 
             set_last_login = True
             try_connections = self.connection_type == ConnectionEnum.unknown

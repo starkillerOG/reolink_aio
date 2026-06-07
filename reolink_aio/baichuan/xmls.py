@@ -67,6 +67,16 @@ UDP_DISCONNECT_XML = """
 </P2P>
 """
 
+WEBHOOK_PUSH = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<HaCfg version="1.1">
+<enable>{enable}</enable>
+<url>{url}</url>
+<verify_cert>0</verify_cert>
+</HaCfg>
+</body>"""
+
 DingDongOpt_1_XML = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
