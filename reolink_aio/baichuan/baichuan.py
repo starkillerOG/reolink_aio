@@ -1431,7 +1431,7 @@ class Baichuan:
 
             if RtspVersion > 0:
                 self.capabilities[channel].add("stream")
-            if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0:
+            if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
                 self.capabilities[channel].add("snapshot")
 
         # Channel capabilities
