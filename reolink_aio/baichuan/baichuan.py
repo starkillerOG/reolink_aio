@@ -1212,6 +1212,9 @@ class Baichuan:
         if self._webhook_subscribed:
             return
 
+        if not self.supported(None, "bc_webhook"):
+            raise NotSupportedError(f"Battery model '{self.http_api.model}', firmware {self.http_api.sw_version} does not support webhooks, no motion/AI push updates")
+
         if not url:
             # start a internall webhook server and use that
             if self._webhook_server is None:
@@ -1451,6 +1454,10 @@ class Baichuan:
         if self.http_api.is_hub and self.api_version("doorbellVersion") > 0:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
 
+        self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
+        if self.http_api.is_battery:
+            host_coroutines.append((806, self.send(cmd_id=806)))
+
         if host_coroutines:
             try:
                 async with asyncio.timeout(3 * TIMEOUT):
@@ -1470,9 +1477,19 @@ class Baichuan:
                     self.capabilities[None].add("scenes")
                     self._scenes[-1] = "off"
                     self._parse_xml(cmd_id, result)
+                elif cmd_id == 806:
+                    self.capabilities[None].add("bc_webhook")
                 elif cmd_id == "dingdonglist":
                     if self.http_api._GetDingDong_present.get(None):
                         self.capabilities[None].add("chime")
+
+        if self.http_api.is_battery and not self.supported(None, "bc_webhook"):
+            _LOGGER.warning(
+                "Baichuan host %s: Battery model '%s', firmware %s does not support webhooks, no motion/AI push updates",
+                self._host,
+                self.http_api.model,
+                self.http_api.sw_version,
+            )
 
         for channel in self.http_api._channels:
             ptz_ver = self.api_version("ptzType", channel)

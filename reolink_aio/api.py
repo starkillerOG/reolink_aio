@@ -2601,7 +2601,6 @@ class Host:
         self.construct_capabilities()
 
         # start task to close the battery cam connection when idle
-        self._is_battery = not self.is_nvr and self.supported(0, "battery")
         self.baichuan._close_battery_connection()
 
         for channel in self._channels:
