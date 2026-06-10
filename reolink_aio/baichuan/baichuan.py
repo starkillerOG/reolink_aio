@@ -543,9 +543,12 @@ class Baichuan:
     def _close_callback(self) -> None:
         """Callback for when the connection is closed"""
         self._logged_in = False
+        if self._webhook_subscribed:
+            return
+
         events_active = self._events_active
         self._events_active = False
-        if self._subscribed and not self._webhook_subscribed:
+        if self._subscribed:
             now = time_now()
             if not events_active:  # Their was no proper connection, or close_callback is beeing called multiple times
                 self._time_connection_lost = now
@@ -1223,6 +1226,7 @@ class Baichuan:
 
     async def _unsubscribe_webhook(self) -> None:
         """Unsubscribe to baichuan webhook"""
+        self._events_active = False
         try:
             if not self._webhook_subscribed:
                 return
@@ -1366,9 +1370,11 @@ class Baichuan:
             except ConnectionResetError as err:
                 _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
 
+        if not self._webhook_subscribed:
+            self._events_active = False
+
         self._logged_in = False
         self._last_login = 0  # rest to allow direct new login
-        self._events_active = False
         self._nonce = None
         self._aes_key = None
         self._user_hash = None
