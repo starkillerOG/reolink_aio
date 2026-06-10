@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from inspect import CORO_CREATED, getcoroutinestate
 from math import ceil
 from random import randint
 from socket import AF_INET, IPPROTO_UDP
@@ -130,7 +131,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             _LOGGER.debug("Baichuan host %s:%s>%s: send UDP disconnect message: %s", self._host, self._local_port, self._port, body)
             await super().send_without_wait(mess, timeout=5)
 
-        if self._protocol is not None and self._protocol.drop_coroutine is not None:
+        if self._protocol is not None and self._protocol.drop_coroutine is not None and getcoroutinestate(self._protocol.drop_coroutine) == CORO_CREATED:
             # cleanup the coroutine in case it was not awaited
             self._protocol.drop_coroutine.close()
 
