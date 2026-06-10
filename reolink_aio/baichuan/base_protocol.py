@@ -204,7 +204,13 @@ class BaichuanBaseConnection:
 class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
     """Reolink Baichuan base protocol."""
 
-    def __init__(self, loop, host: str, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+    def __init__(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        host: str,
+        push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
+        close_callback: Callable[[], None] | None = None,
+    ) -> None:
         self._host: str = host
         self._type: str = "Base"
         self._data: bytes = b""

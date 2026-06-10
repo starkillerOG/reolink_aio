@@ -220,7 +220,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
 
     def __init__(
         self,
-        loop,
+        loop: asyncio.AbstractEventLoop,
         host: str,
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
         close_callback: Callable[[], None] | None = None,
