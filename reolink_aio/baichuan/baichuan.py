@@ -545,7 +545,7 @@ class Baichuan:
         self._logged_in = False
         events_active = self._events_active
         self._events_active = False
-        if self._subscribed:
+        if self._subscribed and not self._webhook_subscribed:
             now = time_now()
             if not events_active:  # Their was no proper connection, or close_callback is beeing called multiple times
                 self._time_connection_lost = now
@@ -1132,6 +1132,7 @@ class Baichuan:
             return
         if self.http_api.is_battery:
             await self._subscribe_webhook(webhook_url)
+            self._subscribed = True
             return
         self._subscribed = True
         self._time_keepalive_loop = time_now()
@@ -1156,6 +1157,9 @@ class Baichuan:
         """Subscribe to baichuan push events, keeping the connection open"""
         if not self._subscribed:
             await self.subscribe_events()
+            return
+
+        if self._webhook_subscribed:
             return
 
         if time_now() - self._time_keepalive_loop > 5 * KEEP_ALLIVE_INTERVAL:
@@ -3638,6 +3642,10 @@ class Baichuan:
     @property
     def events_active(self) -> bool:
         return self._events_active and time_now() - self._time_connection_lost > 120
+
+    @property
+    def webhook_subscribed(self) -> bool:
+        return self._webhook_subscribed
 
     @property
     def session_active(self) -> bool:
