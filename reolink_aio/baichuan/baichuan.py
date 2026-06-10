@@ -517,6 +517,29 @@ class Baichuan:
 
         self._parse_xml(cmd_id, rec_body, payload, mess_id)
 
+    def _webhook_push_callback(self, data: dict[str, Any]) -> None:
+        """Callback to parse a received message that was pushed through the webhook"""
+        uid: str = data.get("uid", "")
+        cmd_id: int | None = data.get("cmd")
+        xml: str | None = data.get("xml")
+        ext_xml: str = data.get("ext_xml", "")
+
+        if cmd_id is None or xml is None:
+            _LOGGER.debug("Baichuan host %s: received webhook push with malformed data:\n%s", self._host, data)
+            return
+
+        if uid != self.http_api.uid:
+            _LOGGER.debug("Baichuan host %s: received webhook push with uid %s which does not match device uid %s", self._host, uid, self.http_api.uid)
+            return
+
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            ext_str = ""
+            if ext_xml:
+                ext_str = f", ext_xml:\n{self._hide_password(ext_xml)}\n\nxml"
+            _LOGGER.debug("Baichuan host %s: received webhook push cmd_id %s%s:\n%s", self._host, cmd_id, ext_str, self._hide_password(xml))
+
+        self._parse_xml(cmd_id, xml)
+
     def _close_callback(self) -> None:
         """Callback for when the connection is closed"""
         self._logged_in = False
@@ -1181,7 +1204,7 @@ class Baichuan:
         if not url:
             # start a internall webhook server and use that
             if self._webhook_server is None:
-                self._webhook_server = WebhookServer(host=self._host)
+                self._webhook_server = WebhookServer(host=self._host, push_callback=self._webhook_push_callback)
             await self._webhook_server.start()
             url = self._webhook_server.adress
 

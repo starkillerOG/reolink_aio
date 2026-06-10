@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
+from typing import Any
 
 from aiohttp import web
 from orjson import JSONDecodeError  # pylint: disable=no-name-in-module
@@ -13,12 +15,13 @@ _LOGGER = logging.getLogger(__name__)
 class WebhookServer:
     """Reolink webhook server to receive Baichuan push callbacks."""
 
-    def __init__(self, host: str, port: int = 0) -> None:
+    def __init__(self, host: str, port: int = 0, push_callback: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.port: int = port
         self.adress: str = ""
         self.local_ip: str = "127.0.0.1"
         self._host = host
         self._random_port: bool = port == 0
+        self._push_callback = push_callback
         self._runner: web.AppRunner | None = None
         self._loop = asyncio.get_event_loop()
 
@@ -29,13 +32,19 @@ class WebhookServer:
             text = await request.text()
             data = json_loads(text)
         except JSONDecodeError as err:
-            _LOGGER.debug("Baichuan server %s: error during decoding json data: %s\n%s", self.port, text, err)
+            _LOGGER.debug("Baichuan server %s: error during decoding json data:\n%s\n%s", self.port, text, err)
             return web.Response(text="JSONDecodeError", status=400)
         except Exception as err:
-            _LOGGER.debug("Baichuan server %s: error during receiving data: %s\n%s", self.port, text, err)
+            _LOGGER.debug("Baichuan server %s: error during receiving data:\n%s\n%s", self.port, text, err)
             return web.Response(text="Error", status=400)
 
-        _LOGGER.debug("Baichuan server %s: Received %s", self.port, data)
+        if self._push_callback is not None:
+            try:
+                self._push_callback(data)
+            except Exception as err:
+                _LOGGER.debug("Baichuan server %s: Error during push callback with data:\n%s\n%s", self.port, data, err)
+        else:
+            _LOGGER.debug("Baichuan server %s: Received:\n%s", self.port, data)
 
         return web.Response(text="OK", status=200)
 
