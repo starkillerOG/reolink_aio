@@ -1127,20 +1127,20 @@ class Baichuan:
 
     async def subscribe_events(self, webhook_url: str = "") -> None:
         """Subscribe to baichuan push events, keeping the connection open"""
-        if self._subscribed or self._webhook_subscribed:
+        if self._subscribed:
             _LOGGER.debug("Baichuan host %s: already subscribed to events", self._host)
             return
         if self.http_api.is_battery:
             await self._subscribe_webhook(webhook_url)
-            self._subscribed = True
-            return
         self._subscribed = True
         self._time_keepalive_loop = time_now()
+
         try:
             await self.send(cmd_id=31, ch_id=251)
         except Exception as err:
             _LOGGER.debug("Baichuan host %s: error while subscribing: %s", self._host, str(err))
-        if self._keepalive_task is None:
+
+        if self._keepalive_task is None and not self.http_api.is_battery:
             self._keepalive_task = self._loop.create_task(self._keepalive_loop())
 
     async def unsubscribe_events(self) -> None:
