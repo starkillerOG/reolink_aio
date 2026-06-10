@@ -1618,10 +1618,10 @@ class Baichuan:
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
 
-            if self.http_api.api_version("doorbellVersion", channel) > 0:
+            if self.api_version("doorbellVersion", channel) > 0:
                 self.http_api._is_doorbell[channel] = True
                 self.http_api._visitor_states.setdefault(channel, False)
-            if self.http_api.is_doorbell(channel) and self.http_api.supported(channel, "battery"):
+            if self.http_api.is_doorbell(channel) and self.api_version("battery", channel) > 0:
                 self.capabilities[channel].add("hardwired_chime")
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
                 # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
