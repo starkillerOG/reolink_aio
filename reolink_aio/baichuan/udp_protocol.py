@@ -119,7 +119,8 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
     async def drop_connection(self) -> None:
         """Drop the connection without sending a close message"""
-        self._protocol.host_id = None  # Prevent sending another close message which will block
+        if self._protocol is not None:
+            self._protocol.host_id = None  # Prevent sending another close message which will block
         await self.close()
 
     async def close(self) -> None:
