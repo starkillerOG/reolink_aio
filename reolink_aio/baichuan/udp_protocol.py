@@ -70,7 +70,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             self._local_port = 0
 
         transport, protocol = await self._loop.create_datagram_endpoint(
-            lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback, self.close()),
+            lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback, self.drop_connection()),
             local_addr=("0.0.0.0", self._local_port),
             reuse_port=False,
             family=AF_INET,
@@ -116,6 +116,11 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             self._port = self._protocol.remote_port
             _LOGGER.debug("Baichuan host %s: using remote UDP port %s", self._host, self._port)
 
+    async def drop_connection(self) -> None:
+        """Drop the connection without sending a close message"""
+        self._protocol.host_id = None  # Prevent sending another close message which will block
+        await self.close()
+
     async def close(self) -> None:
         """close the connection and wait untill close is complete"""
         # send close message
@@ -124,6 +129,10 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             mess, _ = self._construct_udp_mess(body)
             _LOGGER.debug("Baichuan host %s:%s>%s: send UDP disconnect message: %s", self._host, self._local_port, self._port, body)
             await super().send_without_wait(mess, timeout=5)
+
+        if self._protocol is not None and self._protocol.drop_coroutine is not None:
+            # cleanup the coroutine in case it was not awaited
+            self._protocol.drop_coroutine.close()
 
         await super().close()
         self._port = UDP_CONNECT_PORT
@@ -224,10 +233,10 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         host: str,
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
         close_callback: Callable[[], None] | None = None,
-        close_coroutine: Coroutine | None = None,
+        drop_coroutine: Coroutine | None = None,
     ) -> None:
         super().__init__(loop, host, push_callback, close_callback)
-        self._close_coroutine = close_coroutine
+        self.drop_coroutine = drop_coroutine
         self._loop = loop
         self._type: str = "UDP"
         self._udp_data: bytes = b""
@@ -480,9 +489,8 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                         _LOGGER.debug("Baichuan host %s: received UDP connection message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
                     elif child.tag == "D2C_DISC":
                         _LOGGER.debug("Baichuan host %s: received UDP disconnect message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
-                        self.host_id = None  # Prevent sending another close message which will block
-                        if self._close_coroutine is not None:
-                            self._loop.create_task(self._close_coroutine)
+                        if self.drop_coroutine is not None:
+                            self._loop.create_task(self.drop_coroutine)
                     elif child.tag == "D2C_S_R" and len(self.receive_futures.get(-1, {})) == 1 and receive_future is None:
                         exp_mess_id = next(iter(self.receive_futures[-1].keys()))
                         receive_future = self.receive_futures.get(-1, {}).get(exp_mess_id)
