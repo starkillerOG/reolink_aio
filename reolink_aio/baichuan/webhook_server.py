@@ -27,7 +27,7 @@ class WebhookServer:
         text = ""
         try:
             text = await request.text()
-            data = await json_loads(text)
+            data = json_loads(text)
         except JSONDecodeError as err:
             _LOGGER.debug("Baichuan server %s: error during decoding json data: %s\n%s", self.port, text, err)
             return web.Response(text="JSONDecodeError", status=400)

@@ -72,6 +72,7 @@ from .util import (
     i_frame_to_jpeg,
     md5_str_modern,
 )
+from .webhook_server import WebhookServer
 
 if TYPE_CHECKING:
     from ..api import Host
@@ -146,6 +147,7 @@ class Baichuan:
         # Event subscription
         self._subscribed: bool = False
         self._webhook_subscribed: bool = False
+        self._webhook_server: WebhookServer | None = None
         self._events_active: bool = False
         self._keepalive_task: asyncio.Task | None = None
         self._keepalive_interval: float = KEEP_ALLIVE_INTERVAL
@@ -1100,13 +1102,13 @@ class Baichuan:
             except Exception as err:
                 _LOGGER.exception("Baichuan host %s: error during keepalive loop: %s", self._host, str(err))
 
-    async def subscribe_events(self) -> None:
+    async def subscribe_events(self, webhook_url: str = "") -> None:
         """Subscribe to baichuan push events, keeping the connection open"""
-        if self._subscribed:
+        if self._subscribed or self._webhook_subscribed:
             _LOGGER.debug("Baichuan host %s: already subscribed to events", self._host)
             return
         if self.http_api.is_battery:
-            _LOGGER.debug("Baichuan host %s: battery cameras cannot subscribed to events", self._host)
+            await self._subscribe_webhook(webhook_url)
             return
         self._subscribed = True
         self._time_keepalive_loop = time_now()
@@ -1119,7 +1121,7 @@ class Baichuan:
 
     async def unsubscribe_events(self) -> None:
         """Unsubscribe from the baichuan push events"""
-        await self.unsubscribe_webhook()
+        await self._unsubscribe_webhook()
         self._subscribed = False
         self._events_active = False
         if self._keepalive_task is not None:
@@ -1171,10 +1173,18 @@ class Baichuan:
             return
         self._battery_close_task = self._loop.create_task(self._battery_close_loop())
 
-    async def subscribe_webhook(self, url: str) -> None:
+    async def _subscribe_webhook(self, url: str = "") -> None:
         """Subscribe to baichuan webhook"""
         if self._webhook_subscribed:
             return
+
+        if not url:
+            # start a internall webhook server and use that
+            if self._webhook_server is None:
+                self._webhook_server = WebhookServer(host=self._host)
+            await self._webhook_server.start()
+            url = self._webhook_server.adress
+
         xml = xmls.WEBHOOK_PUSH.format(enable=1, url=url)
         await self.send(cmd_id=807, body=xml)
 
@@ -1184,17 +1194,21 @@ class Baichuan:
             raise SubscriptionError(f"Baichuan host {self._host}: set webhook subscribtion URL '{url}' did not match response '{data.get('url')}'")
         self._webhook_subscribed = True
 
-    async def unsubscribe_webhook(self) -> None:
+    async def _unsubscribe_webhook(self) -> None:
         """Unsubscribe to baichuan webhook"""
-        if not self._webhook_subscribed:
-            return
-        xml = xmls.WEBHOOK_PUSH.format(enable=0, url="")
         try:
-            await self.send(cmd_id=807, body=xml)
-        except ReolinkError as err:
-            _LOGGER.error("Baichuan host %s: failed to unsubscribe webhook: %s", self._host, err)
-            return
-        self._webhook_subscribed = False
+            if not self._webhook_subscribed:
+                return
+            xml = xmls.WEBHOOK_PUSH.format(enable=0, url="")
+            try:
+                await self.send(cmd_id=807, body=xml)
+            except ReolinkError as err:
+                _LOGGER.error("Baichuan host %s: failed to unsubscribe webhook: %s", self._host, err)
+                return
+            self._webhook_subscribed = False
+        finally:
+            if self._webhook_server is not None:
+                await self._webhook_server.stop()
 
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
