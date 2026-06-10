@@ -543,7 +543,7 @@ class Baichuan:
     def _close_callback(self) -> None:
         """Callback for when the connection is closed"""
         self._logged_in = False
-        if self._webhook_subscribed:
+        if self._webhook_subscribed or self.http_api.is_battery:
             return
 
         events_active = self._events_active
@@ -1134,7 +1134,11 @@ class Baichuan:
             _LOGGER.debug("Baichuan host %s: already subscribed to events", self._host)
             return
         if self.http_api.is_battery:
-            await self._subscribe_webhook(webhook_url)
+            try:
+                await self._subscribe_webhook(webhook_url)
+            except Exception as err:
+                _LOGGER.debug("Baichuan host %s: error while subscribing to webhook: %s", self._host, str(err))
+                return
         self._subscribed = True
         self._time_keepalive_loop = time_now()
 
@@ -1162,7 +1166,7 @@ class Baichuan:
             await self.subscribe_events()
             return
 
-        if self._webhook_subscribed:
+        if self._webhook_subscribed or self.http_api.is_battery:
             return
 
         if time_now() - self._time_keepalive_loop > 5 * KEEP_ALLIVE_INTERVAL:
