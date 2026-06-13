@@ -40,7 +40,7 @@ MAGIC_UDP_ACK = "20cf872a"
 MAGICS_UDP = [MAGIC_UDP_BC, MAGIC_UDP_ACK, MAGIC_UDP_CON]
 UDP_CONNECT_PORT = 2015
 MTU = 1350  # The maximum transmission unit of the connection. Which is the largest packet size in bytes
-UDP_SEND_ACK_TIMEOUT = 1
+UDP_SEND_ACK_TIMEOUT = 2
 
 _LOGGER = logging.getLogger(__name__)
 
