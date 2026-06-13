@@ -22,7 +22,7 @@ class BaichuanTcpConnection(BaichuanBaseConnection):
         """create the connection"""
         return await self._loop.create_connection(lambda: BaichuanTcpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback), self._host, self._port)
 
-    def _write(self, data: bytes) -> None:
+    def _write(self, data: bytes, cmd_id: int | None = None, full_mess_id: int | None = None) -> None:
         """Write data over the transport"""
         self._transport.write(data)
 

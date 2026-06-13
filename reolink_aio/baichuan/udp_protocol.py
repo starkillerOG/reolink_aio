@@ -40,6 +40,7 @@ MAGIC_UDP_ACK = "20cf872a"
 MAGICS_UDP = [MAGIC_UDP_BC, MAGIC_UDP_ACK, MAGIC_UDP_CON]
 UDP_CONNECT_PORT = 2015
 MTU = 1350  # The maximum transmission unit of the connection. Which is the largest packet size in bytes
+UDP_SEND_ACK_TIMEOUT = 1
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -65,13 +66,14 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         self.uid: str = uid
         self._udp_mess_id: int = 0
         self._connect_mutex = asyncio.Lock()
+        self._send_ack_timeout: dict[int, asyncio.TimerHandle] = {}
 
     async def _create_connection(self) -> tuple[asyncio.DatagramTransport, BaichuanUdpClientProtocol]:
         if self._random_local_port:
             self._local_port = 0
 
         transport, protocol = await self._loop.create_datagram_endpoint(
-            lambda: BaichuanUdpClientProtocol(self._loop, self._host, self._push_callback, self._close_callback, self.drop_connection()),
+            lambda: BaichuanUdpClientProtocol(self._loop, self._host, self.drop_connection(), self.cancel_ack_timeout, self._push_callback, self._close_callback),
             local_addr=("0.0.0.0", self._local_port),
             reuse_port=False,
             family=AF_INET,
@@ -123,6 +125,24 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             self._protocol.host_id = None  # Prevent sending another close message which will block
         await self.close()
 
+    def cancel_ack_timeout(self, recv_seq_id: int) -> None:
+        """Called when the send ACK has passed to prevent a timeout"""
+        if not self._send_ack_timeout:
+            return
+
+        for seq_id in range(min(self._send_ack_timeout), recv_seq_id + 1):
+            handler = self._send_ack_timeout.pop(seq_id, None)
+            if handler is not None:
+                handler.cancel()
+
+    def _timeout_send_ack(self, seq_id: int, cmd_id: int | None, full_mess_id: int | None) -> None:
+        """Called when the timeout for receiving a send ACK has passed to set a exception on the waiting future"""
+        self._send_ack_timeout.pop(seq_id, None)
+        if cmd_id is None or full_mess_id is None:
+            return
+        if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
+            receive_future.set_exception(ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout waiting on send ACK of cmd_id {cmd_id} seq_id {seq_id}"))
+
     async def close(self) -> None:
         """close the connection and wait untill close is complete"""
         # send close message
@@ -136,18 +156,27 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             # cleanup the coroutine in case it was not awaited
             self._protocol.drop_coroutine.close()
 
+        for send_seq_id, handler in self._send_ack_timeout.items():
+            handler.cancel()
+            _LOGGER.debug("Baichuan host %s: canceled send ack timeout for seq_id %s", self._host, send_seq_id)
+        self._send_ack_timeout.clear()
+
         await super().close()
         self._port = UDP_CONNECT_PORT
 
-    def _write(self, data: bytes) -> None:
+    def _write(self, data: bytes, cmd_id: int | None = None, full_mess_id: int | None = None) -> None:
         """Write data over the transport."""
-        if data[0:4].hex() != MAGIC_UDP_BC or len(data) <= MTU - 20:
+        BC = data[0:4].hex() == MAGIC_UDP_BC
+        if BC:
+            seq_id = int.from_bytes(data[12:16], byteorder="little")
+            self._send_ack_timeout[seq_id] = self._loop.call_later(UDP_SEND_ACK_TIMEOUT, self._timeout_send_ack, seq_id, cmd_id, full_mess_id)
+
+        if not BC or len(data) <= MTU - 20:
             self._transport.sendto(data, (self._host, self._port))
             return
 
         # data bigger then MTU, split BC message in several UDP packets
         header_prefix = data[0:12]
-        seq_id = int.from_bytes(data[12:16], byteorder="little")
         payload = data[20:]
         max_payload_size = max(1, MTU - 20)
 
@@ -233,12 +262,14 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         self,
         loop: asyncio.AbstractEventLoop,
         host: str,
+        drop_coroutine: Coroutine,
+        cancel_ack_timeout: Callable[[int], None],
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
         close_callback: Callable[[], None] | None = None,
-        drop_coroutine: Coroutine | None = None,
     ) -> None:
         super().__init__(loop, host, push_callback, close_callback)
         self.drop_coroutine = drop_coroutine
+        self.cancel_ack_timeout = cancel_ack_timeout
         self._loop = loop
         self._type: str = "UDP"
         self._udp_data: bytes = b""
@@ -421,6 +452,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
             return
 
         if seq_id != self._send_seq_id:
+            self.cancel_ack_timeout(seq_id)
             _LOGGER.debug("Baichuan host %s:received UDP ACK, send_seq_id %s  %s", self._host, seq_id, payload.hex())
         self._send_seq_id = seq_id
 
@@ -491,8 +523,7 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                         _LOGGER.debug("Baichuan host %s: received UDP connection message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
                     elif child.tag == "D2C_DISC":
                         _LOGGER.debug("Baichuan host %s: received UDP disconnect message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
-                        if self.drop_coroutine is not None:
-                            self._loop.create_task(self.drop_coroutine)
+                        self._loop.create_task(self.drop_coroutine)
                     elif child.tag == "D2C_S_R" and len(self.receive_futures.get(-1, {})) == 1 and receive_future is None:
                         exp_mess_id = next(iter(self.receive_futures[-1].keys()))
                         receive_future = self.receive_futures.get(-1, {}).get(exp_mess_id)

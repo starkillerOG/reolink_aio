@@ -74,7 +74,7 @@ class BaichuanBaseConnection:
         """create the connection"""
 
     @abstractmethod
-    def _write(self, data: bytes) -> None:
+    def _write(self, data: bytes, cmd_id: int | None = None, full_mess_id: int | None = None) -> None:
         """Write data over the transport"""
 
     async def drop_connection(self) -> None:
@@ -141,8 +141,13 @@ class BaichuanBaseConnection:
         try:
             async with asyncio.timeout(TIMEOUT):
                 async with self._mutex:
-                    self._write(data)
+                    self._write(data, cmd_id, full_mess_id)
                 response = await self.receive_futures[cmd_id][full_mess_id]
+        except ReolinkTimeoutError:
+            if self.con_type == ConnectionEnum.udp:
+                # most likely the camera has gone to sleep and the connection is lost, reastablish a fresh connection.
+                await self.drop_connection()
+            raise
         except asyncio.TimeoutError as err:
             ch_str = f", ch {channel}" if channel is not None else ""
             err_str = f"Baichuan host {self._host}: Timeout error for cmd_id {cmd_id}{ch_str}"
