@@ -52,7 +52,7 @@ class BaichuanBaseConnection:
             _LOGGER.debug("Baichuan host %s: waiting for previous receive futures to finish before opening a new connection", self._host)
             try:
                 async with asyncio.timeout(TIMEOUT + 5):
-                    while self._protocol.receive_futures:
+                    while self._protocol is not None and self._protocol.receive_futures:
                         await asyncio.sleep(0)
             except asyncio.TimeoutError:
                 _LOGGER.warning("Baichuan host %s: Previous receive futures did not finish before opening a new connection", self._host)
