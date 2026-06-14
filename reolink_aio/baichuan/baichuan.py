@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Coroutine, Literal, overload
 from xml.etree import ElementTree as XML
 
 from Cryptodome.Cipher import AES
+from orjson import JSONDecodeError  # pylint: disable=no-name-in-module
+from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 from ..const import (
     AI_DETECT_CONVERSION,
@@ -517,15 +519,27 @@ class Baichuan:
 
         self._parse_xml(cmd_id, rec_body, payload, mess_id)
 
-    def _webhook_push_callback(self, data: dict[str, Any]) -> None:
+    def webhook_push_callback(self, data: bytes) -> None:
         """Callback to parse a received message that was pushed through the webhook"""
-        uid: str = data.get("uid", "")
-        cmd_id: int | None = data.get("cmd")
-        xml: str | None = data.get("xml")
-        ext_xml: str = data.get("ext_xml", "")
+        try:
+            text = data.decode("utf-8")
+        except Exception as err:
+            _LOGGER.debug("Baichuan host %s: error during decoding webhook data: %s", self._host, err)
+            return
+
+        try:
+            mess: dict[str, Any] = json_loads(text)
+        except JSONDecodeError as err:
+            _LOGGER.debug("Baichuan host %s: error during decoding webhook json data:\n%s\n%s", self._host, text, err)
+            return
+
+        uid: str = mess.get("uid", "")
+        cmd_id: int | None = mess.get("cmd")
+        xml: str | None = mess.get("xml")
+        ext_xml: str = mess.get("ext_xml", "")
 
         if cmd_id is None or xml is None:
-            _LOGGER.debug("Baichuan host %s: received webhook push with malformed data:\n%s", self._host, data)
+            _LOGGER.debug("Baichuan host %s: received webhook push with malformed data:\n%s", self._host, mess)
             return
 
         if uid != self.http_api.uid:
@@ -1218,7 +1232,7 @@ class Baichuan:
         if not url:
             # start a internall webhook server and use that
             if self._webhook_server is None:
-                self._webhook_server = WebhookServer(host=self._host, push_callback=self._webhook_push_callback)
+                self._webhook_server = WebhookServer(host=self._host, push_callback=self.webhook_push_callback)
             await self._webhook_server.start()
             url = self._webhook_server.adress
 

@@ -3,11 +3,8 @@
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Any
 
 from aiohttp import web
-from orjson import JSONDecodeError  # pylint: disable=no-name-in-module
-from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -15,7 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 class WebhookServer:
     """Reolink webhook server to receive Baichuan push callbacks."""
 
-    def __init__(self, host: str, port: int = 0, push_callback: Callable[[dict[str, Any]], None] | None = None) -> None:
+    def __init__(self, host: str, port: int = 0, push_callback: Callable[[bytes], None] | None = None) -> None:
         self.port: int = port
         self.adress: str = ""
         self.local_ip: str = "127.0.0.1"
@@ -27,15 +24,10 @@ class WebhookServer:
 
     async def handle_webhook(self, request: web.Request) -> web.Response:
         """Handle a incomming message on the webhook."""
-        text = ""
         try:
-            text = await request.text()
-            data = json_loads(text)
-        except JSONDecodeError as err:
-            _LOGGER.debug("Baichuan server %s: error during decoding json data:\n%s\n%s", self.port, text, err)
-            return web.Response(text="JSONDecodeError", status=400)
+            data = await request.read()
         except Exception as err:
-            _LOGGER.debug("Baichuan server %s: error during receiving data:\n%s\n%s", self.port, text, err)
+            _LOGGER.debug("Baichuan server %s: error during receiving data: %s", self.port, err)
             return web.Response(text="Error", status=400)
 
         if self._push_callback is not None:
@@ -44,7 +36,7 @@ class WebhookServer:
             except Exception as err:
                 _LOGGER.debug("Baichuan server %s: Error during push callback with data:\n%s\n%s", self.port, data, err)
         else:
-            _LOGGER.debug("Baichuan server %s: Received:\n%s", self.port, data)
+            _LOGGER.debug("Baichuan server %s: Received:\n%s", self.port, data.decode("utf-8"))
 
         return web.Response(text="OK", status=200)
 
