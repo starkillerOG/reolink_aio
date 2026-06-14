@@ -24,6 +24,8 @@ class BaichuanTcpConnection(BaichuanBaseConnection):
 
     def _write(self, data: bytes, cmd_id: int | None = None, full_mess_id: int | None = None) -> None:
         """Write data over the transport"""
+        if self._transport is None:
+            return  # the connection was closed while waiting on the mutex, the future will have been set to a exception.
         self._transport.write(data)
 
 
