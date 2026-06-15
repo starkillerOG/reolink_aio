@@ -1539,6 +1539,13 @@ class Baichuan:
                     if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
                         self.capabilities[channel].add("ptz_speed")
 
+            doorbellVersion = self.api_version("doorbellVersion", channel)
+            if doorbellVersion > 0:
+                self.http_api._is_doorbell[channel] = True
+                self.http_api._visitor_states.setdefault(channel, False)
+                if self.http_api.baichuan_only and (doorbellVersion >> 0) & 1 and (doorbellVersion >> 1) & 1 and (doorbellVersion >> 2) & 1 and (doorbellVersion >> 3) & 1:
+                    self.http_api._api_version["supportDingDongCtrl"] = {channel: 1}
+
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
         # Stream capabilities
@@ -1639,9 +1646,6 @@ class Baichuan:
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
 
-            if self.api_version("doorbellVersion", channel) > 0:
-                self.http_api._is_doorbell[channel] = True
-                self.http_api._visitor_states.setdefault(channel, False)
             if self.http_api.is_doorbell(channel) and self.api_version("battery", channel) > 0:
                 self.capabilities[channel].add("hardwired_chime")
                 # cmd_id 483 makes the chime rattle a bit, just assume its supported
