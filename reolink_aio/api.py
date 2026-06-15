@@ -856,17 +856,17 @@ class Host:
                 return self._push_config["PushCfg"]["enable"] == 1
 
             if self.api_version("GetPush") >= 1:
-                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
+                return all(self._push_settings[ch]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
-            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
+            return all(self._push_settings[ch]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
         if channel not in self._push_settings:
             return False
 
         if self.api_version("GetPush") >= 1:
-            return self._push_settings[channel]["Push"]["scheduleEnable"] == 1
+            return self._push_settings[channel]["scheduleEnable"] == 1
 
-        return self._push_settings[channel]["Push"]["schedule"]["enable"] == 1
+        return self._push_settings[channel]["schedule"]["enable"] == 1
 
     def recording_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -1760,7 +1760,7 @@ class Host:
             ):
                 self._capabilities[channel].add("ftp")
 
-            if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
+            if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]):
                 self._capabilities[channel].add("push")
 
             if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
@@ -4016,10 +4016,10 @@ class Host:
                     self._ftp_settings[channel] = data["value"]["Ftp"]
 
                 elif data["cmd"] == "GetPush":
-                    self._push_settings[channel] = data["value"]
+                    self._push_settings[channel] = data["value"]["Push"]
 
                 elif data["cmd"] == "GetPushV20":
-                    self._push_settings[channel] = data["value"]
+                    self._push_settings[channel] = data["value"]["Push"]
 
                 elif data["cmd"] == "GetWebHook":
                     self._webhook_settings[channel] = data["value"]

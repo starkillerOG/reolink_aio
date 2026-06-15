@@ -3283,7 +3283,7 @@ class Baichuan:
         data = get_keys_from_xml(mess, {"enable": ("enable", int)})
         data["scheduleEnable"] = data["enable"]
         data["schedule"] = {"enable": data["enable"]}
-        self.http_api._push_settings.setdefault(channel, {}).setdefault("Push", {}).update(data)
+        self.http_api._push_settings.setdefault(channel, {}).update(data)
 
     @http_cmd(["SetPush", "SetPushV20"])
     async def SetPush(self, **kwargs) -> None:
