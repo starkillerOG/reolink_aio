@@ -791,7 +791,7 @@ class Baichuan:
                     _LOGGER.debug("Reolink %s TCP event channel %s, sleeping: %s", self.http_api.nvr_name, channel, state)
                 self.http_api._sleep[channel] = state
 
-        elif cmd_id == 252:  # BatteryInfo
+        elif cmd_id in {252, 253}:  # BatteryInfo
             for event in root.findall(".//BatteryInfo"):
                 channel = self._get_channel_from_xml_element(event)
                 if channel is None:
@@ -815,10 +815,11 @@ class Baichuan:
                 try:
                     data["chargeStatus"] = BatteryEnum[data["chargeStatus"].lower()].value
                 except KeyError:
-                    _LOGGER.warning("BatteryInfo cmd_id 252 push contained unknown chargeStatus: %s, assuming discharging", data["chargeStatus"])
+                    _LOGGER.warning("BatteryInfo cmd_id %s push contained unknown chargeStatus: %s, assuming discharging", cmd_id, data["chargeStatus"])
                     data["chargeStatus"] = BatteryEnum.discharging.value
                 self.http_api._battery.setdefault(channel, {}).update(data)
-                _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
+                if cmd_id == 252:
+                    _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
 
         elif cmd_id in [289, 438]:  # Floodlight
             channel = self._get_channel_from_xml_element(root, "channel")
@@ -2573,6 +2574,11 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=629, channel=channel, body=xml)
         await self.get_yolo_settings(channel)
+
+    @http_cmd("GetBatteryInfo")
+    async def get_battery_info(self, channel: int) -> None:
+        """Get the BatteryInfo"""
+        await self._send_and_parse(253, channel)
 
     async def get_day_night_state(self, channel: int) -> None:
         """Get the day night state"""
