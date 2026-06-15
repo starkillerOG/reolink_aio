@@ -3104,6 +3104,9 @@ class Baichuan:
         chime_type = chime_type if chime_type is not None else self.hardwired_chime_type(channel)
         time = self._hardwired_chime_settings.get(channel, {}).get("time", 0)
 
+        if chime_type == "unknow":
+            chime_type = HardwiredChimeTypeEnum.none.value
+
         hardwired_chime_type_list = [val.value for val in HardwiredChimeTypeEnum]
         if chime_type not in hardwired_chime_type_list:
             raise InvalidParameterError(f"Baichuan host {self._host}: set_ding_dong_ctrl type {chime_type} not in {hardwired_chime_type_list}")
