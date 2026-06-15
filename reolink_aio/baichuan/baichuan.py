@@ -95,6 +95,7 @@ SMART_AI = {
 }
 
 TIME_STR_TO_INT_SEC = {
+    "8 Seconds": 8,
     "15 Seconds": 15,
     "30 Seconds": 30,
     "1 Minute": 60,
@@ -3199,9 +3200,19 @@ class Baichuan:
 
         mess = await self.send(cmd_id=54, channel=channel)
         data = get_keys_from_xml(mess, {"recordDelayTime": ("postRec_int", int), "packageTime": ("packTime_int", int)})
-        data["postRec"] = TIME_INT_SEC_TO_STR.get(data.get("postRec_int", 0))
-        data["packTime"] = TIME_INT_SEC_TO_STR.get(data.get("packTime_int", 0) * 60)
+        data["postRec"] = TIME_INT_SEC_TO_STR.get(data.get("postRec_int", 0), "")
+        data["packTime"] = TIME_INT_SEC_TO_STR.get(data.get("packTime_int", 0) * 60, "")
         rec_set.update(data)
+
+        root = XML.fromstring(mess)
+        time_range = []
+        for time in root.findall(".//timeList/time"):
+            val = time.text
+            if val is None:
+                continue
+            time_range.append(TIME_INT_SEC_TO_STR.get(int(val), ""))
+        if time_range:
+            self.http_api._recording_range.setdefault(channel, {})["postRec"] = time_range
 
     @http_cmd(["SetRecV20", "SetRec"])
     async def SetRecV20(self, **kwargs) -> None:
