@@ -236,7 +236,7 @@ class Host:
 
         ##############################################################################
         # API-versions and capabilities
-        self._api_version: dict[str, int] = {}
+        self._api_version: dict[str, int | dict[int | None, int]] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
         self._capabilities: dict[int | str, set[str]] = {"Host": set()}  # processed by construct_capabilities
 
@@ -791,19 +791,19 @@ class Host:
         return self._audio_alarm_settings[channel]["schedule"]["enable"] == 1
 
     def ir_enabled(self, channel: int) -> bool:
-        return self._ir_settings.get(channel, {}).get("IrLights", {}).get("state") == "Auto"
+        return self._ir_settings.get(channel, {}).get("state") == "Auto"
 
     def status_led_enabled(self, channel: int) -> bool:
         if channel not in self._status_led_settings:
             return False
 
-        return self._status_led_settings[channel]["PowerLed"].get("state", "Off") == "On"
+        return self._status_led_settings[channel].get("state", "Off") == "On"
 
     def doorbell_led(self, channel: int) -> str:
         if channel not in self._status_led_settings:
             return "Off"
 
-        return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off")
+        return self._status_led_settings[channel].get("eDoorbellLightState", "Off")
 
     def doorbell_led_list(self, channel: int) -> list[str]:
         mode_values = []
@@ -812,7 +812,7 @@ class Host:
         mode_values.extend([StatusLedEnum.auto, StatusLedEnum.alwaysonatnight])
         ledCtrl = self.baichuan.api_version("ledCtrl", channel)
         if self.api_version("supportDoorbellLightKeepOn", channel) > 0 or (ledCtrl >> 15) & 1:  # 16th bit (32768), shift 15:
-            options = self._status_led_range.get(channel, {}).get("PowerLed", {}).get("eDoorbellLightState", [])
+            options = self._status_led_range.get(channel, {}).get("eDoorbellLightState", [])
             if "KeepOn" in options or (ledCtrl >> 15) & 1:
                 mode_values.append(StatusLedEnum.alwayson)
             else:
@@ -1631,7 +1631,7 @@ class Host:
         return self._capabilities
 
     @property
-    def checked_api_versions(self) -> dict[str, int]:
+    def checked_api_versions(self) -> dict[str, int | dict[int | None, int]]:
         return self._api_version
 
     @property
@@ -1949,7 +1949,10 @@ class Host:
     def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
         if capability in self._api_version:
-            return self._api_version[capability]
+            ver = self._api_version[capability]
+            if isinstance(ver, dict):
+                return ver.get(channel, no_key_return)
+            return ver
 
         if channel is None:
             return self._abilities.get(capability, {}).get("ver", 0)
@@ -4052,14 +4055,14 @@ class Host:
                     self._image_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetIrLights":
-                    self._ir_settings[channel] = data["value"]
+                    self._ir_settings[channel] = data["value"]["IrLights"]
 
                 elif data["cmd"] == "GetPowerLed":
                     # GetPowerLed returns incorrect channel
                     # response_channel = data["value"]["PowerLed"]["channel"]
-                    self._status_led_settings[channel] = data["value"]
+                    self._status_led_settings[channel] = data["value"]["PowerLed"]
                     if "range" in data:
-                        self._status_led_range[channel] = data["range"]
+                        self._status_led_range[channel] = data["range"]["PowerLed"]
 
                 elif data["cmd"] == "GetWhiteLed":
                     value = data["value"]["WhiteLed"]

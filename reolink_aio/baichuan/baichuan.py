@@ -2775,7 +2775,14 @@ class Baichuan:
         """Get the status led and IR light status"""
         mess = await self.send(cmd_id=208, channel=channel)
         data = get_keys_from_xml(
-            mess, {"IRLedBrightness": ("ir_brightness", int), "state": ("ir_state", str), "lightState": ("state", str), "doorbellLightState": ("eDoorbellLightState", str)}
+            mess,
+            {
+                "IRLedBrightness": ("ir_brightness", int),
+                "state": ("ir_state", str),
+                "lightState": ("state", str),
+                "doorbellLightState": ("eDoorbellLightState", str),
+                "doorbellAbility": ("doorbellAbility", int),
+            },
         )
 
         if (val := data.get("state")) is not None:
@@ -2784,12 +2791,23 @@ class Baichuan:
             else:
                 data["state"] = "Off"
 
+        if (val := data.get("eDoorbellLightState")) is not None:
+            val = val[:1].upper() + val[1:]  # capitalize first letter.
+            if val == "Close":
+                val = "Off"
+            elif val == "Open":
+                val = "On"
+            data["eDoorbellLightState"] = val
+            if (abi := data.get("doorbellAbility")) is not None:
+                if (abi >> 3) & 1:  # 4th bit (8), shift 3
+                    self.http_api._api_version["supportDoorbellLightKeepOff"] = 1
+
         if (ir_brightness := data.get("ir_brightness")) is not None:
             self._ir_brightness[channel] = ir_brightness
 
-        self.http_api._status_led_settings.setdefault(channel, {}).setdefault("PowerLed", {}).update(data)
+        self.http_api._status_led_settings.setdefault(channel, {}).update(data)
         if "ir_state" in data:
-            self.http_api._ir_settings.setdefault(channel, {}).setdefault("IrLights", {})["state"] = data["ir_state"].capitalize()
+            self.http_api._ir_settings.setdefault(channel, {})["state"] = data["ir_state"].capitalize()
 
     @http_cmd(["SetPowerLed", "SetIrLights"])
     async def set_status_led(self, channel: int | None = None, ir_brightness: int | None = None, **kwargs) -> None:
