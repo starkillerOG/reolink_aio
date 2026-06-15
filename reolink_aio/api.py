@@ -1961,7 +1961,7 @@ class Host:
             if channel not in self._channels and channel in self._stream_channels and len(self._abilities.get("abilityChn", [])) >= 1:
                 channel = 0  # Dual lens camera
             else:
-                return 0
+                return no_key_return
 
         return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", no_key_return)
 
