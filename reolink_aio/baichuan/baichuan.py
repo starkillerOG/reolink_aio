@@ -3245,7 +3245,7 @@ class Baichuan:
         data = get_keys_from_xml(mess, {"enable": ("enable", int)})
         data["scheduleEnable"] = data["enable"]
         data["schedule"] = {"enable": data["enable"]}
-        self.http_api._email_settings.setdefault(channel, {}).setdefault("Email", {}).update(data)
+        self.http_api._email_settings.setdefault(channel, {}).update(data)
 
     @http_cmd(["SetEmail", "SetEmailV20"])
     async def SetEmail(self, **kwargs) -> None:

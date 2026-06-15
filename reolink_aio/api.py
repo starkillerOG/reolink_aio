@@ -838,17 +838,17 @@ class Host:
     def email_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetEmail") >= 1:
-                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
+                return all(self._email_settings[ch]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
-            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
+            return all(self._email_settings[ch]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
         if channel not in self._email_settings:
             return False
 
         if self.api_version("GetEmail") >= 1:
-            return self._email_settings[channel]["Email"]["scheduleEnable"] == 1
+            return self._email_settings[channel]["scheduleEnable"] == 1
 
-        return self._email_settings[channel]["Email"]["schedule"]["enable"] == 1
+        return self._email_settings[channel]["schedule"]["enable"] == 1
 
     def push_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -1780,7 +1780,7 @@ class Host:
             if (
                 channel in self._email_settings
                 and self.api_version("supportIfttt", channel) <= 0
-                and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"])
+                and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel])
             ):
                 self._capabilities[channel].add("email")
 
@@ -4039,10 +4039,10 @@ class Host:
                     self._rtsp_subStream[channel] = subStream.replace("rtsp://", f"rtsp://{self._username}:{self._enc_password}@")
 
                 elif data["cmd"] == "GetEmail":
-                    self._email_settings[channel] = data["value"]
+                    self._email_settings[channel] = data["value"]["Email"]
 
                 elif data["cmd"] == "GetEmailV20":
-                    self._email_settings[channel] = data["value"]
+                    self._email_settings[channel] = data["value"]["Email"]
 
                 elif data["cmd"] == "GetBuzzerAlarmV20":
                     self._buzzer_settings[channel] = data["value"]
