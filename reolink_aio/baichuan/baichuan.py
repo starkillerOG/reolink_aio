@@ -2054,6 +2054,31 @@ class Baichuan:
 
         return self._dev_info[channel]
 
+    @http_cmd("GetHddInfo")
+    async def GetHddInfo(self) -> None:
+        """Get the storage device info"""
+        mess = await self.send(cmd_id=102)
+        root = XML.fromstring(mess)
+        hdd_list = []
+        for hdd in root.findall(".//HddInfo"):
+            data = get_keys_from_xml(
+                hdd,
+                {
+                    "capacity": ("capacityG", int),
+                    "capacityM": ("capacityM", int),
+                    "remainSize": ("remainSizeG", int),
+                    "remainSizeM": ("remainSizeM", int),
+                    "format": ("format", int),
+                    "mount": ("mount", int),
+                    "number": ("number", int),
+                    "storageType": ("storageType", int),
+                },
+            )
+            data["capacity"] = data.get("capacityG", 0) * 1000 + data.get("capacityM", 0)
+            data["size"] = data.get("remainSizeG", 0) * 1000 + data.get("remainSizeM", 0)
+            hdd_list.append(data)
+        self.http_api._hdd_info = hdd_list
+
     @http_cmd("GetEnc")
     async def GetEnc(self, channel: int) -> None:
         """Get the encoding info of a channel"""
