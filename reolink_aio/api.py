@@ -823,17 +823,17 @@ class Host:
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetFtp") >= 1:
-                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
+                return all(self._ftp_settings[ch]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
-            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
+            return all(self._ftp_settings[ch]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
         if channel not in self._ftp_settings:
             return False
 
         if self.api_version("GetFtp") >= 1:
-            return self._ftp_settings[channel]["Ftp"]["scheduleEnable"] == 1
+            return self._ftp_settings[channel]["scheduleEnable"] == 1
 
-        return self._ftp_settings[channel]["Ftp"]["schedule"]["enable"] == 1
+        return self._ftp_settings[channel]["schedule"]["enable"] == 1
 
     def email_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -1756,7 +1756,7 @@ class Host:
             if (
                 channel in self._ftp_settings
                 and self.api_version("supportIfttt", channel) <= 0
-                and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"])
+                and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel])
             ):
                 self._capabilities[channel].add("ftp")
 
@@ -4010,10 +4010,10 @@ class Host:
                         self._name[channel] = data["value"]["Osd"]["osdChannel"]["name"]
 
                 elif data["cmd"] == "GetFtp":
-                    self._ftp_settings[channel] = data["value"]
+                    self._ftp_settings[channel] = data["value"]["Ftp"]
 
                 elif data["cmd"] == "GetFtpV20":
-                    self._ftp_settings[channel] = data["value"]
+                    self._ftp_settings[channel] = data["value"]["Ftp"]
 
                 elif data["cmd"] == "GetPush":
                     self._push_settings[channel] = data["value"]

@@ -3267,6 +3267,15 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=216, channel=channel, body=xml)
 
+    @http_cmd(["GetFtp", "GetFtpV20"])
+    async def GetFtp(self, channel: int, **_kwargs) -> None:
+        """Get the email settings"""
+        mess = await self.send(cmd_id=70, channel=channel)
+        data = get_keys_from_xml(mess, {"enable": ("enable", int)})
+        data["scheduleEnable"] = data["enable"]
+        data["schedule"] = {"enable": data["enable"]}
+        self.http_api._ftp_settings.setdefault(channel, {}).update(data)
+
     @http_cmd(["GetPush", "GetPushV20"])
     async def GetPush(self, channel: int, **_kwargs) -> None:
         """Get the push settings"""
