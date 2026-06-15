@@ -2054,6 +2054,19 @@ class Baichuan:
 
         return self._dev_info[channel]
 
+    @http_cmd("GetOsd")
+    async def GetOsd(self, channel: int) -> None:
+        """Get the On Screen Display settings"""
+        mess = await self.send(cmd_id=44, channel=channel)
+        if not self.http_api._GetChannelStatus_present or not self.http_api._GetChannelStatus_has_name:
+            root = XML.fromstring(mess)
+            for ch_name in root.findall(".//OsdChannelName"):
+                ch = self._get_channel_from_xml_element(ch_name)
+                value = get_value_from_xml(ch_name, "name")
+                if ch is None or value is None:
+                    continue
+                self.http_api._name[ch] = value
+
     @http_cmd("GetHddInfo")
     async def GetHddInfo(self) -> None:
         """Get the storage device info"""
