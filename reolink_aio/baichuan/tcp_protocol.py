@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Callable
 
 from ..enums import ConnectionEnum
+from ..exceptions import ReolinkConnectionError
 from .base_protocol import BaichuanBaseClientProtocol, BaichuanBaseConnection
 
 
@@ -25,7 +26,7 @@ class BaichuanTcpConnection(BaichuanBaseConnection):
     def _write(self, data: bytes, cmd_id: int | None = None, full_mess_id: int | None = None) -> None:
         """Write data over the transport"""
         if self._transport is None:
-            return  # the connection was closed while waiting on the mutex, the future will have been set to a exception.
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: lost TCP connection while waiting to write cmd_id {cmd_id}")
         self._transport.write(data)
 
 

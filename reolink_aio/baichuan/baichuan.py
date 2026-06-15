@@ -283,7 +283,13 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
 
         # send message
-        await self._connect_if_needed()
+        try:
+            await self._connect_if_needed()
+        except (ReolinkTimeoutError, ReolinkConnectionError) as err:
+            if retry <= 0 or cmd_id == 2:
+                raise
+            _LOGGER.debug("%s, trying again", err)
+            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
         if TYPE_CHECKING:
             assert self._connection is not None
 

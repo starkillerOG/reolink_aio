@@ -13,7 +13,7 @@ from time import time as time_now
 from typing import TYPE_CHECKING, Coroutine
 from xml.etree import ElementTree as XML
 
-from ..const import RETRY_ATTEMPTS, TIMEOUT, UNKNOWN
+from ..const import TIMEOUT, UNKNOWN
 from ..enums import ConnectionEnum
 from ..exceptions import (
     ReolinkConnectionError,
@@ -167,7 +167,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
     def _write(self, data: bytes, cmd_id: int | None = None, full_mess_id: int | None = None) -> None:
         """Write data over the transport."""
         if self._transport is None:
-            return  # the connection was closed while waiting on the mutex, the future will have been set to a exception.
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: lost UDP connection while waiting to write cmd_id {cmd_id}")
         BC = data[0:4].hex() == MAGIC_UDP_BC
         if BC:
             seq_id = int.from_bytes(data[12:16], byteorder="little")
@@ -217,7 +217,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
     async def send_without_wait(self, data: bytes, cmd_id: int | None = None, timeout: int | float = TIMEOUT) -> None:
         """Wrap the BC message in a UDP header, send a message without waiting"""
         udp_header = await self._construct_udp_header(len(data))
-        return await super().send_without_wait(udp_header + data, cmd_id)
+        return await super().send_without_wait(udp_header + data, cmd_id, timeout)
 
     def _construct_udp_mess(self, body: str) -> tuple[bytes, int]:
         trans_id = randint(1000, 1000000)
@@ -231,21 +231,13 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         header = bytes.fromhex(MAGIC_UDP_CON) + mess_len_bytes + bytes.fromhex("01000000") + mess_id_bytes + checksum
         return header + payload, trans_id
 
-    async def send_udp(self, body: str, retry: int = RETRY_ATTEMPTS) -> str:
-        retry = retry - 1
+    async def send_udp(self, body: str) -> str:
         mess, trans_id = self._construct_udp_mess(body)
 
         cmd_id = -1
         log_mess = f"Baichuan host {self._host}:{self._local_port}>{self._port}: send UDP message: {body}"
 
-        try:
-            recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess)
-        except (ReolinkTimeoutError, ReolinkConnectionError) as err:
-            if retry <= 0:
-                raise
-            _LOGGER.debug("%s, trying again", err)
-            return await self.send_udp(body, retry)
-
+        recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess)
         recv_mess = recv_payload.decode("utf8")
         _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, recv_mess)
         return recv_mess
