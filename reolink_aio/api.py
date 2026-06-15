@@ -7237,6 +7237,9 @@ class Chime:
                 tone_id = current_tone_id
             state = 0
 
+        if event_type == "md" and "other" in self.chime_event_types:
+            event_type = "other"
+
         params = {"ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}
         if self.channel is not None:
             params["channel"] = self.channel
