@@ -3249,7 +3249,7 @@ class Baichuan:
 
     @http_cmd(["SetEmail", "SetEmailV20"])
     async def SetEmail(self, **kwargs) -> None:
-        """Get the email settings"""
+        """Set the email settings"""
         param = kwargs["Email"]
         channel = param.get("schedule", {}).get("channel")
 
@@ -3269,12 +3269,32 @@ class Baichuan:
 
     @http_cmd(["GetFtp", "GetFtpV20"])
     async def GetFtp(self, channel: int, **_kwargs) -> None:
-        """Get the email settings"""
+        """Get the Ftp settings"""
         mess = await self.send(cmd_id=70, channel=channel)
         data = get_keys_from_xml(mess, {"enable": ("enable", int)})
         data["scheduleEnable"] = data["enable"]
         data["schedule"] = {"enable": data["enable"]}
         self.http_api._ftp_settings.setdefault(channel, {}).update(data)
+
+    @http_cmd(["SetFtp", "SetFtpV20"])
+    async def SetFtp(self, **kwargs) -> None:
+        """Set the Ftp settings"""
+        param = kwargs["Ftp"]
+        channel = param.get("schedule", {}).get("channel")
+
+        mess = await self.send(cmd_id=70, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (enable := param.get("enable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+        if (enable := param.get("schedule", {}).get("enable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+        if (enable := param.get("scheduleEnable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=71, channel=channel, body=xml)
 
     @http_cmd(["GetPush", "GetPushV20"])
     async def GetPush(self, channel: int, **_kwargs) -> None:
