@@ -1473,7 +1473,7 @@ class Baichuan:
             self.capabilities[None].add("RTSP")
         if self.api_version("onvif") > 0 and self.http_api._onvif_port is not None:
             self.capabilities[None].add("ONVIF")
-        if self.http_api.is_hub and self.api_version("doorbellVersion") > 0:
+        if self.http_api.is_hub and (self.api_version("doorbellVersion") >> 0) & 1:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
 
         self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
@@ -1544,8 +1544,11 @@ class Baichuan:
             if doorbellVersion > 0:
                 self.http_api._is_doorbell[channel] = True
                 self.http_api._visitor_states.setdefault(channel, False)
-                if self.http_api.baichuan_only and (doorbellVersion >> 0) & 1 and (doorbellVersion >> 1) & 1 and (doorbellVersion >> 2) & 1 and (doorbellVersion >> 3) & 1:
+                if (doorbellVersion >> 0) & 1:
                     self.http_api._api_version["supportDingDongCtrl"] = {channel: 1}
+                if (doorbellVersion >> 1) & 1:
+                    self.capabilities[channel].add("hardwired_chime")
+                    # cmd_id 483 makes the chime rattle a bit, just assume its supported
 
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
@@ -1646,11 +1649,6 @@ class Baichuan:
                 self.capabilities[channel].add("ai_yolo")
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
-
-            if self.http_api.is_doorbell(channel) and self.api_version("battery", channel) > 0:
-                self.capabilities[channel].add("hardwired_chime")
-                # cmd_id 483 makes the chime rattle a bit, just assume its supported
-                # coroutines.append((483, channel, self.get_ding_dong_ctrl(channel)))
 
             if self.supported(channel, "pan_tilt"):
                 coroutines.append(("ptz_position", channel, self.get_ptz_position(channel)))
