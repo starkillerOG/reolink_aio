@@ -2852,8 +2852,10 @@ class Baichuan:
                 val = "On"
             data["eDoorbellLightState"] = val
             if (abi := data.get("doorbellAbility")) is not None:
-                if (abi >> 3) & 1:  # 4th bit (8), shift 3
-                    self.http_api._api_version["supportDoorbellLightKeepOff"] = 1
+                if (abi >> 1) & 1:  # shift 1
+                    self.http_api._api_version["supportDoorbellLightKeepOff"] = {channel: 1}
+                if (abi >> 2) & 1:  # shift 2
+                    self.http_api._api_version["supportDoorbellLightKeepOn"] = {channel: 1}
 
         if (ir_brightness := data.get("ir_brightness")) is not None:
             self._ir_brightness[channel] = ir_brightness
