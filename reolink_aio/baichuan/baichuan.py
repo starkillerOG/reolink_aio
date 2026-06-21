@@ -3201,6 +3201,30 @@ class Baichuan:
         data = get_keys_from_xml(mess, {"enable": ("enable", int), "audioId": ("fileId", int), "timeout": ("timeout", int)})
         self.http_api._auto_reply_settings.setdefault(channel, {}).update(data)
 
+    @http_cmd("SetAutoReply")
+    async def SetAutoReply(self, **kwargs) -> None:
+        """Set the auto reply settings"""
+        info = kwargs.get("AutoReply", {})
+        channel = info.get("channel")
+        enable = info.get("enable")
+        fileId = info.get("fileId")
+        timeout = info.get("timeout")
+
+        mess = await self.send(cmd_id=427, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if enable is not None and (xml_enable := xml_body.find(".//enable")) is not None:
+            xml_enable.text = str(enable)
+        if fileId is not None and (xml_fileId := xml_body.find(".//audioId")) is not None:
+            xml_fileId.text = str(fileId)
+        if timeout is not None and (xml_timeout := xml_body.find(".//timeout")) is not None:
+            xml_timeout.text = str(timeout)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=428, channel=channel, body=xml)
+        await self.GetAutoReply(channel)
+
     @http_cmd("QuickReplyPlay")
     async def QuickReplyPlay(self, **kwargs) -> None:
         """Get the GetDingDongCfg info"""
