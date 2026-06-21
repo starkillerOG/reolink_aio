@@ -1187,20 +1187,20 @@ class Host:
         if channel not in self._auto_reply_settings:
             return False
 
-        return self._auto_reply_settings[channel]["AutoReply"]["enable"] == 1
+        return self._auto_reply_settings[channel]["enable"] == 1
 
     def quick_reply_file(self, channel: int) -> int:
         """Return the quick replay audio file id, -1 means quick replay is off."""
         if channel not in self._auto_reply_settings:
             return -1
 
-        return self._auto_reply_settings[channel]["AutoReply"]["fileId"]
+        return self._auto_reply_settings[channel]["fileId"]
 
     def quick_reply_time(self, channel: int) -> int:
         if channel not in self._auto_reply_settings:
             return 0
 
-        return self._auto_reply_settings[channel]["AutoReply"]["timeout"]
+        return self._auto_reply_settings[channel]["timeout"]
 
     def pir_enabled(self, channel: int) -> bool | None:
         if channel not in self._pir:
@@ -4142,7 +4142,7 @@ class Host:
                     self.map_chime_json_response(data, channel, chime_id)
 
                 elif data["cmd"] == "GetAutoReply":
-                    self._auto_reply_settings[channel] = data["value"]
+                    self._auto_reply_settings[channel] = data["value"]["AutoReply"]
 
                 elif data["cmd"] == "GetAutoFocus":
                     self._auto_focus_settings[channel] = data["value"]["AutoFocus"]

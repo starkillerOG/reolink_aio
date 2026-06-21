@@ -3194,6 +3194,13 @@ class Baichuan:
             file_list.append(data)
         self.http_api._audio_file_list[channel] = file_list
 
+    @http_cmd("GetAutoReply")
+    async def GetAutoReply(self, channel: int, **_kwargs) -> None:
+        """Get the auto reply info"""
+        mess = await self.send(cmd_id=427, channel=channel)
+        data = get_keys_from_xml(mess, {"enable": ("enable", int), "audioId": ("fileId", int), "timeout": ("timeout", int)})
+        self.http_api._auto_reply_settings.setdefault(channel, {}).update(data)
+
     @http_cmd("QuickReplyPlay")
     async def QuickReplyPlay(self, **kwargs) -> None:
         """Get the GetDingDongCfg info"""
