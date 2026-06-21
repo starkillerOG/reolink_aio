@@ -1679,6 +1679,9 @@ class Baichuan:
                     self.capabilities[channel].add("siren")
             if (audioVersion >> 4) & 1 or (audioVersion >> 9) & 1:  # 5 & 10 th bit (16 & 512) shift 4 & 9
                 coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
+            if (audioVersion >> 6) & 1 or (audioVersion >> 7) & 1:  # shift 6 & 7
+                if not self.http_api.supported(channel, "quick_reply"):
+                    coroutines.append(("GetAudioFileList", channel, self.GetAudioFileList(channel)))
             if self.http_api.api_version("supportAIDenoise", channel) > 0:
                 coroutines.append(("GetAudioNoise", channel, self.GetAudioNoise(channel)))
 
@@ -1762,6 +1765,9 @@ class Baichuan:
                         self.capabilities[channel].add("volume_speak")
                     if self.http_api.volume_doorbell(channel) is not None:
                         self.capabilities[channel].add("volume_doorbell")
+                elif cmd_id == "GetAudioFileList":
+                    self.capabilities[channel].add("quick_reply")
+                    self.capabilities[channel].add("play_quick_reply")
                 elif cmd_id == "GetAudioNoise":
                     self.capabilities[channel].add("noise_reduction")
                 elif cmd_id == "GetPirInfo":
@@ -3176,6 +3182,17 @@ class Baichuan:
     def _parse_hardwired_chime(self, mess: str, channel: int) -> None:
         """Parse hardwired chime response"""
         self._hardwired_chime_settings[channel] = get_keys_from_xml(mess, {"type": ("type", str), "bopen": ("enable", int), "time": ("time", int)})
+
+    @http_cmd("GetAudioFileList")
+    async def GetAudioFileList(self, channel: int, **_kwargs) -> None:
+        """Get the audio file list"""
+        mess = await self.send(cmd_id=347, channel=channel)
+        root = XML.fromstring(mess)
+        file_list = []
+        for file in root.findall(".//audioFileInfo"):
+            data = get_keys_from_xml(file, {"id": ("id", int), "fileName": ("fileName", str)})
+            file_list.append(data)
+        self.http_api._audio_file_list[channel] = file_list
 
     @http_cmd("QuickReplyPlay")
     async def QuickReplyPlay(self, **kwargs) -> None:

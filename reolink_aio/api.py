@@ -311,7 +311,7 @@ class Host:
         self._auto_track_settings: dict[int, dict] = {}
         self._auto_track_range: dict[int, dict] = {}
         self._auto_track_limits: dict[int, dict] = {}
-        self._audio_file_list: dict[int, dict] = {}
+        self._audio_file_list: dict[int, list[dict]] = {}
         self._auto_reply_settings: dict[int, dict] = {}
 
         ##############################################################################
@@ -1176,10 +1176,10 @@ class Host:
         if channel not in self._audio_file_list:
             return audio_dict
 
-        if self._audio_file_list[channel]["AudioFileList"] is None:
+        if self._audio_file_list[channel] is None:
             return audio_dict
 
-        for audio_file in self._audio_file_list[channel]["AudioFileList"]:
+        for audio_file in self._audio_file_list[channel]:
             audio_dict[audio_file["id"]] = audio_file["fileName"]
         return audio_dict
 
@@ -4136,7 +4136,7 @@ class Host:
                     self._audio_alarm_settings[channel] = data["value"]["Audio"]
 
                 elif data["cmd"] == "GetAudioFileList":
-                    self._audio_file_list[channel] = data["value"]
+                    self._audio_file_list[channel] = data["value"]["AudioFileList"]
 
                 elif data["cmd"] in {"GetDingDongList", "GetDingDongCfg", "DingDongOpt"}:
                     self.map_chime_json_response(data, channel, chime_id)
