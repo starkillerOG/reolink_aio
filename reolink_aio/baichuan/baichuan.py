@@ -768,6 +768,45 @@ class Baichuan:
                             self._log_once.add(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
+        elif cmd_id == 56:  # Enc
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            audio = 1
+            if (main := root.find(".//mainStream")) is not None:
+                data = get_keys_from_xml(
+                    main,
+                    {
+                        "audio": ("audio", int),
+                        "width": ("width", int),
+                        "height": ("height", int),
+                        "videoEncType": ("vType_int", int),
+                        "frame": ("frameRate", int),
+                        "bitRate": ("bitRate", int),
+                    },
+                )
+                data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
+                self.http_api._enc_settings.setdefault(channel, {}).setdefault("mainStream", {}).update(data)
+                audio = audio and data.get("audio", 0)
+            if (sub := root.find(".//subStream")) is not None:
+                data = get_keys_from_xml(
+                    sub,
+                    {
+                        "audio": ("audio", int),
+                        "width": ("width", int),
+                        "height": ("height", int),
+                        "videoEncType": ("vType_int", int),
+                        "frame": ("frameRate", int),
+                        "bitRate": ("bitRate", int),
+                    },
+                )
+                data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
+                self.http_api._enc_settings.setdefault(channel, {}).setdefault("subStream", {}).update(data)
+                audio = audio and data.get("audio", 0)
+            self.http_api._enc_settings.setdefault(channel, {})["audio"] = audio
+            self.http_api._enc_settings[channel]["channel"] = channel
+
         elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
             if mess_id is None:
                 _LOGGER.warning("Reolink %s baichaun push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
@@ -885,7 +924,7 @@ class Baichuan:
             if (threshold := data.get("dayNightThreshold")) is not None:
                 self.http_api._isp_settings.setdefault(channel, {})["dayNightThreshold"] = threshold
 
-        elif cmd_id == 342:
+        elif cmd_id == 342:  # AiAlarm
             channel = self._get_channel_from_xml_element(root, "chn")
             if channel is None:
                 return
@@ -947,7 +986,7 @@ class Baichuan:
             if cmd_id_modified == 342:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
-            if cmd_id_modified not in {26, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -2118,41 +2157,7 @@ class Baichuan:
     @http_cmd("GetEnc")
     async def GetEnc(self, channel: int) -> None:
         """Get the encoding info of a channel"""
-        mess = await self.send(cmd_id=56, channel=channel)
-        root = XML.fromstring(mess)
-        audio = 1
-        if (main := root.find(".//mainStream")) is not None:
-            data = get_keys_from_xml(
-                main,
-                {
-                    "audio": ("audio", int),
-                    "width": ("width", int),
-                    "height": ("height", int),
-                    "videoEncType": ("vType_int", int),
-                    "frame": ("frameRate", int),
-                    "bitRate": ("bitRate", int),
-                },
-            )
-            data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
-            self.http_api._enc_settings.setdefault(channel, {}).setdefault("mainStream", {}).update(data)
-            audio = audio and data.get("audio", 0)
-        if (sub := root.find(".//subStream")) is not None:
-            data = get_keys_from_xml(
-                sub,
-                {
-                    "audio": ("audio", int),
-                    "width": ("width", int),
-                    "height": ("height", int),
-                    "videoEncType": ("vType_int", int),
-                    "frame": ("frameRate", int),
-                    "bitRate": ("bitRate", int),
-                },
-            )
-            data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
-            self.http_api._enc_settings.setdefault(channel, {}).setdefault("subStream", {}).update(data)
-            audio = audio and data.get("audio", 0)
-        self.http_api._enc_settings.setdefault(channel, {})["audio"] = audio
-        self.http_api._enc_settings[channel]["channel"] = channel
+        await self._send_and_parse(56, channel)
 
     @http_cmd("SetEnc")
     async def SetEnc(self, channel: int | None = None, stream: str | None = None, encoding: str | None = None, **kwargs) -> None:
