@@ -789,9 +789,9 @@ class Baichuan:
                 data["vType"] = list(EncodingEnum)[data.get("vType_int", 0)].value
                 self.http_api._enc_settings.setdefault(channel, {}).setdefault("mainStream", {}).update(data)
                 audio = audio and data.get("audio", 0)
-            if (sub := root.find(".//subStream")) is not None:
+            if (subStream := root.find(".//subStream")) is not None:
                 data = get_keys_from_xml(
-                    sub,
+                    subStream,
                     {
                         "audio": ("audio", int),
                         "width": ("width", int),
@@ -930,10 +930,10 @@ class Baichuan:
                 return
             channels.add(channel)
             data = get_keys_from_xml(root, {"sensitivity": ("sensitivity", int), "stayTime": ("stay_time", int), "type": ("type", str)})
-            ai_type = data.get("type")
-            if ai_type is None:
+            ai_typ = data.get("type")
+            if ai_typ is None:
                 return
-            self.http_api._ai_alarm_settings.setdefault(channel, {}).setdefault(ai_type, {}).update(data)
+            self.http_api._ai_alarm_settings.setdefault(channel, {}).setdefault(ai_typ, {}).update(data)
 
         elif cmd_id == 433:  # PTZ position
             if mess_id is None:
@@ -983,7 +983,7 @@ class Baichuan:
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
             cmd_id_modified = get_value_from_xml(root, "cmdId", int)
-            if cmd_id_modified == 342:
+            if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
             if cmd_id_modified not in {26, 56, 527, 529, 531, 549, 551}:
