@@ -867,6 +867,22 @@ class Baichuan:
                 if cmd_id == 252:
                     _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
 
+        elif cmd_id == 264:  # AudioCfg
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(
+                root,
+                {
+                    "volume": ("volume", int),
+                    "talkAndReplyVolume": ("talkAndReplyVolume", int),
+                    "visitorVolume": ("visitorVolume", int),
+                    "visitorLoudspeaker": ("visitorLoudspeaker", int),
+                },
+            )
+            self.http_api._audio_settings.setdefault(channel, {}).update(data)
+
         elif cmd_id in [289, 438]:  # Floodlight
             channel = self._get_channel_from_xml_element(root, "channel")
             if channel is None:
@@ -986,7 +1002,7 @@ class Baichuan:
             if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
-            if cmd_id_modified not in {26, 56, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 264, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -2985,18 +3001,7 @@ class Baichuan:
     @http_cmd("GetAudioCfg")
     async def GetAudioCfg(self, channel: int, **_kwargs) -> None:
         """Get the audio settings"""
-        mess = await self.send(cmd_id=264, channel=channel)
-        data = get_keys_from_xml(
-            mess,
-            {
-                "volume": ("volume", int),
-                "talkAndReplyVolume": ("talkAndReplyVolume", int),
-                "visitorVolume": ("visitorVolume", int),
-                "visitorLoudspeaker": ("visitorLoudspeaker", int),
-            },
-        )
-
-        self.http_api._audio_settings.setdefault(channel, {}).update(data)
+        await self._send_and_parse(264, channel)
 
     @http_cmd("SetAudioCfg")
     async def SetAudioCfg(self, **kwargs) -> None:
