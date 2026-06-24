@@ -837,6 +837,48 @@ class Baichuan:
                     _LOGGER.debug("Reolink %s TCP event channel %s, sleeping: %s", self.http_api.nvr_name, channel, state)
                 self.http_api._sleep[channel] = state
 
+        if cmd_id == 208:  # PowerLed/IrLights
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(
+                root,
+                {
+                    "IRLedBrightness": ("ir_brightness", int),
+                    "state": ("ir_state", str),
+                    "lightState": ("state", str),
+                    "doorbellLightState": ("eDoorbellLightState", str),
+                    "doorbellAbility": ("doorbellAbility", int),
+                },
+            )
+
+            if (val := data.get("state")) is not None:
+                if val == "open":
+                    data["state"] = "On"
+                else:
+                    data["state"] = "Off"
+
+            if (val := data.get("eDoorbellLightState")) is not None:
+                val = val[:1].upper() + val[1:]  # capitalize first letter.
+                if val == "Close":
+                    val = "Off"
+                elif val == "Open":
+                    val = "On"
+                data["eDoorbellLightState"] = val
+                if (abi := data.get("doorbellAbility")) is not None:
+                    if (abi >> 1) & 1:  # shift 1
+                        self.http_api._api_version["supportDoorbellLightKeepOff"] = {channel: 1}
+                    if (abi >> 2) & 1:  # shift 2
+                        self.http_api._api_version["supportDoorbellLightKeepOn"] = {channel: 1}
+
+            if (ir_brightness := data.get("ir_brightness")) is not None:
+                self._ir_brightness[channel] = ir_brightness
+
+            self.http_api._status_led_settings.setdefault(channel, {}).update(data)
+            if "ir_state" in data:
+                self.http_api._ir_settings.setdefault(channel, {})["state"] = data["ir_state"].capitalize()
+
         elif cmd_id in {252, 253}:  # BatteryInfo
             for event in root.findall(".//BatteryInfo"):
                 channel = self._get_channel_from_xml_element(event)
@@ -1002,7 +1044,7 @@ class Baichuan:
             if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
-            if cmd_id_modified not in {26, 56, 264, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 208, 264, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -2876,43 +2918,7 @@ class Baichuan:
     @http_cmd(["GetPowerLed", "GetIrLights"])
     async def get_status_led(self, channel: int, **_kwargs) -> None:
         """Get the status led and IR light status"""
-        mess = await self.send(cmd_id=208, channel=channel)
-        data = get_keys_from_xml(
-            mess,
-            {
-                "IRLedBrightness": ("ir_brightness", int),
-                "state": ("ir_state", str),
-                "lightState": ("state", str),
-                "doorbellLightState": ("eDoorbellLightState", str),
-                "doorbellAbility": ("doorbellAbility", int),
-            },
-        )
-
-        if (val := data.get("state")) is not None:
-            if val == "open":
-                data["state"] = "On"
-            else:
-                data["state"] = "Off"
-
-        if (val := data.get("eDoorbellLightState")) is not None:
-            val = val[:1].upper() + val[1:]  # capitalize first letter.
-            if val == "Close":
-                val = "Off"
-            elif val == "Open":
-                val = "On"
-            data["eDoorbellLightState"] = val
-            if (abi := data.get("doorbellAbility")) is not None:
-                if (abi >> 1) & 1:  # shift 1
-                    self.http_api._api_version["supportDoorbellLightKeepOff"] = {channel: 1}
-                if (abi >> 2) & 1:  # shift 2
-                    self.http_api._api_version["supportDoorbellLightKeepOn"] = {channel: 1}
-
-        if (ir_brightness := data.get("ir_brightness")) is not None:
-            self._ir_brightness[channel] = ir_brightness
-
-        self.http_api._status_led_settings.setdefault(channel, {}).update(data)
-        if "ir_state" in data:
-            self.http_api._ir_settings.setdefault(channel, {})["state"] = data["ir_state"].capitalize()
+        await self._send_and_parse(208, channel)
 
     @http_cmd(["SetPowerLed", "SetIrLights"])
     async def set_status_led(self, channel: int | None = None, ir_brightness: int | None = None, **kwargs) -> None:
