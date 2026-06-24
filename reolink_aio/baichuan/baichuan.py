@@ -879,6 +879,16 @@ class Baichuan:
             if "ir_state" in data:
                 self.http_api._ir_settings.setdefault(channel, {})["state"] = data["ir_state"].capitalize()
 
+        elif cmd_id == 217:  # Email
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(root, {"enable": ("enable", int)})
+            data["scheduleEnable"] = data["enable"]
+            data["schedule"] = {"enable": data["enable"]}
+            self.http_api._email_settings.setdefault(channel, {}).update(data)
+
         elif cmd_id in {252, 253}:  # BatteryInfo
             for event in root.findall(".//BatteryInfo"):
                 channel = self._get_channel_from_xml_element(event)
@@ -3390,11 +3400,7 @@ class Baichuan:
     @http_cmd(["GetEmail", "GetEmailV20"])
     async def GetEmail(self, channel: int, **_kwargs) -> None:
         """Get the email settings"""
-        mess = await self.send(cmd_id=217, channel=channel)
-        data = get_keys_from_xml(mess, {"enable": ("enable", int)})
-        data["scheduleEnable"] = data["enable"]
-        data["schedule"] = {"enable": data["enable"]}
-        self.http_api._email_settings.setdefault(channel, {}).update(data)
+        await self._send_and_parse(217, channel)
 
     @http_cmd(["SetEmail", "SetEmailV20"])
     async def SetEmail(self, **kwargs) -> None:
