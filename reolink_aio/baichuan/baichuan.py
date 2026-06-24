@@ -899,6 +899,16 @@ class Baichuan:
             data["schedule"] = {"enable": data["enable"]}
             self.http_api._email_settings.setdefault(channel, {}).update(data)
 
+        elif cmd_id == 232:  # AudioAlarm
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(root, {"enable": ("enable", int)})
+            data["enable"] = data["enable"]
+            data["schedule"] = {"enable": data["enable"]}
+            self.http_api._audio_alarm_settings.setdefault(channel, {}).update(data)
+
         elif cmd_id in {252, 253}:  # BatteryInfo
             for event in root.findall(".//BatteryInfo"):
                 channel = self._get_channel_from_xml_element(event)
@@ -1064,7 +1074,7 @@ class Baichuan:
             if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
-            if cmd_id_modified not in {26, 56, 70, 208, 264, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 70, 208, 232, 264, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -3489,11 +3499,7 @@ class Baichuan:
     @http_cmd(["GetAudioAlarm", "GetAudioAlarmV20"])
     async def GetAudioAlarm(self, channel: int, **_kwargs) -> None:
         """Get the siren on event settings"""
-        mess = await self.send(cmd_id=232, channel=channel)
-        data = get_keys_from_xml(mess, {"enable": ("enable", int)})
-        data["enable"] = data["enable"]
-        data["schedule"] = {"enable": data["enable"]}
-        self.http_api._audio_alarm_settings.setdefault(channel, {}).update(data)
+        await self._send_and_parse(232, channel)
 
     @http_cmd(["SetAudioAlarm", "SetAudioAlarmV20"])
     async def SetAudioAlarm(self, **kwargs) -> None:
