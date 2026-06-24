@@ -853,19 +853,19 @@ class Baichuan:
                 },
             )
 
-            if (val := data.get("state")) is not None:
-                if val == "open":
+            if (value := data.get("state")) is not None:
+                if value == "open":
                     data["state"] = "On"
                 else:
                     data["state"] = "Off"
 
-            if (val := data.get("eDoorbellLightState")) is not None:
-                val = val[:1].upper() + val[1:]  # capitalize first letter.
-                if val == "Close":
-                    val = "Off"
-                elif val == "Open":
-                    val = "On"
-                data["eDoorbellLightState"] = val
+            if (value := data.get("eDoorbellLightState")) is not None:
+                value = value[:1].upper() + value[1:]  # capitalize first letter.
+                if value == "Close":
+                    value = "Off"
+                elif value == "Open":
+                    value = "On"
+                data["eDoorbellLightState"] = value
                 if (abi := data.get("doorbellAbility")) is not None:
                     if (abi >> 1) & 1:  # shift 1
                         self.http_api._api_version["supportDoorbellLightKeepOff"] = {channel: 1}
