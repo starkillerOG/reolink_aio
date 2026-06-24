@@ -807,6 +807,16 @@ class Baichuan:
             self.http_api._enc_settings.setdefault(channel, {})["audio"] = audio
             self.http_api._enc_settings[channel]["channel"] = channel
 
+        elif cmd_id == 70:  # Ftp
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(root, {"enable": ("enable", int)})
+            data["scheduleEnable"] = data["enable"]
+            data["schedule"] = {"enable": data["enable"]}
+            self.http_api._ftp_settings.setdefault(channel, {}).update(data)
+
         elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
             if mess_id is None:
                 _LOGGER.warning("Reolink %s baichaun push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
@@ -1054,7 +1064,7 @@ class Baichuan:
             if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
-            if cmd_id_modified not in {26, 56, 208, 264, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 70, 208, 264, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -3425,11 +3435,7 @@ class Baichuan:
     @http_cmd(["GetFtp", "GetFtpV20"])
     async def GetFtp(self, channel: int, **_kwargs) -> None:
         """Get the Ftp settings"""
-        mess = await self.send(cmd_id=70, channel=channel)
-        data = get_keys_from_xml(mess, {"enable": ("enable", int)})
-        data["scheduleEnable"] = data["enable"]
-        data["schedule"] = {"enable": data["enable"]}
-        self.http_api._ftp_settings.setdefault(channel, {}).update(data)
+        await self._send_and_parse(70, channel)
 
     @http_cmd(["SetFtp", "SetFtpV20"])
     async def SetFtp(self, **kwargs) -> None:
