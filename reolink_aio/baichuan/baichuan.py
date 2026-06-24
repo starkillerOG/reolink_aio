@@ -885,6 +885,17 @@ class Baichuan:
             if (threshold := data.get("dayNightThreshold")) is not None:
                 self.http_api._isp_settings.setdefault(channel, {})["dayNightThreshold"] = threshold
 
+        elif cmd_id == 342:
+            channel = self._get_channel_from_xml_element(root, "chn")
+            if channel is None:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(root, {"sensitivity": ("sensitivity", int), "stayTime": ("stay_time", int), "type": ("type", str)})
+            ai_type = data.get("type")
+            if ai_type is None:
+                return
+            self.http_api._ai_alarm_settings.setdefault(channel, {}).setdefault(ai_type, {}).update(data)
+
         elif cmd_id == 433:  # PTZ position
             if mess_id is None:
                 return
@@ -933,6 +944,9 @@ class Baichuan:
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
             cmd_id_modified = get_value_from_xml(root, "cmdId", int)
+            if cmd_id_modified == 342:
+                self._loop.create_task(self.GetAllAiAlarm(channel))
+                return
             if cmd_id_modified not in {26, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
@@ -2548,8 +2562,17 @@ class Baichuan:
         """Get the AI detection sensitivity/delay"""
         xml = xmls.GetAiAlarm.format(channel=channel, ai_type=ai_type)
         mess = await self.send(cmd_id=342, channel=channel, body=xml)
-        data = get_keys_from_xml(mess, {"sensitivity": ("sensitivity", int), "stayTime": ("stay_time", int)})
-        self.http_api._ai_alarm_settings.setdefault(channel, {}).setdefault(ai_type, {}).update(data)
+        self._parse_xml(342, mess)
+
+    async def GetAllAiAlarm(self, channel: int) -> None:
+        """Get all the AI detection sensitivities/delays"""
+        coroutines: list[Coroutine] = []
+        for ai_type in self.http_api.ai_supported_types(channel):
+            if ai_type == "cry":
+                continue
+            coroutines.append(self.GetAiAlarm(channel, ai_type))
+        if coroutines:
+            await asyncio.gather(*coroutines)
 
     @http_cmd("SetAiAlarm")
     async def SetAiAlarm(self, **kwargs) -> None:
