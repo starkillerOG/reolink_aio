@@ -1074,7 +1074,7 @@ class Baichuan:
             if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
-            if cmd_id_modified not in {26, 56, 70, 208, 232, 264, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 70, 208, 217, 232, 264, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
