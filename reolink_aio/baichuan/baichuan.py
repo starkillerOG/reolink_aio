@@ -889,6 +889,25 @@ class Baichuan:
             if "ir_state" in data:
                 self.http_api._ir_settings.setdefault(channel, {})["state"] = data["ir_state"].capitalize()
 
+        elif cmd_id == 212:  # PirInfo
+            if mess_id is None:
+                return
+            channel = mess_id % 256 - 1
+            if channel < 0 or channel > 100:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(
+                root,
+                {
+                    "enable": ("enable", int),
+                    "sensiValue": ("sensitive", int),
+                    "reduceFalseAlarm": ("reduceAlarm", int),
+                    "interval": ("interval", int),
+                    "intervalSecMax": ("interval_max", int),
+                },
+            )
+            self.http_api._pir.setdefault(channel, {}).update(data)
+
         elif cmd_id == 217:  # Email
             channel = self._get_channel_from_xml_element(root)
             if channel is None:
@@ -1074,7 +1093,7 @@ class Baichuan:
             if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
                 return
-            if cmd_id_modified not in {26, 56, 70, 208, 217, 232, 264, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 70, 208, 212, 217, 232, 264, 527, 529, 531, 549, 551}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -3378,18 +3397,7 @@ class Baichuan:
     @http_cmd("GetPirInfo")
     async def GetPirInfo(self, channel: int, **_kwargs) -> None:
         """Get the Pir settings"""
-        mess = await self.send(cmd_id=212, channel=channel)
-        data = get_keys_from_xml(
-            mess,
-            {
-                "enable": ("enable", int),
-                "sensiValue": ("sensitive", int),
-                "reduceFalseAlarm": ("reduceAlarm", int),
-                "interval": ("interval", int),
-                "intervalSecMax": ("interval_max", int),
-            },
-        )
-        self.http_api._pir.setdefault(channel, {}).update(data)
+        await self._send_and_parse(212, channel)
 
     @http_cmd("SetPirInfo")
     async def SetPirInfo(self, **kwargs) -> None:
