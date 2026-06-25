@@ -768,6 +768,25 @@ class Baichuan:
                             self._log_once.add(f"TCP_event_tag_{event.tag}")
                             _LOGGER.warning("Reolink %s TCP event cmd_id %s, channel %s, received unknown event tag %s", self.http_api.nvr_name, cmd_id, channel, event.tag)
 
+        elif cmd_id == 54:  # RecordCfg
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(root, {"recordDelayTime": ("postRec_int", int), "packageTime": ("packTime_int", int)})
+            data["postRec"] = TIME_INT_SEC_TO_STR.get(data.get("postRec_int", 0), "")
+            data["packTime"] = TIME_INT_SEC_TO_STR.get(data.get("packTime_int", 0) * 60, "")
+            self.http_api._recording_settings.setdefault(channel, {}).update(data)
+
+            time_range = []
+            for time in root.findall(".//timeList/time"):
+                value = time.text
+                if value is None:
+                    continue
+                time_range.append(TIME_INT_SEC_TO_STR.get(int(value), ""))
+            if time_range:
+                self.http_api._recording_range.setdefault(channel, {})["postRec"] = time_range
+
         elif cmd_id == 56:  # Enc
             channel = self._get_channel_from_xml_element(root)
             if channel is None:
@@ -816,6 +835,18 @@ class Baichuan:
             data["scheduleEnable"] = data["enable"]
             data["schedule"] = {"enable": data["enable"]}
             self.http_api._ftp_settings.setdefault(channel, {}).update(data)
+
+        elif cmd_id == 81:  # Record
+            channel = self._get_channel_from_xml_element(root)
+            if channel is None:
+                return
+            channels.add(channel)
+            enable = get_value_from_xml(root, "enable", int)
+            rec_set = self.http_api._recording_settings.setdefault(channel, {})
+            rec_set.setdefault("schedule", {})["enable"] = enable
+            rec_set["schedule"]["channel"] = channel
+            if self.http_api.api_version("GetRec") >= 1:
+                rec_set["scheduleEnable"] = enable
 
         elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
             if mess_id is None:
@@ -1092,6 +1123,9 @@ class Baichuan:
             cmd_id_modified = get_value_from_xml(root, "cmdId", int)
             if cmd_id_modified == 342 and channel is not None:
                 self._loop.create_task(self.GetAllAiAlarm(channel))
+                return
+            if cmd_id_modified in {54, 81} and channel is not None:
+                self._loop.create_task(self.GetRec(channel))  # both 81 and 54 refresh needed
                 return
             if cmd_id_modified not in {26, 56, 70, 208, 212, 217, 232, 264, 527, 529, 531, 549, 551}:
                 return
@@ -3325,30 +3359,12 @@ class Baichuan:
     @http_cmd(["GetRecV20", "GetRec"])
     async def GetRec(self, channel: int, **_kwargs) -> None:
         """Get the recording info"""
-        mess = await self.send(cmd_id=81, channel=channel)
-        enable = get_value_from_xml(mess, "enable", int)
-
-        rec_set = self.http_api._recording_settings.setdefault(channel, {})
-        rec_set.setdefault("schedule", {})["enable"] = enable
-        rec_set["schedule"]["channel"] = channel
-        if self.http_api.api_version("GetRec") >= 1:
-            rec_set["scheduleEnable"] = enable
-
-        mess = await self.send(cmd_id=54, channel=channel)
-        data = get_keys_from_xml(mess, {"recordDelayTime": ("postRec_int", int), "packageTime": ("packTime_int", int)})
-        data["postRec"] = TIME_INT_SEC_TO_STR.get(data.get("postRec_int", 0), "")
-        data["packTime"] = TIME_INT_SEC_TO_STR.get(data.get("packTime_int", 0) * 60, "")
-        rec_set.update(data)
-
-        root = XML.fromstring(mess)
-        time_range = []
-        for time in root.findall(".//timeList/time"):
-            val = time.text
-            if val is None:
-                continue
-            time_range.append(TIME_INT_SEC_TO_STR.get(int(val), ""))
-        if time_range:
-            self.http_api._recording_range.setdefault(channel, {})["postRec"] = time_range
+        mess81, mess54 = await asyncio.gather(
+            self.send(cmd_id=81, channel=channel),
+            self.send(cmd_id=54, channel=channel),
+        )
+        self._parse_xml(81, mess81)
+        self._parse_xml(54, mess54)
 
     @http_cmd(["SetRecV20", "SetRec"])
     async def SetRecV20(self, **kwargs) -> None:
