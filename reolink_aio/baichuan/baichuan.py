@@ -1118,6 +1118,26 @@ class Baichuan:
                 self._siren_state[channel] = state == 1
                 _LOGGER.debug("Reolink %s TCP event channel %s, Siren status: %s", self.http_api.nvr_name, channel, state == 1)
 
+        elif cmd_id == 574:  # privacy mode
+            if mess_id is None:
+                return
+            channel = mess_id % 256 - 1
+            if channel < 0 or channel > 100:
+                return
+            channels.add(channel)
+            sleep = get_value_from_xml(root, "sleep", bool)
+            if sleep is None:
+                return
+            self._privacy_mode[channel] = sleep
+            now = time_now()
+            self.last_privacy_check = now
+            if sleep:
+                self.last_privacy_on = now
+
+            self.capabilities.setdefault(channel, set()).add("privacy_mode")
+            if not self.http_api.is_nvr:
+                self.capabilities.setdefault(None, set()).add("privacy_mode")
+
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
             cmd_id_modified = get_value_from_xml(root, "cmdId", int)
@@ -1127,7 +1147,7 @@ class Baichuan:
             if cmd_id_modified in {54, 81} and channel is not None:
                 self._loop.create_task(self.GetRec(channel))  # both 81 and 54 refresh needed
                 return
-            if cmd_id_modified not in {26, 56, 70, 208, 212, 217, 232, 264, 527, 529, 531, 549, 551}:
+            if cmd_id_modified not in {26, 56, 70, 208, 212, 217, 232, 264, 527, 529, 531, 549, 551, 574}:
                 return
             self._loop.create_task(self._send_and_parse(cmd_id_modified, channel))
             return
@@ -2839,23 +2859,9 @@ class Baichuan:
         await self.send(cmd_id=595, channel=channel, body=xml)
         await self.get_pre_recording(channel)
 
-    async def get_privacy_mode(self, channel: int = 0) -> bool | None:
+    async def get_privacy_mode(self, channel: int = 0) -> None:
         """Get the privacy mode state"""
-        mess = await self.send(cmd_id=574, channel=channel)
-        sleep = get_value_from_xml(mess, "sleep", bool)
-        if sleep is None:
-            return None
-        self._privacy_mode[channel] = sleep
-        now = time_now()
-        self.last_privacy_check = now
-        if sleep:
-            self.last_privacy_on = now
-
-        self.capabilities.setdefault(channel, set()).add("privacy_mode")
-        if not self.http_api.is_nvr:
-            self.capabilities.setdefault(None, set()).add("privacy_mode")
-
-        return sleep
+        await self._send_and_parse(574, channel)
 
     async def set_privacy_mode(self, channel: int = 0, enable: bool = False) -> None:
         """Set the privacy mode"""
