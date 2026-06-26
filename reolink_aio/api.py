@@ -3068,7 +3068,7 @@ class Host:
                 for info in zip_file.infolist():
                     if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
                         firmware_pak = zip_file.read(info)
-                        firmware_name = info.filename
+                        firmware_name = basename(info.filename)
                         break
             response.release()
 
