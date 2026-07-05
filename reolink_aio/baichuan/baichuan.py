@@ -98,6 +98,7 @@ TIME_STR_TO_INT_SEC = {
     "8 Seconds": 8,
     "15 Seconds": 15,
     "30 Seconds": 30,
+    "45 Seconds": 45,
     "1 Minute": 60,
     "2 Minutes": 120,
     "5 Minutes": 300,
