@@ -71,6 +71,51 @@ TalkConfigSet = """<?xml version="1.0" encoding="UTF-8" ?>
 <soundTrack>{sound_track}</soundTrack>
 </audioConfig>
 </TalkConfig>
+</body>
+"""
+
+UDP_GET_UID_XML = """
+<P2P>
+<C2D_S>
+<to>
+<port>{port}</port>
+</to>
+</C2D_S>
+</P2P>
+"""
+
+UDP_CONNECT_XML = """
+<P2P>
+<C2D_C>
+<uid>{uid}</uid>
+<cli>
+<port>{port}</port>
+</cli>
+<cid>{client_id}</cid>
+<mtu>{mtu}</mtu>
+<debug>0</debug>
+<p>WIN</p>
+</C2D_C>
+</P2P>
+"""
+
+UDP_DISCONNECT_XML = """
+<P2P>
+<C2D_DISC>
+<cid>{client_id}</cid>
+<did>{host_id}</did>
+</C2D_DISC>
+</P2P>
+"""
+
+WEBHOOK_PUSH = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<HaCfg version="1.1">
+<enable>{enable}</enable>
+<url>{url}</url>
+<verify_cert>0</verify_cert>
+</HaCfg>
 </body>"""
 
 DingDongOpt_1_XML = """

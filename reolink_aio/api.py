@@ -41,6 +41,7 @@ from .enums import (
     BatteryEnum,
     BinningModeEnum,
     ChimeToneEnum,
+    ConnectionEnum,
     DayNightEnum,
     EncodingEnum,
     ExposureEnum,
@@ -145,6 +146,8 @@ class Host:
         aiohttp_get_session_callback=None,
         bc_port: int = DEFAULT_BC_PORT,
         bc_only: bool = False,
+        bc_connection: ConnectionEnum = ConnectionEnum.unknown,
+        uid: str = UNKNOWN,
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
@@ -186,14 +189,14 @@ class Host:
 
         ##############################################################################
         # Baichuan protocol (port 9000)
-        self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, http_api=self)
+        self.baichuan = Baichuan(host=host, username=username, password=password, port=bc_port, connection_type=bc_connection, http_api=self)
         self.baichuan_only: bool = bc_only
-        self.baichuan_cmds: set[str] = set()
 
         ##############################################################################
         # NVR (host-level) attributes
         self._is_nvr: bool = False
         self._is_hub: bool = False
+        self._is_battery: bool = False
         self._num_channels: int = 0
 
         ##############################################################################
@@ -202,7 +205,7 @@ class Host:
         self._model: dict[int | None, str] = {}
         self._hw_version: dict[int | None, str] = {}
         self._item_number: dict[int | None, str] = {}
-        self._uid: dict[int | None, str] = {}
+        self._uid: dict[int | None, str] = {None: uid}
         self._serial: dict[int | None, str] = {}
         self._sw_version: dict[int | None, str] = {}
         self._sw_version_object: dict[int | None, SoftwareVersion] = {}
@@ -228,10 +231,12 @@ class Host:
         self._channel_online_check: dict[int, bool] = {}
         self._is_doorbell: dict[int, bool] = {}
         self._GetDingDong_present: dict[int | None, bool] = {}
+        self.baichuan_cmds: set[str] = set()
+        self.broken_cmds: set[str] = set()
 
         ##############################################################################
         # API-versions and capabilities
-        self._api_version: dict[str, int] = {}
+        self._api_version: dict[str, int | dict[int | None, int]] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
         self._capabilities: dict[int | str, set[str]] = {"Host": set()}  # processed by construct_capabilities
 
@@ -306,7 +311,7 @@ class Host:
         self._auto_track_settings: dict[int, dict] = {}
         self._auto_track_range: dict[int, dict] = {}
         self._auto_track_limits: dict[int, dict] = {}
-        self._audio_file_list: dict[int, dict] = {}
+        self._audio_file_list: dict[int, list[dict]] = {}
         self._auto_reply_settings: dict[int, dict] = {}
 
         ##############################################################################
@@ -425,6 +430,10 @@ class Host:
     @property
     def is_hub(self) -> bool:
         return self._is_hub
+
+    @property
+    def is_battery(self) -> bool:
+        return self._is_battery
 
     @property
     def nvr_name(self) -> str:
@@ -782,19 +791,19 @@ class Host:
         return self._audio_alarm_settings[channel]["schedule"]["enable"] == 1
 
     def ir_enabled(self, channel: int) -> bool:
-        return self._ir_settings.get(channel, {}).get("IrLights", {}).get("state") == "Auto"
+        return self._ir_settings.get(channel, {}).get("state") == "Auto"
 
     def status_led_enabled(self, channel: int) -> bool:
         if channel not in self._status_led_settings:
             return False
 
-        return self._status_led_settings[channel]["PowerLed"].get("state", "Off") == "On"
+        return self._status_led_settings[channel].get("state", "Off") == "On"
 
     def doorbell_led(self, channel: int) -> str:
         if channel not in self._status_led_settings:
             return "Off"
 
-        return self._status_led_settings[channel]["PowerLed"].get("eDoorbellLightState", "Off")
+        return self._status_led_settings[channel].get("eDoorbellLightState", "Off")
 
     def doorbell_led_list(self, channel: int) -> list[str]:
         mode_values = []
@@ -803,7 +812,7 @@ class Host:
         mode_values.extend([StatusLedEnum.auto, StatusLedEnum.alwaysonatnight])
         ledCtrl = self.baichuan.api_version("ledCtrl", channel)
         if self.api_version("supportDoorbellLightKeepOn", channel) > 0 or (ledCtrl >> 15) & 1:  # 16th bit (32768), shift 15:
-            options = self._status_led_range.get(channel, {}).get("PowerLed", {}).get("eDoorbellLightState", [])
+            options = self._status_led_range.get(channel, {}).get("eDoorbellLightState", [])
             if "KeepOn" in options or (ledCtrl >> 15) & 1:
                 mode_values.append(StatusLedEnum.alwayson)
             else:
@@ -814,32 +823,32 @@ class Host:
     def ftp_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetFtp") >= 1:
-                return all(self._ftp_settings[ch]["Ftp"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
+                return all(self._ftp_settings[ch]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
-            return all(self._ftp_settings[ch]["Ftp"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
+            return all(self._ftp_settings[ch]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._ftp_settings)
 
         if channel not in self._ftp_settings:
             return False
 
         if self.api_version("GetFtp") >= 1:
-            return self._ftp_settings[channel]["Ftp"]["scheduleEnable"] == 1
+            return self._ftp_settings[channel]["scheduleEnable"] == 1
 
-        return self._ftp_settings[channel]["Ftp"]["schedule"]["enable"] == 1
+        return self._ftp_settings[channel]["schedule"]["enable"] == 1
 
     def email_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
             if self.api_version("GetEmail") >= 1:
-                return all(self._email_settings[ch]["Email"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
+                return all(self._email_settings[ch]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
-            return all(self._email_settings[ch]["Email"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
+            return all(self._email_settings[ch]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._email_settings)
 
         if channel not in self._email_settings:
             return False
 
         if self.api_version("GetEmail") >= 1:
-            return self._email_settings[channel]["Email"]["scheduleEnable"] == 1
+            return self._email_settings[channel]["scheduleEnable"] == 1
 
-        return self._email_settings[channel]["Email"]["schedule"]["enable"] == 1
+        return self._email_settings[channel]["schedule"]["enable"] == 1
 
     def push_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -847,17 +856,17 @@ class Host:
                 return self._push_config["PushCfg"]["enable"] == 1
 
             if self.api_version("GetPush") >= 1:
-                return all(self._push_settings[ch]["Push"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
+                return all(self._push_settings[ch]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
-            return all(self._push_settings[ch]["Push"]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
+            return all(self._push_settings[ch]["schedule"]["enable"] == 1 for ch in self._channels if ch in self._push_settings)
 
         if channel not in self._push_settings:
             return False
 
         if self.api_version("GetPush") >= 1:
-            return self._push_settings[channel]["Push"]["scheduleEnable"] == 1
+            return self._push_settings[channel]["scheduleEnable"] == 1
 
-        return self._push_settings[channel]["Push"]["schedule"]["enable"] == 1
+        return self._push_settings[channel]["schedule"]["enable"] == 1
 
     def recording_enabled(self, channel: int | None = None) -> bool:
         if channel is None:
@@ -1167,10 +1176,10 @@ class Host:
         if channel not in self._audio_file_list:
             return audio_dict
 
-        if self._audio_file_list[channel]["AudioFileList"] is None:
+        if self._audio_file_list[channel] is None:
             return audio_dict
 
-        for audio_file in self._audio_file_list[channel]["AudioFileList"]:
+        for audio_file in self._audio_file_list[channel]:
             audio_dict[audio_file["id"]] = audio_file["fileName"]
         return audio_dict
 
@@ -1178,20 +1187,20 @@ class Host:
         if channel not in self._auto_reply_settings:
             return False
 
-        return self._auto_reply_settings[channel]["AutoReply"]["enable"] == 1
+        return self._auto_reply_settings[channel]["enable"] == 1
 
     def quick_reply_file(self, channel: int) -> int:
         """Return the quick replay audio file id, -1 means quick replay is off."""
         if channel not in self._auto_reply_settings:
             return -1
 
-        return self._auto_reply_settings[channel]["AutoReply"]["fileId"]
+        return self._auto_reply_settings[channel]["fileId"]
 
     def quick_reply_time(self, channel: int) -> int:
         if channel not in self._auto_reply_settings:
             return 0
 
-        return self._auto_reply_settings[channel]["AutoReply"]["timeout"]
+        return self._auto_reply_settings[channel]["timeout"]
 
     def pir_enabled(self, channel: int) -> bool | None:
         if channel not in self._pir:
@@ -1382,6 +1391,8 @@ class Host:
         # check if HTTP(s) API is supported
         try:
             await self.baichuan.get_host_data()
+        except CredentialsInvalidError:
+            raise
         except ReolinkError as exc:
             _LOGGER.debug("%s, can not check if HTTP api is supported", exc)
         if self.baichuan_only:
@@ -1392,6 +1403,8 @@ class Host:
         # see which ports are enabled using baichuan protocol on port 9000
         try:
             await self.baichuan.get_ports()
+        except CredentialsInvalidError:
+            raise
         except ReolinkError as exc:
             _LOGGER.debug(exc)
             # Raise original exception instead of the retry fallback exception
@@ -1496,6 +1509,8 @@ class Host:
         # see which ports are enabled using baichuan protocol on port 9000
         try:
             await self.baichuan.get_ports()
+        except CredentialsInvalidError:
+            raise
         except ReolinkError as exc:
             _LOGGER.debug(exc)
             # Raise original exception instead of the retry fallback exception
@@ -1616,7 +1631,7 @@ class Host:
         return self._capabilities
 
     @property
-    def checked_api_versions(self) -> dict[str, int]:
+    def checked_api_versions(self) -> dict[str, int | dict[int | None, int]]:
         return self._api_version
 
     @property
@@ -1741,11 +1756,11 @@ class Host:
             if (
                 channel in self._ftp_settings
                 and self.api_version("supportIfttt", channel) <= 0
-                and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel]["Ftp"])
+                and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel])
             ):
                 self._capabilities[channel].add("ftp")
 
-            if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]["Push"]):
+            if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]):
                 self._capabilities[channel].add("push")
 
             if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
@@ -1765,7 +1780,7 @@ class Host:
             if (
                 channel in self._email_settings
                 and self.api_version("supportIfttt", channel) <= 0
-                and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel]["Email"])
+                and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel])
             ):
                 self._capabilities[channel].add("email")
 
@@ -1873,12 +1888,11 @@ class Host:
                 self._capabilities[channel].add("battery")
                 if channel in self._sleep:
                     self._capabilities[channel].add("sleep")
-                    if "sleep" not in self._capabilities["Host"]:
-                        self._capabilities["Host"].add("sleep")
+                    self._capabilities["Host"].add("sleep")
             if self.api_version("mdWithPir", channel) > 0:
                 self._capabilities[channel].add("PIR")
 
-            if channel in self._md_alarm_settings and not self.supported(channel, "PIR"):
+            if channel in self._md_alarm_settings and not self.supported(channel, "PIR") and not self.baichuan.supported(channel, "PIR"):
                 self._capabilities[channel].add("md_sensitivity")
 
             if self.api_version("supportAiSensitivity", channel) > 0:
@@ -1935,7 +1949,10 @@ class Host:
     def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
         if capability in self._api_version:
-            return self._api_version[capability]
+            ver = self._api_version[capability]
+            if isinstance(ver, dict):
+                return ver.get(channel, no_key_return)
+            return ver
 
         if channel is None:
             return self._abilities.get(capability, {}).get("ver", 0)
@@ -1944,7 +1961,7 @@ class Host:
             if channel not in self._channels and channel in self._stream_channels and len(self._abilities.get("abilityChn", [])) >= 1:
                 channel = 0  # Dual lens camera
             else:
-                return 0
+                return no_key_return
 
         return self._abilities["abilityChn"][channel].get(capability, {}).get("ver", no_key_return)
 
@@ -2161,6 +2178,9 @@ class Host:
 
         any_battery = any(self.supported(ch, "battery") for ch in self._channels)
         all_wake = all(wake.values())
+        if self.is_battery and not all_wake:
+            _LOGGER.debug("Host %s: is a battery camera and wake=False, skipping get_states", self._host)
+            return
         if any_battery and any(wake.values()):
             wake_ch = [ch for ch in wake if wake[ch] and self.supported(ch, "battery")]
             _LOGGER.debug("Host %s:%s: Waking battery camera channels %s for the get_states update", self._host, self._port, wake_ch)
@@ -2582,6 +2602,9 @@ class Host:
         self._api_version["GetMdAlarm"] = check_command_exists("GetMdAlarm")
 
         self.construct_capabilities()
+
+        # start task to close the battery cam connection when idle
+        self.baichuan._close_battery_connection()
 
         for channel in self._channels:
             # fix for manual record firmware bug, it should be 0 or 1, other values are a bug and cause battery drain
@@ -3045,7 +3068,7 @@ class Host:
                 for info in zip_file.infolist():
                     if info.filename.endswith(".pak") or info.filename.endswith(".paks"):
                         firmware_pak = zip_file.read(info)
-                        firmware_name = info.filename
+                        firmware_name = basename(info.filename)
                         break
             response.release()
 
@@ -3987,16 +4010,16 @@ class Host:
                         self._name[channel] = data["value"]["Osd"]["osdChannel"]["name"]
 
                 elif data["cmd"] == "GetFtp":
-                    self._ftp_settings[channel] = data["value"]
+                    self._ftp_settings[channel] = data["value"]["Ftp"]
 
                 elif data["cmd"] == "GetFtpV20":
-                    self._ftp_settings[channel] = data["value"]
+                    self._ftp_settings[channel] = data["value"]["Ftp"]
 
                 elif data["cmd"] == "GetPush":
-                    self._push_settings[channel] = data["value"]
+                    self._push_settings[channel] = data["value"]["Push"]
 
                 elif data["cmd"] == "GetPushV20":
-                    self._push_settings[channel] = data["value"]
+                    self._push_settings[channel] = data["value"]["Push"]
 
                 elif data["cmd"] == "GetWebHook":
                     self._webhook_settings[channel] = data["value"]
@@ -4016,10 +4039,10 @@ class Host:
                     self._rtsp_subStream[channel] = subStream.replace("rtsp://", f"rtsp://{self._username}:{self._enc_password}@")
 
                 elif data["cmd"] == "GetEmail":
-                    self._email_settings[channel] = data["value"]
+                    self._email_settings[channel] = data["value"]["Email"]
 
                 elif data["cmd"] == "GetEmailV20":
-                    self._email_settings[channel] = data["value"]
+                    self._email_settings[channel] = data["value"]["Email"]
 
                 elif data["cmd"] == "GetBuzzerAlarmV20":
                     self._buzzer_settings[channel] = data["value"]
@@ -4032,14 +4055,14 @@ class Host:
                     self._image_settings[channel] = data["value"]
 
                 elif data["cmd"] == "GetIrLights":
-                    self._ir_settings[channel] = data["value"]
+                    self._ir_settings[channel] = data["value"]["IrLights"]
 
                 elif data["cmd"] == "GetPowerLed":
                     # GetPowerLed returns incorrect channel
                     # response_channel = data["value"]["PowerLed"]["channel"]
-                    self._status_led_settings[channel] = data["value"]
+                    self._status_led_settings[channel] = data["value"]["PowerLed"]
                     if "range" in data:
-                        self._status_led_range[channel] = data["range"]
+                        self._status_led_range[channel] = data["range"]["PowerLed"]
 
                 elif data["cmd"] == "GetWhiteLed":
                     value = data["value"]["WhiteLed"]
@@ -4113,13 +4136,13 @@ class Host:
                     self._audio_alarm_settings[channel] = data["value"]["Audio"]
 
                 elif data["cmd"] == "GetAudioFileList":
-                    self._audio_file_list[channel] = data["value"]
+                    self._audio_file_list[channel] = data["value"]["AudioFileList"]
 
                 elif data["cmd"] in {"GetDingDongList", "GetDingDongCfg", "DingDongOpt"}:
                     self.map_chime_json_response(data, channel, chime_id)
 
                 elif data["cmd"] == "GetAutoReply":
-                    self._auto_reply_settings[channel] = data["value"]
+                    self._auto_reply_settings[channel] = data["value"]["AutoReply"]
 
                 elif data["cmd"] == "GetAutoFocus":
                     self._auto_focus_settings[channel] = data["value"]["AutoFocus"]
@@ -5232,8 +5255,9 @@ class Host:
         if doorbell_button_sound is not None:
             params["visitorLoudspeaker"] = 1 if doorbell_button_sound else 0
 
-        body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
-        await self.baichuan.SetAudioCfg(**body[0]["param"])
+        # body = [{"cmd": "SetAudioCfg", "action": 0, "param": {"AudioCfg": params}}]
+        param = {"AudioCfg": params}
+        await self.baichuan.SetAudioCfg(**param)
         await self.baichuan.GetAudioCfg(channel)
 
     async def set_hub_audio(
@@ -6022,7 +6046,7 @@ class Host:
             return await self._baichuan_alternative(body, expected_response_type)
 
         cmds = [cmd.get("cmd", "") for cmd in body]
-        baichuan_idxs: dict[int, str] = {}
+        filtered_idxs: dict[int, tuple[str, int]] = {}
         if expected_response_type in ["image/jpeg", "application/octet-stream"]:
             cur_command = "" if param is None else param.get("cmd", "")
             is_login_logout = False
@@ -6043,17 +6067,21 @@ class Host:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("%s/%s:%s::send() HTTP Request params =\n%s\n", self.nvr_name, self._host, self._port, self.hide_password(param))
 
-        # filter baichuan fallbacks
+        # filter baichuan fallbacks and broken cmds
         filtered_body = body
-        if expected_response_type == "json" and self.baichuan_cmds:
+        if expected_response_type == "json" and (self.baichuan_cmds or self.broken_cmds):
             filtered_body = body.copy()
             coroutines = []
-            for baichuan_cmd in self.baichuan_cmds:
-                if baichuan_cmd in cmds:
-                    idx = cmds.index(baichuan_cmd)
-                    func = self.baichuan.cmd_funcs[baichuan_cmd]
+            for idx, cmd_i in enumerate(cmds):
+                if cmd_i in self.baichuan_cmds:
+                    # Strip cmds for which the baichuan fallback succeded
+                    func = self.baichuan.cmd_funcs[cmd_i]
                     args = body[idx].get("param", {})
-                    coroutines.append((idx, baichuan_cmd, func(**args)))
+                    coroutines.append((idx, cmd_i, func(**args)))
+                    continue
+                if cmd_i in self.broken_cmds:
+                    # Strip cmds known to hang this firmware (see broken_cmds)
+                    filtered_idxs[idx] = (cmd_i, -8)
             if coroutines:
                 results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
                 for i, result in enumerate(results):
@@ -6064,12 +6092,13 @@ class Host:
                     if isinstance(result, BaseException):
                         raise result
                     _LOGGER.debug("Used Baichuan for %s successfully", baichuan_cmd)
-                    baichuan_idxs[idx] = baichuan_cmd
-            for idx in sorted(baichuan_idxs, reverse=True):
+                    filtered_idxs[idx] = (baichuan_cmd, -9998)
+            # filter the body
+            for idx in sorted(filtered_idxs, reverse=True):
                 filtered_body.pop(idx)
-            if not filtered_body and baichuan_idxs:
-                _LOGGER.debug("No commands left after Baichuan filtering, continuing with parsing")
-                return await self._parse_json("[]", baichuan_idxs, body, param, retry)
+            if not filtered_body and filtered_idxs:
+                _LOGGER.debug("No commands left after Baichuan/Broken cmd filtering, continuing with parsing")
+                return await self._parse_json("[]", filtered_idxs, body, param, retry)
 
         if self._aiohttp_session.closed:
             self._aiohttp_session = self._get_aiohttp_session()
@@ -6179,7 +6208,7 @@ class Host:
                 raise InvalidContentTypeError(err_mess)
 
             if expected_response_type == "json" and isinstance(data, str):
-                return await self._parse_json(data, baichuan_idxs, body, param, retry)
+                return await self._parse_json(data, filtered_idxs, body, param, retry)
 
             if expected_response_type == "image/jpeg" and isinstance(data, bytes):
                 return data
@@ -6268,7 +6297,7 @@ class Host:
     async def _parse_json(
         self,
         data: str,
-        baichuan_idxs: dict[int, str],
+        filtered_idxs: dict[int, tuple[str, int]],
         body: typings.reolink_json,
         param: dict[str, Any] | None,
         retry: int,
@@ -6287,46 +6316,97 @@ class Host:
             await self.expire_session(unsubscribe=False)
             raise NoDataError(f"Host {self._host}:{self._port}: returned no data: {data}")
 
-        # re-insert baichuan fallbacks
-        for idx, cmd in sorted(baichuan_idxs.items()):
-            json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": -9998}})
+        def re_insert_filtered(full_json_data: typings.reolink_json, filtered_idxs: dict[int, tuple[str, int]]) -> typings.reolink_json:
+            # Re-inserted as error placeholders so the caller's index mapping is preserved.
+            for idx, tup in sorted(filtered_idxs.items()):
+                cmd, code = tup
+                if code == -8:
+                    full_json_data.insert(idx, {"cmd": cmd, "code": 1, "error": {"detail": "cmd blacklisted on this firmware", "rspCode": code}})
+                else:
+                    full_json_data.insert(idx, {"cmd": cmd, "Baichuan_fallback_succes": True, "code": 1, "error": {"detail": "used baichuan instead", "rspCode": code}})
+            return full_json_data
 
-        if len(json_data) != len(body) and len(body) != 1:
+        sent_body_len = len(body) - len(filtered_idxs)
+        if len(json_data) != sent_body_len and sent_body_len > 1:
+            # Some firmwares collapse a multi-cmd batch into a single error response
+            # (rspCode -8 "timeout" or -10 "protocol") when one cmd misbehaves;
+            # treat that like a mismatch and skip the sleep + batch retry.
+            is_global_timeout = (
+                len(json_data) == 1 and isinstance(json_data[0], dict) and json_data[0].get("code") == 1 and json_data[0].get("error", {}).get("rspCode", 0) < 0
+            )
             if retry <= 0:
                 raise UnexpectedDataError(
-                    f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {len(body)} responses",
+                    f"Host {self._host}:{self._port} error mapping responses to requests, received {len(json_data)} responses while requesting {sent_body_len} responses",
                 )
-            # back-off a bit, this is mostly caused by a timeout error because the camera is too busy
-            await asyncio.sleep(5)
-            if retry == 1:
-                _LOGGER.debug(
-                    "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying by sending each command separately",
-                    self._host,
-                    self._port,
-                    len(json_data),
-                    len(body),
-                )
-                json_data_sep = []
+            if not is_global_timeout:
+                # back-off a bit, this is mostly caused by a timeout error because the camera is too busy
+                await asyncio.sleep(5)
+            # filter out the already succeded baichuan fallbacks/broken cmds
+            for idx in sorted(filtered_idxs, reverse=True):
+                body.pop(idx)
+            if is_global_timeout or retry == 1:
+                if is_global_timeout:
+                    _LOGGER.debug(
+                        "Host %s:%s: device returned a single global timeout for a batch of %s commands, retrying each separately",
+                        self._host,
+                        self._port,
+                        sent_body_len,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, retrying each separately",
+                        self._host,
+                        self._port,
+                        len(json_data),
+                        sent_body_len,
+                    )
+                json_data_sep: typings.reolink_json = []
                 for command in body:
+                    cmd_name = command.get("cmd", "")
                     try:
                         # since len(body) will be 1, it is safe to increase retry to 2 for the individual command, this can not be reached again.
-                        json_data_sep.extend(await self.send([command], param, "json", retry + 1))
+                        res = await self.send([command], param, "json", retry + 1)
                     except ReolinkError as err:
-                        raise UnexpectedDataError(
-                            f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
-                            f"while requesting {len(body)} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
-                        ) from err
-                return json_data_sep
+                        if not is_global_timeout:
+                            raise UnexpectedDataError(
+                                f"Host {self._host}:{self._port} error mapping responses to requests, originally received {len(json_data)} responses "
+                                f"while requesting {sent_body_len} responses, during separete sending retry of cmd '{command}' got error: {str(err)}",
+                            ) from err
+                        _LOGGER.debug("Host %s: cmd '%s' failed during global-timeout split: %s", self._host, cmd_name, err)
+                        res = [{"cmd": cmd_name, "code": 1, "error": {"detail": str(err), "rspCode": -8}}]
+                    json_data_sep.extend(res)
+                    if (
+                        cmd_name
+                        and cmd_name not in self.broken_cmds
+                        and res
+                        and isinstance(res[0], dict)
+                        and res[0].get("code") == 1
+                        and res[0].get("error", {}).get("rspCode") == -8
+                    ):
+                        _LOGGER.warning(
+                            "Host %s:%s: command '%s' returns timeout (-8) on its own, blacklisting it for this session",
+                            self._host,
+                            self._port,
+                            cmd_name,
+                        )
+                        self.broken_cmds.add(cmd_name)
+                return re_insert_filtered(json_data_sep, filtered_idxs)
 
             _LOGGER.debug(
                 "Host %s:%s error mapping responses to requests, received %s responses while requesting %s responses, trying again",
                 self._host,
                 self._port,
                 len(json_data),
-                len(body),
+                sent_body_len,
             )
             await self.expire_session(unsubscribe=False)
-            return await self.send(body, param, "json", retry)
+            # re-insert the already succeded baichuan fallbacks/broken cmds in the final response
+            filtered_json_data = await self.send(body, param, "json", retry)
+            return re_insert_filtered(filtered_json_data, filtered_idxs)
+
+        # re-insert baichuan fallbacks/broken cmds
+        re_insert_filtered(json_data, filtered_idxs)
+
         # retry commands that have not been received by the camera (battery cam waking from sleep)
         retry_cmd = []
         retry_idxs = []
@@ -7204,18 +7284,16 @@ class Chime:
                 tone_id = current_tone_id
             state = 0
 
-        param = {"ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}
-        if self.channel is not None:
-            param["channel"] = self.channel
+        if event_type == "md" and "other" in self.chime_event_types:
+            event_type = "other"
 
-        body = [
-            {
-                "cmd": "SetDingDongCfg",
-                "action": 0,
-                "param": {"DingDongCfg": param},
-            }
-        ]
-        await self.host.baichuan.SetDingDongCfg(**body[0]["param"])
+        params = {"ringId": self.dev_id, "type": {event_type: {"switch": state, "musicId": tone_id}}}
+        if self.channel is not None:
+            params["channel"] = self.channel
+
+        # body = [{"cmd": "SetDingDongCfg", "action": 0, "param": {"DingDongCfg": param}}]
+        param = {"DingDongCfg": params}
+        await self.host.baichuan.SetDingDongCfg(**param)
         await self.host.baichuan.GetDingDongCfg(self.channel)
 
     async def remove(self) -> None:
