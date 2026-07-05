@@ -790,6 +790,9 @@ class Host:
 
         return self._audio_alarm_settings[channel]["schedule"]["enable"] == 1
 
+    def pre_alarm_enabled(self, channel: int) -> bool:
+        return self._audio_settings.get(channel, {}).get("preAlarm", False)
+
     def ir_enabled(self, channel: int) -> bool:
         return self._ir_settings.get(channel, {}).get("state") == "Auto"
 
@@ -5354,6 +5357,17 @@ class Host:
 
         body = [{"cmd": "SetAutoReply", "action": 0, "param": {"AutoReply": params}}]
         await self.send_setting(body)
+
+    async def set_pre_alarm(self, channel: int, pre_alarm: bool) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_pre_alarm: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "pre_siren"):
+            raise NotSupportedError(f"set_pre_alarm: pre-alarm on camera {self.camera_name(channel)} is not available")
+
+        params = {"channel": channel, "preAlarm": 1 if pre_alarm else 0}
+        param = {"AudioCfg": params}
+        await self.baichuan.SetAudioCfg(**param)
+        await self.baichuan.GetAudioCfg(channel)
 
     async def set_audio_alarm(self, channel: int, enable: bool) -> None:
         if channel not in self._channels:

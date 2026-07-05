@@ -405,6 +405,15 @@ SirenHubTimes = """
 </audioPlayInfo>
 </body>"""
 
+PRE_ALARM = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<audioPlayInfo version="1.1">
+<channelId>{channel}</channelId>
+<playMode>4</playMode>
+</audioPlayInfo>
+</body>"""
+
 GetRule = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>

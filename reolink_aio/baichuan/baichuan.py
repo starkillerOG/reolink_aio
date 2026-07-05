@@ -1002,6 +1002,7 @@ class Baichuan:
                     "talkAndReplyVolume": ("talkAndReplyVolume", int),
                     "visitorVolume": ("visitorVolume", int),
                     "visitorLoudspeaker": ("visitorLoudspeaker", int),
+                    "preAlarm": ("preAlarm", int),
                 },
             )
             self.http_api._audio_settings.setdefault(channel, {}).update(data)
@@ -1892,7 +1893,7 @@ class Baichuan:
                 self.capabilities[channel].add("siren_play")
                 if self.http_api.api_version("supportIfttt", channel) <= 0 and self.api_version("linkages", channel) <= 0:
                     self.capabilities[channel].add("siren")
-            if (audioVersion >> 4) & 1 or (audioVersion >> 9) & 1:  # 5 & 10 th bit (16 & 512) shift 4 & 9
+            if (audioVersion >> 4) & 1 or (audioVersion >> 5) & 1 or (audioVersion >> 9) & 1:  # 5 & 6 & 10 th bit (16 & 32 & 512) shift 4 & 5 & 9
                 coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
             if (audioVersion >> 6) & 1 or (audioVersion >> 7) & 1:  # shift 6 & 7
                 if not self.http_api.supported(channel, "quick_reply"):
@@ -1980,6 +1981,8 @@ class Baichuan:
                         self.capabilities[channel].add("volume_speak")
                     if self.http_api.volume_doorbell(channel) is not None:
                         self.capabilities[channel].add("volume_doorbell")
+                    if (self.api_version("audioVersion", channel) >> 5) & 1 and "preAlarm" in self.http_api._audio_settings.get(channel, {}):
+                        self.capabilities[channel].add("pre_siren")
                 elif cmd_id == "GetAudioFileList":
                     self.capabilities[channel].add("quick_reply")
                     self.capabilities[channel].add("play_quick_reply")
@@ -3094,6 +3097,11 @@ class Baichuan:
             self._siren_play_time[channel] = now + 2 * 5
             await self.send(cmd_id=263, channel=channel, body=xml)
 
+    async def PreAlarm(self, channel: int) -> None:
+        """Sound the pre-alarm"""
+        xml = xmls.PRE_ALARM.format(channel=channel)
+        await self.send(cmd_id=263, channel=channel, body=xml)
+
     @http_cmd("GetAudioCfg")
     async def GetAudioCfg(self, channel: int, **_kwargs) -> None:
         """Get the audio settings"""
@@ -3116,6 +3124,8 @@ class Baichuan:
             xml_talkAndReplyVolume.text = str(talkAndReplyVolume)
         if (visitorVolume := param.get("visitorVolume")) is not None and (xml_visitorVolume := xml_body.find(".//visitorVolume")) is not None:
             xml_visitorVolume.text = str(visitorVolume)
+        if (preAlarm := param.get("preAlarm")) is not None and (xml_preAlarm := xml_body.find(".//preAlarm")) is not None:
+            xml_preAlarm.text = str(preAlarm)
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
