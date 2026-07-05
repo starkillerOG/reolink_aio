@@ -5380,6 +5380,53 @@ class Host:
 
         await self.send_setting(body)
 
+    def two_way_audio_support(self, channel: int) -> bool:
+        """Return True if the camera channel supports two-way audio (talk)."""
+        return self.supported(channel, "two_way_audio")
+
+    async def start_talk(self, channel: int) -> dict:
+        """Start a two-way audio (talk) session on the camera channel.
+
+        Returns a dict describing the audio format the camera expects:
+          - audio_type (str): codec name, e.g. "adpcm"
+          - sample_rate (int): samples per second, e.g. 8000 or 16000
+          - sample_precision (int): bit depth, e.g. 16
+          - length_per_encoder (int): samples per ADPCM block, e.g. 320 or 1024
+          - sound_track (str): channel layout, e.g. "mono"
+          - duplex (str): duplex mode, e.g. "FDX"
+          - audio_stream_mode (str): e.g. "followVideoStream"
+
+        Encode audio as IMA ADPCM blocks with the returned parameters, wrap
+        each block with ``Baichuan.build_bcmedia_adpcm([block])``, and stream
+        with ``send_talk_data()``.  Call ``stop_talk()`` when finished.
+
+        Raises NotSupportedError if two-way audio is not supported.
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"start_talk: no camera connected to channel '{channel}'")
+        if not self.two_way_audio_support(channel):
+            raise NotSupportedError(f"start_talk: Two-way audio is not supported on {self.camera_name(channel)}")
+
+        return await self.baichuan.start_talk(channel)
+
+    async def send_talk_data(self, channel: int, bcmedia_data: bytes) -> None:
+        """Send BcMedia-framed IMA ADPCM audio data to the camera.
+
+        ``bcmedia_data`` must be produced by ``Baichuan.build_bcmedia_adpcm()``.
+        Call ``start_talk()`` before the first call to this method.
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"send_talk_data: no camera connected to channel '{channel}'")
+
+        await self.baichuan.send_talk_data(channel, bcmedia_data)
+
+    async def stop_talk(self, channel: int) -> None:
+        """Stop the two-way audio (talk) session on the camera channel."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"stop_talk: no camera connected to channel '{channel}'")
+
+        await self.baichuan.stop_talk(channel)
+
     async def set_siren(self, channel: int | None = None, enable: bool = True, duration: int | None = 2) -> None:
         if channel not in self._channels and channel is not None:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")
