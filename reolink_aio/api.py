@@ -1924,7 +1924,7 @@ class Host:
             if self.api_version("supportIspHdr", channel, no_key_return=1) > 0 and self.HDR_state(channel) >= 0:
                 self._capabilities[channel].add("HDR")
 
-            if self.api_version("ispDayNight", channel, no_key_return=1) > 0 and self.daynight_state(channel) is not None:
+            if (self.api_version("ispDayNight", channel, no_key_return=1) > 0 and not self.baichuan_only) and self.daynight_state(channel) is not None:
                 self._capabilities[channel].add("dayNight")
                 if self.daynight_threshold(channel) is not None:
                     self._capabilities[channel].add("dayNightThreshold")
