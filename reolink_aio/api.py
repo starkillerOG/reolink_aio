@@ -934,17 +934,13 @@ class Host:
         return self._whiteled_settings.get(channel, {}).get("state", 0) == 1
 
     def whiteled_mode(self, channel: int) -> Optional[int]:
-        mode = self._whiteled_settings.get(channel, {}).get("mode")
-        if mode == 6:
-            return SpotlightModeEnum.adaptive.value  # Elite Floodlight WiFi uses 6 as adaptive mode, sending 5 will also set it to 6, so no need for a change there.
-        return mode
+        return self._whiteled_settings.get(channel, {}).get("mode")
 
     def whiteled_mode_list(self, channel: int) -> list[str]:
         mode_values = [SpotlightModeEnum.off]
         ledCtrl = self.baichuan.api_version("ledCtrl", channel)
         if (ledCtrl >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
-            # on Floodlight: the schedule_plus has the same number 4 as autoadaptive
-            mode_values.extend([SpotlightModeEnum.schedule])
+            mode_values.extend([SpotlightModeEnum.scheduleplus])
         if not (ledCtrl >> 6) & 1 or (self.api_version("supportFLIntelligent", channel) > 0 and ledCtrl == 0):  # 7th bit (64), shift 6
             mode_values.extend([SpotlightModeEnum.auto])
         if self.api_version("supportFLSchedule", channel) > 0 or (ledCtrl >> 5) & 1:  # 6th bit (32), shift 5

@@ -35,7 +35,6 @@ from ..enums import (
     ExposureEnum,
     HardwiredChimeTypeEnum,
     SpotlightEventModeEnum,
-    SpotlightModeEnum,
 )
 from ..exceptions import (
     ApiError,
@@ -108,6 +107,17 @@ TIME_STR_TO_INT_SEC = {
     "60 Minutes": 3600,
 }
 TIME_INT_SEC_TO_STR = {v: k for k, v in TIME_STR_TO_INT_SEC.items()}
+
+WHITELED_MODE_BC_TO_HTTP = {
+    0: 0,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: -4,  # Floodlight: the schedule_plus has number 4 and a unknown HTTP number
+    5: 4,
+    6: 5,
+}
+WHITELED_MODE_HTTP_TO_BC = {v: k for k, v in WHITELED_MODE_BC_TO_HTTP.items()}
 
 
 class Baichuan:
@@ -1016,7 +1026,7 @@ class Baichuan:
                 root,
                 {
                     "brightness_cur": ("bright", int),
-                    "alarmMode": ("mode", int),
+                    "alarmMode": ("mode_bc", int),
                     "newColorTemperature": ("ColorTemp", int),
                     "alarmLightEnabledSL": ("event_mode_enabled", int),
                     "alarmLightModeSL": ("event_mode", str),
@@ -1025,9 +1035,9 @@ class Baichuan:
                     "flickerDurationSL": ("event_flash_time", int),
                 },
             )
-            if values.get("mode") == 4 and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
-                # Floodlight: the schedule_plus has the same number 4 as autoadaptive, so switch it around
-                values["mode"] = 3
+            if (mode_bc := values.get("mode_bc")) is not None:
+                # Baichuan uses different mode numbers then HTTP, translate
+                values["mode"] = WHITELED_MODE_BC_TO_HTTP.get(mode_bc, mode_bc)
             self.http_api._whiteled_settings.setdefault(channel, {}).update(values)
 
         elif cmd_id == 291:  # Floodlight
@@ -2945,9 +2955,9 @@ class Baichuan:
         ):
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param for SetWhiteLed")
 
-        if mode == SpotlightModeEnum.schedule.value and (self.api_version("ledCtrl", channel) >> 8) & 1:  # schedule_plus, 9th bit (256), shift 8
-            # Floodlight: the schedule_plus has the same number 4 as autoadaptive, so switch it around
-            mode = 4
+        if mode is not None:
+            # Baichuan uses different mode numbers then HTTP, translate:
+            mode = WHITELED_MODE_HTTP_TO_BC.get(mode, mode)
 
         if state is not None:
             xml = xmls.SetWhiteLed.format(channel=channel, state=state)
