@@ -1821,24 +1821,6 @@ class Baichuan:
             if (SmartaiVersion >> 5) & 1:  # 6th bit (32), shift 5
                 coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))  # loss/taken item
 
-            newIspCfg = self.api_version("newIspCfg", channel)
-            if (newIspCfg >> 0) & 1 and self.http_api.daynight_state(channel) is not None:  # 1th bit (1), shift 0
-                self.capabilities[channel].add("dayNight")
-                if (newIspCfg >> 13) & 1 or (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
-                    coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
-            if (newIspCfg >> 2) & 1:  # 3th bit (4), shift 2
-                self.capabilities[channel].add("exposure")
-            if (newIspCfg >> 8) & 1 or (newIspCfg >> 14) & 1:  # 9th bit (256), shift 8
-                self.capabilities[channel].add("isp_bright")  # 8 = brightness, 14 = brightness&shadows
-            if (newIspCfg >> 9) & 1:
-                self.capabilities[channel].add("isp_contrast")
-            if (newIspCfg >> 10) & 1:
-                self.capabilities[channel].add("isp_satruation")
-            if (newIspCfg >> 11) & 1:
-                self.capabilities[channel].add("isp_hue")
-            if (newIspCfg >> 12) & 1:
-                self.capabilities[channel].add("isp_sharpen")
-
             if self.api_version("motion", channel, no_key_return=1) > 0:
                 self.capabilities[channel].add("motion_detection")
                 self.http_api._motion_detection_states.setdefault(channel, False)
@@ -1905,7 +1887,7 @@ class Baichuan:
                     self.capabilities[channel].add("siren")
             if (audioVersion >> 4) & 1 or (audioVersion >> 5) & 1 or (audioVersion >> 9) & 1:  # 5 & 6 & 10 th bit (16 & 32 & 512) shift 4 & 5 & 9
                 coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
-            if (audioVersion >> 6) & 1 or (audioVersion >> 7) & 1:  # shift 6 & 7
+            if (audioVersion >> 6) & 1 and (audioVersion >> 7) & 1:  # shift 6 & 7
                 if not self.http_api.supported(channel, "quick_reply"):
                     coroutines.append(("GetAudioFileList", channel, self.GetAudioFileList(channel)))
             if self.http_api.api_version("supportAIDenoise", channel) > 0:
@@ -1921,6 +1903,36 @@ class Baichuan:
             # Fallback for missing information
             if self.http_api.camera_hardware_version(channel) == UNKNOWN:
                 coroutines.append(("ch_info", channel, self.get_info(channel)))
+
+            if "snapshot" not in self.capabilities[channel]:
+                # No camera stream/snapshots e.g. Floodlight WiFi
+                continue
+
+            if self.http_api._enc_settings.get(channel, {}).get("audio") is not None:
+                self.capabilities[channel].add("audio")
+
+            if self.http_api.frame_rate(channel) is not None:
+                self.capabilities[channel].add("frame_rate")
+            if self.http_api.bit_rate(channel) is not None:
+                self.capabilities[channel].add("bit_rate")
+
+            newIspCfg = self.api_version("newIspCfg", channel)
+            if (newIspCfg >> 0) & 1 and self.http_api.daynight_state(channel) is not None:  # 1th bit (1), shift 0
+                self.capabilities[channel].add("dayNight")
+                if (newIspCfg >> 13) & 1 or (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
+                    coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
+            if (newIspCfg >> 2) & 1:  # 3th bit (4), shift 2
+                self.capabilities[channel].add("exposure")
+            if (newIspCfg >> 8) & 1 or (newIspCfg >> 14) & 1:  # 9th bit (256), shift 8
+                self.capabilities[channel].add("isp_bright")  # 8 = brightness, 14 = brightness&shadows
+            if (newIspCfg >> 9) & 1:
+                self.capabilities[channel].add("isp_contrast")
+            if (newIspCfg >> 10) & 1:
+                self.capabilities[channel].add("isp_satruation")
+            if (newIspCfg >> 11) & 1:
+                self.capabilities[channel].add("isp_hue")
+            if (newIspCfg >> 12) & 1:
+                self.capabilities[channel].add("isp_sharpen")
 
         for scene_id in self._scenes:
             if scene_id < 0:

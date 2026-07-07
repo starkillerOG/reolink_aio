@@ -1820,9 +1820,6 @@ class Host:
                 if self.api_version("supportIfttt", channel) <= 0 and self.baichuan.api_version("linkages", channel) <= 0:
                     self._capabilities[channel].add("siren")
 
-            if self._enc_settings.get(channel, {}).get("audio") is not None:
-                self._capabilities[channel].add("audio")
-
             ptz_ver = self.api_version("ptzType", channel)
             if ptz_ver != 0:
                 self._capabilities[channel].add("ptz")
@@ -1900,10 +1897,6 @@ class Host:
             if self.api_version("supportAiStayTime", channel) > 0:
                 self._capabilities[channel].add("ai_delay")
 
-            if self.frame_rate(channel) is not None:
-                self._capabilities[channel].add("frame_rate")
-            if self.bit_rate(channel) is not None:
-                self._capabilities[channel].add("bit_rate")
             if self.api_version("supportEncoderSelect", channel) > 0:
                 self._capabilities[channel].add("encoding")
 
