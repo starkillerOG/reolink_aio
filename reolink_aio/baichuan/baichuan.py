@@ -1755,7 +1755,7 @@ class Baichuan:
             self.capabilities[None].add("RTSP")
         if self.api_version("onvif") > 0 and self.http_api._onvif_port is not None:
             self.capabilities[None].add("ONVIF")
-        if self.http_api.is_hub and (self.api_version("doorbellVersion") >> 0) & 1:
+        if self.http_api.is_hub and ((self.api_version("doorbellVersion") >> 0) & 1 or (self.api_version("doorbellVersion") >> 4) & 1):
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
 
         self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
@@ -2240,8 +2240,8 @@ class Baichuan:
             if inc_ch_wake_cmd("609", chime.channel):
                 coroutines.append(self.get_ding_dong_silent(channel=chime.channel, chime_id=chime_id))
 
-            if inc_host_cmd("DingDongOpt", no_wake_check=True) and chime.channel is not None:
-                # None waking for Hub connected
+            if inc_host_cmd("DingDongOpt", no_wake_check=True) and chime.channel is None:
+                # None waking for Hub connected, only update hub connected chimes, others are updated in api.py
                 coroutines.append(self.get_DingDongOpt(chime_id=chime_id))
 
         if coroutines:
