@@ -7027,7 +7027,7 @@ class Host:
                 continue
 
             # find camera channel
-            if self.num_cameras == 1:
+            if self.num_channels == 1:
                 channel = self.channels[0]
             else:
                 source_element = message.find(".//{http://www.onvif.org/ver10/schema}SimpleItem[@Name='Source']")

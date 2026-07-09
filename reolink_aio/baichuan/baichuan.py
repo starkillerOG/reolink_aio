@@ -556,12 +556,21 @@ class Baichuan:
         xml: str | None = mess.get("xml")
         ext_xml: str = mess.get("ext_xml", "")
 
-        if cmd_id is None or xml is None:
-            _LOGGER.debug("Baichuan host %s: received webhook push with malformed data:\n%s", self._host, mess)
+        if uid != self.http_api.uid:
+            if not uid:
+                _LOGGER.debug("Baichuan host %s: received webhook push with malformed data:\n%s", self._host, mess)
+                return
+            _LOGGER.debug("Baichuan host %s: received webhook push with uid %s which does not match device uid %s", self._host, uid, self.http_api.uid)
             return
 
-        if uid != self.http_api.uid:
-            _LOGGER.debug("Baichuan host %s: received webhook push with uid %s which does not match device uid %s", self._host, uid, self.http_api.uid)
+        if cmd_id is None or xml is None:
+            event_data: dict[str, str] = mess.get("data", {})
+            if not event_data:
+                _LOGGER.debug("Baichuan host %s: received webhook push with malformed data:\n%s", self._host, mess)
+                return
+            if _LOGGER.isEnabledFor(logging.DEBUG):
+                _LOGGER.debug("Baichuan host %s: received webhook push event:\n%s", self._host, self._hide_password(event_data))
+            self._parse_event(event_data)
             return
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
@@ -1296,6 +1305,53 @@ class Baichuan:
             for ch in channels:
                 for callback in self._ext_callback.get(cmd, {}).get(ch, {}).values():
                     callback()
+
+    def _parse_event(self, data: dict[str, str]) -> None:
+        """parce received webhook event"""
+        event = data.get("event")
+        cmd_ids: set[int | None] = {None}
+
+        if self.http_api._num_channels != 1:
+            _LOGGER.warning("Reolink %s received webhook event without knowing which channel of %s", self.http_api.nvr_name, self.http_api._channels)
+            return
+        channel = self.http_api._channels[0]
+
+        if event == "sleep":
+            if not self.http_api._sleep.get(channel):
+                _LOGGER.debug("Reolink %s webhook event, sleeping: True", self.http_api.nvr_name)
+            self.http_api._sleep[channel] = True
+            cmd_ids.add(145)
+
+        elif event == "wake":
+            if self.http_api._sleep.get(channel):
+                _LOGGER.debug("Reolink %s webhook event, sleeping: False", self.http_api.nvr_name)
+            self.http_api._sleep[channel] = False
+            cmd_ids.add(145)
+            reason = data.get("reason")
+            if reason == "doorbell":
+                _LOGGER.debug("Reolink %s webhook event, visitor: True", self.http_api.nvr_name)
+                self.http_api._visitor_states[channel] = True
+                cmd_ids.add(33)
+            elif reason == "pir":
+                _LOGGER.debug("Reolink %s webhook event, motion: True", self.http_api.nvr_name)
+                self.http_api._motion_detection_states[channel] = True
+                cmd_ids.add(33)
+            elif reason not in {None, "network", "other"} and f"Webhook_wake_reason_{reason}" not in self._log_once:
+                self._log_once.add(f"Webhook_wake_reason_{reason}")
+                _LOGGER.warning("Reolink %s unknown webhook wake reason '%s' received", self.http_api.nvr_name, reason)
+
+        elif event == "test":
+            if not self._events_active:
+                self._events_active = True
+
+        elif f"Webhook_event_unknown_{event}" not in self._log_once:
+            self._log_once.add(f"Webhook_event_unknown_{event}")
+            _LOGGER.warning("Reolink %s unknown webhook event '%s' received", self.http_api.nvr_name, event)
+
+        # call the callbacks
+        for cmd in cmd_ids:
+            for callback in self._ext_callback.get(cmd, {}).get(channel, {}).values():
+                callback()
 
     def _parse_smart_ai_settings(self, root: XML.Element, channels: set[int | None], smart_type: str) -> None:
         """Parse smart ai settings response"""
