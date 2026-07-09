@@ -1759,7 +1759,7 @@ class Baichuan:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
 
         self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
-        if self.http_api.is_battery:
+        if (self.api_version("webhook") >> 1) & 1 and self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
 
         if host_coroutines:
