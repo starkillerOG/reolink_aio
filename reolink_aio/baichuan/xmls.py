@@ -531,3 +531,19 @@ PtzGuard = """
 <imageName></imageName>
 </PtzGuard>
 </body>"""
+
+SynchronizeTime = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<SystemGeneral version="1.1">
+<timeZone>{timeZone}</timeZone>
+<osdFormat>{osdFormat}</osdFormat>
+<timeFormat>{timeFormat}</timeFormat>
+<year>{year}</year>
+<month>{month}</month>
+<day>{day}</day>
+<hour>{hour}</hour>
+<minute>{minute}</minute>
+<second>{second}</second>
+</SystemGeneral>
+</body>"""

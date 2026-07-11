@@ -3829,6 +3829,45 @@ class Baichuan:
         """Return if the survaillance rule is enabled or not"""
         return self._rules.get(channel, {}).get(rule_id, {}).get("enable", False)
 
+    async def synchronize_time(self) -> None:
+        """Synchronize the camera time to the time of the device running this code"""
+        mess = await self.send(cmd_id=104)
+        data = get_keys_from_xml(mess, {"timeZone": ("timeZone", str), "osdFormat": ("osdFormat", str), "timeFormat": ("timeFormat", int)})
+
+        timeZone = data.get("timeZone")
+        osdFormat = data.get("osdFormat")
+        timeFormat = data.get("timeFormat")
+        if timeZone is None or osdFormat is None or timeFormat is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: synchronize_time: could not find timeZone, osdFormat or timeFormat in response:\n{mess}")
+
+        now = datetime.now()
+        second = round(now.second + now.microsecond / 1e6)
+        xml = xmls.SynchronizeTime.format(
+            timeZone=timeZone,
+            osdFormat=osdFormat,
+            timeFormat=timeFormat,
+            year=now.year,
+            month=now.month,
+            day=now.day,
+            hour=now.hour,
+            minute=now.minute,
+            second=second,
+        )
+        await self.send(cmd_id=105, body=xml)
+
+        mess = await self.send(cmd_id=104)
+        root = XML.fromstring(mess)
+        new_time = self._xml_time_to_datetime(root)
+        if new_time is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: synchronize_time: failed to obtain new time from response:\n{mess}")
+        t_diff = abs((new_time - now).total_seconds())
+        if t_diff > 5:
+            raise ReolinkError(
+                f"Baichuan host {self._host}: failed to synchronize time, "
+                f"local time {now.strftime('%d-%m-%Y %H:%M:%S.%f')}, "
+                f"camera time {new_time.strftime('%d-%m-%Y %H:%M:%S')}"
+            )
+
     def _xml_time_to_datetime(self, xml_time: XML.Element | None) -> datetime | None:
         if xml_time is None:
             return None
