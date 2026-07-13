@@ -1757,6 +1757,8 @@ class Baichuan:
             self.capabilities[None].add("ONVIF")
         if self.http_api.is_hub and ((self.api_version("doorbellVersion") >> 0) & 1 or (self.api_version("doorbellVersion") >> 4) & 1):
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
+        if self.api_version("timeFormat") > 0:
+            self.capabilities[None].add("sync_time")
 
         self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
         if (self.api_version("webhook") >> 1) & 1 and self.http_api.is_battery:
