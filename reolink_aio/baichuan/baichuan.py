@@ -516,7 +516,7 @@ class Baichuan:
                     payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
                     if payload_future is None:
                         _LOGGER.debug(
-                            "Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future",
+                            "Reolink %s Baichuan push cmd_id %s ch_id %s mess_id %s received with payload without payload_future",
                             self.http_api.nvr_name,
                             cmd_id,
                             ch_id,
@@ -870,14 +870,14 @@ class Baichuan:
 
         elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
             if mess_id is None:
-                _LOGGER.warning("Reolink %s baichaun push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
+                _LOGGER.warning("Reolink %s Baichuan push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
                 return
             ch_id = mess_id % 256
             payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
             payload_future_data = self._payload_future_data.get(mess_id)
             if payload_future is None or payload_future_data is None:
                 _LOGGER.debug(
-                    "Reolink %s baichaun push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id
+                    "Reolink %s Baichuan push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id
                 )
                 return
             if len(payload) <= 0:
@@ -1711,7 +1711,7 @@ class Baichuan:
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
-        # Get Baichaun capabilities
+        # Get Baichuan capabilities
         try:
             mess = await self.send(cmd_id=199)
         except CredentialsInvalidError:
@@ -3154,7 +3154,7 @@ class Baichuan:
         elif enable == 1:
             self._siren_play_time[channel] = now
         elif enable == 0 and now < self._siren_play_time.get(channel, 0):
-            _LOGGER.debug("Baichaun host %s: circumventing reolink firmware limitation stopping siren_play by issuing a manual play first", self._host)
+            _LOGGER.debug("Baichuan host %s: circumventing reolink firmware limitation stopping siren_play by issuing a manual play first", self._host)
             if channel is None:
                 xml_man = xmls.SirenHubManual.format(enable=1)
             else:
@@ -3162,14 +3162,14 @@ class Baichuan:
             try:
                 await self.send(cmd_id=263, channel=channel, body=xml_man)
             except ReolinkError as err:
-                _LOGGER.debug("Baichaun host %s: AudioAlarmPlay failed to play manual, before trying to stop a siren times play: %s", self._host, err)
+                _LOGGER.debug("Baichuan host %s: AudioAlarmPlay failed to play manual, before trying to stop a siren times play: %s", self._host, err)
 
         try:
             await self.send(cmd_id=263, channel=channel, body=xml)
         except ReolinkError:
             if alarm_mode != "manul" or enable != 1:
                 raise
-            _LOGGER.debug("Baichaun host %s: AudioAlarmPlay failed to play manual, using times 2 instead", self._host)
+            _LOGGER.debug("Baichuan host %s: AudioAlarmPlay failed to play manual, using times 2 instead", self._host)
             if channel is None:
                 xml = xmls.SirenHubTimes.format(times=2)
             else:
