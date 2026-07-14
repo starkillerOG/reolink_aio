@@ -113,12 +113,7 @@ DUAL_LENS_DUAL_MOTION_MODELS: set[str] = {
     "Reolink Duo PoE",
     "Reolink Duo WiFi",
 }
-DUAL_LENS_SINGLE_MOTION_MODELS: set[str] = {
-    "Reolink TrackMix PoE",
-    "Reolink TrackMix WiFi",
-    "RLC-81MA",
-}
-DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS | DUAL_LENS_SINGLE_MOTION_MODELS
+DUAL_LENS_MODELS: set[str] = DUAL_LENS_DUAL_MOTION_MODELS
 
 # not all chars in a password can be used in the URLS of for instance the FLV stream
 ALLOWED_SPECIAL_CHARS = r"@$*~_-+=!?.,:;'()[]"
@@ -2436,7 +2431,7 @@ class Host:
                         self._channels.remove(channel)
                         _LOGGER.debug("Reolink camera on channel %s, called 'NVT' or 'IPCAM' with model 'IPC', removing this invalid channel", channel)
 
-        if self.model in DUAL_LENS_SINGLE_MOTION_MODELS or (not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0):
+        if not self.is_nvr and self.api_version("supportAutoTrackStream", 0) > 0:
             self._stream_channels = [0, 1]
             self._num_channels = 1
             self._channels = [0]
