@@ -628,7 +628,7 @@ class Baichuan:
 
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
         channel = get_value_from_xml(xml_element, key, int)
-        if channel not in self.http_api._channels:
+        if channel not in self.http_api._stream_channels:
             return None
         return channel
 
@@ -1621,17 +1621,23 @@ class Baichuan:
                 if not self.http_api._is_hub:
                     self.http_api._is_hub = self._dev_type == "homehub" or dev_type_info == "HOMEHUB"
 
-            data = get_keys_from_xml(dev_info, {"sleep": ("sleep", bool), "channelNum": ("channelNum", int)})
+            data = get_keys_from_xml(dev_info, {"sleep": ("sleep", bool), "channelNum": ("channelNum", int), "analogChnNum": ("analogChnNum", int)})
             # privacy mode
             if "sleep" in data:
                 self._privacy_mode[0] = data["sleep"]
             # channels
-            if "channelNum" in data and self.http_api._num_channels == 0 and not self.http_api._is_nvr:
+            if ("channelNum" in data or "analogChnNum" in data) and self.http_api._num_channels == 0 and not self.http_api._is_nvr:
                 self.http_api._channels.clear()
-                self.http_api._num_channels = data["channelNum"]
-                if self.http_api._num_channels > 0:
+                self.http_api._stream_channels.clear()
+                num_stream_channels = data.get("channelNum", data["analogChnNum"])
+                self.http_api._num_channels = data.get("analogChnNum", 0)
+                if self.http_api._num_channels <= 0:
+                    self.http_api._num_channels = num_stream_channels
+                if num_stream_channels > 0:
                     for ch in range(self.http_api._num_channels):
                         self.http_api._channels.append(ch)
+                    for ch in range(num_stream_channels):
+                        self.http_api._stream_channels.append(ch)
 
         self.http_api._enc_range = {}
         for info in root.findall(".//StreamInfo"):
@@ -1734,7 +1740,7 @@ class Baichuan:
 
         # Host capabilities
         self.capabilities.setdefault(None, set())
-        for channel in self.http_api._channels:
+        for channel in self.http_api._stream_channels:
             self.capabilities.setdefault(channel, set())
         if self.api_version("reboot") > 0:
             self.capabilities[None].add("reboot")

@@ -1717,6 +1717,10 @@ class Host:
                 self._capabilities[channel].add("stream")
                 self._capabilities[channel].add("snapshot")
 
+            # Baichuan capabilities
+            if channel in self.baichuan.capabilities:
+                self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
+
         # Channel capabilities
         for channel in self._channels:
             self._capabilities.setdefault(channel, set())
@@ -1923,10 +1927,6 @@ class Host:
 
             if self.backlight_state(channel) is not None:
                 self._capabilities[channel].add("backLight")
-
-            # Baichuan capabilities
-            if channel in self.baichuan.capabilities:
-                self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
@@ -2436,7 +2436,7 @@ class Host:
             self._stream_channels = [0, 1]
             self._num_channels = 1
             self._channels = [0]
-        else:
+        elif not self._stream_channels:
             self._stream_channels = self._channels
 
         body = []
