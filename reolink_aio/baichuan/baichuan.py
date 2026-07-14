@@ -1640,6 +1640,7 @@ class Baichuan:
                     self.http_api._stream_channels.clear()
                     for ch in range(num_stream_channels):
                         self.http_api._stream_channels.append(ch)
+                    self.http_api._is_dual_lens = not self.http_api._is_nvr and num_stream_channels > self.http_api._num_channels
 
         self.http_api._enc_range = {}
         for info in root.findall(".//StreamInfo"):
@@ -1805,11 +1806,21 @@ class Baichuan:
                 self.http_api.sw_version,
             )
 
+        for channel in self.http_api._stream_channels:
+            ptz_ctr = self.api_version("ptzControl", channel)
+            if (ptz_ctr >> 4) & 1:  # bit 4 DigitalZoom
+                if self.http_api.is_dual_lens:
+                    # Only add zoom to the first channel
+                    self.capabilities[0].add("zoom_basic")
+                else:
+                    self.capabilities[channel].add("zoom_basic")
+
         for channel in self.http_api._channels:
             ptz_ver = self.api_version("ptzType", channel)
             if ptz_ver != 0:
                 self.capabilities[channel].add("ptz")
                 if ptz_ver in [1, 2, 5]:
+                    self.capabilities[channel].add("zoom_basic")
                     if self.api_version("supportPtz3DLocation", channel) > 0:
                         self.capabilities[channel].add("ptz_3d_zoom")
                 if ptz_ver in [2, 3, 5, 6]:
@@ -1853,6 +1864,12 @@ class Baichuan:
                 self.capabilities[channel].add("stream")
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
                 self.capabilities[channel].add("snapshot")
+
+            if self.supported(channel, "zoom_basic"):
+                min_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
+                max_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
+                if min_zoom is not None and max_zoom is not None:
+                    self.capabilities[channel].add("zoom")
 
         # Channel capabilities
         coroutines: list[tuple[Any, int, Coroutine]] = []

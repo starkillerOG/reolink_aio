@@ -2454,6 +2454,8 @@ class Host:
             ]
             if self.api_version("mask", channel) > 0 or self.supported(channel, "privacy_mask_basic"):
                 ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "zoom_basic") or self.api_version("supportDigitalZoom", channel) > 0:
+                ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
@@ -2491,7 +2493,6 @@ class Host:
             if self.supported(channel, "doorbell_led"):
                 ch_body.append({"cmd": "GetPowerLed", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "zoom_basic") or self.api_version("supportDigitalZoom", channel) > 0:
-                ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
                 if self.api_version("disableAutoFocus", channel) > 0:
                     ch_body.append({"cmd": "GetAutoFocus", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "ptz_preset_basic"):
@@ -4416,7 +4417,7 @@ class Host:
 
     def get_zoom(self, channel: int) -> int:
         """Get absolute zoom value."""
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"get_zoom: no camera connected to channel '{channel}'")
         if channel not in self._zoom_focus_settings or not self._zoom_focus_settings[channel]:
             raise NotSupportedError(f"get_zoom: ZoomFocus on camera {self.camera_name(channel)} is not available")
@@ -4427,7 +4428,7 @@ class Host:
         """Set absolute zoom value.
         Parameters:
         zoom (int) 0..33"""
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"set_zoom: no camera connected to channel '{channel}'")
         if not self.supported(channel, "zoom"):
             raise NotSupportedError(f"set_zoom: not supported by camera {self.camera_name(channel)}")
