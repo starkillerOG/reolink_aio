@@ -2113,7 +2113,7 @@ class Baichuan:
                     abilities_dict[pretty_key][feature.tag] = value
         return abilities_dict
 
-    def _analyze_ability_info(self, ability_info: XML.Element, token: str, capability: dict[str, str]) -> None:
+    def _analyze_ability_info(self, ability_info: XML.Element, token: str, capability: dict[str, tuple[str, bool]]) -> None:
         """Analyze a ability info segment."""
         if (info := ability_info.find(token)) is not None:
             for info_ch in info.findall("subModule"):
@@ -2125,7 +2125,9 @@ class Baichuan:
                     raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
                 for key, value in capability.items():
                     if key in ability:
-                        self.capabilities[channel].add(value)
+                        cap, stream_channel = value
+                        if stream_channel or channel in self.http_api._channels:
+                            self.capabilities[channel].add(cap)
 
     async def _get_ability_info(self) -> None:
         """Get ability info as part of get_host_data."""
@@ -2135,13 +2137,13 @@ class Baichuan:
             root = XML.fromstring(mess)
             if (ability_info := root.find("AbilityInfo")) is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: get_ability_info got unexpected data")
-            self._analyze_ability_info(ability_info, "image", {"ledState_rw": "ir_lights"})
+            self._analyze_ability_info(ability_info, "image", {"ledState_rw": ("ir_lights", False)})
         except ReolinkError:
             for channel in self.http_api._channels:
                 self.capabilities[channel].add("ir_lights")
             raise
 
-        self._analyze_ability_info(ability_info, "video", {"shelter_rw": "privacy_mask_basic"})
+        self._analyze_ability_info(ability_info, "video", {"shelter_rw": ("privacy_mask_basic", True)})
 
     async def get_states(self, cmd_list: cmd_list_type = None, wake: dict[int, bool] | None = None) -> None:
         """Update the state information of polling data"""
