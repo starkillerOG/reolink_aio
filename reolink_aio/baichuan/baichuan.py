@@ -2702,8 +2702,20 @@ class Baichuan:
 
     @http_cmd("GetZoomFocus")
     async def get_zoom_focus(self, channel: int) -> None:
-        """Get the current PTZ position"""
+        """Get the current Zoom/Focus"""
         await self._send_and_parse(294, channel)
+
+    @http_cmd("StartZoomFocus")
+    async def StartZoomFocus(self, channel: int | None = None, command: str | None = None, pos: int | None = None, **kwargs) -> None:
+        """Set the Zoom/Focus"""
+        if channel is None or command is None or pos is None:
+            param = kwargs["ZoomFocus"]
+            channel = param["channel"]
+            command = param["op"]
+            pos = param["pos"]
+
+        xml = xmls.StartZoomFocus.format(channel=channel, command=command, pos=pos)
+        await self.send(cmd_id=295, channel=channel, body=xml)
 
     @http_cmd("GetPtzPreset")
     async def get_ptz_preset(self, channel: int) -> None:
