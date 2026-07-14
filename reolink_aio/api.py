@@ -1717,6 +1717,9 @@ class Host:
                 self._capabilities[channel].add("stream")
                 self._capabilities[channel].add("snapshot")
 
+            if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
+                self._capabilities[channel].add("privacy_mask")
+
             # Baichuan capabilities
             if channel in self.baichuan.capabilities:
                 self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
@@ -1765,9 +1768,6 @@ class Host:
 
             if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]):
                 self._capabilities[channel].add("push")
-
-            if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
-                self._capabilities[channel].add("privacy_mask")
 
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]):
                 self._capabilities[channel].add("recording")
@@ -1971,6 +1971,8 @@ class Host:
                 ch_body = [{"cmd": "GetEnc", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetRtspUrl":
                 ch_body = [{"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}}]
+            elif cmd == "GetMask" and self.supported(channel, "privacy_mask"):
+                ch_body = [{"cmd": "GetMask", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
             chime_ids.extend([-1] * len(ch_body))
@@ -1998,8 +2000,6 @@ class Host:
                 ch_body = [{"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPirInfo" and self.supported(channel, "PIR"):
                 ch_body = [{"cmd": "GetPirInfo", "action": 0, "param": {"channel": channel}}]
-            elif cmd == "GetMask" and self.supported(channel, "privacy_mask"):
-                ch_body = [{"cmd": "GetMask", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetWebHook" and self.supported(channel, "webhook"):
                 ch_body = [{"cmd": "GetWebHook", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPtzPreset" and self.supported(channel, "ptz_presets"):
@@ -2195,6 +2195,8 @@ class Host:
             ch_body = []
             if inc_cmd("GetEnc", channel):
                 ch_body.append({"cmd": "GetEnc", "action": 0, "param": {"channel": channel}})
+            if self.supported(channel, "privacy_mask") and inc_cmd("GetMask", channel):
+                ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
             chime_ids.extend([-1] * len(ch_body))
@@ -2223,9 +2225,6 @@ class Host:
 
             if self.supported(channel, "battery") and inc_cmd("GetBatteryInfo", channel):
                 ch_body.append({"cmd": "GetBatteryInfo", "action": 0, "param": {"channel": channel}})
-
-            if self.supported(channel, "privacy_mask") and inc_cmd("GetMask", channel):
-                ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
 
             if self.supported(channel, "status_led") and inc_cmd("GetPowerLed", channel) and not inc_cmd("208", channel):
                 ch_body.append({"cmd": "GetPowerLed", "action": 0, "param": {"channel": channel}})
@@ -2452,6 +2451,8 @@ class Host:
                 {"cmd": "GetEnc", "action": 0, "param": {"channel": channel}},
                 {"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}},
             ]
+            if self.api_version("mask", channel) > 0 or self.supported(channel, "privacy_mask_basic"):
+                ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
@@ -2500,8 +2501,6 @@ class Host:
                 ch_body.append({"cmd": "Get3DPos", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "auto_track"):
                 ch_body.append({"cmd": "GetAiCfg", "action": 1, "param": {"channel": channel}})
-            if self.api_version("mask", channel) > 0 or self.supported(channel, "privacy_mask_basic"):
-                ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
             # checking API versions
             if self.api_version("supportBuzzer") > 0:
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
