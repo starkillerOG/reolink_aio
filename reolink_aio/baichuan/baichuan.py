@@ -129,6 +129,7 @@ OSD_POS_HTTP_TO_BC = {
 }
 OSD_POS_BC_TO_HTTP = {v: k for k, v in OSD_POS_HTTP_TO_BC.items()}
 
+
 class Baichuan:
     """Reolink Baichuan API class."""
 
@@ -2378,6 +2379,14 @@ class Baichuan:
 
         return self._dev_info[channel]
 
+    def _get_osd_pos(self, xml_element: XML.Element) -> str | None:
+        """Decode a HTTP-style OSD position string from a OsdChannelName/OsdDatetime xml element"""
+        pos_x = get_value_from_xml(xml_element, "topLeftX", int, False)
+        pos_y = get_value_from_xml(xml_element, "topLeftY", int, False)
+        if pos_x is None or pos_y is None:
+            return None
+        return OSD_POS_BC_TO_HTTP.get((pos_x, pos_y))
+
     @http_cmd("GetOsd")
     async def GetOsd(self, channel: int) -> None:
         """Get the On Screen Display settings"""
@@ -2401,16 +2410,12 @@ class Baichuan:
             "enable": get_value_from_xml(xml_osd_channel, "enable", int, False),
             "name": get_value_from_xml(xml_osd_channel, "name", str, False),
         }
-        name_pos = OSD_POS_BC_TO_HTTP.get(
-            (get_value_from_xml(xml_osd_channel, "topLeftX", int, False), get_value_from_xml(xml_osd_channel, "topLeftY", int, False))
-        )
+        name_pos = self._get_osd_pos(xml_osd_channel)
         if name_pos is not None:
             osd_channel["pos"] = name_pos
 
         osd_time: dict[str, Any] = {"enable": get_value_from_xml(xml_osd_time, "enable", int, False)}
-        date_pos = OSD_POS_BC_TO_HTTP.get(
-            (get_value_from_xml(xml_osd_time, "topLeftX", int, False), get_value_from_xml(xml_osd_time, "topLeftY", int, False))
-        )
+        date_pos = self._get_osd_pos(xml_osd_time)
         if date_pos is not None:
             osd_time["pos"] = date_pos
 
