@@ -197,6 +197,7 @@ class Host:
         self._is_nvr: bool = False
         self._is_hub: bool = False
         self._is_battery: bool = False
+        self._is_dual_lens: bool = False
         self._num_channels: int = 0
 
         ##############################################################################
@@ -434,6 +435,10 @@ class Host:
     @property
     def is_battery(self) -> bool:
         return self._is_battery
+
+    @property
+    def is_dual_lens(self) -> bool:
+        return self._is_dual_lens
 
     @property
     def nvr_name(self) -> str:
@@ -2437,6 +2442,7 @@ class Host:
             self._channels = [0]
         elif not self._stream_channels:
             self._stream_channels = self._channels
+        self._is_dual_lens = not self.is_nvr and len(self._stream_channels) > self._num_channels
 
         body = []
         channels = []
