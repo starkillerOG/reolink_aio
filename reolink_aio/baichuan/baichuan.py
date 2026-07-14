@@ -119,6 +119,15 @@ WHITELED_MODE_BC_TO_HTTP = {
 }
 WHITELED_MODE_HTTP_TO_BC = {v: k for k, v in WHITELED_MODE_BC_TO_HTTP.items()}
 
+OSD_POS_HTTP_TO_BC = {
+    "Upper Left": (1, 1),
+    "Upper Right": (65536, 1),
+    "Top Center": (65537, 1),
+    "Bottom Center": (65537, 65536),
+    "Lower Left": (1, 65536),
+    "Lower Right": (65536, 65536),
+}
+OSD_POS_BC_TO_HTTP = {v: k for k, v in OSD_POS_HTTP_TO_BC.items()}
 
 class Baichuan:
     """Reolink Baichuan API class."""
@@ -2373,14 +2382,88 @@ class Baichuan:
     async def GetOsd(self, channel: int) -> None:
         """Get the On Screen Display settings"""
         mess = await self.send(cmd_id=44, channel=channel)
+        root = XML.fromstring(mess)
+
         if not self.http_api._GetChannelStatus_present or not self.http_api._GetChannelStatus_has_name:
-            root = XML.fromstring(mess)
             for ch_name in root.findall(".//OsdChannelName"):
                 ch = self._get_channel_from_xml_element(ch_name)
                 value = get_value_from_xml(ch_name, "name")
                 if ch is None or value is None:
                     continue
                 self.http_api._name[ch] = value
+
+        xml_osd_channel = root.find(".//OsdChannelName")
+        xml_osd_time = root.find(".//OsdDatetime")
+        if xml_osd_channel is None or xml_osd_time is None:
+            return
+
+        osd_channel: dict[str, Any] = {
+            "enable": get_value_from_xml(xml_osd_channel, "enable", int, False),
+            "name": get_value_from_xml(xml_osd_channel, "name", str, False),
+        }
+        name_pos = OSD_POS_BC_TO_HTTP.get(
+            (get_value_from_xml(xml_osd_channel, "topLeftX", int, False), get_value_from_xml(xml_osd_channel, "topLeftY", int, False))
+        )
+        if name_pos is not None:
+            osd_channel["pos"] = name_pos
+
+        osd_time: dict[str, Any] = {"enable": get_value_from_xml(xml_osd_time, "enable", int, False)}
+        date_pos = OSD_POS_BC_TO_HTTP.get(
+            (get_value_from_xml(xml_osd_time, "topLeftX", int, False), get_value_from_xml(xml_osd_time, "topLeftY", int, False))
+        )
+        if date_pos is not None:
+            osd_time["pos"] = date_pos
+
+        osd: dict[str, Any] = {"channel": channel, "osdChannel": osd_channel, "osdTime": osd_time}
+        watermark = get_value_from_xml(xml_osd_channel, "enWatermark", int, False)
+        if watermark is not None:
+            osd["watermark"] = watermark
+
+        self.http_api._osd_settings[channel] = {"Osd": osd}
+
+    @http_cmd("SetOsd")
+    async def SetOsd(self, channel: int | None = None, **kwargs) -> None:
+        """Set the On Screen Display settings"""
+        param = kwargs.get("Osd", {})
+        if channel is None:
+            channel = param.get("channel")
+        if channel is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: SetOsd channel not defined")
+
+        mess = await self.send(cmd_id=44, channel=channel)
+        root = XML.fromstring(mess)
+        xml_osd_channel = root.find(".//OsdChannelName")
+        xml_osd_time = root.find(".//OsdDatetime")
+
+        name_param = param.get("osdChannel", {})
+        if xml_osd_channel is not None:
+            if (enable := name_param.get("enable")) is not None and (xml_val := xml_osd_channel.find("enable")) is not None:
+                xml_val.text = str(enable)
+            if (name := name_param.get("name")) is not None and (xml_val := xml_osd_channel.find("name")) is not None:
+                xml_val.text = name
+            if (pos := name_param.get("pos")) is not None and pos in OSD_POS_HTTP_TO_BC:
+                pos_x, pos_y = OSD_POS_HTTP_TO_BC[pos]
+                if (xml_x := xml_osd_channel.find("topLeftX")) is not None:
+                    xml_x.text = str(pos_x)
+                if (xml_y := xml_osd_channel.find("topLeftY")) is not None:
+                    xml_y.text = str(pos_y)
+            if (watermark := param.get("watermark")) is not None and (xml_val := xml_osd_channel.find("enWatermark")) is not None:
+                xml_val.text = str(watermark)
+
+        time_param = param.get("osdTime", {})
+        if xml_osd_time is not None:
+            if (enable := time_param.get("enable")) is not None and (xml_val := xml_osd_time.find("enable")) is not None:
+                xml_val.text = str(enable)
+            if (pos := time_param.get("pos")) is not None and pos in OSD_POS_HTTP_TO_BC:
+                pos_x, pos_y = OSD_POS_HTTP_TO_BC[pos]
+                if (xml_x := xml_osd_time.find("topLeftX")) is not None:
+                    xml_x.text = str(pos_x)
+                if (xml_y := xml_osd_time.find("topLeftY")) is not None:
+                    xml_y.text = str(pos_y)
+
+        xml = XML.tostring(root, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=45, channel=channel, body=xml)
 
     @http_cmd("GetHddInfo")
     async def GetHddInfo(self) -> None:
