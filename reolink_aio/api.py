@@ -4115,7 +4115,7 @@ class Host:
                         self._auto_track_range[channel] = data["range"]
 
                 elif data["cmd"] == "GetPtzTraceSection":
-                    self._auto_track_limits[channel] = data["value"]
+                    self._auto_track_limits[channel] = data["value"]["PtzTraceSection"]
 
                 elif data["cmd"] == "GetAudioCfg":
                     value = data["value"]["AudioCfg"]
@@ -4720,17 +4720,11 @@ class Host:
 
     def auto_track_limit_left(self, channel: int) -> int:
         """-1 = limit not set"""
-        if channel not in self._auto_track_limits:
-            return -1
-
-        return self._auto_track_limits[channel]["PtzTraceSection"]["LimitLeft"]
+        return self._auto_track_limits.get(channel, {}).get("LimitLeft", -1)
 
     def auto_track_limit_right(self, channel: int) -> int:
         """-1 = limit not set"""
-        if channel not in self._auto_track_limits:
-            return -1
-
-        return self._auto_track_limits[channel]["PtzTraceSection"]["LimitRight"]
+        return self._auto_track_limits.get(channel, {}).get("LimitRight", -1)
 
     async def set_auto_track_limit(self, channel: int, left: int | None = None, right: int | None = None) -> None:
         """-1 = disable limit"""

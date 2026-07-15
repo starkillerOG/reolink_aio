@@ -1930,6 +1930,8 @@ class Baichuan:
                 self.capabilities[channel].add("ai_delay")
             if (aiVersion >> 9) & 1:  # 10th bit (512), shift 9
                 self.capabilities[channel].add("ai_sensitivity")
+            if (aiVersion >> 13) & 1:  # bit 13
+                self.capabilities[channel].add("auto_track_limit")
             if (aiVersion >> 17) & 1:  # 18th bit (131072), shift 17
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
@@ -2925,6 +2927,21 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=300, channel=channel, body=xml)
         await self.GetAiCfg(channel)
+
+    @http_cmd("GetPtzTraceSection")
+    async def get_track_limit(self, channel: int | None = None, **kwargs) -> None:
+        """Get the auto tracking limits"""
+        if channel is None:
+            channel = kwargs.get("PtzTraceSection", {}).get("channel")
+        mess = await self.send(cmd_id=434, channel=channel)
+        data = get_keys_from_xml(
+            mess,
+            {
+                "leftLimit": ("LimitLeft", int),
+                "rightLimit": ("LimitRight", int),
+            },
+        )
+        self.http_api._auto_track_limits.setdefault(channel, {}).update(data)
 
     async def get_yolo_settings(self, channel: int) -> None:
         """Get the yoloworld AI settings"""
