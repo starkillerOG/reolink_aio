@@ -1924,6 +1924,8 @@ class Baichuan:
             if (aiVersion >> 6) & 1:  # 7th bit (64), shift 6
                 self.capabilities[channel].add("motion_detection")  # other detection (PIR)
                 self.http_api._motion_detection_states.setdefault(channel, False)
+            if (aiVersion >> 7) & 1 or (aiVersion >> 22) & 1:  # bit 7 or 22
+                coroutines.append(("GetAiCfg", channel, self.GetAiCfg(channel)))
             if (aiVersion >> 8) & 1:  # 9th bit (256), shift 8
                 self.capabilities[channel].add("ai_delay")
             if (aiVersion >> 9) & 1:  # 10th bit (512), shift 9
@@ -1931,8 +1933,6 @@ class Baichuan:
             if (aiVersion >> 17) & 1:  # 18th bit (131072), shift 17
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
-            if (aiVersion >> 22) & 1:  # 23th bit (4194304), shift 22
-                coroutines.append(("cry", channel, self.get_cry_detection(channel)))
             if (aiVersion >> 23) & 1:  # 24th bit (8388608), shift 23 Yolo World
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
@@ -2069,8 +2069,14 @@ class Baichuan:
                         self.capabilities[channel].add("dayNightThreshold")
                     if self.day_night_state(channel) is not None:
                         self.capabilities[channel].add("day_night_state")
-                elif cmd_id == "cry" and result:
-                    self.capabilities[channel].add("ai_cry")
+                elif cmd_id == "GetAiCfg":
+                    aiVersion = self.api_version("aitype", channel)
+                    if (aiVersion >> 22) & 1 and result.get("cryDetectAbility") == "1":
+                        self.capabilities[channel].add("ai_cry")
+                    if (aiVersion >> 7) & 1:
+                        self.capabilities[channel].add("auto_track")
+                        if result.get("smartTrackModeAbility", 0).bit_count() > 1:
+                            self.capabilities[channel].add("auto_track_method")
                 elif cmd_id == "ptz_position":
                     if self.http_api.ptz_pan_position(channel) is not None:
                         self.capabilities[channel].add("ptz_position")
@@ -2238,7 +2244,7 @@ class Baichuan:
                 coroutines.append(self.get_floodlight(channel))
 
             if self.supported(channel, "ai_cry") and inc_cmd("299", channel):
-                coroutines.append(self.get_cry_detection(channel))
+                coroutines.append(self.GetAiCfg(channel))
 
             if self.supported(channel, "ai_yolo") and self.http_api.supported(channel, "ai_sensitivity") and inc_cmd("GetAiAlarm", channel):
                 coroutines.append(self.get_yolo_settings(channel))
@@ -2887,13 +2893,26 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=343, channel=channel, body=xml)
 
-    async def get_cry_detection(self, channel: int) -> bool:
-        """Check if cry detection is supported and get the sensitivity level"""
+    @http_cmd("GetAiCfg")
+    async def GetAiCfg(self, channel: int) -> dict:
+        """Get the AiCfg containing the cry detection and auto tracking"""
         mess = await self.send(cmd_id=299, channel=channel)
-        data = get_keys_from_xml(mess, {"cryDetectAbility": ("cryDetectAbility", str), "cryDetectLevel": ("cryDetectLevel", int)})
+        data = get_keys_from_xml(
+            mess,
+            {
+                "cryDetectAbility": ("cryDetectAbility", str),
+                "cryDetectLevel": ("cryDetectLevel", int),
+                "smartTrack": ("bSmartTrack", int),
+                "smartTrackMode": ("aiTrack", int),
+                "smartTrackModeAbility": ("smartTrackModeAbility", int),
+                "smartTrackObjectDisappearDelay": ("aiDisappearBackTime", int),
+                "smartTrackObjectStopDelay": ("aiStopBackTime", int),
+            },
+        )
+        self.http_api._auto_track_settings.setdefault(channel, {}).update(data)
         if (cry_sensitivity := data.get("cryDetectLevel")) is not None:
             self._cry_sensitivity[channel] = cry_sensitivity
-        return data.get("cryDetectAbility") == "1"  # supported or not
+        return data  # used in capability detection
 
     async def set_cry_detection(self, channel: int, sensitivity: int) -> None:
         mess = await self.send(cmd_id=299, channel=channel)
@@ -2905,7 +2924,7 @@ class Baichuan:
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=300, channel=channel, body=xml)
-        await self.get_cry_detection(channel)
+        await self.GetAiCfg(channel)
 
     async def get_yolo_settings(self, channel: int) -> None:
         """Get the yoloworld AI settings"""

@@ -1876,6 +1876,8 @@ class Host:
                 if isinstance(track_method, list):
                     if len(track_method) > 1 and sorted(track_method) != [0, 1]:
                         self._capabilities[channel].add("auto_track_method")
+
+            if self.supported(channel, "auto_track"):
                 if self.auto_track_disappear_time(channel) > 0:
                     self._capabilities[channel].add("auto_track_disappear_time")
                 if self.auto_track_stop_time(channel) > 0:
