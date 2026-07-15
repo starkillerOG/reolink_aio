@@ -2957,6 +2957,24 @@ class Baichuan:
         )
         self.http_api._auto_track_limits.setdefault(channel, {}).update(data)
 
+    @http_cmd("SetPtzTraceSection")
+    async def set_track_limit(self, **kwargs) -> None:
+        """Set the auto tracking limits"""
+        param = kwargs.get("PtzTraceSection", {})
+        channel = param["channel"]
+
+        mess = await self.send(cmd_id=434, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (leftLimit := param.get("LimitLeft")) is not None and (xml_leftLimit := xml_body.find(".//leftLimit")) is not None:
+            xml_leftLimit.text = str(leftLimit)
+        if (rightLimit := param.get("LimitRight")) is not None and (xml_rightLimit := xml_body.find(".//rightLimit")) is not None:
+            xml_rightLimit.text = str(rightLimit)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=435, channel=channel, body=xml)
+
     async def get_yolo_settings(self, channel: int) -> None:
         """Get the yoloworld AI settings"""
         mess = await self.send(cmd_id=628, channel=channel)
