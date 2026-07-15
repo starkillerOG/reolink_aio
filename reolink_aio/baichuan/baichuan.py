@@ -2916,17 +2916,31 @@ class Baichuan:
             self._cry_sensitivity[channel] = cry_sensitivity
         return data  # used in capability detection
 
-    async def set_cry_detection(self, channel: int, sensitivity: int) -> None:
+    @http_cmd("SetAiCfg")
+    async def SetAiCfg(self, channel: int, cry_sensitivity: int | None = None, **kwargs) -> None:
+        """Set the AiCfg containing the cry detection and auto tracking"""
         mess = await self.send(cmd_id=299, channel=channel)
         xml_body = XML.fromstring(mess)
 
-        if (xml_cry_sensitivity := xml_body.find(".//cryDetectLevel")) is not None:
-            xml_cry_sensitivity.text = str(sensitivity)
+        if cry_sensitivity is not None and (xml_cry_sensitivity := xml_body.find(".//cryDetectLevel")) is not None:
+            xml_cry_sensitivity.text = str(cry_sensitivity)
+        if (smartTrack := kwargs.get("bSmartTrack")) is not None and (xml_smart_track := xml_body.find(".//smartTrack")) is not None:
+            xml_smart_track.text = str(smartTrack)
+        if (smartTrackMode := kwargs.get("aiTrack")) is not None and (xml_smartTrackMode := xml_body.find(".//smartTrackMode")) is not None:
+            xml_smartTrackMode.text = str(smartTrackMode)
+        if (DisappearDelay := kwargs.get("aiDisappearBackTime")) is not None and (xml_DisappearDelay := xml_body.find(".//smartTrackObjectDisappearDelay")) is not None:
+            xml_DisappearDelay.text = str(DisappearDelay)
+        if (StopDelay := kwargs.get("aiStopBackTime")) is not None and (xml_StopDelay := xml_body.find(".//smartTrackObjectStopDelay")) is not None:
+            xml_StopDelay.text = str(StopDelay)
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=300, channel=channel, body=xml)
-        await self.GetAiCfg(channel)
+        if cry_sensitivity is not None:
+            await self.GetAiCfg(channel)
+
+    async def set_cry_detection(self, channel: int, sensitivity: int) -> None:
+        return await self.SetAiCfg(channel=channel, cry_sensitivity=sensitivity)
 
     @http_cmd("GetPtzTraceSection")
     async def get_track_limit(self, channel: int | None = None, **kwargs) -> None:
