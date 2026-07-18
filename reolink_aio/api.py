@@ -29,6 +29,7 @@ from orjson import dumps as json_dumps  # pylint: disable=no-name-in-module
 from orjson import loads as json_loads  # pylint: disable=no-name-in-module
 
 from . import templates, typings
+from .baichuan import AI_DETECTS as AI_DETECTS_BC
 from .baichuan import DEFAULT_BC_PORT, Baichuan, PortType
 from .const import (
     AI_DETECT_CONVERSION,
@@ -102,6 +103,10 @@ _LOGGER = logging.getLogger(__name__)
 _LOGGER_DATA = logging.getLogger(__name__ + ".data")
 _LOGGER_RTSP = logging.getLogger(__name__ + ".aiortsp")
 _LOGGER_RTSP.setLevel(logging.WARNING)
+
+AI_DETECT_MAP = {"people_state": "people", "vehicle_state": "vehicle", "dogcat_state": "dog_cat", "state": "state"}
+if AI_DETECTS_BC.intersection(AI_DETECT_MAP.values()) != AI_DETECTS_BC:
+    _LOGGER.error("Reolink AI DETECTS map needs updating")
 
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.set_ciphers("DEFAULT")
@@ -3925,7 +3930,18 @@ class Host:
                     if "ai" in data["value"]:
                         self._ai_detection_states.setdefault(channel, {})
                         self._ai_detection_support.setdefault(channel, {})
+                        ai_detect = self.baichuan._ai_detect.setdefault(channel, {})
                         for key, value in data["value"]["ai"].items():
+                            if isinstance(value, list):
+                                # smart AI
+                                for item in value:
+                                    location = item.get("index")
+                                    if item.get("enable") != 1 or item.get("support") != 1 or location is None:
+                                        continue
+                                    ai_type_set = set(AI_DETECT_MAP).intersection(item)
+                                    for ai_type in ai_type_set:
+                                        ai_detect.setdefault(key, {}).setdefault(location, {})[AI_DETECT_MAP[ai_type]] = item[ai_type] == 1
+                                continue
                             supported: bool = value.get("support", 0) == 1
                             if not supported:
                                 continue
