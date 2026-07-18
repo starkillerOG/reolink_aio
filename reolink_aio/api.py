@@ -6451,6 +6451,8 @@ class Host:
             results = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
             for i, result in enumerate(results):
                 idx, cmd, _ = coroutines[i]
+                if isinstance(result, (LoginError, ReolinkConnectionError)):
+                    raise result
                 if isinstance(result, ReolinkError):
                     json_data[idx]["error"]["detail"] = str(result)
                     if isinstance(result, ApiError):
