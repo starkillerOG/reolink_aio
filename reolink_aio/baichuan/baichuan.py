@@ -630,7 +630,7 @@ class Baichuan:
 
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
         channel = get_value_from_xml(xml_element, key, int)
-        if channel not in self.http_api._stream_channels:
+        if channel not in self.http_api._stream_channels and channel not in self.http_api._channels:
             return None
         return channel
 

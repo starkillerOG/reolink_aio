@@ -2422,6 +2422,9 @@ class Host:
 
         self.map_host_json_response(json_data)
 
+        if not self._stream_channels:
+            self._stream_channels = self._channels
+
         # Baichuan capabilities
         await self.baichuan.get_host_data()
 
@@ -2448,8 +2451,6 @@ class Host:
             self._stream_channels = [0, 1]
             self._num_channels = 1
             self._channels = [0]
-        elif not self._stream_channels:
-            self._stream_channels = self._channels
         self._is_dual_lens = not self.is_nvr and len(self._stream_channels) > self._num_channels
 
         body = []
