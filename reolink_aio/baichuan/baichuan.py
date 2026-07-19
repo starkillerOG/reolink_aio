@@ -28,6 +28,8 @@ from ..const import (
     YOLO_DETECTS,
 )
 from ..enums import (
+    ANTI_FLICKER_MAP,
+    AntiFlickerEnum,
     BatteryEnum,
     ConnectionEnum,
     DayNightEnum,
@@ -684,6 +686,14 @@ class Baichuan:
                     value = value.replace("And", "&")
                     value = value[0].upper() + value[1:]
                     isp["dayNight"] = DayNightEnum(value).value
+
+            if (PowerLineFrequency := root.find(".//PowerLineFrequency")) is not None:
+                data = get_keys_from_xml(PowerLineFrequency, {"mode": ("mode", str), "enable": ("enable", int)})
+                if data.get("enable", 0) == 1:
+                    value = ANTI_FLICKER_MAP.get(data.get("mode", "off"), "Off")
+                    isp["antiFlicker"] = AntiFlickerEnum(value).value
+                else:
+                    isp["antiFlicker"] = AntiFlickerEnum.off.value
 
             data = get_keys_from_xml(root, {"hdrSwitch": ("hdr", int), "binning_mode": ("binningMode", int)})
             data["channel"] = channel
@@ -2010,6 +2020,8 @@ class Baichuan:
                 self.capabilities[channel].add("dayNight")
                 if (newIspCfg >> 13) & 1 or (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
                     coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
+            if (newIspCfg >> 1) & 1:  # bit 1
+                self.capabilities[channel].add("anti_flicker")
             if (newIspCfg >> 2) & 1:  # 3th bit (4), shift 2
                 self.capabilities[channel].add("exposure")
             if (newIspCfg >> 8) & 1 or (newIspCfg >> 14) & 1:  # 9th bit (256), shift 8
@@ -2542,6 +2554,18 @@ class Baichuan:
             xml_val.text = str(val)
         if (val := param.get("exposure")) is not None and (xml_val := xml_body.find("InputAdvanceCfg/Exposure/mode")) is not None:
             xml_val.text = val.lower()
+        if (
+            (val := param.get("antiFlicker")) is not None
+            and (xml_val := xml_body.find("InputAdvanceCfg/PowerLineFrequency/mode")) is not None
+            and (xml_val2 := xml_body.find("InputAdvanceCfg/PowerLineFrequency/enable")) is not None
+        ):
+            inv_ANTI_FLICKER_MAP = {v: k for k, v in ANTI_FLICKER_MAP.items()}
+            val = inv_ANTI_FLICKER_MAP[val]
+            if val == "off":
+                xml_val2.text = "0"
+            else:
+                xml_val.text = val
+                xml_val2.text = "1"
 
         if val is not None:
             xml = XML.tostring(xml_body, encoding="unicode")

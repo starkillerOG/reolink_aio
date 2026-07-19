@@ -39,6 +39,7 @@ from .const import (
     UNKNOWN,
 )
 from .enums import (
+    AntiFlickerEnum,
     BatteryEnum,
     BinningModeEnum,
     ChimeToneEnum,
@@ -1102,6 +1103,9 @@ class Host:
 
     def backlight_state(self, channel: int) -> Optional[str]:
         return self._isp_settings.get(channel, {}).get("backLight")
+
+    def anti_flicker_mode(self, channel: int) -> str:
+        return self._isp_settings.get(channel, {}).get("antiFlicker", "Off")
 
     def image_brightness(self, channel: int) -> int | None:
         if channel not in self._image_settings:
@@ -5528,6 +5532,22 @@ class Host:
 
         body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
         body[0]["param"]["Isp"]["backLight"] = value
+
+        await self.send_setting(body)
+
+    async def set_anti_flicker(self, channel: int, value: str) -> None:
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_anti_flicker: no camera connected to channel '{channel}'")
+        await self.get_state(cmd="GetIsp", ch=channel)
+        if channel not in self._isp_settings or not self._isp_settings[channel]:
+            raise NotSupportedError(f"set_anti_flicker: ISP on camera {self.camera_name(channel)} is not available")
+
+        val_list = [val.value for val in AntiFlickerEnum]
+        if value not in val_list:
+            raise InvalidParameterError(f"set_anti_flicker: value {value} not in {val_list}")
+
+        body: typings.reolink_json = [{"cmd": "SetIsp", "action": 0, "param": {"Isp": self._isp_settings[channel]}}]
+        body[0]["param"]["Isp"]["antiFlicker"] = value
 
         await self.send_setting(body)
 

@@ -105,6 +105,18 @@ class BinningModeEnum(Enum):
     auto = 1
 
 
+ANTI_FLICKER_MAP = {"off": "Off", "outdoor": "Other", "50hz": "50HZ", "60hz": "60HZ"}
+
+
+class AntiFlickerEnum(Enum):
+    """Options for the Anit-Flicker mode setting"""
+
+    off = "Off"
+    other = "Other"
+    f50 = "50HZ"
+    f60 = "60HZ"
+
+
 class PtzEnum(Enum):
     """Options for PTZ control"""
 
