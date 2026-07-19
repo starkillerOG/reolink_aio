@@ -1857,6 +1857,8 @@ class Baichuan:
         """Fetch the channel settings/capabilities."""
         # Stream capabilities
         RtspVersion = self.api_version("rtsp")
+        RtmpVersion = self.api_version("rtmp")
+        noExternStream = self.api_version("noExternStream", None, 0)
         for channel in self.http_api._stream_channels:
             self.capabilities.setdefault(channel, set())
 
@@ -1864,6 +1866,8 @@ class Baichuan:
                 self.capabilities[channel].add("stream")
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
                 self.capabilities[channel].add("snapshot")
+            if noExternStream == 0 and RtmpVersion > 0:
+                self.capabilities[channel].add("ext_stream")
 
             if self.supported(channel, "zoom_basic"):
                 min_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")

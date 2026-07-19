@@ -1653,6 +1653,8 @@ class Host:
             self._capabilities["Host"].add("RTSP")
         if self.api_version("rtmp") > 0 and self._rtmp_port is not None:
             self._capabilities["Host"].add("RTMP")
+        if self.api_version("httpFlv") > 0 and self._rtmp_port is not None:
+            self._capabilities["Host"].add("FLV")
 
         if self.uid != UNKNOWN:
             self._capabilities["Host"].add("UID")
@@ -3485,9 +3487,9 @@ class Host:
 
         if stream not in ["main", "sub", "ext", "autotrack_sub", "autotrack_main", "telephoto_sub", "telephoto_main"]:
             return None
-        if self.protocol == "rtmp" and not self.baichuan_only:
+        if (self.protocol == "rtmp" or (stream == "ext" and not self.supported(None, "FLV"))) and not self.baichuan_only:
             return self.get_rtmp_stream_source(channel, stream)
-        if (self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub"]) and not self.baichuan_only:
+        if (self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub", "ext"]) and not self.baichuan_only:
             return self.get_flv_stream_source(channel, stream)
         if self.protocol == "rtsp" or self.baichuan_only:
             return await self.get_rtsp_stream_source(channel, stream, check)
