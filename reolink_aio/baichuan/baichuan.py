@@ -157,6 +157,7 @@ class Baichuan:
         self._logged_in: bool = False
         self._login_sucess: bool = False
         self._last_login: float = 0
+        self._first_login: bool = True
         self._mess_id = 0
         self._battery_close_task: asyncio.Task | None = None
 
@@ -1619,24 +1620,25 @@ class Baichuan:
         # parse response
         root = XML.fromstring(mess)
         if (dev_info := root.find(".//DeviceInfo")) is not None:
-            # is_nvr / is_hub
-            dev_type_ob = dev_info.find("type")
-            dev_type_info_ob = dev_info.find("typeInfo")
-            if dev_type_ob is not None and dev_type_info_ob is not None:
-                if dev_type_ob.text is not None:
-                    self._dev_type = dev_type_ob.text
-                dev_type_info = dev_type_info_ob.text
-                if not self.http_api._is_nvr:
-                    self.http_api._is_nvr = self._dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
-                if not self.http_api._is_hub:
-                    self.http_api._is_hub = self._dev_type == "homehub" or dev_type_info == "HOMEHUB"
+            if self._first_login:
+                # is_nvr / is_hub
+                dev_type_ob = dev_info.find("type")
+                dev_type_info_ob = dev_info.find("typeInfo")
+                if dev_type_ob is not None and dev_type_info_ob is not None:
+                    if dev_type_ob.text is not None:
+                        self._dev_type = dev_type_ob.text
+                    dev_type_info = dev_type_info_ob.text
+                    if not self.http_api._is_nvr:
+                        self.http_api._is_nvr = self._dev_type in ["nvr", "wifi_nvr", "homehub"] or dev_type_info in ["NVR", "WIFI_NVR", "HOMEHUB"]
+                    if not self.http_api._is_hub:
+                        self.http_api._is_hub = self._dev_type == "homehub" or dev_type_info == "HOMEHUB"
 
             data = get_keys_from_xml(dev_info, {"sleep": ("sleep", bool), "channelNum": ("channelNum", int), "analogChnNum": ("analogChnNum", int)})
             # privacy mode
             if "sleep" in data:
                 self._privacy_mode[0] = data["sleep"]
             # channels
-            if ("channelNum" in data or "analogChnNum" in data) and not self.http_api._is_nvr:
+            if self._first_login and ("channelNum" in data or "analogChnNum" in data) and not self.http_api._is_nvr:
                 num_stream_channels = data.get("channelNum", data["analogChnNum"])
                 num_channels = data.get("analogChnNum", 0)
                 if num_channels <= 0:
@@ -1646,7 +1648,7 @@ class Baichuan:
                     self.http_api._num_channels = num_channels
                     for ch in range(num_channels):
                         self.http_api._channels.append(ch)
-                if not self.http_api._stream_channels and num_stream_channels > 0:
+                if num_stream_channels > 0:
                     self.http_api._stream_channels.clear()
                     for ch in range(num_stream_channels):
                         self.http_api._stream_channels.append(ch)
@@ -1674,6 +1676,8 @@ class Baichuan:
                     if bitrateTable is not None:
                         enc_data[stream_type]["bitRate"] = [int(val) for val in bitrateTable.split(",")]
                 enc_range.append(enc_data)
+
+        self._first_login = False
 
     async def logout(self) -> None:
         """Close the TCP session and cleanup"""
