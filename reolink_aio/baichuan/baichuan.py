@@ -1821,16 +1821,10 @@ class Baichuan:
             )
 
         for channel in self.http_api._stream_channels:
+            ptz_ver = self.api_version("ptzType", channel)
             ptz_ctr = self.api_version("ptzControl", channel)
             if (ptz_ctr >> 4) & 1:  # bit 4 DigitalZoom
-                if self.http_api.is_dual_lens:
-                    # Only add zoom to the first channel
-                    self.capabilities[0].add("zoom_basic")
-                else:
-                    self.capabilities[channel].add("zoom_basic")
-
-        for channel in self.http_api._channels:
-            ptz_ver = self.api_version("ptzType", channel)
+                self.capabilities[channel].add("zoom_basic")
             if ptz_ver != 0:
                 self.capabilities[channel].add("ptz")
                 if ptz_ver in [1, 2, 5]:
@@ -1847,7 +1841,6 @@ class Baichuan:
                     if self.api_version("autoPt", channel) > 0:
                         self.capabilities[channel].add("ptz_auto")
 
-                    ptz_ctr = self.api_version("ptzControl", channel)
                     if not (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
                         self.capabilities[channel].add("ptz_diagonal")
                     if (ptz_ctr >> 2) & 1:  # 3th bit (4), shift 2
@@ -1857,6 +1850,7 @@ class Baichuan:
                     if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
                         self.capabilities[channel].add("ptz_speed")
 
+        for channel in self.http_api._channels:
             doorbellVersion = self.api_version("doorbellVersion", channel)
             if doorbellVersion > 0:
                 self.http_api._is_doorbell[channel] = True
@@ -1873,6 +1867,7 @@ class Baichuan:
         RtspVersion = self.api_version("rtsp")
         RtmpVersion = self.api_version("rtmp")
         noExternStream = self.api_version("noExternStream", None, 0)
+        coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._stream_channels:
             self.capabilities.setdefault(channel, set())
 
@@ -1888,9 +1883,10 @@ class Baichuan:
                 max_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
                     self.capabilities[channel].add("zoom")
+            if self.supported(channel, "pan_tilt"):
+                coroutines.append(("ptz_position", channel, self.get_ptz_position(channel)))
 
         # Channel capabilities
-        coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._channels:
             if self.http_api.is_nvr and self.http_api.wifi_connection(channel) and (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
                 coroutines.append(("wifi", channel, self.get_wifi_signal(channel)))
@@ -1960,9 +1956,6 @@ class Baichuan:
                 self.capabilities[channel].add("ai_yolo")
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
-
-            if self.supported(channel, "pan_tilt"):
-                coroutines.append(("ptz_position", channel, self.get_ptz_position(channel)))
 
             ledVersion = self.api_version("ledCtrl", channel)
             if (ledVersion >> 0) & 1:  # 1th bit (1), shift 0
