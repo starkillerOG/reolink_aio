@@ -1643,7 +1643,7 @@ class Baichuan:
                 num_channels = data.get("analogChnNum", 0)
                 if num_channels <= 0:
                     num_channels = num_stream_channels
-                if self.http_api._num_channels == 0 and num_channels > 0:
+                if num_channels > 0:
                     self.http_api._channels.clear()
                     self.http_api._num_channels = num_channels
                     for ch in range(num_channels):

@@ -2423,7 +2423,7 @@ class Host:
         self.map_host_json_response(json_data)
 
         if not self._stream_channels:
-            self._stream_channels = self._channels
+            self._stream_channels = self._channels.copy()
 
         # Baichuan capabilities
         await self.baichuan.get_host_data()
