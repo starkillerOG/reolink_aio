@@ -1977,7 +1977,7 @@ class Baichuan:
             if (ledVersion >> 19) & 1:  # 20 th bit (524288) shift 19
                 self.capabilities[channel].add("floodlight_event")
 
-            if (self.api_version("recordCfg", channel) >> 7) & 1:  # 8 th bit (128) shift 7
+            if (self.api_version("recordCfg", channel) >> 7) & 1 or (self.api_version("recordCfg", None) >> 7) & 1:  # 8 th bit (128) shift 7
                 self.capabilities[channel].add("pre_record")
 
             if self.http_api.is_nvr and self.api_version("reboot", channel) > 0:
@@ -3052,10 +3052,20 @@ class Baichuan:
     async def get_pre_recording(self, channel: int) -> None:
         """Get the pre recording settings"""
         mess = await self.send(cmd_id=594, channel=channel)
+        root = XML.fromstring(mess)
         self._pre_record_state[channel] = get_keys_from_xml(
-            mess,
+            root,
             {"enable": ("enabled", int), "value": ("batteryStop", int), "preTime": ("preTime", int), "fps": ("fps", int), "usePlanList": ("schedule", int)},
         )
+        fps_list = []
+        listOfFps_xml = root.find(".//listOfFps")
+        if listOfFps_xml is not None:
+            for item in listOfFps_xml:
+                if item.text is not None:
+                    fps_list.append(item.text)
+        if not fps_list:
+            fps_list = ["1", "2", "5"]
+        self._pre_record_state[channel]["fps_list"] = fps_list
 
     async def set_pre_recording(self, channel: int, enabled: bool | None = None, time: int | None = None, fps: int | None = None, battery_stop: int | None = None) -> None:
         """Set the pre recording settings"""
@@ -4330,6 +4340,9 @@ class Baichuan:
 
     def pre_record_fps(self, channel: int) -> int | None:
         return self._pre_record_state.get(channel, {}).get("fps")
+
+    def pre_record_fps_list(self, channel: int) -> list[str]:
+        return self._pre_record_state.get(channel, {}).get("fps_list", ["1", "2", "5"])
 
     def pre_record_battery_stop(self, channel: int) -> int | None:
         return self._pre_record_state.get(channel, {}).get("batteryStop")
