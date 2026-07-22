@@ -940,9 +940,13 @@ class Baichuan:
                 data["eDoorbellLightState"] = value
                 if (abi := data.get("doorbellAbility")) is not None:
                     if (abi >> 1) & 1:  # shift 1
-                        self.http_api._api_version["supportDoorbellLightKeepOff"] = {channel: 1}
+                        ver = self.http_api._api_version.setdefault("supportDoorbellLightKeepOff", {})
+                        assert isinstance(ver, dict)
+                        ver[channel] = 1
                     if (abi >> 2) & 1:  # shift 2
-                        self.http_api._api_version["supportDoorbellLightKeepOn"] = {channel: 1}
+                        ver = self.http_api._api_version.setdefault("supportDoorbellLightKeepOn", {})
+                        assert isinstance(ver, dict)
+                        ver[channel] = 1
 
             if (ir_brightness := data.get("ir_brightness")) is not None:
                 self._ir_brightness[channel] = ir_brightness
@@ -1856,7 +1860,9 @@ class Baichuan:
                 self.http_api._is_doorbell[channel] = True
                 self.http_api._visitor_states.setdefault(channel, False)
                 if (doorbellVersion >> 0) & 1:
-                    self.http_api._api_version["supportDingDongCtrl"] = {channel: 1}
+                    ver = self.http_api._api_version.setdefault("supportDingDongCtrl", {})
+                    assert isinstance(ver, dict)
+                    ver[channel] = 1
                 if (doorbellVersion >> 1) & 1:
                     self.capabilities[channel].add("hardwired_chime")
                     # cmd_id 483 makes the chime rattle a bit, just assume its supported
