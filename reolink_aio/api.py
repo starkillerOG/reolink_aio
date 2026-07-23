@@ -1721,6 +1721,10 @@ class Host:
         for channel in self._stream_channels:
             self._capabilities[channel] = set()
 
+            # Baichuan capabilities
+            if channel in self.baichuan.capabilities:
+                self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
+
             if self.api_version("recReplay", channel) > 0:
                 self._capabilities[channel].add("replay")
 
@@ -1731,9 +1735,10 @@ class Host:
             if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
                 self._capabilities[channel].add("privacy_mask")
 
-            # Baichuan capabilities
-            if channel in self.baichuan.capabilities:
-                self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
+            if len(self._ptz_presets.get(channel, {})) > 0:
+                self._capabilities[channel].add("ptz_presets")
+            if len(self._ptz_patrols.get(channel, {})) > 0:
+                self._capabilities[channel].add("ptz_patrol")
 
         # Channel capabilities
         for channel in self._channels:
@@ -1866,11 +1871,6 @@ class Host:
                 if ptz_ver in [2, 3]:
                     if self.api_version("supportPtzSpeed", channel, no_key_return=1) > 0:
                         self._capabilities[channel].add("ptz_speed")
-
-            if len(self._ptz_presets.get(channel, {})) > 0:
-                self._capabilities[channel].add("ptz_presets")
-            if len(self._ptz_patrols.get(channel, {})) > 0:
-                self._capabilities[channel].add("ptz_patrol")
 
             if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
                 min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
@@ -2470,6 +2470,10 @@ class Host:
                 ch_body.append({"cmd": "GetMask", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "zoom_basic") or self.api_version("supportDigitalZoom", channel) > 0:
                 ch_body.append({"cmd": "GetZoomFocus", "action": 1, "param": {"channel": channel}})
+            if self.supported(channel, "ptz_preset_basic"):
+                ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
+                ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
@@ -2509,10 +2513,6 @@ class Host:
             if self.supported(channel, "zoom_basic") or self.api_version("supportDigitalZoom", channel) > 0:
                 if self.api_version("disableAutoFocus", channel) > 0:
                     ch_body.append({"cmd": "GetAutoFocus", "action": 1, "param": {"channel": channel}})
-            if self.supported(channel, "ptz_preset_basic"):
-                ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
-                ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
-                ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
             if self.supported(channel, "ptz_3d_zoom"):
                 ch_body.append({"cmd": "Get3DPos", "action": 1, "param": {"channel": channel}})
             if self.supported(channel, "auto_track"):
@@ -4591,7 +4591,7 @@ class Host:
     async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | str | None = None, speed: int | None = None, patrol: int | None = None) -> None:
         """Send PTZ command to the camera, list of possible commands see PtzEnum."""
 
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
         if speed is not None and not isinstance(speed, int):
             raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
@@ -4652,7 +4652,7 @@ class Host:
     async def set_ptz_guard(self, channel: int, command: str | None = None, enable: bool | None = None, time: int | None = None) -> None:
         """Send PTZ guard."""
 
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"set_ptz_guard: no camera connected to channel '{channel}'")
         if time is not None and not isinstance(time, int):
             raise InvalidParameterError(f"set_ptz_guard: guard time {time} is not integer")
@@ -4677,7 +4677,7 @@ class Host:
 
     async def ptz_callibrate(self, channel: int) -> None:
         """Callibrate PTZ of the camera."""
-        if channel not in self._channels:
+        if channel not in self._stream_channels:
             raise InvalidParameterError(f"ptz_callibrate: no camera connected to channel '{channel}'")
 
         body: typings.reolink_json = [{"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}]
