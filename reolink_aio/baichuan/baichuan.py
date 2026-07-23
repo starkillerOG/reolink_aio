@@ -1828,31 +1828,31 @@ class Baichuan:
             ptz_ver = self.api_version("ptzType", channel)
             ptz_ctr = self.api_version("ptzControl", channel)
             if (ptz_ctr >> 4) & 1:  # bit 4 DigitalZoom
-                self.capabilities[channel].add("zoom_basic")
+                self._add_capability_once("zoom_basic", channel)
             if ptz_ver != 0:
-                self.capabilities[channel].add("ptz")
+                self._add_capability_once("ptz", channel)
                 if ptz_ver in [1, 2, 5]:
-                    self.capabilities[channel].add("zoom_basic")
+                    self._add_capability_once("zoom_basic", channel)
                     if self.api_version("supportPtz3DLocation", channel) > 0:
-                        self.capabilities[channel].add("ptz_3d_zoom")
+                        self._add_capability_once("ptz_3d_zoom", channel)
                 if ptz_ver in [2, 3, 5, 6]:
-                    self.capabilities[channel].add("tilt")
+                    self._add_capability_once("tilt", channel)
                 if ptz_ver in [2, 3, 5, 6, 7]:
-                    self.capabilities[channel].add("pan_tilt")
-                    self.capabilities[channel].add("pan")
+                    self._add_capability_once("pan_tilt", channel)
+                    self._add_capability_once("pan", channel)
                     if self.api_version("ptzPreset", channel) > 0:
-                        self.capabilities[channel].add("ptz_preset_basic")
+                        self._add_capability_once("ptz_preset_basic", channel)
                     if self.api_version("autoPt", channel) > 0:
-                        self.capabilities[channel].add("ptz_auto")
+                        self._add_capability_once("ptz_auto", channel)
 
                     if not (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
-                        self.capabilities[channel].add("ptz_diagonal")
+                        self._add_capability_once("ptz_diagonal", channel)
                     if (ptz_ctr >> 2) & 1:  # 3th bit (4), shift 2
-                        self.capabilities[channel].add("ptz_guard")
+                        self._add_capability_once("ptz_guard", channel)
                     if (ptz_ctr >> 3) & 1:  # 4th bit (8), shift 3
-                        self.capabilities[channel].add("ptz_callibrate")
+                        self._add_capability_once("ptz_callibrate", channel)
                     if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
-                        self.capabilities[channel].add("ptz_speed")
+                        self._add_capability_once("ptz_speed", channel)
 
         for channel in self.http_api._channels:
             doorbellVersion = self.api_version("doorbellVersion", channel)
@@ -2123,6 +2123,14 @@ class Baichuan:
                 elif cmd_id == "GetPirInfo":
                     if self.http_api._pir.get(channel, {}).get("interval_max", 0) > 0:
                         self.capabilities[channel].add("PIR_interval")
+
+    def _add_capability_once(self, capability: str, channel: int | None = None):
+        """Add a capability flag, but make sure it only gets added to at most 1 channel for dual lens cameras."""
+        if self.http_api._is_dual_lens and channel is not None:
+            for ch in self.http_api._stream_channels:
+                if capability in self.capabilities[ch]:
+                    return
+        self.capabilities[channel].add(capability)
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""

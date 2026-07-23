@@ -1716,15 +1716,13 @@ class Host:
         # Baichuan capabilities
         if None in self.baichuan.capabilities:
             self._capabilities["Host"] = self._capabilities["Host"].union(self.baichuan.capabilities[None])
-
-        # Stream capabilities
         for channel in self._stream_channels:
             self._capabilities[channel] = set()
-
-            # Baichuan capabilities
             if channel in self.baichuan.capabilities:
                 self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
 
+        # Stream capabilities
+        for channel in self._stream_channels:
             if self.api_version("recReplay", channel) > 0:
                 self._capabilities[channel].add("replay")
 
@@ -1735,10 +1733,54 @@ class Host:
             if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
                 self._capabilities[channel].add("privacy_mask")
 
+            ptz_ver = self.api_version("ptzType", channel)
+            if ptz_ver != 0:
+                self._add_capability_once("ptz", channel)
+                if ptz_ver in [1, 2, 5]:
+                    self._add_capability_once("zoom_basic", channel)
+                    min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
+                    max_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
+                    if min_zoom is None or max_zoom is None:
+                        if warnings:
+                            _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
+                    else:
+                        self._add_capability_once("zoom", channel)
+                        self._add_capability_once("focus", channel)
+                        if self.api_version("disableAutoFocus", channel) > 0 and channel in self._auto_focus_settings:
+                            self._add_capability_once("auto_focus", channel)
+                    if self.api_version("supportPtz3DLocation", channel) > 0:
+                        self._add_capability_once("ptz_3d_zoom", channel)
+                if ptz_ver in [2, 3, 5, 6]:
+                    self._add_capability_once("tilt", channel)
+                if ptz_ver in [2, 3, 5, 6, 7]:
+                    self._add_capability_once("pan_tilt", channel)
+                    self._add_capability_once("pan", channel)
+                    if self.api_version("ptzPreset", channel) > 0:
+                        self._add_capability_once("ptz_preset_basic", channel)
+                    if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
+                        self._add_capability_once("ptz_callibrate", channel)
+                    if self.api_version("GetPtzGuard", channel) > 0:
+                        self._add_capability_once("ptz_guard", channel)
+                if ptz_ver in [2, 3]:
+                    if self.api_version("supportPtzSpeed", channel, no_key_return=1) > 0:
+                        self._add_capability_once("ptz_speed", channel)
+
+            if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
+                min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
+                max_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
+                if min_zoom is not None and max_zoom is not None:
+                    self._add_capability_once("zoom", channel)
+                else:
+                    if warnings:
+                        _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
+
+            if self.supported(channel, "pan_tilt") or self.supported(channel, "zoom_basic"):
+                self._add_capability_once("ptz_stop", channel)
+
             if len(self._ptz_presets.get(channel, {})) > 0:
-                self._capabilities[channel].add("ptz_presets")
+                self._add_capability_once("ptz_presets", channel)
             if len(self._ptz_patrols.get(channel, {})) > 0:
-                self._capabilities[channel].add("ptz_patrol")
+                self._add_capability_once("ptz_patrol", channel)
 
         # Channel capabilities
         for channel in self._channels:
@@ -1840,47 +1882,6 @@ class Host:
                 if self.api_version("supportIfttt", channel) <= 0 and self.baichuan.api_version("linkages", channel) <= 0:
                     self._capabilities[channel].add("siren")
 
-            ptz_ver = self.api_version("ptzType", channel)
-            if ptz_ver != 0:
-                self._capabilities[channel].add("ptz")
-                if ptz_ver in [1, 2, 5]:
-                    self._capabilities[channel].add("zoom_basic")
-                    min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
-                    max_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
-                    if min_zoom is None or max_zoom is None:
-                        if warnings:
-                            _LOGGER.warning("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
-                    else:
-                        self._capabilities[channel].add("zoom")
-                        self._capabilities[channel].add("focus")
-                        if self.api_version("disableAutoFocus", channel) > 0 and channel in self._auto_focus_settings:
-                            self._capabilities[channel].add("auto_focus")
-                    if self.api_version("supportPtz3DLocation", channel) > 0:
-                        self._capabilities[channel].add("ptz_3d_zoom")
-                if ptz_ver in [2, 3, 5, 6]:
-                    self._capabilities[channel].add("tilt")
-                if ptz_ver in [2, 3, 5, 6, 7]:
-                    self._capabilities[channel].add("pan_tilt")
-                    self._capabilities[channel].add("pan")
-                    if self.api_version("ptzPreset", channel) > 0:
-                        self._capabilities[channel].add("ptz_preset_basic")
-                    if self.api_version("supportPtzCalibration", channel) > 0 or self.api_version("supportPtzCheck", channel) > 0:
-                        self._capabilities[channel].add("ptz_callibrate")
-                    if self.api_version("GetPtzGuard", channel) > 0:
-                        self._capabilities[channel].add("ptz_guard")
-                if ptz_ver in [2, 3]:
-                    if self.api_version("supportPtzSpeed", channel, no_key_return=1) > 0:
-                        self._capabilities[channel].add("ptz_speed")
-
-            if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
-                min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
-                max_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
-                if min_zoom is not None and max_zoom is not None:
-                    self._capabilities[channel].add("zoom")
-                else:
-                    if warnings:
-                        _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
-
             if self.api_version("aiTrack", channel) > 0:
                 self._capabilities[channel].add("auto_track")
                 track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
@@ -1940,6 +1941,14 @@ class Host:
 
             if self.backlight_state(channel) is not None:
                 self._capabilities[channel].add("backLight")
+
+    def _add_capability_once(self, capability: str, channel: int | str = "Host"):
+        """Add a capability flag, but make sure it only gets added to at most 1 channel for dual lens cameras."""
+        if self._is_dual_lens and isinstance(channel, int):
+            for ch in self._stream_channels:
+                if capability in self._capabilities[ch]:
+                    return
+        self._capabilities[channel].add(capability)
 
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
