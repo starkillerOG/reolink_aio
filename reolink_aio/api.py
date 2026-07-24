@@ -2491,13 +2491,11 @@ class Host:
             channels.extend([channel] * len(ch_body))
 
         for channel in self._channels:
-            ch_body.extend(
-                [
-                    {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
-                    {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
-                    {"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}},
-                ]
-            )
+            ch_body = [
+                {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}},
+                {"cmd": "GetManualRec", "action": 0, "param": {"channel": channel}},
+            ]
             if self.is_nvr:
                 ch_body.append({"cmd": "GetDeviceAudioCfg", "action": 0, "param": {"channel": channel}})
             # one time values
