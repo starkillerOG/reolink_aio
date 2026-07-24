@@ -1782,15 +1782,12 @@ class Host:
             if len(self._ptz_patrols.get(channel, {})) > 0:
                 self._add_capability_once("ptz_patrol", channel)
 
-        # Channel capabilities
-        for channel in self._channels:
-            self._capabilities.setdefault(channel, set())
-
-            if self.camera_uid(channel) != UNKNOWN:
-                self._capabilities[channel].add("UID")
-
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._capabilities[channel].add("autotrack_stream")
+
+            # DUAL LENS DUAL MOTION MODELS
+            if channel not in self._channels and self.model not in DUAL_LENS_DUAL_MOTION_MODELS:
+                continue
 
             if channel in self._motion_detection_states:
                 self._capabilities[channel].add("motion_detection")
@@ -1802,8 +1799,12 @@ class Host:
                 if value:
                     self._capabilities[channel].add(f"ai_{key}")
 
-            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
-                continue
+        # Channel capabilities
+        for channel in self._channels:
+            self._capabilities.setdefault(channel, set())
+
+            if self.camera_uid(channel) != UNKNOWN:
+                self._capabilities[channel].add("UID")
 
             if self.baichuan.supported(channel, "ai_cry"):
                 self._ai_detection_support.setdefault(channel, {})["cry"] = True
@@ -1995,21 +1996,15 @@ class Host:
                 ch_body = [{"cmd": "GetRtspUrl", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetMask" and self.supported(channel, "privacy_mask"):
                 ch_body = [{"cmd": "GetMask", "action": 0, "param": {"channel": channel}}]
+            if channel in request_channels or self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                if cmd == "GetIsp":
+                    ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
             chime_ids.extend([-1] * len(ch_body))
 
         for channel in request_channels:
             ch_body = []
-            if cmd == "GetIsp":
-                ch_body = [{"cmd": "GetIsp", "action": 0, "param": {"channel": channel}}]
-
-            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
-                body.extend(ch_body)
-                channels.extend([channel] * len(ch_body))
-                chime_ids.extend([-1] * len(ch_body))
-                continue
-
             if cmd == "GetIrLights" and self.supported(channel, "ir_lights"):
                 ch_body = [{"cmd": "GetIrLights", "action": 0, "param": {"channel": channel}}]
             elif cmd == "GetPowerLed" and self.supported(channel, "status_led"):
@@ -2483,22 +2478,19 @@ class Host:
                 ch_body.append({"cmd": "GetPtzPreset", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzPatrol", "action": 0, "param": {"channel": channel}})
                 ch_body.append({"cmd": "GetPtzGuard", "action": 0, "param": {"channel": channel}})
+            if channel in self._channels or self.model in DUAL_LENS_DUAL_MOTION_MODELS:
+                ch_body.extend(
+                    [
+                        {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
+                        {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
+                        {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
+                    ]
+                )
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
 
         for channel in self._channels:
-            ch_body = [
-                {"cmd": "GetMdState", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetAiState", "action": 0, "param": {"channel": channel}},  # to capture AI capabilities
-                {"cmd": "GetEvents", "action": 0, "param": {"channel": channel}},
-                {"cmd": "GetIsp", "action": 0, "param": {"channel": channel}},
-            ]
-
-            if channel > 0 and self.model in DUAL_LENS_DUAL_MOTION_MODELS:
-                body.extend(ch_body)
-                channels.extend([channel] * len(ch_body))
-                continue
-
             ch_body.extend(
                 [
                     {"cmd": "GetWhiteLed", "action": 0, "param": {"channel": channel}},
