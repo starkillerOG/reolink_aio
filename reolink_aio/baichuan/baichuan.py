@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+import re
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
@@ -82,6 +83,8 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+VOD_QUEUE_CHUNKS = 512
+
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
@@ -144,6 +147,9 @@ class Baichuan:
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
+        self._vod_queue: asyncio.Queue[bytes] | None = None
+        self._vod_overflow: bool = False
+        self._vod_download_rejected: set[int] = set()
         self._log_once: set[str] = set()
         self._log_error: bool = True
         self.last_privacy_check: float = 0
@@ -878,6 +884,15 @@ class Baichuan:
             rec_set["schedule"]["channel"] = channel
             if self.http_api.api_version("GetRec") >= 1:
                 rec_set["scheduleEnable"] = enable
+
+        elif cmd_id == 8 and self._vod_queue is not None:  # VOD file download
+            if payload:
+                try:
+                    self._vod_queue.put_nowait(payload)
+                except asyncio.QueueFull:
+                    # dropping a chunk would corrupt the file, so end the transfer
+                    self._vod_overflow = True
+            return
 
         elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
             if mess_id is None:
@@ -4218,6 +4233,88 @@ class Baichuan:
         # await self.send(cmd_id=16, body=xml_file_info)
 
         return vod_type_dict, vod_dict
+
+    @staticmethod
+    def _vod_name_element(file_id: str, channel: int) -> str:
+        """Build the <name> element older models need in addition to the <Id> path."""
+        match = re.search(r"Rec\w{3}(?:_DST|_)(\d{8})_(\d{6})_", file_id)
+        if match is None:
+            return ""
+        return f"\n<name>{channel + 1:02d}{match.group(1)}{match.group(2)}</name>"
+
+    async def get_vod_file_info(self, channel: int, file_id: str) -> dict[str, Any]:
+        """Get the size, handle and type of a recording file using cmd_id 13."""
+        if channel in self._vod_download_rejected:
+            raise NotSupportedError(f"Baichuan host {self._host}: camera refused to download recordings on channel {channel}")
+
+        name = self._vod_name_element(file_id, channel)
+        try:
+            mess = await self.send(cmd_id=13, body=xmls.VodFileInfo.format(file_id=file_id, channel=channel, name=name))
+        except ApiError as err:
+            if err.rspCode == 400:
+                self._vod_download_rejected.add(channel)
+            raise
+
+        size = (get_value_from_xml(mess, "sizeL", int) or 0) + ((get_value_from_xml(mess, "sizeH", int) or 0) << 32)
+        if not size:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: no size reported for VOD file '{file_id}'")
+
+        return {
+            "size": size,
+            "handle": get_value_from_xml(mess, "handle") or "0",
+            "file_type": get_value_from_xml(mess, "fileType"),
+            "contains_audio": get_value_from_xml(mess, "containsAudio", bool) or False,
+        }
+
+    async def download_vod(
+        self,
+        channel: int,
+        file_id: str,
+        info: dict[str, Any] | None = None,
+        timeout: int = 60,
+    ) -> AsyncIterator[bytes]:
+        """Download a recording over Baichuan, yielding it chunk by chunk."""
+        if info is None:
+            info = await self.get_vod_file_info(channel, file_id)
+
+        if self._vod_queue is not None:
+            raise ReolinkError(f"Baichuan host {self._host}: a VOD download is already in progress")
+
+        size = info["size"]
+        received = 0
+        # bounded, so a consumer that cannot keep up fails instead of growing
+        # until it runs the host out of memory
+        queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=VOD_QUEUE_CHUNKS)
+        self._vod_queue = queue
+        self._vod_overflow = False
+
+        try:
+            body = xmls.VodFileDownload.format(file_id=file_id, channel=channel, name=self._vod_name_element(file_id, channel))
+            try:
+                await self.send(cmd_id=8, body=body)
+            except ApiError as err:
+                if err.rspCode == 400:
+                    self._vod_download_rejected.add(channel)
+                raise
+
+            # the camera sends no terminator, the transfer ends at the reported size
+            while received < size:
+                if self._vod_overflow:
+                    raise ReolinkError(f"Baichuan host {self._host}: VOD '{file_id}' arrived faster than it was consumed")
+                try:
+                    async with asyncio.timeout(timeout):
+                        chunk = await queue.get()
+                except asyncio.TimeoutError as err:
+                    raise ReolinkTimeoutError(f"Baichuan host {self._host}: timeout downloading VOD '{file_id}', received {received} of {size} bytes") from err
+                received += len(chunk)
+                yield chunk
+        finally:  # the camera only has one VOD session, always release it
+            self._vod_queue = None
+            self._vod_overflow = False
+            try:
+                await self.send(cmd_id=9, body=xmls.VodFileStop.format(channel=channel, handle=info["handle"]))
+            except ReolinkError as err:
+                _LOGGER.debug("Baichuan host %s: could not stop VOD download after %s bytes: %s", self._host, received, err)
 
     @property
     def events_active(self) -> bool:

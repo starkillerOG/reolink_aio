@@ -278,6 +278,39 @@ FileInfoList = """
 </FileInfoList>
 </body>"""
 
+VodFileInfo = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<Id>{file_id}</Id>
+<channelId>{channel}</channelId>{name}
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+VodFileDownload = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<Id>{file_id}</Id>
+<channelId>{channel}</channelId>{name}
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+VodFileStop = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<channelId>{channel}</channelId>
+<handle>{handle}</handle>
+</FileInfo>
+</FileInfoList>
+</body>"""
+
 FindRecVideoOpen = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
