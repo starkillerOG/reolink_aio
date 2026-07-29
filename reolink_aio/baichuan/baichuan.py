@@ -200,6 +200,7 @@ class Baichuan:
         self._ptz_patrol_cruising: dict[int, bool | None] = {}
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
+        self._tamper_states: dict[int, bool] = {}
         self._hardwired_chime_settings: dict[int, dict[str, str | int]] = {}
         self._ir_brightness: dict[int, int] = {}
         self._cry_sensitivity: dict[int, int] = {}
@@ -704,7 +705,7 @@ class Baichuan:
                     data["exposure"] = val.value
             isp.update(data)
 
-        elif cmd_id == 33:  # Motion/AI/Visitor event | DayNightEvent
+        elif cmd_id == 33:  # Motion/AI/Visitor/Tamper event | DayNightEvent
             for event_list in root:
                 for event in event_list:
                     channel = self._get_channel_from_xml_element(event)
@@ -722,12 +723,16 @@ class Baichuan:
                         if states is not None:
                             motion_state = "MD" in states
                             visitor_state = "visitor" in states
+                            tamper_state = "tamper" in states
                             if motion_state != self.http_api._motion_detection_states.get(channel, motion_state):
                                 _LOGGER.debug("Reolink %s TCP event channel %s, motion: %s", self.http_api.nvr_name, channel, motion_state)
                             if visitor_state != self.http_api._visitor_states.get(channel, visitor_state):
                                 _LOGGER.debug("Reolink %s TCP event channel %s, visitor: %s", self.http_api.nvr_name, channel, visitor_state)
+                            if tamper_state != self._tamper_states.get(channel, False):
+                                _LOGGER.debug("Reolink %s TCP event channel %s, tamper: %s", self.http_api.nvr_name, channel, tamper_state)
                             self.http_api._motion_detection_states[channel] = motion_state
                             self.http_api._visitor_states[channel] = visitor_state
+                            self._tamper_states[channel] = tamper_state
 
                         if ai_types is not None:
                             for ai_type_key in self.http_api._ai_detection_states.get(channel, {}):
@@ -1962,6 +1967,8 @@ class Baichuan:
                 self.capabilities[channel].add("ai_yolo")
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
                     self.capabilities[channel].add("ai_yolo_type")
+            if (aiVersion >> 25) & 1:  # bit 25
+                self.capabilities[channel].add("tamper")
 
             ledVersion = self.api_version("ledCtrl", channel)
             if (ledVersion >> 0) & 1:  # 1th bit (1), shift 0
@@ -4369,6 +4376,9 @@ class Baichuan:
 
     def ptz_patrol_cruising(self, channel: int) -> bool | None:
         return self._ptz_patrol_cruising.get(channel)
+
+    def tamper_state(self, channel: int) -> bool:
+        return self._tamper_states.get(channel, False)
 
     def smart_type_list(self, channel: int) -> list[str]:
         return list(self._ai_detect.get(channel, {}).keys())
