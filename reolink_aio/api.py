@@ -996,12 +996,9 @@ class Host:
             return None
         return self._whiteled_settings.get(channel, {}).get("event_flash_time")
 
-    def whiteled_schedule(self, channel: int) -> Optional[dict]:
+    def whiteled_schedule(self, channel: int) -> dict | None:
         """Return the spotlight state."""
-        if channel in self._whiteled_settings:
-            return self._whiteled_settings[channel]["LightingSchedule"]
-
-        return None
+        return self._whiteled_settings.get(channel, {}).get("LightingSchedule")
 
     def whiteled_settings(self, channel: int) -> Optional[dict]:
         """Return the spotlight state."""
@@ -5170,7 +5167,9 @@ class Host:
 
         await self.send_setting(body, wait_before_get=3)
 
-    async def set_spotlight_lighting_schedule(self, channel: int, endhour=6, endmin=0, starthour=18, startmin=0) -> None:
+    async def set_spotlight_lighting_schedule(
+        self, channel: int, endhour: int | None = None, endmin: int | None = None, starthour: int | None = None, startmin: int | None = None
+    ) -> None:
         """Stub to handle setting the time period where spotlight (WhiteLed) will be on when NightMode set and AUTO is off.
         Time in 24-hours format"""
         if channel not in self._channels:
@@ -5178,17 +5177,26 @@ class Host:
         if channel not in self._whiteled_settings or not self._whiteled_settings[channel]:
             raise NotSupportedError(f"set_spotlight_lighting_schedule: White Led on camera {self.camera_name(channel)} is not available")
 
+        schedule = self._whiteled_settings.get(channel, {}).get("LightingSchedule", {})
+        if starthour is None:
+            starthour = schedule.get("StartHour", 0)
+        if startmin is None:
+            startmin = schedule.get("StartMin", 0)
+        if endhour is None:
+            endhour = schedule.get("EndHour", 23)
+        if endmin is None:
+            endmin = schedule.get("EndMin", 59)
+
         if (
-            endhour < 0
-            or endhour > 23
-            or endmin < 0
-            or endmin > 59
-            or starthour < 0
+            starthour < 0
             or starthour > 23
             or startmin < 0
             or startmin > 59
-            or (endhour == starthour and endmin < startmin)
-            or (not (endhour < 12 and starthour > 16) and (endhour < starthour))
+            or endhour < 0
+            or endhour > 23
+            or endmin < 0
+            or endmin > 59
+            or (endhour == starthour and endmin == startmin)
         ):
             raise InvalidParameterError(
                 f"set_spotlight_lighting_schedule: Parameter error on camera {self.camera_name(channel)} start time: {starthour}:{startmin}, end time: {endhour}:{endmin}"
