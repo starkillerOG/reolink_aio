@@ -785,9 +785,16 @@ class Baichuan:
                                 for sub in sub_list:
                                     location_ob = sub.find("index")
                                     ai_type_ob = sub.find("type")
-                                    if location_ob is None or ai_type_ob is None or location_ob.text is None or ai_type_ob.text is None:
+                                    if location_ob is None or location_ob.text is None:
                                         continue
                                     location = int(location_ob.text)
+                                    if ai_type_ob is None or ai_type_ob.text is None:
+                                        _LOGGER.debug("Reolink %s TCP event channel %s, %s location %s detected", self.http_api.nvr_name, channel, smart_type, location)
+                                        smart_ai_dict = smart_ai_locs.setdefault(location, {})
+                                        smart_ai_dict["state"] = True
+                                        for ai_type in AI_DETECTS.intersection(smart_ai_dict):
+                                            smart_ai_dict[ai_type] = True
+                                        continue
                                     ai_type = ai_type_ob.text
                                     smart_ai_locs.setdefault(location, {})[ai_type] = True
                                     _LOGGER.debug(
