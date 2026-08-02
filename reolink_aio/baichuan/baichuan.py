@@ -3169,6 +3169,12 @@ class Baichuan:
         The sample rate of the PCM data must match the sample rate from
         get_talk_ability (16 kHz on all known models). The audio is sent in
         real time, so this coroutine takes as long as the audio is long.
+
+        Only one talk session can be active at a time, on an NVR that limit
+        applies to all channels together, not per channel. When another client
+        is already talking, ApiError with rspCode 422 is raised. A session that
+        was never closed, after a crash for example, is released by the camera
+        as soon as the connection is gone, so it does not need to be reset.
         """
         if talk_ability is None:
             talk_ability = self._talk_ability.get(channel) or await self.get_talk_ability(channel)
@@ -3189,10 +3195,18 @@ class Baichuan:
         async with self._talk_lock:
             try:
                 await self.send(cmd_id=201, channel=channel, body=xml)
-            except ApiError:
-                # another client is talking, or a previous session was not closed
-                await self.talk_stop(channel)
-                await self.send(cmd_id=201, channel=channel, body=xml)
+            except ApiError as err:
+                if err.rspCode != 422:
+                    raise
+                # 422 means another client is talking. Sending a talk stop to
+                # take the session over does interrupt their audio and gets
+                # refused again anyway while they keep streaming, so report it
+                # instead of fighting over the speaker.
+                raise ApiError(
+                    f"Baichuan host {self._host}: can not start two-way audio on channel {channel}, "
+                    "another client is already talking",
+                    rspCode=422,
+                ) from err
 
             try:
                 await self._send_talk_audio(channel, pcm, talk_ability)
