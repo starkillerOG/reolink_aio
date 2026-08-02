@@ -209,6 +209,49 @@ class TestTalk(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(caught.exception.rspCode, 400)
 
+    async def test_talk_stream_plays_audio_that_arrives_in_chunks(self) -> None:
+        pcm = sine(0.128)  # two blocks
+        raw = struct.pack(f"<{len(pcm)}h", *pcm)
+
+        async def microphone():
+            for start in range(0, len(raw), 700):  # chunks that ignore block borders
+                yield raw[start : start + 700]
+
+        await self.baichuan.talk_stream(2, microphone())
+
+        self.assertEqual([cmd_id for cmd_id, _ in self.sent], [10, 201, 11])
+        self.assertEqual(len(self.audio), 2, "chunks are regrouped into whole blocks")
+
+    async def test_talk_stream_sends_a_trailing_partial_block(self) -> None:
+        pcm = sine(0.096)  # one and a half block
+        raw = struct.pack(f"<{len(pcm)}h", *pcm)
+
+        async def microphone():
+            yield raw
+
+        await self.baichuan.talk_stream(2, microphone())
+
+        self.assertEqual(len(self.audio), 2, "the remainder is played too")
+
+    async def test_talk_stream_ignores_a_split_sample_at_the_end(self) -> None:
+        async def microphone():
+            yield b"\x01"  # half a sample, nothing playable
+
+        await self.baichuan.talk_stream(2, microphone())
+
+        self.assertEqual(self.audio, [])
+        self.assertIn(11, [cmd_id for cmd_id, _ in self.sent], "session is still closed")
+
+    async def test_talk_stream_stops_the_session_when_the_stream_fails(self) -> None:
+        async def microphone():
+            yield struct.pack("<1024h", *sine(0.064))
+            raise OSError("microphone lost")
+
+        with self.assertRaises(OSError):
+            await self.baichuan.talk_stream(2, microphone())
+
+        self.assertIn(11, [cmd_id for cmd_id, _ in self.sent])
+
     async def test_session_is_stopped_even_when_sending_audio_fails(self) -> None:
         self.baichuan._connection.send_without_wait = AsyncMock(side_effect=OSError("connection lost"))
 

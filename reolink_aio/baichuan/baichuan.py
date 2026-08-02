@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Iterable, Sequence
 from datetime import datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, overload
 from xml.etree import ElementTree as XML
 
@@ -87,6 +86,8 @@ _LOGGER = logging.getLogger(__name__)
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
+TALK_LEAD = 0.2  # seconds of two-way audio the camera may have buffered ahead
+TALK_MAX_BACKLOG = 0.5  # seconds of two-way audio that may be sent in one burst
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 SMART_AI = {
@@ -3170,12 +3171,43 @@ class Baichuan:
         get_talk_ability (16 kHz on all known models). The audio is sent in
         real time, so this coroutine takes as long as the audio is long.
 
+        Use talk_stream to play audio that does not exist yet when the session
+        starts, a live microphone for example.
+
         Only one talk session can be active at a time, on an NVR that limit
         applies to all channels together, not per channel. When another client
         is already talking, ApiError with rspCode 422 is raised. A session that
         was never closed, after a crash for example, is released by the camera
         as soon as the connection is gone, so it does not need to be reset.
         """
+        talk_ability = await self._start_talk(channel, talk_ability)
+        try:
+            samples_per_block = talk_ability.length_per_encoder
+            blocks = (pcm[start : start + samples_per_block] for start in range(0, len(pcm), samples_per_block))
+            await self._send_talk_audio(channel, blocks, talk_ability)
+        finally:
+            await self.talk_stop(channel)
+
+    async def talk_stream(self, channel: int, audio: AsyncIterator[bytes], talk_ability: TalkAbility | None = None) -> None:
+        """Play a stream of 16 bit little endian mono PCM through the speaker
+
+        Meant for audio that arrives while it is being played, a microphone in
+        a voice call for example. The chunks may have any size, they do not
+        have to line up with the block size of the encoder. The session runs
+        until the stream ends, so stop the stream to hang up.
+
+        The audio is paced to real time. When it arrives faster than that, for
+        instance from a file, sending waits, and when it arrives slower the
+        camera simply plays what it gets. Everything else works like talk().
+        """
+        talk_ability = await self._start_talk(channel, talk_ability)
+        try:
+            await self._send_talk_audio(channel, self._blocks_from_stream(audio, talk_ability), talk_ability)
+        finally:
+            await self.talk_stop(channel)
+
+    async def _start_talk(self, channel: int, talk_ability: TalkAbility | None) -> TalkAbility:
+        """Look up the audio format if needed and open a talk session"""
         if talk_ability is None:
             talk_ability = self._talk_ability.get(channel) or await self.get_talk_ability(channel)
         if talk_ability is None:
@@ -3192,29 +3224,42 @@ class Baichuan:
             sound_track=talk_ability.sound_track,
         )
 
-        async with self._talk_lock:
-            try:
-                await self.send(cmd_id=201, channel=channel, body=xml)
-            except ApiError as err:
-                if err.rspCode != 422:
-                    raise
-                # 422 means another client is talking. Sending a talk stop to
-                # take the session over does interrupt their audio and gets
-                # refused again anyway while they keep streaming, so report it
-                # instead of fighting over the speaker.
-                raise ApiError(
-                    f"Baichuan host {self._host}: can not start two-way audio on channel {channel}, "
-                    "another client is already talking",
-                    rspCode=422,
-                ) from err
+        try:
+            await self.send(cmd_id=201, channel=channel, body=xml)
+        except ApiError as err:
+            if err.rspCode != 422:
+                raise
+            # 422 means another client is talking. Sending a talk stop to take
+            # the session over does interrupt their audio and gets refused
+            # again anyway while they keep streaming, so report it instead of
+            # fighting over the speaker.
+            raise ApiError(
+                f"Baichuan host {self._host}: can not start two-way audio on channel {channel}, "
+                "another client is already talking",
+                rspCode=422,
+            ) from err
 
-            try:
-                await self._send_talk_audio(channel, pcm, talk_ability)
-            finally:
-                await self.talk_stop(channel)
+        return talk_ability
 
-    async def _send_talk_audio(self, channel: int, pcm: Sequence[int], talk_ability: TalkAbility) -> None:
-        """Encode PCM to ADPCM and stream it to the camera in real time"""
+    @staticmethod
+    async def _blocks_from_stream(audio: AsyncIterator[bytes], talk_ability: TalkAbility) -> AsyncIterator[Sequence[int]]:
+        """Cut a stream of PCM bytes into blocks of the size the encoder wants"""
+        block_bytes = talk_ability.length_per_encoder * 2  # 16 bit samples
+        buffer = bytearray()
+        async for chunk in audio:
+            buffer += chunk
+            while len(buffer) >= block_bytes:
+                yield memoryview(bytes(buffer[:block_bytes])).cast("h")
+                del buffer[:block_bytes]
+
+        rest = len(buffer) - len(buffer) % 2  # a split sample can not be played
+        if rest:
+            yield memoryview(bytes(buffer[:rest])).cast("h")
+
+    async def _send_talk_audio(
+        self, channel: int, blocks: Iterable[Sequence[int]] | AsyncIterator[Sequence[int]], talk_ability: TalkAbility
+    ) -> None:
+        """Encode blocks of PCM to ADPCM and send them to the camera in real time"""
         encoder = AdpcmEncoder()
         extension = xmls.TALK_BINARY_EXTENSION_XML.format(channel=channel)
         ext_bytes = extension.encode("utf8")
@@ -3225,16 +3270,13 @@ class Baichuan:
         self._mess_id = (((self._mess_id >> 8) + 1) % 65536) << 8
         mess_id_bytes = (channel + 1).to_bytes(1, byteorder="little") + (self._mess_id).to_bytes(3, byteorder="little")
 
-        samples_per_block = talk_ability.length_per_encoder
-        block_duration = samples_per_block / talk_ability.sample_rate
-        next_send = self._loop.time()
-
         await self._connect_if_needed()
         if TYPE_CHECKING:
             assert self._connection is not None
 
-        for start in range(0, len(pcm), samples_per_block):
-            payload = bcmedia_adpcm_packet(encoder.encode_block(pcm[start : start + samples_per_block]))
+        next_send = self._loop.time()
+        async for block in _aiter(blocks):
+            payload = bcmedia_adpcm_packet(encoder.encode_block(block))
             mess_len = len(ext_bytes) + len(payload)
             header = (
                 bytes.fromhex(HEADER_MAGIC)
@@ -3246,11 +3288,18 @@ class Baichuan:
             )
             await self._connection.send_without_wait(header + enc_ext_bytes + payload, cmd_id=202)
 
-            # keep real time pacing without drifting
-            next_send += block_duration
-            delay = next_send - self._loop.time()
-            if delay > 0:
-                await asyncio.sleep(delay)
+            # Hold back audio that arrives faster than it plays, and send it
+            # right away when it arrives slower, which is what a microphone
+            # does. The camera is allowed to run TALK_LEAD ahead so that it
+            # always has something to play: waiting on every single block
+            # would let the rounding of each sleep add up to a stutter.
+            next_send += len(block) / talk_ability.sample_rate
+            ahead = next_send - self._loop.time()
+            if ahead > TALK_LEAD:
+                await asyncio.sleep(ahead - TALK_LEAD)
+            elif ahead < -TALK_MAX_BACKLOG:
+                # a source that fell behind should not earn a burst later
+                next_send = self._loop.time() - TALK_MAX_BACKLOG
 
     @http_cmd("GetMask")
     async def GetMask(self, channel: int, **_kwargs) -> None:
@@ -4569,3 +4618,13 @@ class Baichuan:
 
     def audio_noise_reduction(self, channel: int) -> int | None:
         return self._noise_reduction.get(channel)
+
+
+async def _aiter(blocks):
+    """Iterate over blocks that come either from a plain or an async iterable"""
+    if hasattr(blocks, "__aiter__"):
+        async for block in blocks:
+            yield block
+    else:
+        for block in blocks:
+            yield block
