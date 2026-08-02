@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dtc
+from dataclasses import dataclass
 import logging
 from enum import IntFlag, auto
 from typing import (
@@ -334,6 +335,19 @@ VOD_download = NamedTuple(
         ("etag", Optional[str]),
     ],
 )
+
+
+@dataclass
+class TalkAbility:
+    """Audio format a camera accepts for two-way audio (talk)"""
+
+    duplex: str
+    audio_stream_mode: str
+    audio_type: str
+    sample_rate: int
+    sample_precision: int
+    length_per_encoder: int
+    sound_track: str
 
 
 class VOD_file:

@@ -557,3 +557,27 @@ StartZoomFocus = """
 <movePos>{pos}</movePos>
 </StartZoomFocus>
 </body>"""
+
+TalkConfig = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<TalkConfig version="1.1">
+<channelId>{channel}</channelId>
+<duplex>{duplex}</duplex>
+<audioStreamMode>{audio_stream_mode}</audioStreamMode>
+<audioConfig>
+<audioType>{audio_type}</audioType>
+<sampleRate>{sample_rate}</sampleRate>
+<samplePrecision>{sample_precision}</samplePrecision>
+<lengthPerEncoder>{length_per_encoder}</lengthPerEncoder>
+<soundTrack>{sound_track}</soundTrack>
+</audioConfig>
+</TalkConfig>
+</body>"""
+
+TALK_BINARY_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<channelId>{channel}</channelId>
+<binaryData>1</binaryData>
+</Extension>
+"""

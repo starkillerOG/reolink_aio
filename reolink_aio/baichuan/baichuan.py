@@ -8,6 +8,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, overload
 from xml.etree import ElementTree as XML
 
@@ -52,13 +53,14 @@ from ..exceptions import (
     UnexpectedDataError,
 )
 from ..software_version import SoftwareVersion
-from ..typings import VOD_file, VOD_trigger, cmd_list_type
+from ..typings import VOD_file, VOD_trigger, TalkAbility, cmd_list_type
 from ..utils import (
     datetime_to_reolink_time,
     reolink_time_to_datetime,
     to_reolink_time_id,
 )
 from . import xmls
+from .adpcm import AdpcmEncoder, bcmedia_adpcm_packet
 from .tcp_protocol import BaichuanTcpConnection
 from .udp_protocol import BaichuanUdpConnection
 from .util import (
@@ -153,6 +155,8 @@ class Baichuan:
         self._connection: BaichuanTcpConnection | BaichuanUdpConnection | None = None
         self.connection_type: ConnectionEnum = connection_type
         self._login_mutex = asyncio.Lock()
+        self._talk_lock = asyncio.Lock()
+        self._talk_ability: dict[int, TalkAbility] = {}
         self._loop = asyncio.get_event_loop()
         self._logged_in: bool = False
         self._login_sucess: bool = False
@@ -3124,6 +3128,115 @@ class Baichuan:
         await self.send(cmd_id=575, channel=channel, body=xml)
         # get the new privacy mode status
         await self.get_privacy_mode(channel)
+
+
+    async def get_talk_ability(self, channel: int = 0) -> TalkAbility | None:
+        """Get the audio format the camera accepts for two-way audio (talk)
+
+        Returns None if the channel does not support two-way audio.
+        """
+        try:
+            mess = await self.send(cmd_id=10, channel=channel)
+        except ReolinkError as err:
+            _LOGGER.debug("Baichuan host %s: no talk ability for channel %s: %s", self._host, channel, str(err))
+            return None
+
+        root = XML.fromstring(mess)
+        for audio_config in root.iter("audioConfig"):
+            if (audio_config.findtext("audioType") or "").strip() != "adpcm":
+                continue  # only ADPCM is implemented, cameras do not offer anything else
+            talk_ability = TalkAbility(
+                duplex=(root.findtext(".//duplex") or "FDX").strip(),
+                audio_stream_mode=(root.findtext(".//audioStreamMode") or "followVideoStream").strip(),
+                audio_type="adpcm",
+                sample_rate=int(audio_config.findtext("sampleRate") or 16000),
+                sample_precision=int(audio_config.findtext("samplePrecision") or 16),
+                length_per_encoder=int(audio_config.findtext("lengthPerEncoder") or 1024),
+                sound_track=(audio_config.findtext("soundTrack") or "mono").strip(),
+            )
+            self._talk_ability[channel] = talk_ability
+            return talk_ability
+
+        return None
+
+    async def talk_stop(self, channel: int = 0) -> None:
+        """Stop a running two-way audio (talk) session"""
+        await self.send(cmd_id=11, channel=channel)
+
+    async def talk(self, channel: int, pcm: Sequence[int], talk_ability: TalkAbility | None = None) -> None:
+        """Play 16 bit mono PCM audio through the speaker of a camera
+
+        The sample rate of the PCM data must match the sample rate from
+        get_talk_ability (16 kHz on all known models). The audio is sent in
+        real time, so this coroutine takes as long as the audio is long.
+        """
+        if talk_ability is None:
+            talk_ability = self._talk_ability.get(channel) or await self.get_talk_ability(channel)
+        if talk_ability is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: channel {channel} does not support two-way audio")
+
+        xml = xmls.TalkConfig.format(
+            channel=channel,
+            duplex=talk_ability.duplex,
+            audio_stream_mode=talk_ability.audio_stream_mode,
+            audio_type=talk_ability.audio_type,
+            sample_rate=talk_ability.sample_rate,
+            sample_precision=talk_ability.sample_precision,
+            length_per_encoder=talk_ability.length_per_encoder,
+            sound_track=talk_ability.sound_track,
+        )
+
+        async with self._talk_lock:
+            try:
+                await self.send(cmd_id=201, channel=channel, body=xml)
+            except ApiError:
+                # another client is talking, or a previous session was not closed
+                await self.talk_stop(channel)
+                await self.send(cmd_id=201, channel=channel, body=xml)
+
+            try:
+                await self._send_talk_audio(channel, pcm, talk_ability)
+            finally:
+                await self.talk_stop(channel)
+
+    async def _send_talk_audio(self, channel: int, pcm: Sequence[int], talk_ability: TalkAbility) -> None:
+        """Encode PCM to ADPCM and stream it to the camera in real time"""
+        encoder = AdpcmEncoder()
+        extension = xmls.TALK_BINARY_EXTENSION_XML.format(channel=channel)
+        ext_bytes = extension.encode("utf8")
+        enc_ext_bytes = self._aes_encrypt(ext_bytes)
+
+        # mess_id (3 bytes LE) is [stream_type][msg_num lo][msg_num hi], talk
+        # requires stream_type 0 so the lowest byte has to be zero
+        self._mess_id = (((self._mess_id >> 8) + 1) % 65536) << 8
+        mess_id_bytes = (channel + 1).to_bytes(1, byteorder="little") + (self._mess_id).to_bytes(3, byteorder="little")
+
+        samples_per_block = talk_ability.length_per_encoder
+        block_duration = samples_per_block / talk_ability.sample_rate
+        next_send = self._loop.time()
+
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._connection is not None
+
+        for start in range(0, len(pcm), samples_per_block):
+            payload = bcmedia_adpcm_packet(encoder.encode_block(pcm[start : start + samples_per_block]))
+            mess_len = len(ext_bytes) + len(payload)
+            header = (
+                bytes.fromhex(HEADER_MAGIC)
+                + (202).to_bytes(4, byteorder="little")
+                + (mess_len).to_bytes(4, byteorder="little")
+                + mess_id_bytes
+                + bytes.fromhex("0000" + "1464")
+                + len(ext_bytes).to_bytes(4, byteorder="little")
+            )
+            await self._connection.send_without_wait(header + enc_ext_bytes + payload, cmd_id=202)
+
+            # keep real time pacing without drifting
+            next_send += block_duration
+            delay = next_send - self._loop.time()
+            if delay > 0:
+                await asyncio.sleep(delay)
 
     @http_cmd("GetMask")
     async def GetMask(self, channel: int, **_kwargs) -> None:
