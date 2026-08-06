@@ -352,6 +352,65 @@ class Baichuan:
 
         return rec_body
 
+    async def send_binary(
+        self,
+        cmd_id: int,
+        channel: int,
+        binary_payload: bytes,
+        extension: str = "",
+        enc_type: EncType = EncType.AES,
+    ) -> None:
+        """Send an encrypted extension header followed by a raw, unencrypted binary payload.
+
+        `send()` always encrypts both the extension and the body, so it cannot
+        express the framing some Baichuan commands use: an encrypted extension
+        XML immediately followed by a raw binary payload that must reach the
+        camera unencrypted (for example cmd_id 202, two-way talk audio).
+
+        Does not retry on failure: for a stream of audio blocks, resending an
+        old block out of order is worse than dropping it.
+        """
+        if not self._logged_in:
+            await self.login()
+
+        ch_id = channel + 1
+
+        ext = extension or xmls.BINARY_DATA_EXTENSION_XML.format(channel=channel)
+        ext_bytes = ext.encode("utf8")
+        ext_len = len(ext_bytes)
+        # On-wire lengths: the payload isn't encrypted, but it's still part of
+        # the message body the camera expects to read after the header.
+        mess_len = ext_len + len(binary_payload)
+        payload_offset = ext_len
+
+        self._mess_id = (self._mess_id + 1) % 16777216
+
+        cmd_id_bytes = (cmd_id).to_bytes(4, byteorder="little")
+        mess_len_bytes = (mess_len).to_bytes(4, byteorder="little")
+        mess_id_bytes = (ch_id).to_bytes(1, byteorder="little") + (self._mess_id).to_bytes(3, byteorder="little")
+        full_mess_id = int.from_bytes(mess_id_bytes, byteorder="little")
+        payload_offset_bytes = (payload_offset).to_bytes(4, byteorder="little")
+        status_code = "0000"
+        message_class = "1464"
+        header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex(status_code + message_class) + payload_offset_bytes
+
+        if enc_type == EncType.BC:
+            enc_ext_bytes = encrypt_baichuan(ext_bytes, ch_id)
+        elif enc_type == EncType.AES:
+            enc_ext_bytes = self._aes_encrypt(ext_bytes)
+        else:
+            raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
+
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._connection is not None
+
+        log_mess = ""
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, binary payload of {len(binary_payload)} bytes"
+
+        await self._connection.send(header + enc_ext_bytes + binary_payload, cmd_id, full_mess_id, channel, log_mess)
+
     async def send_payload(
         self,
         cmd_id: int,
