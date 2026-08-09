@@ -557,3 +557,11 @@ StartZoomFocus = """
 <movePos>{pos}</movePos>
 </StartZoomFocus>
 </body>"""
+
+SetTamper = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<tamperAlarmCfg version="1.1">
+<enable>{enable}</enable>
+</tamperAlarmCfg>
+</body>"""

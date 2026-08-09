@@ -201,6 +201,7 @@ class Baichuan:
         self._privacy_mode: dict[int, bool] = {}
         self._ai_detect: dict[int, dict[str, dict[int, dict[str, Any]]]] = {}
         self._tamper_states: dict[int, bool] = {}
+        self._tamper_enabled: dict[int, bool] = {}
         self._hardwired_chime_settings: dict[int, dict[str, str | int]] = {}
         self._ir_brightness: dict[int, int] = {}
         self._cry_sensitivity: dict[int, int] = {}
@@ -1327,6 +1328,15 @@ class Baichuan:
                     self._privacy_mode[channel] = state
                     _LOGGER.debug("Reolink %s TCP event channel %s, Privacy mode: %s", self.http_api.nvr_name, channel, state)
 
+        elif cmd_id == 763:  # Tamper alarm
+            if mess_id is None:
+                return
+            channel = mess_id % 256 - 1
+            if channel < 0 or channel > 100:
+                return
+            channels.add(channel)
+            self._tamper_enabled[channel] = get_value_from_xml(root, "enable", int) == 1
+
         # call the callbacks
         for cmd in cmd_ids:
             for ch in channels:
@@ -2294,6 +2304,9 @@ class Baichuan:
 
             if self.http_api.supported(channel, "PIR") and inc_cmd("GetPirInfo", channel):
                 coroutines.append(self.GetPirInfo(channel))
+
+            if self.supported(channel, "tamper") and inc_cmd("763", channel):
+                coroutines.append(self._send_and_parse(763, channel))
 
             if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
                 coroutines.append(self.get_ptz_position(channel))
@@ -3825,6 +3838,13 @@ class Baichuan:
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=231, channel=channel, body=xml)
 
+    async def set_tamper(self, channel: int, enable: bool) -> None:
+        """Set the tamper alarm"""
+        enable_int = 1 if enable else 0
+        xml = xmls.SetTamper.format(enable=enable_int)
+        await self.send(cmd_id=764, channel=channel, body=xml)
+        await self._send_and_parse(763, channel)
+
     @http_cmd("GetAutoFocus")
     async def GetAutoFocus(self, **kwargs) -> None:
         """Get the auto focus settings"""
@@ -4398,6 +4418,9 @@ class Baichuan:
 
     def tamper_state(self, channel: int) -> bool:
         return self._tamper_states.get(channel, False)
+
+    def tamper_enabled(self, channel: int) -> bool:
+        return self._tamper_enabled.get(channel, False)
 
     def smart_type_list(self, channel: int) -> list[str]:
         return list(self._ai_detect.get(channel, {}).keys())
