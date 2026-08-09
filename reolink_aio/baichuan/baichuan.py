@@ -2310,6 +2310,18 @@ class Baichuan:
             if self.supported(channel, "noise_reduction") and inc_cmd("439", channel):
                 coroutines.append(self.GetAudioNoise(channel))
 
+            if self.http_api.is_battery:
+                if self.supported(channel, "ai_crossline"):
+                    coroutines.append(self._send_and_parse(527, channel))
+                if self.supported(channel, "ai_intrusion"):
+                    coroutines.append(self._send_and_parse(529, channel))
+                if self.supported(channel, "ai_linger"):
+                    coroutines.append(self._send_and_parse(531, channel))
+                if self.supported(channel, "ai_forgotten_item"):
+                    coroutines.append(self._send_and_parse(549, channel))
+                if self.supported(channel, "ai_taken_item"):
+                    coroutines.append(self._send_and_parse(551, channel))
+
         # chimes
         for chime_id, chime in self.http_api._chime_list.items():
             if not chime.online:
