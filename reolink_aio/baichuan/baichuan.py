@@ -1800,7 +1800,7 @@ class Baichuan:
             self.capabilities[None].add("sync_time")
 
         self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
-        if self.api_version("webhook") > 0 and self.http_api.is_battery:
+        if self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
 
         if host_coroutines:
