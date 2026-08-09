@@ -1671,7 +1671,7 @@ class Baichuan:
                     self.http_api._is_dual_lens = not self.http_api._is_nvr and num_stream_channels > self.http_api._num_channels
 
         self.http_api._enc_range = {}
-        for info in root.findall(".//StreamInfo"):
+        for info in root.findall(".//StreamInfo"):  # cmd_id 146
             channelBits = get_value_from_xml(info, "channelBits", int)
             if channelBits is None:
                 continue
