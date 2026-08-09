@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, overload
@@ -120,6 +120,25 @@ WHITELED_MODE_BC_TO_HTTP = {
     6: 5,
 }
 WHITELED_MODE_HTTP_TO_BC = {v: k for k, v in WHITELED_MODE_BC_TO_HTTP.items()}
+
+# Maps a VOD_trigger to the recordType/alarmType substrings that set it. Shared
+# by the cmd 272 and the FILE_FIND VOD search paths so both classify identically.
+VOD_TRIGGER_TOKENS: tuple[tuple[VOD_trigger, tuple[str, ...]], ...] = (
+    (VOD_trigger.MOTION, ("md", "pir", "other")),
+    (VOD_trigger.IO, ("io",)),
+    (VOD_trigger.PERSON, ("people",)),
+    (VOD_trigger.FACE, ("face",)),
+    (VOD_trigger.VEHICLE, ("vehicle",)),
+    (VOD_trigger.ANIMAL, ("dog_cat",)),
+    (VOD_trigger.DOORBELL, ("visitor",)),
+    (VOD_trigger.PACKAGE, ("package",)),
+    (VOD_trigger.CRYING, ("cry",)),
+    (VOD_trigger.CROSSLINE, ("crossline",)),
+    (VOD_trigger.INTRUSION, ("intrusion",)),
+    (VOD_trigger.LINGER, ("loitering",)),
+    (VOD_trigger.FORGOTTEN_ITEM, ("legacy",)),
+    (VOD_trigger.TAKEN_ITEM, ("loss",)),
+)
 
 
 class Baichuan:
@@ -4150,7 +4169,20 @@ class Baichuan:
                 end_minute=end.minute,
                 end_second=end.second,
             )
-            mess = await self.send(cmd_id=272, channel=channel, body=xml)
+            try:
+                mess = await self.send(cmd_id=272, channel=channel, body=xml)
+            except ApiError as err:
+                if err.rspCode != 405 or request_i > 1:
+                    raise
+                # Some firmwares (Reolink E1 Pro, Argus battery cameras) do not
+                # implement the cmd 272 VOD search and reject it with HTTP 405.
+                # The generic FILE_FIND search (cmd 14/15/16) returns the same SD
+                # recordings, so fall back to it. See issue #150.
+                _LOGGER.debug(
+                    "Baichuan host %s: cmd 272 VOD search not supported (status 405), falling back to FILE_FIND",
+                    self._host,
+                )
+                return await self._search_vod_filefind(channel, uid, start, end, stream)
             fileHandle = get_value_from_xml(mess, "fileHandle")
 
             xml = xmls.FindRecVideo.format(channel=channel, fileHandle=fileHandle)
@@ -4193,63 +4225,9 @@ class Baichuan:
                     if time_event is not None:
                         start_time_file = to_reolink_time_id(time_file + int((time_event - time_file) / split_time) * split_time)
 
-                vod_type_dict.setdefault(start_time_file, VOD_trigger.NONE)
-                if "md" in trigger or "pir" in trigger or "other" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.MOTION
-                    vod_file.bc_triggers |= VOD_trigger.MOTION
-                    vod_dict[VOD_trigger.MOTION].append(vod_file)
-                if "io" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.IO
-                    vod_file.bc_triggers |= VOD_trigger.IO
-                    vod_dict[VOD_trigger.IO].append(vod_file)
-                if "people" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.PERSON
-                    vod_file.bc_triggers |= VOD_trigger.PERSON
-                    vod_dict[VOD_trigger.PERSON].append(vod_file)
-                if "face" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.FACE
-                    vod_file.bc_triggers |= VOD_trigger.FACE
-                    vod_dict[VOD_trigger.FACE].append(vod_file)
-                if "vehicle" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.VEHICLE
-                    vod_file.bc_triggers |= VOD_trigger.VEHICLE
-                    vod_dict[VOD_trigger.VEHICLE].append(vod_file)
-                if "dog_cat" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.ANIMAL
-                    vod_file.bc_triggers |= VOD_trigger.ANIMAL
-                    vod_dict[VOD_trigger.ANIMAL].append(vod_file)
-                if "visitor" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.DOORBELL
-                    vod_file.bc_triggers |= VOD_trigger.DOORBELL
-                    vod_dict[VOD_trigger.DOORBELL].append(vod_file)
-                if "package" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.PACKAGE
-                    vod_file.bc_triggers |= VOD_trigger.PACKAGE
-                    vod_dict[VOD_trigger.PACKAGE].append(vod_file)
-                if "cry" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.CRYING
-                    vod_file.bc_triggers |= VOD_trigger.CRYING
-                    vod_dict[VOD_trigger.CRYING].append(vod_file)
-                if "crossline" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.CROSSLINE
-                    vod_file.bc_triggers |= VOD_trigger.CROSSLINE
-                    vod_dict[VOD_trigger.CROSSLINE].append(vod_file)
-                if "intrusion" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.INTRUSION
-                    vod_file.bc_triggers |= VOD_trigger.INTRUSION
-                    vod_dict[VOD_trigger.INTRUSION].append(vod_file)
-                if "loitering" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.LINGER
-                    vod_file.bc_triggers |= VOD_trigger.LINGER
-                    vod_dict[VOD_trigger.LINGER].append(vod_file)
-                if "legacy" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.FORGOTTEN_ITEM
-                    vod_file.bc_triggers |= VOD_trigger.FORGOTTEN_ITEM
-                    vod_dict[VOD_trigger.FORGOTTEN_ITEM].append(vod_file)
-                if "loss" in trigger:
-                    vod_type_dict[start_time_file] |= VOD_trigger.TAKEN_ITEM
-                    vod_file.bc_triggers |= VOD_trigger.TAKEN_ITEM
-                    vod_dict[VOD_trigger.TAKEN_ITEM].append(vod_file)
+                self._classify_vod_triggers(
+                    trigger, start_time_file, vod_file, vod_type_dict, vod_dict
+                )
 
             if finished == 0:
                 if time_event is None:
@@ -4259,31 +4237,126 @@ class Baichuan:
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
-        # xml = xmls.FileInfoListOpen.format(
-        #    channel=channel,
-        #    uid=uid,
-        #    stream_type=stream_type,
-        #    start_year=start.year,
-        #    start_month=start.month,
-        #    start_day=start.day,
-        #    start_hour=start.hour,
-        #    start_minute=start.minute,
-        #    start_second=start.second,
-        #    end_year=end.year,
-        #    end_month=end.month,
-        #    end_day=end.day,
-        #    end_hour=end.hour,
-        #    end_minute=end.minute,
-        #    end_second=end.second,
-        # )
-        # mess = await self.send(cmd_id=14, body=xml)
-        # handle = get_value_from_xml(mess, "handle")
+        return vod_type_dict, vod_dict
 
-        # xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
-        # await self.send(cmd_id=15, body=xml_file_info)
-        # await self.send(cmd_id=16, body=xml_file_info)
+    @staticmethod
+    def _classify_vod_triggers(
+        trigger: str,
+        name: str,
+        vod_file: VOD_file,
+        vod_type_dict: dict[str, VOD_trigger],
+        vod_dict: dict[VOD_trigger, list[VOD_file]],
+    ) -> None:
+        """Set VOD_trigger flags on a clip from its recordType/alarmType string.
+
+        Shared by the cmd 272 and FILE_FIND VOD search paths (see
+        VOD_TRIGGER_TOKENS) so both classify clips identically.
+        """
+        vod_type_dict.setdefault(name, VOD_trigger.NONE)
+        for trig, tokens in VOD_TRIGGER_TOKENS:
+            if any(token in trigger for token in tokens):
+                vod_type_dict[name] |= trig
+                vod_file.bc_triggers = (vod_file.bc_triggers or VOD_trigger.NONE) | trig
+                vod_dict[trig].append(vod_file)
+
+    async def _search_vod_filefind(
+        self, channel: int, uid: str, start: datetime, end: datetime, stream: str | None
+    ) -> tuple[dict[str, VOD_trigger], dict[VOD_trigger, list[VOD_file]]]:
+        """List SD recordings via the Baichuan FILE_FIND protocol (cmd 14/15/16).
+
+        Fallback for firmwares that reject the cmd 272 VOD search with HTTP 405
+        (Reolink E1 Pro, Argus battery cameras). Returns the same structure as
+        search_vod_type. The firmware searches a single day per FILE_FIND open
+        (a multi-day window returns only the start day), so iterate day-by-day
+        and merge the results.
+        """
+        vod_type_dict: dict[str, VOD_trigger] = {}
+        vod_dict: dict[VOD_trigger, list[VOD_file]] = {trig: [] for trig in VOD_trigger}
+        seen: set[str] = set()
+
+        day = start.date()
+        while day <= end.date():
+            await self._filefind_day(
+                channel, uid, day, stream, vod_type_dict, vod_dict, seen
+            )
+            day += timedelta(days=1)
 
         return vod_type_dict, vod_dict
+
+    async def _filefind_day(
+        self,
+        channel: int,
+        uid: str,
+        day: date,
+        stream: str | None,
+        vod_type_dict: dict[str, VOD_trigger],
+        vod_dict: dict[VOD_trigger, list[VOD_file]],
+        seen: set[str],
+    ) -> None:
+        """FILE_FIND one whole calendar day (00:00:00–23:59:59), merging results."""
+        open_xml = xmls.FileInfoListOpen.format(
+            channel=channel,
+            uid=uid,
+            start_year=day.year,
+            start_month=day.month,
+            start_day=day.day,
+            start_hour=0,
+            start_minute=0,
+            start_second=0,
+            end_year=day.year,
+            end_month=day.month,
+            end_day=day.day,
+            end_hour=23,
+            end_minute=59,
+            end_second=59,
+        )
+        mess = await self.send(cmd_id=14, channel=channel, body=open_xml)
+        handle = get_value_from_xml(mess, "handle")
+        if handle is None:
+            return
+
+        list_xml = xmls.FileInfoList.format(channel=channel, uid=uid, handle=handle)
+        try:
+            for _ in range(50):
+                mess = await self.send(cmd_id=15, channel=channel, body=list_xml)
+                new_files = False
+                for item in XML.fromstring(mess).findall(".//FileInfo"):
+                    name = get_value_from_xml(item, "name")
+                    if name is None or name in seen:
+                        continue
+                    start_event = self._xml_time_to_datetime(item.find("startTime"))
+                    end_event = self._xml_time_to_datetime(item.find("endTime"))
+                    if start_event is None or end_event is None:
+                        continue
+                    seen.add(name)
+                    new_files = True
+
+                    size_l = get_value_from_xml(item, "sizeL", int) or 0
+                    size_h = get_value_from_xml(item, "sizeH", int) or 0
+                    trigger = get_value_from_xml(item, "recordType") or ""
+                    data = {
+                        "type": stream,
+                        "StartTime": datetime_to_reolink_time(start_event),
+                        "EndTime": datetime_to_reolink_time(end_event),
+                        "PlaybackTime": datetime_to_reolink_time(start_event),
+                        "name": name,
+                        "size": str(size_l + (size_h << 32)),
+                    }
+                    vod_file = VOD_file(data)
+                    vod_file.bc_triggers = VOD_trigger.NONE
+                    self._classify_vod_triggers(
+                        trigger, name, vod_file, vod_type_dict, vod_dict
+                    )
+
+                if not new_files:
+                    break
+            else:
+                _LOGGER.warning("Baichuan host %s: FILE_FIND search exceeded 50 pages, quitting", self._host)
+        finally:
+            try:
+                await self.send(cmd_id=16, channel=channel, body=list_xml)
+            except ApiError:
+                pass
 
     @property
     def events_active(self) -> bool:
