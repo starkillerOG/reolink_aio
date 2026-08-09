@@ -3702,6 +3702,10 @@ class Baichuan:
             xml = XML.tostring(xml_body, encoding="unicode")
             xml = xmls.XML_HEADER + xml
             await self.send(cmd_id=55, channel=channel, body=xml)
+            if postRec is not None and self.supported(channel, "post_rec_ai"):
+                enable_ai = 1 if postRec == "Auto" else 0
+                xml = xmls.SetPostRecAi.format(enable=enable_ai)
+                await self.send(cmd_id=656, channel=channel, body=xml)
 
     @http_cmd("SetNetPort")
     async def SetNetPort(self, **kwargs) -> None:
