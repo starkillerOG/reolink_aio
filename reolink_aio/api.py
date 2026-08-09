@@ -909,6 +909,8 @@ class Host:
     def post_recording_time(self, channel: int) -> str:
         if channel not in self._recording_settings:
             return ""
+        if self._recording_settings[channel].get("postRecAi"):
+            return "Auto"
         return self._recording_settings[channel].get("postRec", "")
 
     def post_recording_time_list(self, channel: int) -> list[str]:
@@ -916,7 +918,10 @@ class Host:
             if self.baichuan_only:
                 return ["15 Seconds", "30 Seconds", "1 Minute"]  # default for baichuan_only
             return []
-        return self._recording_range[channel].get("postRec", [])
+        time_list = self._recording_range[channel].get("postRec", [])
+        if self.supported(channel, "post_rec_ai"):
+            time_list.append("Auto")
+        return time_list
 
     def manual_record_enabled(self, channel: int) -> bool:
         if channel not in self._manual_record_settings:
@@ -4093,12 +4098,12 @@ class Host:
                     self._privacy_mask[channel] = data["value"]["Mask"]
 
                 elif data["cmd"] == "GetRec":
-                    self._recording_settings[channel] = data["value"]["Rec"]
+                    self._recording_settings.setdefault(channel, {}).update(data["value"]["Rec"])
                     if "range" in data:
                         self._recording_range[channel] = data["range"]["Rec"]
 
                 elif data["cmd"] == "GetRecV20":
-                    self._recording_settings[channel] = data["value"]["Rec"]
+                    self._recording_settings.setdefault(channel, {}).update(data["value"]["Rec"])
                     if "range" in data:
                         self._recording_range[channel] = data["range"]["Rec"]
 

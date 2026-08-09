@@ -1241,6 +1241,16 @@ class Baichuan:
                         _LOGGER.debug("Reolink %s TCP yolo event channel %s, %s: True", self.http_api.nvr_name, channel, yolo_type)
                         self._ai_yolo_600.setdefault(channel, {})[yolo_type] = True
 
+        elif cmd_id == 655:  # aiExtendRecord
+            if mess_id is None:
+                return
+            channel = mess_id % 256 - 1
+            if channel < 0 or channel > 100:
+                return
+            channels.add(channel)
+            data = {"postRecAi": get_value_from_xml(root, "enable", int) == 1}
+            self.http_api._recording_settings.setdefault(channel, {}).update(data)
+
         elif cmd_id == 677:  # IO input
             for event_list in root.findall(".//statusList"):
                 channel = self._get_channel_from_xml_element(event_list, "channel")
@@ -2042,6 +2052,9 @@ class Baichuan:
             if self.http_api.bit_rate(channel) is not None:
                 self.capabilities[channel].add("bit_rate")
 
+            if (self.api_version("recordCfg") >> 8) & 1:  # bit 8, aiExtendRecord
+                coroutines.append((655, channel, self._send_and_parse(655, channel)))
+
             newIspCfg = self.api_version("newIspCfg", channel)
             if (newIspCfg >> 0) & 1 and self.http_api.daynight_state(channel) is not None:  # 1th bit (1), shift 0
                 self.capabilities[channel].add("dayNight")
@@ -2104,6 +2117,8 @@ class Baichuan:
                 elif cmd_id == 551:  # taken item
                     self.capabilities[channel].add("ai_taken_item")
                     self._parse_xml(cmd_id, result)
+                elif cmd_id == 655:  # aiExtendRecord
+                    self.capabilities[channel].add("post_rec_ai")
                 elif cmd_id == "wifi":
                     self.capabilities[channel].add("wifi")
                 elif cmd_id == "rules":
@@ -3651,12 +3666,13 @@ class Baichuan:
     @http_cmd(["GetRecV20", "GetRec"])
     async def GetRec(self, channel: int, **_kwargs) -> None:
         """Get the recording info"""
-        mess81, mess54 = await asyncio.gather(
-            self.send(cmd_id=81, channel=channel),
-            self.send(cmd_id=54, channel=channel),
-        )
-        self._parse_xml(81, mess81)
-        self._parse_xml(54, mess54)
+        coroutines: list[Coroutine] = [
+            self._send_and_parse(81, channel),
+            self._send_and_parse(54, channel),
+        ]
+        if self.supported(channel, "post_rec_ai"):
+            coroutines.append(self._send_and_parse(655, channel))
+        await asyncio.gather(*coroutines)
 
     @http_cmd(["SetRecV20", "SetRec"])
     async def SetRecV20(self, **kwargs) -> None:
