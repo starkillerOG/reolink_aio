@@ -2311,15 +2311,15 @@ class Baichuan:
                 coroutines.append(self.GetAudioNoise(channel))
 
             if self.http_api.is_battery:
-                if self.supported(channel, "ai_crossline"):
+                if self.supported(channel, "ai_crossline") and inc_cmd("527", channel):
                     coroutines.append(self._send_and_parse(527, channel))
-                if self.supported(channel, "ai_intrusion"):
+                if self.supported(channel, "ai_intrusion") and inc_cmd("529", channel):
                     coroutines.append(self._send_and_parse(529, channel))
-                if self.supported(channel, "ai_linger"):
+                if self.supported(channel, "ai_linger") and inc_cmd("531", channel):
                     coroutines.append(self._send_and_parse(531, channel))
-                if self.supported(channel, "ai_forgotten_item"):
+                if self.supported(channel, "ai_forgotten_item") and inc_cmd("549", channel):
                     coroutines.append(self._send_and_parse(549, channel))
-                if self.supported(channel, "ai_taken_item"):
+                if self.supported(channel, "ai_taken_item") and inc_cmd("551", channel):
                     coroutines.append(self._send_and_parse(551, channel))
 
         # chimes
