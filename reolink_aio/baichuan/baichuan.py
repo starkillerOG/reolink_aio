@@ -1674,11 +1674,13 @@ class Baichuan:
             if "sleep" in data:
                 self._privacy_mode[0] = data["sleep"]
             # channels
-            if self._first_login and ("channelNum" in data or "analogChnNum" in data) and not self.http_api._is_nvr:
-                num_stream_channels = data.get("channelNum", data["analogChnNum"])
+            if self._first_login and not self.http_api._is_nvr:
+                num_stream_channels = data.get("channelNum", 0)
                 num_channels = data.get("analogChnNum", 0)
                 if num_channels <= 0:
                     num_channels = num_stream_channels
+                if num_stream_channels <= 0:
+                    num_stream_channels = num_channels
                 if num_channels > 0:
                     self.http_api._channels.clear()
                     self.http_api._num_channels = num_channels
