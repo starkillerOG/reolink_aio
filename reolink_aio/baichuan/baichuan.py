@@ -1827,6 +1827,7 @@ class Baichuan:
 
         # Host capabilities
         self.capabilities.setdefault(None, set())
+        self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
         for channel in self.http_api._stream_channels:
             self.capabilities.setdefault(channel, set())
         if self.api_version("reboot") > 0:
@@ -1846,14 +1847,13 @@ class Baichuan:
             self.capabilities[None].add("wifi")
         if self.api_version("rtsp") > 0 and self.http_api._rtsp_port is not None:
             self.capabilities[None].add("RTSP")
-        if self.api_version("onvif") > 0 and self.http_api._onvif_port is not None:
+        if self.api_version("onvif") > 0 and self.http_api._onvif_port is not None and not self.http_api.is_battery:
             self.capabilities[None].add("ONVIF")
         if self.http_api.is_hub and ((self.api_version("doorbellVersion") >> 0) & 1 or (self.api_version("doorbellVersion") >> 4) & 1):
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
         if self.api_version("timeFormat") > 0:
             self.capabilities[None].add("sync_time")
 
-        self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
         if self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
 
