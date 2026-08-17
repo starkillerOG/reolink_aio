@@ -191,6 +191,7 @@ class Baichuan:
         self._active_scene: int = -1
         self._day_night_state: dict[int, str] = {}
         self._dev_type: str = ""
+        self._wired_power: bool = False
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -1026,6 +1027,7 @@ class Baichuan:
                         "lowPower": ("lowPowerFlag", int),
                         "temperature": ("temperature", int),
                         "voltage": ("voltage", int),
+                        "powerSupplyStatus": ("powerSupplyStatus", str),
                     },
                 )
                 if data["chargeStatus"] == "none":
@@ -1036,6 +1038,7 @@ class Baichuan:
                     _LOGGER.warning("BatteryInfo cmd_id %s push contained unknown chargeStatus: %s, assuming discharging", cmd_id, data["chargeStatus"])
                     data["chargeStatus"] = BatteryEnum.discharging.value
                 self.http_api._battery.setdefault(channel, {}).update(data)
+                self._wired_power = data.get("powerSupplyStatus") == "normal"
                 if cmd_id == 252:
                     _LOGGER.debug("Reolink %s TCP event channel %s, BatteryInfo", self.http_api.nvr_name, channel)
 

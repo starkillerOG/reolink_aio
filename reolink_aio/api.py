@@ -3404,6 +3404,9 @@ class Host:
         if check:
             _LOGGER.debug("Checking RTSP urls host %s:%s, channel %s, stream %s", self._host, self._port, channel, stream)
 
+        if self._is_battery and not self.baichuan._wired_power:
+            return None
+
         if self.api_version("rtsp") >= 3 and stream == "main" and channel in self._rtsp_mainStream:
             if not check:
                 return self._rtsp_mainStream[channel]
