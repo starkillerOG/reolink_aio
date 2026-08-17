@@ -31,6 +31,7 @@ from ..enums import (
     ANTI_FLICKER_MAP,
     AntiFlickerEnum,
     BatteryEnum,
+    BatteryModeEnum,
     ConnectionEnum,
     DayNightEnum,
     EncodingEnum,
@@ -195,6 +196,7 @@ class Baichuan:
         self._dev_info: dict[int | None, dict[str, str]] = {}
         self._network_info: dict[int | None, dict[str, str]] = {}
         self._wifi_connection: dict[int, bool] = {}
+        self._battery_mode: dict[int, str] = {}
         self._ptz_running: dict[int, bool] = {}
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._ptz_patrol_cruising: dict[int, bool | None] = {}
@@ -1240,6 +1242,36 @@ class Baichuan:
 
                         _LOGGER.debug("Reolink %s TCP yolo event channel %s, %s: True", self.http_api.nvr_name, channel, yolo_type)
                         self._ai_yolo_600.setdefault(channel, {})[yolo_type] = True
+
+        elif cmd_id == 626:  # BatteryMode
+            if mess_id is None:
+                return
+            channel = mess_id % 256 - 1
+            if channel < 0 or channel > 100:
+                return
+            channels.add(channel)
+            data = get_keys_from_xml(
+                root, {"batteryMode": ("batteryMode", int), "recEnable": ("recEnable", int), "recordTimeSec": ("recordTimeSec", int), "aiExtendRecord": ("postRecAi", bool)}
+            )
+
+            rec_set = self.http_api._recording_settings.setdefault(channel, {})
+            if "recEnable" in data:
+                rec_set.setdefault("schedule", {})["enable"] = data["recEnable"]
+                if self.http_api.api_version("GetRec") >= 1:
+                    rec_set["scheduleEnable"] = data["recEnable"]
+            if post_rec := TIME_INT_SEC_TO_STR.get(data.get("recordTimeSec", 0), ""):
+                rec_set["postRec"] = post_rec
+            if "postRecAi" in data:
+                rec_set["postRecAi"] = data["postRecAi"]
+
+            pir_data = get_keys_from_xml(root, {"pirEnable": ("enable", int), "pirSensitive": ("sensitive", int), "pirCdSec": ("interval", int)})
+            self.http_api._pir.setdefault(channel, {}).update(pir_data)
+
+            if (bat_mode := data.get("batteryMode")) is not None:
+                try:
+                    self._battery_mode[channel] = BatteryModeEnum(bat_mode).name
+                except ValueError:
+                    _LOGGER.debug("Reolink %s unknown battery mode int %s", self.http_api.nvr_name, bat_mode)
 
         elif cmd_id == 655:  # aiExtendRecord
             if mess_id is None:

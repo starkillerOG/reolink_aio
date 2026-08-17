@@ -117,6 +117,15 @@ class AntiFlickerEnum(Enum):
     f60 = "60HZ"
 
 
+class BatteryModeEnum(Enum):
+    """Options for the battery mode setting"""
+
+    optimalsurveillance = 0
+    powersaving = 1
+    smart = 2
+    custom = 3
+
+
 class PtzEnum(Enum):
     """Options for PTZ control"""
 
