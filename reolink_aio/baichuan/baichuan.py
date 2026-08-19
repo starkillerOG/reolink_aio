@@ -1859,6 +1859,7 @@ class Baichuan:
 
         if self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
+            host_coroutines.append(("battery_info", self.get_battery_info(0)))  # determine "wired_power"
 
         if host_coroutines:
             try:
@@ -2067,7 +2068,9 @@ class Baichuan:
                 coroutines.append(("GetAudioNoise", channel, self.GetAudioNoise(channel)))
 
             if self.api_version("motion", channel, no_key_return=1) == 0 or self._dev_type == "light":
-                self.capabilities[channel].add("PIR")
+                self.capabilities[channel].add("PIR_sensitivity")
+                if not self.http_api.is_battery or not self._wired_power:
+                    self.capabilities[channel].add("PIR")
             if self.http_api.supported(channel, "PIR") or self.supported(channel, "PIR"):
                 # check for pir interval compatability
                 coroutines.append(("GetPirInfo", channel, self.GetPirInfo(channel)))
