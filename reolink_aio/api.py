@@ -3942,18 +3942,20 @@ class Host:
                     if "ai" in data["value"]:
                         self._ai_detection_states.setdefault(channel, {})
                         self._ai_detection_support.setdefault(channel, {})
-                        ai_detect = self.baichuan._ai_detect.setdefault(channel, {})
+                        # ai_detect = self.baichuan._ai_detect.setdefault(channel, {})
                         for key, value in data["value"]["ai"].items():
-                            if isinstance(value, list):
-                                # smart AI
-                                for item in value:
-                                    location = item.get("index")
-                                    if item.get("enable") != 1 or item.get("support") != 1 or location is None:
-                                        continue
-                                    ai_type_set = set(AI_DETECT_MAP).intersection(item)
-                                    for ai_type in ai_type_set:
-                                        ai_detect.setdefault(key, {}).setdefault(location, {})[AI_DETECT_MAP[ai_type]] = item[ai_type] == 1
+                            if isinstance(value, list):  # smart AI
+                                # The state can hang for at least crossline on the
+                                # Elite Floodlight WiFi, IPC_NT18NA68MPW, v3.2.0.6530_2606232191, relaying on Baichuan only
                                 continue
+                                # for item in value:
+                                #    location = item.get("index")
+                                #    if item.get("enable") != 1 or item.get("support") != 1 or location is None:
+                                #        continue
+                                #    ai_type_set = set(AI_DETECT_MAP).intersection(item)
+                                #    for ai_type in ai_type_set:
+                                #        ai_detect.setdefault(key, {}).setdefault(location, {})[AI_DETECT_MAP[ai_type]] = item[ai_type] == 1
+                                # continue
                             supported: bool = value.get("support", 0) == 1
                             if not supported:
                                 continue
