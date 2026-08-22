@@ -278,6 +278,79 @@ FileInfoList = """
 </FileInfoList>
 </body>"""
 
+VodFileInfo = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<Id>{file_id}</Id>
+<channelId>{channel}</channelId>{name}
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+VodFileDownload = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<Id>{file_id}</Id>
+<channelId>{channel}</channelId>{name}
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+VodFileSearchOpen = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<searchAITrack>1</searchAITrack>
+<channelId>{channel}</channelId>
+<streamType>{stream}</streamType>
+<startTime>
+<year>{start_year}</year>
+<month>{start_month}</month>
+<day>{start_day}</day>
+<hour>{start_hour}</hour>
+<minute>{start_minute}</minute>
+<second>{start_second}</second>
+</startTime>
+<endTime>
+<year>{end_year}</year>
+<month>{end_month}</month>
+<day>{end_day}</day>
+<hour>{end_hour}</hour>
+<minute>{end_minute}</minute>
+<second>{end_second}</second>
+</endTime>
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+VodFileSearchHandle = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<channelId>{channel}</channelId>
+<searchAITrack>1</searchAITrack>
+<handle>{handle}</handle>
+</FileInfo>
+</FileInfoList>
+</body>"""
+
+VodFileStop = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<channelId>{channel}</channelId>
+<handle>{handle}</handle>
+</FileInfo>
+</FileInfoList>
+</body>"""
+
 FindRecVideoOpen = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
