@@ -1258,12 +1258,29 @@ class Baichuan:
             channels.add(channel)
             # The other settings like PIR enabled/sensitivity etc. are the configuration of the custom mode, they do not reflect the current status.
 
-            data = get_keys_from_xml(root, {"batteryMode": ("batteryMode", int)})
+            data = get_keys_from_xml(
+                root,
+                {
+                    "batteryMode": ("batteryMode", int),
+                    "batteryModeStr": ("batteryModeStr", str),
+                    "supportBatteryMode": ("supportBatteryMode", str),
+                    "supportBatteryAovMode": ("supportBatteryAovMode", str),
+                },
+            )
             if (bat_mode := data.get("batteryMode")) is not None:
                 try:
                     self._work_mode_battery[channel] = BatteryModeEnum(bat_mode).name
                 except ValueError:
                     _LOGGER.debug("Reolink %s unknown battery mode int %s", self.http_api.nvr_name, bat_mode)
+            if (bat_mode_str := data.get("batteryModeStr")) is not None:
+                self._work_mode_battery[channel] = bat_mode_str.lower()
+            modes = []
+            if (mode_list := data.get("supportBatteryMode")) is not None:
+                modes.extend(mode_list.lower().split(","))
+            if (mode_list2 := data.get("supportBatteryAovMode")) is not None:
+                modes.extend(mode_list2.lower().split(","))
+            if modes:
+                self._work_mode_battery_list[channel] = modes
 
         elif cmd_id == 655:  # aiExtendRecord
             if mess_id is None:
