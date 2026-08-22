@@ -197,7 +197,10 @@ class Baichuan:
         self._dev_info: dict[int | None, dict[str, str]] = {}
         self._network_info: dict[int | None, dict[str, str]] = {}
         self._wifi_connection: dict[int, bool] = {}
-        self._battery_mode: dict[int, str] = {}
+        self._work_mode_battery: dict[int, str] = {}
+        self._work_mode_battery_list: dict[int, list[str]] = {}
+        self._work_mode_powered: dict[int, str] = {}
+        self._work_mode_powered_list: dict[int, list[str]] = {}
         self._ptz_running: dict[int, bool] = {}
         self._ptz_position: dict[int, dict[str, str]] = {}
         self._ptz_patrol_cruising: dict[int, bool | None] = {}
@@ -1253,26 +1256,12 @@ class Baichuan:
             if channel < 0 or channel > 100:
                 return
             channels.add(channel)
-            data = get_keys_from_xml(
-                root, {"batteryMode": ("batteryMode", int), "recEnable": ("recEnable", int), "recordTimeSec": ("recordTimeSec", int), "aiExtendRecord": ("postRecAi", bool)}
-            )
+            # The other settings like PIR enabled/sensitivity etc. are the configuration of the custom mode, they do not reflect the current status.
 
-            rec_set = self.http_api._recording_settings.setdefault(channel, {})
-            if "recEnable" in data:
-                rec_set.setdefault("schedule", {})["enable"] = data["recEnable"]
-                if self.http_api.api_version("GetRec") >= 1:
-                    rec_set["scheduleEnable"] = data["recEnable"]
-            if post_rec := TIME_INT_SEC_TO_STR.get(data.get("recordTimeSec", 0), ""):
-                rec_set["postRec"] = post_rec
-            if "postRecAi" in data:
-                rec_set["postRecAi"] = data["postRecAi"]
-
-            pir_data = get_keys_from_xml(root, {"pirEnable": ("enable", int), "pirSensitive": ("sensitive", int), "pirCdSec": ("interval", int)})
-            self.http_api._pir.setdefault(channel, {}).update(pir_data)
-
+            data = get_keys_from_xml(root, {"batteryMode": ("batteryMode", int)})
             if (bat_mode := data.get("batteryMode")) is not None:
                 try:
-                    self._battery_mode[channel] = BatteryModeEnum(bat_mode).name
+                    self._work_mode_battery[channel] = BatteryModeEnum(bat_mode).name
                 except ValueError:
                     _LOGGER.debug("Reolink %s unknown battery mode int %s", self.http_api.nvr_name, bat_mode)
 
@@ -1381,6 +1370,18 @@ class Baichuan:
                 return
             channels.add(channel)
             self._tamper_enabled[channel] = get_value_from_xml(root, "enable", int) == 1
+
+        elif cmd_id == 771:  # AdapterWorkModeCfg
+            if mess_id is None:
+                return
+            channel = mess_id % 256 - 1
+            if channel < 0 or channel > 100:
+                return
+            channels.add(channel)
+
+            data = get_keys_from_xml(root, {"adapterWorkMode": ("adapterWorkMode", str), "supportAdapterWorkMode": ("supportAdapterWorkMode", str)})
+            self._work_mode_powered[channel] = data["adapterWorkMode"]
+            self._work_mode_powered_list[channel] = data["supportAdapterWorkMode"].split(",")
 
         # call the callbacks
         for cmd in cmd_ids:
@@ -1937,6 +1938,12 @@ class Baichuan:
                     self.capabilities[channel].add("hardwired_chime")
                     # cmd_id 483 makes the chime rattle a bit, just assume its supported
 
+            batteryMode = self.api_version("batteryMode")
+            if not self.http_api.is_nvr and batteryMode > 0:
+                self.capabilities[channel].add("work_mode_battery")
+                if (batteryMode >> 6) & 1 and (batteryMode >> 8) & 1:  # bit 6 and bit 8
+                    self.capabilities[channel].add("work_mode_powered")
+
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
         # Stream capabilities
@@ -2362,6 +2369,12 @@ class Baichuan:
 
             if self.supported(channel, "tamper") and inc_cmd("763", channel):
                 coroutines.append(self._send_and_parse(763, channel))
+
+            if self.supported(channel, "work_mode_battery") and inc_cmd("626", channel):
+                coroutines.append(self._send_and_parse(626, channel))
+
+            if self.supported(channel, "work_mode_powered") and inc_cmd("771", channel):
+                coroutines.append(self._send_and_parse(771, channel))
 
             if self.supported(channel, "ptz_position") and inc_cmd("GetPtzCurPos", channel):
                 coroutines.append(self.get_ptz_position(channel))
@@ -3145,6 +3158,39 @@ class Baichuan:
     async def get_battery_info(self, channel: int) -> None:
         """Get the BatteryInfo"""
         await self._send_and_parse(253, channel)
+
+    async def set_work_mode_battery(self, channel: int, mode: str) -> None:
+        """Set the battery mode"""
+        mess = await self.send(cmd_id=626, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (xml_mode := xml_body.find("BatteryMode/batteryMode")) is not None:
+            mode_list = [val.name for val in BatteryModeEnum]
+            if mode not in mode_list:
+                raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_battery mode {mode} not in {mode_list}")
+            mode_int = BatteryModeEnum[mode].value
+            xml_mode.text = str(mode_int)
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=627, channel=channel, body=xml)
+        await self._send_and_parse(cmd_id=626, channel=channel)
+
+    async def set_work_mode_powered(self, channel: int, mode: str) -> None:
+        """Set the powered work mode"""
+        mess = await self.send(cmd_id=771, channel=channel)
+        xml_body = XML.fromstring(mess)
+
+        if (xml_mode := xml_body.find(".//adapterWorkMode")) is not None:
+            mode_list = self._work_mode_powered_list.get(channel, [mode])
+            if mode not in mode_list:
+                raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_powered mode {mode} not in {mode_list}")
+            xml_mode.text = mode
+
+        xml = XML.tostring(xml_body, encoding="unicode")
+        xml = xmls.XML_HEADER + xml
+        await self.send(cmd_id=772, channel=channel, body=xml)
+        await self._send_and_parse(cmd_id=771, channel=channel)
 
     async def get_day_night_state(self, channel: int) -> None:
         """Get the day night state"""

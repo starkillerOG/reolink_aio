@@ -41,6 +41,7 @@ from .const import (
 from .enums import (
     AntiFlickerEnum,
     BatteryEnum,
+    BatteryModeEnum,
     BinningModeEnum,
     ChimeToneEnum,
     ConnectionEnum,
@@ -1029,6 +1030,20 @@ class Host:
             return BatteryEnum.discharging.value
 
         return self._battery[channel]["chargeStatus"]
+
+    def work_mode_battery(self, channel: int) -> str:
+        return self.baichuan._work_mode_battery.get(channel, "")
+
+    def work_mode_battery_list(self, channel: int) -> list[str]:
+        if mode_list := self.baichuan._work_mode_battery_list.get(channel):
+            return mode_list
+        return [val.name for val in BatteryModeEnum]
+
+    def work_mode_powered(self, channel: int) -> str:
+        return self.baichuan._work_mode_powered.get(channel, "")
+
+    def work_mode_powered_list(self, channel: int) -> list[str]:
+        return self.baichuan._work_mode_powered_list.get(channel, [])
 
     def sleeping(self, channel: int) -> bool:
         if channel not in self._sleep:
