@@ -3188,6 +3188,18 @@ class Baichuan:
             mode_int = BatteryModeEnum[mode].value
             xml_mode.text = str(mode_int)
 
+        if (xml_mode_str := xml_body.find("BatteryMode/batteryModeStr")) is not None:
+            # match case of the mode
+            modes = []
+            if (mode_list1 := get_value_from_xml(xml_body, "supportBatteryMode")) is not None:
+                modes.extend(mode_list1.split(","))
+            if (mode_list2 := get_value_from_xml(xml_body, "supportBatteryAovMode")) is not None:
+                modes.extend(mode_list2.split(","))
+            mode_str = next((val for val in modes if val.lower() == mode), None)
+            if mode_str is None:
+                raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_battery mode {mode} could not be matched to {modes}")
+            xml_mode_str.text = str(mode_str)
+
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
         await self.send(cmd_id=627, channel=channel, body=xml)
