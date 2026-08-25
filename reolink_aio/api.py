@@ -1204,7 +1204,7 @@ class Host:
         return self._hub_audio_settings[channel]["AudioCfg"]["ringToneId"]
 
     def quick_reply_dict(self, channel: int) -> dict[int, str]:
-        audio_dict = {-1: "off"}
+        audio_dict = {-1: "off", -2: UNKNOWN}
         if channel not in self._audio_file_list:
             return audio_dict
 
