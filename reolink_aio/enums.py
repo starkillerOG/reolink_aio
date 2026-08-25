@@ -117,13 +117,25 @@ class AntiFlickerEnum(Enum):
     f60 = "60HZ"
 
 
-class BatteryModeEnum(Enum):
-    """Options for the battery mode setting"""
+class BatteryModeIntEnum(Enum):
+    """Options for the int battery mode setting"""
 
-    optimalsurveillance = 0
-    powersaving = 1
+    optimal_surveillance = 0
+    power_saving = 1
     smart = 2
     custom = 3
+
+
+class BatteryModeStrEnum(Enum):
+    """Options for the str battery mode setting"""
+
+    power_saving = "balancedMoniteringModeV2"
+    detection_priority = "optimizedMoniteringModeV2"
+    extended_recording = "AIDelayModeV2"
+    custom = "diyModeV2"
+    pre_recording = "preRecordModeV2"
+    continuous_recording = "lowFpsRecordModeV2"
+    always_on_custom = "aovDiyModeV2"
 
 
 class PtzEnum(Enum):

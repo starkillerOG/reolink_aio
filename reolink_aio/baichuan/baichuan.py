@@ -31,7 +31,8 @@ from ..enums import (
     ANTI_FLICKER_MAP,
     AntiFlickerEnum,
     BatteryEnum,
-    BatteryModeEnum,
+    BatteryModeIntEnum,
+    BatteryModeStrEnum,
     ConnectionEnum,
     DayNightEnum,
     EncodingEnum,
@@ -1269,16 +1270,16 @@ class Baichuan:
             )
             if (bat_mode := data.get("batteryMode")) is not None:
                 try:
-                    self._work_mode_battery[channel] = BatteryModeEnum(bat_mode).name
+                    self._work_mode_battery[channel] = BatteryModeIntEnum(bat_mode).name
                 except ValueError:
                     _LOGGER.debug("Reolink %s unknown battery mode int %s", self.http_api.nvr_name, bat_mode)
             if (bat_mode_str := data.get("batteryModeStr")) is not None:
                 self._work_mode_battery[channel] = bat_mode_str.lower()
             modes = []
-            if (mode_list := data.get("supportBatteryMode")) is not None:
-                modes.extend(mode_list.lower().split(","))
+            if (mode_list1 := data.get("supportBatteryMode")) is not None:
+                modes.extend(mode_list1.split(","))
             if (mode_list2 := data.get("supportBatteryAovMode")) is not None:
-                modes.extend(mode_list2.lower().split(","))
+                modes.extend(mode_list2.split(","))
             if modes:
                 self._work_mode_battery_list[channel] = modes
 
@@ -3182,22 +3183,16 @@ class Baichuan:
         xml_body = XML.fromstring(mess)
 
         if (xml_mode := xml_body.find("BatteryMode/batteryMode")) is not None:
-            mode_list = [val.name for val in BatteryModeEnum]
+            mode_list = [val.name for val in BatteryModeIntEnum]
             if mode not in mode_list:
                 raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_battery mode {mode} not in {mode_list}")
-            mode_int = BatteryModeEnum[mode].value
+            mode_int = BatteryModeIntEnum[mode].value
             xml_mode.text = str(mode_int)
-
         if (xml_mode_str := xml_body.find("BatteryMode/batteryModeStr")) is not None:
-            # match case of the mode
-            modes = []
-            if (mode_list1 := get_value_from_xml(xml_body, "supportBatteryMode")) is not None:
-                modes.extend(mode_list1.split(","))
-            if (mode_list2 := get_value_from_xml(xml_body, "supportBatteryAovMode")) is not None:
-                modes.extend(mode_list2.split(","))
-            mode_str = next((val for val in modes if val.lower() == mode), None)
-            if mode_str is None:
-                raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_battery mode {mode} could not be matched to {modes}")
+            mode_list = [val.name for val in BatteryModeStrEnum]
+            if mode not in mode_list:
+                raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_battery mode {mode} not in {mode_list}")
+            mode_str = BatteryModeStrEnum[mode].value
             xml_mode_str.text = str(mode_str)
 
         xml = XML.tostring(xml_body, encoding="unicode")
