@@ -1274,7 +1274,11 @@ class Baichuan:
                 except ValueError:
                     _LOGGER.debug("Reolink %s unknown battery mode int %s", self.http_api.nvr_name, bat_mode)
             if (bat_mode_str := data.get("batteryModeStr")) is not None:
-                self._work_mode_battery[channel] = bat_mode_str.lower()
+                try:
+                    self._work_mode_battery[channel] = BatteryModeStrEnum(bat_mode_str).name
+                except ValueError:
+                    _LOGGER.debug("Reolink %s unknown battery mode str %s", self.http_api.nvr_name, bat_mode_str)
+                    self._work_mode_battery[channel] = bat_mode_str.lower()
             modes = []
             if (mode_list1 := data.get("supportBatteryMode")) is not None:
                 modes.extend(mode_list1.split(","))
