@@ -2261,13 +2261,27 @@ class Baichuan:
     @property
     def abilities(self) -> dict[int | str, Any]:
         """Return the abilities as a dictionary"""
-        abilities_dict: dict[int | str, dict[str, int | str]] = {}
+        abilities_dict: dict[int | str, dict[str, int | str | dict[str, int | str]]] = {}
+        value: int | str
         for key, xml in self._abilities.items():
             pretty_key: str | int = key if key is not None else "Host"
             abilities_dict[pretty_key] = {}
             for feature in xml:
+                if feature.tag == "subItem":
+                    sub_channel = get_value_from_xml(feature, "chnID", int)
+                    if sub_channel is None:
+                        continue
+                    sub_dict = {}
+                    for sub_feature in feature:
+                        if sub_feature.text is not None:
+                            try:
+                                value = int(sub_feature.text)
+                            except ValueError:
+                                value = sub_feature.text
+                            sub_dict[sub_feature.tag] = value
+                    abilities_dict[pretty_key][f"sub_channel_{sub_channel}"] = sub_dict
+                    continue
                 if feature.text is not None:
-                    value: int | str
                     try:
                         value = int(feature.text)
                     except ValueError:
