@@ -231,6 +231,7 @@ class Host:
         self._channels: list[int] = []
         self._other_brand_channels: list[int] = []
         self._stream_channels: list[int] = []
+        self._sub_channels: dict[int, set[int]] = {}
         self._channel_online: dict[int, bool] = {}
         self._channel_online_check: dict[int, bool] = {}
         self._is_doorbell: dict[int, bool] = {}
@@ -505,6 +506,10 @@ class Host:
     def stream_channels(self) -> list[int]:
         """Return the list of indices of stream channels available."""
         return self._stream_channels
+
+    def sub_channels(self, channel: int) -> set[int] | set[None]:
+        """Return the list of indices of stream channels available."""
+        return self._sub_channels.get(channel, {None})
 
     @property
     def new_devices(self) -> bool:

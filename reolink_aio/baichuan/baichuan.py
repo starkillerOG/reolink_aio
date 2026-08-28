@@ -1845,6 +1845,12 @@ class Baichuan:
                     channel = self._get_channel_from_xml_element(item, "chnID")
                     self._abilities[channel] = item
                     support.remove(item)
+                    # check for sub channels
+                    for sub_item in item.findall("subItem"):
+                        sub_channel = get_value_from_xml(sub_item, "chnID", int)
+                        if sub_channel is None:
+                            continue
+                        self.http_api._sub_channels.setdefault(channel, set()).add(sub_channel)
                 self._abilities[None] = support
 
             # check if HTTP(s) API is supported
