@@ -2382,10 +2382,15 @@ class Baichuan:
             if self.http_api.supported(channel, "chime") and inc_cmd("GetDingDongCfg", channel):
                 coroutines.append(self.GetDingDongCfg(channel))
 
-            if self.supported(channel, "hardwired_chime") and channel in cmd_list.get("483", []) and channel not in self._hardwired_chime_settings:
+            if (
+                self.supported(channel, "hardwired_chime")
+                and channel in cmd_list.get("483", [])
+                and (channel not in self._hardwired_chime_settings or (channel_wake("483", channel) and not self._hardwired_chime_settings.get(channel)))
+            ):
                 # only get the state if not known yet, cmd_id 483 can make the hardwired chime rattle a bit
                 # Do not check for waking, this command will not be included in the first get_states when cmd_list is still empty (otherwise there always is a rattle there).
                 # It will be retrieved once on the second get_states when the cmd_list is set, after the initial retrieval it will not be set anymore.
+                self._hardwired_chime_settings.setdefault(channel, {})
                 coroutines.append(self.get_ding_dong_ctrl(channel))
 
             if self.supported(channel, "ir_brightness") and inc_cmd("208", channel):
@@ -4615,10 +4620,7 @@ class Baichuan:
         return str(self._hardwired_chime_settings.get(channel, {}).get("type"))
 
     def hardwired_chime_enabled(self, channel: int) -> bool:
-        if channel not in self._hardwired_chime_settings:
-            return False
-
-        return self._hardwired_chime_settings[channel]["enable"] == 1
+        return self._hardwired_chime_settings.get(channel, {}).get("enable") == 1
 
     def siren_state(self, channel: int) -> bool | None:
         return self._siren_state.get(channel)
