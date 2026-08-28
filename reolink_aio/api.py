@@ -243,7 +243,7 @@ class Host:
         # API-versions and capabilities
         self._api_version: dict[str, int | dict[int | None, int]] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
-        self._capabilities: dict[int | str, set[str]] = {"Host": set()}  # processed by construct_capabilities
+        self._capabilities: dict[int | None, set[str]] = {None: set()}  # processed by construct_capabilities
 
         ##############################################################################
         # Video-stream formats
@@ -1664,7 +1664,7 @@ class Host:
         self._lease_time = None
 
     @property
-    def capabilities(self) -> dict[int | str, set[str]]:
+    def capabilities(self) -> dict[int | None, set[str]]:
         return self._capabilities
 
     @property
@@ -1678,73 +1678,73 @@ class Host:
     def construct_capabilities(self, warnings=True) -> None:
         """Construct the capabilities list of the NVR/camera."""
         # Host capabilities
-        self._capabilities["Host"] = set()
+        self._capabilities[None] = set()
 
         if self.api_version("onvif") > 0 and self._onvif_port is not None:
-            self._capabilities["Host"].add("ONVIF")
+            self._add_capability("ONVIF")
         if self.api_version("rtsp") > 0 and self._rtsp_port is not None:
-            self._capabilities["Host"].add("RTSP")
+            self._add_capability("RTSP")
         if self.api_version("rtmp") > 0 and self._rtmp_port is not None:
-            self._capabilities["Host"].add("RTMP")
+            self._add_capability("RTMP")
         if self.api_version("httpFlv") > 0 and self._rtmp_port is not None:
-            self._capabilities["Host"].add("FLV")
+            self._add_capability("FLV")
 
         if self.uid != UNKNOWN:
-            self._capabilities["Host"].add("UID")
+            self._add_capability("UID")
 
         if self.sw_version_object.date > datetime(year=2021, month=6, day=1):
             # Check if this camera publishes its inital state upon ONVIF subscription
-            self._capabilities["Host"].add("initial_ONVIF_state")
+            self._add_capability("initial_ONVIF_state")
 
         if self._ftp_settings and self.api_version("supportIfttt", 0) <= 0 and not self._is_hub:
-            self._capabilities["Host"].add("ftp")
+            self._add_capability("ftp")
 
         if self._push_settings and not self._is_hub:
-            self._capabilities["Host"].add("push")
+            self._add_capability("push")
 
         if self._push_config.get("PushCfg", {}).get("enable") is not None:
-            self._capabilities["Host"].add("push_config")
+            self._add_capability("push_config")
 
         if self._recording_settings and not self._is_hub:
-            self._capabilities["Host"].add("recording")
+            self._add_capability("recording")
             if self.api_version("supportIfttt", 0) <= 0:
-                self._capabilities["Host"].add("rec_enable")
+                self._add_capability("rec_enable")
 
         if self.recording_packing_time_list and self.recording_packing_time:
-            self._capabilities["Host"].add("pak_time")
+            self._add_capability("pak_time")
 
         if self._email_settings and self.api_version("supportIfttt", 0) <= 0 and not self._is_hub:
-            self._capabilities["Host"].add("email")
+            self._add_capability("email")
 
         if self.api_version("supportBuzzer") > 0 and not self._is_hub:
-            self._capabilities["Host"].add("buzzer")
+            self._add_capability("buzzer")
 
-        self._capabilities["Host"].add("firmware")
+        self._add_capability("firmware")
         if self.api_version("upgrade") >= 2:
-            self._capabilities["Host"].add("update")
+            self._add_capability("update")
 
         if self.api_version("wifi") > 0:
-            self._capabilities["Host"].add("wifi")
+            self._add_capability("wifi")
 
         if self.api_version("performance") > 0 and self.cpu_usage is not None:
-            self._capabilities["Host"].add("performance")
+            self._add_capability("performance")
 
         if "enable" in self._state_light:
-            self._capabilities["Host"].add("state_light")
+            self._add_capability("state_light")
 
         if self.api_version("GetDeviceAudioCfg") > 0:
-            self._capabilities["Host"].add("hub_audio")
-            self._capabilities["Host"].add("siren_play")
+            self._add_capability("hub_audio")
+            self._add_capability("siren_play")
 
         if self.hdd_info:
-            self._capabilities["Host"].add("hdd")
+            self._add_capability("hdd")
 
         if self.api_version("reboot") > 0:
-            self._capabilities["Host"].add("reboot")
+            self._add_capability("reboot")
 
         # Baichuan capabilities
         if (bc_host_cap := self.baichuan.capabilities.get(None, {}).get(None)) is not None:
-            self._capabilities["Host"] = self._capabilities["Host"].union(bc_host_cap)
+            self._capabilities[None] = self._capabilities[None].union(bc_host_cap)
         for channel in self._stream_channels:
             self._capabilities[channel] = set()
             if (bc_cap := self.baichuan.capabilities.get(channel, {}).get(None)) is not None:
@@ -1753,14 +1753,14 @@ class Host:
         # Stream capabilities
         for channel in self._stream_channels:
             if self.api_version("recReplay", channel) > 0:
-                self._capabilities[channel].add("replay")
+                self._add_capability("replay", channel)
 
             if not self.baichuan_only:
-                self._capabilities[channel].add("stream")
-                self._capabilities[channel].add("snapshot")
+                self._add_capability("stream", channel)
+                self._add_capability("snapshot", channel)
 
             if (self.api_version("mask", channel) > 0 or self.baichuan.supported(channel, "privacy_mask_basic")) and self._privacy_mask.get(channel, {}).get("area"):
-                self._capabilities[channel].add("privacy_mask")
+                self._add_capability("privacy_mask", channel)
 
             ptz_ver = self.api_version("ptzType", channel)
             if ptz_ver != 0:
@@ -1794,7 +1794,7 @@ class Host:
                     if self.api_version("supportPtzSpeed", channel, no_key_return=1) > 0:
                         self._add_capability_once("ptz_speed", channel)
 
-            if self.api_version("supportDigitalZoom", channel) > 0 and "zoom" not in self._capabilities[channel]:
+            if self.api_version("supportDigitalZoom", channel) > 0 and not self.supported(channel, "zoom"):
                 min_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
                 max_zoom = self._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
@@ -1812,184 +1812,182 @@ class Host:
                 self._add_capability_once("ptz_patrol", channel)
 
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
-                self._capabilities[channel].add("autotrack_stream")
+                self._add_capability("autotrack_stream", channel)
 
             # DUAL LENS DUAL MOTION MODELS
             if channel not in self._channels and self.model not in DUAL_LENS_DUAL_MOTION_MODELS:
                 continue
 
             if channel in self._motion_detection_states:
-                self._capabilities[channel].add("motion_detection")
+                self._add_capability("motion_detection", channel)
 
             if self.api_version("supportAiAnimal", channel) and self.ai_supported(channel, PET_DETECTION_TYPE):
-                self._capabilities[channel].add("ai_animal")
+                self._add_capability("ai_animal", channel)
 
             for key, value in self._ai_detection_support.get(channel, {}).items():
                 if value:
-                    self._capabilities[channel].add(f"ai_{key}")
+                    self._add_capability(f"ai_{key}", channel)
 
         # Channel capabilities
         for channel in self._channels:
             self._capabilities.setdefault(channel, set())
 
             if self.camera_uid(channel) != UNKNOWN:
-                self._capabilities[channel].add("UID")
+                self._add_capability("UID", channel)
 
             if self.baichuan.supported(channel, "ai_cry"):
                 self._ai_detection_support.setdefault(channel, {})["cry"] = True
                 self._ai_detection_states.setdefault(channel, {})["cry"] = False
 
             if self.is_nvr and self.camera_hardware_version(channel) != UNKNOWN and self.camera_model(channel) != UNKNOWN:
-                self._capabilities[channel].add("firmware")
+                self._add_capability("firmware", channel)
                 if self.api_version("upgrade") >= 2:
-                    self._capabilities[channel].add("update")
+                    self._add_capability("update", channel)
 
             if self.api_version("supportWebhook", channel) > 0:
-                self._capabilities[channel].add("webhook")
+                self._add_capability("webhook", channel)
 
             if (
                 channel in self._ftp_settings
                 and self.api_version("supportIfttt", channel) <= 0
                 and (self.api_version("GetFtp") < 1 or "scheduleEnable" in self._ftp_settings[channel])
             ):
-                self._capabilities[channel].add("ftp")
+                self._add_capability("ftp", channel)
 
             if channel in self._push_settings and (self.api_version("GetPush") < 1 or "scheduleEnable" in self._push_settings[channel]):
-                self._capabilities[channel].add("push")
+                self._add_capability("push", channel)
 
             if channel in self._recording_settings and (self.api_version("GetRec") < 1 or "scheduleEnable" in self._recording_settings[channel]):
-                self._capabilities[channel].add("recording")
+                self._add_capability("recording", channel)
                 if self.api_version("supportIfttt", channel) <= 0:
-                    self._capabilities[channel].add("rec_enable")
+                    self._add_capability("rec_enable", channel)
 
             if self.post_recording_time_list(channel) and self.post_recording_time(channel):
-                self._capabilities[channel].add("post_rec_time")
+                self._add_capability("post_rec_time", channel)
 
             if "enable" in self._manual_record_settings.get(channel, {}):
-                self._capabilities[channel].add("manual_record")
+                self._add_capability("manual_record", channel)
 
             if (
                 channel in self._email_settings
                 and self.api_version("supportIfttt", channel) <= 0
                 and (self.api_version("GetEmail") < 1 or "scheduleEnable" in self._email_settings[channel])
             ):
-                self._capabilities[channel].add("email")
+                self._add_capability("email", channel)
 
             if channel in self._buzzer_settings and self.api_version("supportBuzzer") > 0 and "scheduleEnable" in self._buzzer_settings[channel]["Buzzer"]:
-                self._capabilities[channel].add("buzzer")
+                self._add_capability("buzzer", channel)
 
             if self.api_version("ledControl", channel) > 0 and channel in self._ir_settings:
-                self._capabilities[channel].add("ir_lights")
+                self._add_capability("ir_lights", channel)
 
             if self.api_version("powerLed", channel) > 0 or self.api_version("indicatorLight", channel) > 0:
                 # powerLed == statusLed = doorbell_led
-                self._capabilities[channel].add("status_led")  # internal use only
-                self._capabilities[channel].add("power_led")
+                self._add_capability("status_led", channel)  # internal use only
+                self._add_capability("power_led", channel)
             if self.api_version("supportDoorbellLight", channel) > 0 or self.is_doorbell(channel):
                 # powerLed == statusLed = doorbell_led
-                self._capabilities[channel].add("status_led")  # internal use only
-                self._capabilities[channel].add("doorbell_led")
+                self._add_capability("status_led", channel)  # internal use only
+                self._add_capability("doorbell_led", channel)
 
             if self.api_version("GetWhiteLed") > 0 and (self.api_version("floodLight", channel) > 0 or self.api_version("supportFLswitch", channel) > 0):
                 # floodlight == spotlight == WhiteLed
-                self._capabilities[channel].add("floodLight")
+                self._add_capability("floodLight", channel)
 
             if self.api_version("GetDeviceAudioCfg") > 0:
-                self._capabilities[channel].add("hub_audio")
+                self._add_capability("hub_audio", channel)
 
             if (self.api_version("supportAudioFileList", channel) > 0) or (not self.is_nvr and self.api_version("supportAudioFileList") > 0):
                 if self.api_version("supportAutoReply", channel) > 0 or (not self.is_nvr and self.api_version("supportAutoReply") > 0):
-                    self._capabilities[channel].add("quick_reply")
-                    self._capabilities[channel].add("play_quick_reply")  # Baichuan fallback
+                    self._add_capability("quick_reply", channel)
+                    self._add_capability("play_quick_reply", channel)  # Baichuan fallback
                 elif self.api_version("supportAudioPlay", channel) > 0 or self.api_version("supportQuickReplyPlay", channel) > 0:
-                    self._capabilities[channel].add("play_quick_reply")
+                    self._add_capability("play_quick_reply", channel)
 
             if self.api_version("supportDingDongCtrl", channel) > 0 and self._GetDingDong_present.get(channel):
-                self._capabilities[channel].add("chime")
+                self._add_capability("chime", channel)
 
             if (self.api_version("alarmAudio", channel) > 0 or self.api_version("supportAudioAlarm", channel) > 0) and channel in self._audio_alarm_settings:
-                self._capabilities[channel].add("siren_play")  # if self.api_version("supportAoAdjust", channel) > 0
+                self._add_capability("siren_play", channel)  # if self.api_version("supportAoAdjust", channel) > 0
                 if self.api_version("supportIfttt", channel) <= 0 and self.baichuan.api_version("linkages", channel) <= 0:
-                    self._capabilities[channel].add("siren")
+                    self._add_capability("siren", channel)
 
             if self.api_version("aiTrack", channel) > 0:
-                self._capabilities[channel].add("auto_track")
+                self._add_capability("auto_track", channel)
                 track_method = self._auto_track_range.get(channel, {}).get("aiTrack", False)
                 if isinstance(track_method, list):
                     if len(track_method) > 1 and sorted(track_method) != [0, 1]:
-                        self._capabilities[channel].add("auto_track_method")
+                        self._add_capability("auto_track_method", channel)
 
             if self.supported(channel, "auto_track"):
                 if self.auto_track_disappear_time(channel) > 0:
-                    self._capabilities[channel].add("auto_track_disappear_time")
+                    self._add_capability("auto_track_disappear_time", channel)
                 if self.auto_track_stop_time(channel) > 0:
-                    self._capabilities[channel].add("auto_track_stop_time")
+                    self._add_capability("auto_track_stop_time", channel)
 
             if self.api_version("supportAITrackLimit", channel) > 0:
-                self._capabilities[channel].add("auto_track_limit")
+                self._add_capability("auto_track_limit", channel)
 
             if self.api_version("battery", channel) > 0:
-                self._capabilities[channel].add("battery")
+                self._add_capability("battery", channel)
                 if channel in self._sleep:
-                    self._capabilities[channel].add("sleep")
-                    self._capabilities["Host"].add("sleep")
+                    self._add_capability("sleep", channel)
+                    self._add_capability("sleep")
             if self.api_version("mdWithPir", channel) > 0:
-                self._capabilities[channel].add("PIR")
-                self._capabilities[channel].add("PIR_sensitivity")
+                self._add_capability("PIR", channel)
+                self._add_capability("PIR_sensitivity", channel)
 
             if channel in self._md_alarm_settings and not self.supported(channel, "PIR_sensitivity") and not self.baichuan.supported(channel, "PIR_sensitivity"):
-                self._capabilities[channel].add("md_sensitivity")
+                self._add_capability("md_sensitivity", channel)
 
             if self.api_version("supportAiSensitivity", channel) > 0:
-                self._capabilities[channel].add("ai_sensitivity")
+                self._add_capability("ai_sensitivity", channel)
 
             if self.api_version("supportAiStayTime", channel) > 0:
-                self._capabilities[channel].add("ai_delay")
+                self._add_capability("ai_delay", channel)
 
             if self.api_version("supportEncoderSelect", channel) > 0:
-                self._capabilities[channel].add("encoding")
+                self._add_capability("encoding", channel)
 
             if self.api_version("supportIspBinningModeCfg", channel) > 0:
-                self._capabilities[channel].add("binning_mode")
+                self._add_capability("binning_mode", channel)
 
             if self.api_version("ispHue", channel) > 0:
-                self._capabilities[channel].add("isp_hue")
+                self._add_capability("isp_hue", channel)
             if self.api_version("ispSatruation", channel) > 0:
-                self._capabilities[channel].add("isp_satruation")
+                self._add_capability("isp_satruation", channel)
             if self.api_version("ispSharpen", channel) > 0:
-                self._capabilities[channel].add("isp_sharpen")
+                self._add_capability("isp_sharpen", channel)
             if self.api_version("ispContrast", channel) > 0:
-                self._capabilities[channel].add("isp_contrast")
+                self._add_capability("isp_contrast", channel)
             if self.api_version("ispBright", channel) > 0:
-                self._capabilities[channel].add("isp_bright")
+                self._add_capability("isp_bright", channel)
             if self.api_version("supportIspHdr", channel, no_key_return=1) > 0 and self.HDR_state(channel) >= 0:
-                self._capabilities[channel].add("HDR")
+                self._add_capability("HDR", channel)
 
             if (self.api_version("ispDayNight", channel, no_key_return=1) > 0 and not self.baichuan_only) and self.daynight_state(channel) is not None:
-                self._capabilities[channel].add("dayNight")
+                self._add_capability("dayNight", channel)
                 if self.daynight_threshold(channel) is not None:
-                    self._capabilities[channel].add("dayNightThreshold")
+                    self._add_capability("dayNightThreshold", channel)
 
             if self.backlight_state(channel) is not None:
-                self._capabilities[channel].add("backLight")
+                self._add_capability("backLight", channel)
 
-    def _add_capability_once(self, capability: str, channel: int | str = "Host"):
+    def _add_capability_once(self, capability: str, channel: int | None = None):
         """Add a capability flag, but make sure it only gets added to at most 1 channel for dual lens cameras."""
-        if self._is_dual_lens and isinstance(channel, int):
+        if self._is_dual_lens and channel is not None:
             for ch in self._stream_channels:
                 if capability in self._capabilities[ch]:
                     return
         self._capabilities[channel].add(capability)
 
+    def _add_capability(self, capability: str, channel: int | None = None):
+        """Add a capability flag."""
+        self._capabilities[channel].add(capability)
+
     def supported(self, channel: int | None, capability: str) -> bool:
         """Return if a capability is supported by a camera channel."""
-        if channel is None:
-            return capability in self._capabilities["Host"]
-
-        if channel not in self._capabilities:
-            return False
-
-        return capability in self._capabilities[channel]
+        return capability in self._capabilities.get(channel, set())
 
     def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
