@@ -243,7 +243,7 @@ class Host:
         # API-versions and capabilities
         self._api_version: dict[str, int | dict[int | None, int]] = {}
         self._abilities: dict[str, Any] = {}  # raw response from NVR/camera
-        self._capabilities: dict[int | None, set[str]] = {None: set()}  # processed by construct_capabilities
+        self._capabilities: dict[int | None, dict[int | None, set[str]]] = {None: {None: set()}}  # processed by construct_capabilities
 
         ##############################################################################
         # Video-stream formats
@@ -1664,7 +1664,7 @@ class Host:
         self._lease_time = None
 
     @property
-    def capabilities(self) -> dict[int | None, set[str]]:
+    def capabilities(self) -> dict[int | None, dict[int | None, set[str]]]:
         return self._capabilities
 
     @property
@@ -1678,7 +1678,7 @@ class Host:
     def construct_capabilities(self, warnings=True) -> None:
         """Construct the capabilities list of the NVR/camera."""
         # Host capabilities
-        self._capabilities[None] = set()
+        self._capabilities.setdefault(None, {})[None] = set()
 
         if self.api_version("onvif") > 0 and self._onvif_port is not None:
             self._add_capability("ONVIF")
@@ -1743,12 +1743,10 @@ class Host:
             self._add_capability("reboot")
 
         # Baichuan capabilities
-        if (bc_host_cap := self.baichuan.capabilities.get(None, {}).get(None)) is not None:
-            self._capabilities[None] = self._capabilities[None].union(bc_host_cap)
-        for channel in self._stream_channels:
-            self._capabilities[channel] = set()
-            if (bc_cap := self.baichuan.capabilities.get(channel, {}).get(None)) is not None:
-                self._capabilities[channel] = self._capabilities[channel].union(bc_cap)
+        for ch, cap_dict in self.baichuan.capabilities.items():
+            for sub_ch, bc_cap_set in cap_dict.items():
+                cap_set = self._capabilities.setdefault(ch, {}).setdefault(sub_ch, set())
+                self._capabilities[ch][sub_ch] = cap_set.union(bc_cap_set)
 
         # Stream capabilities
         for channel in self._stream_channels:
@@ -1830,7 +1828,7 @@ class Host:
 
         # Channel capabilities
         for channel in self._channels:
-            self._capabilities.setdefault(channel, set())
+            self._capabilities.setdefault(channel, {}).setdefault(None, set())
 
             if self.camera_uid(channel) != UNKNOWN:
                 self._add_capability("UID", channel)
@@ -1973,21 +1971,22 @@ class Host:
             if self.backlight_state(channel) is not None:
                 self._add_capability("backLight", channel)
 
-    def _add_capability_once(self, capability: str, channel: int | None = None):
+    def _add_capability_once(self, capability: str, channel: int | None = None, sub_channel: int | None = None):
         """Add a capability flag, but make sure it only gets added to at most 1 channel for dual lens cameras."""
         if self._is_dual_lens and channel is not None:
             for ch in self._stream_channels:
-                if capability in self._capabilities[ch]:
-                    return
-        self._capabilities[channel].add(capability)
+                for sub_ch in self.sub_channels(ch):
+                    if capability in self._capabilities[ch][sub_ch]:
+                        return
+        self._capabilities[channel][sub_channel].add(capability)
 
-    def _add_capability(self, capability: str, channel: int | None = None):
+    def _add_capability(self, capability: str, channel: int | None = None, sub_channel: int | None = None):
         """Add a capability flag."""
-        self._capabilities[channel].add(capability)
+        self._capabilities[channel][sub_channel].add(capability)
 
-    def supported(self, channel: int | None, capability: str) -> bool:
+    def supported(self, channel: int | None, capability: str, sub_channel: int | None = None) -> bool:
         """Return if a capability is supported by a camera channel."""
-        return capability in self._capabilities.get(channel, set())
+        return capability in self._capabilities.get(channel, {}).get(sub_channel, set())
 
     def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
