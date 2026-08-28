@@ -183,7 +183,7 @@ class Baichuan:
                 self.cmd_funcs[cmd] = func
 
         # supported
-        self.capabilities: dict[int | None, set[str]] = {}
+        self.capabilities: dict[int | None, dict[int | None, set[str]]] = {}
         self._abilities: dict[int | None, dict[int | None, XML.Element]] = {}
 
         # host states
@@ -1192,9 +1192,11 @@ class Baichuan:
             if sleep:
                 self.last_privacy_on = now
 
-            self.capabilities.setdefault(channel, set()).add("privacy_mode")
+            self.capabilities.setdefault(channel, {}).setdefault(None, set())
+            self._add_capability("privacy_mode", channel)
             if not self.http_api.is_nvr:
-                self.capabilities.setdefault(None, set()).add("privacy_mode")
+                self.capabilities.setdefault(None, {}).setdefault(None, set())
+                self._add_capability("privacy_mode")
 
         elif cmd_id == 580:  # modify Cfg
             channel = self._get_channel_from_xml_element(root)
@@ -1845,11 +1847,12 @@ class Baichuan:
                     if channel is None:
                         continue
                     # check for sub channels
+                    self.http_api._sub_channels.setdefault(channel, {None})
                     for sub_item in item.findall("subItem"):
                         sub_channel = get_value_from_xml(sub_item, "chnID", int)
                         if sub_channel is None:
                             continue
-                        self.http_api._sub_channels.setdefault(channel, set()).add(sub_channel)
+                        self.http_api._sub_channels[channel].add(sub_channel)
                         self._abilities.setdefault(channel, {})[sub_channel] = sub_item
                         item.remove(sub_item)
                     # channel item
@@ -1863,12 +1866,13 @@ class Baichuan:
                 self.http_api.baichuan_only = True
 
         # Host capabilities
-        self.capabilities.setdefault(None, set())
+        self.capabilities.setdefault(None, {}).setdefault(None, set())
         self.http_api._is_battery = not self.http_api.is_nvr and self.api_version("battery", 0) > 0
         for channel in self.http_api._stream_channels:
-            self.capabilities.setdefault(channel, set())
+            for sub_channel in self.http_api.sub_channels(channel):
+                self.capabilities.setdefault(channel, {}).setdefault(sub_channel, set())
         if self.api_version("reboot") > 0:
-            self.capabilities[None].add("reboot")
+            self._add_capability("reboot")
         if (io_inputs := self.api_version("IOInputPortNum")) > 0:
             channel = None if self.http_api._is_nvr else 0
             self._io_inputs[channel] = list(range(0, io_inputs))
@@ -1881,15 +1885,15 @@ class Baichuan:
         if self.api_version("sceneModeCfg") > 0:
             host_coroutines.append((603, self.send(cmd_id=603)))
         if self.api_version("wifi") > 0:
-            self.capabilities[None].add("wifi")
+            self._add_capability("wifi")
         if self.api_version("rtsp") > 0 and self.http_api._rtsp_port is not None:
-            self.capabilities[None].add("RTSP")
+            self._add_capability("RTSP")
         if self.api_version("onvif") > 0 and self.http_api._onvif_port is not None and not self.http_api.is_battery:
-            self.capabilities[None].add("ONVIF")
+            self._add_capability("ONVIF")
         if self.http_api.is_hub and ((self.api_version("doorbellVersion") >> 0) & 1 or (self.api_version("doorbellVersion") >> 4) & 1):
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
         if self.api_version("timeFormat") > 0:
-            self.capabilities[None].add("sync_time")
+            self._add_capability("sync_time")
 
         if self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
@@ -1911,14 +1915,14 @@ class Baichuan:
                     raise result
 
                 if cmd_id == 603:  # sceneListID
-                    self.capabilities[None].add("scenes")
+                    self._add_capability("scenes")
                     self._scenes[-1] = "off"
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 806:
-                    self.capabilities[None].add("bc_webhook")
+                    self._add_capability("bc_webhook")
                 elif cmd_id == "dingdonglist":
                     if self.http_api._GetDingDong_present.get(None):
-                        self.capabilities[None].add("chime")
+                        self._add_capability("chime")
 
         if self.http_api.is_battery and not self.supported(None, "bc_webhook"):
             _LOGGER.warning(
@@ -1968,14 +1972,14 @@ class Baichuan:
                     assert isinstance(ver, dict)
                     ver[channel] = 1
                 if (doorbellVersion >> 1) & 1:
-                    self.capabilities[channel].add("hardwired_chime")
+                    self._add_capability("hardwired_chime", channel)
                     # cmd_id 483 makes the chime rattle a bit, just assume its supported
 
             batteryMode = self.api_version("batteryMode")
             if not self.http_api.is_nvr and batteryMode > 0:
-                self.capabilities[channel].add("work_mode_battery")
+                self._add_capability("work_mode_battery", channel)
                 if (batteryMode >> 6) & 1 and (batteryMode >> 8) & 1:  # bit 6 and bit 8
-                    self.capabilities[channel].add("work_mode_powered")
+                    self._add_capability("work_mode_powered", channel)
 
     async def get_channel_data(self) -> None:
         """Fetch the channel settings/capabilities."""
@@ -1985,20 +1989,21 @@ class Baichuan:
         noExternStream = self.api_version("noExternStream", no_key_return=0)
         coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._stream_channels:
-            self.capabilities.setdefault(channel, set())
+            for sub_channel in self.http_api.sub_channels(channel):
+                self.capabilities.setdefault(channel, {}).setdefault(sub_channel, set())
 
             if RtspVersion > 0:
-                self.capabilities[channel].add("stream")
+                self._add_capability("stream", channel)
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
-                self.capabilities[channel].add("snapshot")
+                self._add_capability("snapshot", channel)
             if noExternStream == 0 and RtmpVersion > 0:
-                self.capabilities[channel].add("ext_stream")
+                self._add_capability("ext_stream", channel)
 
             if self.supported(channel, "zoom_basic"):
                 min_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
                 max_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("max")
                 if min_zoom is not None and max_zoom is not None:
-                    self.capabilities[channel].add("zoom")
+                    self._add_capability("zoom", channel)
             if self.supported(channel, "pan_tilt"):
                 coroutines.append(("ptz_position", channel, self.get_ptz_position(channel)))
 
@@ -2017,10 +2022,10 @@ class Baichuan:
                 coroutines.append(("rules", channel, self.get_rule_ids(channel)))
 
             if self.api_version("battery", channel) > 0:
-                self.capabilities[channel].add("battery")
+                self._add_capability("battery", channel)
                 if self.http_api.baichuan_only:
-                    self.capabilities[channel].add("sleep")
-                    self.capabilities[None].add("sleep")
+                    self._add_capability("sleep", channel)
+                    self._add_capability("sleep")
 
             SmartaiVersion = self.api_version("smartAI", channel)
             if (SmartaiVersion >> 1) & 1:  # 2th bit (2), shift 1
@@ -2035,7 +2040,7 @@ class Baichuan:
                 coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))  # loss/taken item
 
             if self.api_version("motion", channel, no_key_return=1) > 0:
-                self.capabilities[channel].add("motion_detection")
+                self._add_capability("motion_detection", channel)
                 self.http_api._motion_detection_states.setdefault(channel, False)
 
             aiVersion = self.api_version("aitype", channel)
@@ -2052,53 +2057,53 @@ class Baichuan:
                 self.http_api._ai_detection_support.setdefault(channel, {})["dog_cat"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("dog_cat", False)
             if (aiVersion >> 6) & 1:  # 7th bit (64), shift 6
-                self.capabilities[channel].add("motion_detection")  # other detection (PIR)
+                self._add_capability("motion_detection", channel)  # other detection (PIR)
                 self.http_api._motion_detection_states.setdefault(channel, False)
             if (aiVersion >> 7) & 1 or (aiVersion >> 22) & 1:  # bit 7 or 22
                 coroutines.append(("GetAiCfg", channel, self.GetAiCfg(channel)))
             if (aiVersion >> 8) & 1:  # 9th bit (256), shift 8
-                self.capabilities[channel].add("ai_delay")
+                self._add_capability("ai_delay", channel)
             if (aiVersion >> 9) & 1:  # 10th bit (512), shift 9
-                self.capabilities[channel].add("ai_sensitivity")
+                self._add_capability("ai_sensitivity", channel)
             if (aiVersion >> 13) & 1:  # bit 13
-                self.capabilities[channel].add("auto_track_limit")
+                self._add_capability("auto_track_limit", channel)
             if (aiVersion >> 17) & 1:  # 18th bit (131072), shift 17
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
             if (aiVersion >> 23) & 1:  # 24th bit (8388608), shift 23 Yolo World
                 self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
                 self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
-                self.capabilities[channel].add("ai_non-motor vehicle")
-                self.capabilities[channel].add("ai_yolo")
+                self._add_capability("ai_non-motor vehicle", channel)
+                self._add_capability("ai_yolo", channel)
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
-                    self.capabilities[channel].add("ai_yolo_type")
+                    self._add_capability("ai_yolo_type", channel)
             if (aiVersion >> 25) & 1:  # bit 25
-                self.capabilities[channel].add("tamper")
+                self._add_capability("tamper", channel)
 
             ledVersion = self.api_version("ledCtrl", channel)
             if (ledVersion >> 0) & 1:  # 1th bit (1), shift 0
-                self.capabilities[channel].add("status_led")  # internal use only
-                self.capabilities[channel].add("power_led")
+                self._add_capability("status_led", channel)  # internal use only
+                self._add_capability("power_led", channel)
             if (ledVersion >> 1) & 1 and (ledVersion >> 2) & 1:  # 2nd bit (2), shift 1, 3nd bit (4), shift 2
-                self.capabilities[channel].add("floodLight")
+                self._add_capability("floodLight", channel)
             if (ledVersion >> 12) & 1:  # 13 th bit (4096) shift 12
-                self.capabilities[channel].add("ir_brightness")
+                self._add_capability("ir_brightness", channel)
             if (ledVersion >> 17) & 1:  # 18 th bit (131072) shift 17
-                self.capabilities[channel].add("color_temp")
+                self._add_capability("color_temp", channel)
             if (ledVersion >> 19) & 1:  # 20 th bit (524288) shift 19
-                self.capabilities[channel].add("floodlight_event")
+                self._add_capability("floodlight_event", channel)
 
             if (self.api_version("recordCfg", channel) >> 7) & 1 or (self.api_version("recordCfg") >> 7) & 1:  # 8 th bit (128) shift 7
-                self.capabilities[channel].add("pre_record")
+                self._add_capability("pre_record", channel)
 
             if self.http_api.is_nvr and self.api_version("reboot", channel) > 0:
-                self.capabilities[channel].add("reboot")
+                self._add_capability("reboot", channel)
 
             audioVersion = self.api_version("audioVersion", channel)
             if (audioVersion >> 2) & 1:  # 3 th bit (4) shift 2
-                self.capabilities[channel].add("siren_play")
+                self._add_capability("siren_play", channel)
                 if self.http_api.api_version("supportIfttt", channel) <= 0 and self.api_version("linkages", channel) <= 0:
-                    self.capabilities[channel].add("siren")
+                    self._add_capability("siren", channel)
             if (audioVersion >> 4) & 1 or (audioVersion >> 5) & 1 or (audioVersion >> 9) & 1:  # 5 & 6 & 10 th bit (16 & 32 & 512) shift 4 & 5 & 9
                 coroutines.append(("GetAudioCfg", channel, self.GetAudioCfg(channel)))
             if (audioVersion >> 6) & 1 and (audioVersion >> 7) & 1:  # shift 6 & 7
@@ -2108,9 +2113,9 @@ class Baichuan:
                 coroutines.append(("GetAudioNoise", channel, self.GetAudioNoise(channel)))
 
             if self.api_version("motion", channel, no_key_return=1) == 0 or self._dev_type == "light":
-                self.capabilities[channel].add("PIR_sensitivity")
+                self._add_capability("PIR_sensitivity", channel)
                 if not self.http_api.is_battery or not self._wired_power:
-                    self.capabilities[channel].add("PIR")
+                    self._add_capability("PIR", channel)
             if self.http_api.supported(channel, "PIR") or self.supported(channel, "PIR"):
                 # check for pir interval compatability
                 coroutines.append(("GetPirInfo", channel, self.GetPirInfo(channel)))
@@ -2120,40 +2125,40 @@ class Baichuan:
             if self.http_api.camera_hardware_version(channel) == UNKNOWN:
                 coroutines.append(("ch_info", channel, self.get_info(channel)))
 
-            if "snapshot" not in self.capabilities[channel]:
+            if not self.supported(channel, "snapshot"):
                 # No camera stream/snapshots e.g. Floodlight WiFi
                 continue
 
             if self.http_api._enc_settings.get(channel, {}).get("audio") is not None:
-                self.capabilities[channel].add("audio")
+                self._add_capability("audio", channel)
 
             if self.http_api.frame_rate(channel) is not None:
-                self.capabilities[channel].add("frame_rate")
+                self._add_capability("frame_rate", channel)
             if self.http_api.bit_rate(channel) is not None:
-                self.capabilities[channel].add("bit_rate")
+                self._add_capability("bit_rate", channel)
 
             if (self.api_version("recordCfg") >> 8) & 1:  # bit 8, aiExtendRecord
                 coroutines.append((655, channel, self._send_and_parse(655, channel)))
 
             newIspCfg = self.api_version("newIspCfg", channel)
             if (newIspCfg >> 0) & 1 and self.http_api.daynight_state(channel) is not None:  # 1th bit (1), shift 0
-                self.capabilities[channel].add("dayNight")
+                self._add_capability("dayNight", channel)
                 if (newIspCfg >> 13) & 1 or (newIspCfg >> 16) & 1:  # 17th bit (65536), shift 16
                     coroutines.append(("day_night_state", channel, self.get_day_night_state(channel)))
             if (newIspCfg >> 1) & 1:  # bit 1
-                self.capabilities[channel].add("anti_flicker")
+                self._add_capability("anti_flicker", channel)
             if (newIspCfg >> 2) & 1:  # 3th bit (4), shift 2
-                self.capabilities[channel].add("exposure")
+                self._add_capability("exposure", channel)
             if (newIspCfg >> 8) & 1 or (newIspCfg >> 14) & 1:  # 9th bit (256), shift 8
-                self.capabilities[channel].add("isp_bright")  # 8 = brightness, 14 = brightness&shadows
+                self._add_capability("isp_bright", channel)  # 8 = brightness, 14 = brightness&shadows
             if (newIspCfg >> 9) & 1:
-                self.capabilities[channel].add("isp_contrast")
+                self._add_capability("isp_contrast", channel)
             if (newIspCfg >> 10) & 1:
-                self.capabilities[channel].add("isp_satruation")
+                self._add_capability("isp_satruation", channel)
             if (newIspCfg >> 11) & 1:
-                self.capabilities[channel].add("isp_hue")
+                self._add_capability("isp_hue", channel)
             if (newIspCfg >> 12) & 1:
-                self.capabilities[channel].add("isp_sharpen")
+                self._add_capability("isp_sharpen", channel)
 
         for scene_id in self._scenes:
             if scene_id < 0:
@@ -2179,84 +2184,86 @@ class Baichuan:
                     root = XML.fromstring(result)
                     for audio in root.findall(".//audioStreamMode"):
                         if audio.text == "mixAudioStream":
-                            self.capabilities[channel].add("two_way_audio")
+                            self._add_capability("two_way_audio", channel)
                 if cmd_id == 483:  # hardwired chime
-                    self.capabilities[channel].add("hardwired_chime")
+                    self._add_capability("hardwired_chime", channel)
                 if cmd_id == 527:  # crossline detection
-                    self.capabilities[channel].add("ai_crossline")
+                    self._add_capability("ai_crossline", channel)
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 529:  # intrusion detection
-                    self.capabilities[channel].add("ai_intrusion")
+                    self._add_capability("ai_intrusion", channel)
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 531:  # linger detection
-                    self.capabilities[channel].add("ai_linger")
+                    self._add_capability("ai_linger", channel)
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 549:  # forgotten item
-                    self.capabilities[channel].add("ai_forgotten_item")
+                    self._add_capability("ai_forgotten_item", channel)
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 551:  # taken item
-                    self.capabilities[channel].add("ai_taken_item")
+                    self._add_capability("ai_taken_item", channel)
                     self._parse_xml(cmd_id, result)
                 elif cmd_id == 655:  # aiExtendRecord
-                    self.capabilities[channel].add("post_rec_ai")
+                    self._add_capability("post_rec_ai", channel)
                 elif cmd_id == "wifi":
-                    self.capabilities[channel].add("wifi")
+                    self._add_capability("wifi", channel)
                 elif cmd_id == "rules":
-                    self.capabilities[channel].add("rules")
+                    self._add_capability("rules", channel)
                 elif cmd_id == "day_night_state":
                     newIspCfg = self.api_version("newIspCfg", channel)
                     if ((newIspCfg >> 13) & 1 or (newIspCfg >> 16) & 1) and self.http_api.daynight_threshold(channel) is not None:
-                        self.capabilities[channel].add("dayNightThreshold")
+                        self._add_capability("dayNightThreshold", channel)
                     if self.day_night_state(channel) is not None:
-                        self.capabilities[channel].add("day_night_state")
+                        self._add_capability("day_night_state", channel)
                 elif cmd_id == "GetAiCfg":
                     aiVersion = self.api_version("aitype", channel)
                     if (aiVersion >> 22) & 1 and result.get("cryDetectAbility") == "1":
-                        self.capabilities[channel].add("ai_cry")
+                        self._add_capability("ai_cry", channel)
                     if (aiVersion >> 7) & 1:
-                        self.capabilities[channel].add("auto_track")
+                        self._add_capability("auto_track", channel)
                         if result.get("smartTrackModeAbility", 0).bit_count() > 1:
-                            self.capabilities[channel].add("auto_track_method")
+                            self._add_capability("auto_track_method", channel)
                 elif cmd_id == "ptz_position":
                     if self.http_api.ptz_pan_position(channel) is not None:
-                        self.capabilities[channel].add("ptz_position")
-                        self.capabilities[channel].add("ptz_pan_position")
+                        self._add_capability("ptz_position", channel)
+                        self._add_capability("ptz_pan_position", channel)
                     if self.http_api.ptz_tilt_position(channel) is not None:
-                        self.capabilities[channel].add("ptz_position")
-                        self.capabilities[channel].add("ptz_tilt_position")
+                        self._add_capability("ptz_position", channel)
+                        self._add_capability("ptz_tilt_position", channel)
                 elif cmd_id == "GetAudioCfg":
-                    self.capabilities[channel].add("volume")
+                    self._add_capability("volume", channel)
                     if self.api_version("doorbellVersion", channel) > 0 and "visitorLoudspeaker" in self.http_api._audio_settings.get(channel, {}):
-                        self.capabilities[channel].add("doorbell_button_sound")
+                        self._add_capability("doorbell_button_sound", channel)
                     if self.http_api.volume_speak(channel) is not None:
-                        self.capabilities[channel].add("volume_speak")
+                        self._add_capability("volume_speak", channel)
                     if self.http_api.volume_doorbell(channel) is not None:
-                        self.capabilities[channel].add("volume_doorbell")
+                        self._add_capability("volume_doorbell", channel)
                     if (self.api_version("audioVersion", channel) >> 5) & 1 and "preAlarm" in self.http_api._audio_settings.get(channel, {}):
-                        self.capabilities[channel].add("pre_siren")
+                        self._add_capability("pre_siren", channel)
                 elif cmd_id == "GetAudioFileList":
-                    self.capabilities[channel].add("quick_reply")
-                    self.capabilities[channel].add("play_quick_reply")
+                    self._add_capability("quick_reply", channel)
+                    self._add_capability("play_quick_reply", channel)
                 elif cmd_id == "GetAudioNoise":
-                    self.capabilities[channel].add("noise_reduction")
+                    self._add_capability("noise_reduction", channel)
                 elif cmd_id == "GetPirInfo":
                     if self.http_api._pir.get(channel, {}).get("interval_max", 0) > 0:
-                        self.capabilities[channel].add("PIR_interval")
+                        self._add_capability("PIR_interval", channel)
 
-    def _add_capability_once(self, capability: str, channel: int | None = None):
+    def _add_capability_once(self, capability: str, channel: int | None = None, sub_channel: int | None = None):
         """Add a capability flag, but make sure it only gets added to at most 1 channel for dual lens cameras."""
         if self.http_api._is_dual_lens and channel is not None:
             for ch in self.http_api._stream_channels:
-                if capability in self.capabilities[ch]:
-                    return
-        self.capabilities[channel].add(capability)
+                for sub_ch in self.http_api.sub_channels(ch):
+                    if capability in self.capabilities[ch][sub_ch]:
+                        return
+        self.capabilities[channel][sub_channel].add(capability)
 
-    def supported(self, channel: int | None, capability: str) -> bool:
+    def _add_capability(self, capability: str, channel: int | None = None, sub_channel: int | None = None):
+        """Add a capability flag."""
+        self.capabilities[channel][sub_channel].add(capability)
+
+    def supported(self, channel: int | None, capability: str, sub_channel: int | None = None) -> bool:
         """Return if a capability is supported by a camera channel."""
-        if channel not in self.capabilities:
-            return False
-
-        return capability in self.capabilities[channel]
+        return capability in self.capabilities.get(channel, {}).get(sub_channel, set())
 
     def api_version(self, capability: str, channel: int | None = None, sub_channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
@@ -2305,7 +2312,7 @@ class Baichuan:
                     if key in ability:
                         cap, stream_channel = value
                         if stream_channel or channel in self.http_api._channels:
-                            self.capabilities[channel].add(cap)
+                            self._add_capability(cap, channel)
 
     async def _get_ability_info(self) -> None:
         """Get ability info as part of get_host_data."""
@@ -2318,7 +2325,7 @@ class Baichuan:
             self._analyze_ability_info(ability_info, "image", {"ledState_rw": ("ir_lights", False)})
         except ReolinkError:
             for channel in self.http_api._channels:
-                self.capabilities[channel].add("ir_lights")
+                self._add_capability("ir_lights", channel)
             raise
 
         self._analyze_ability_info(ability_info, "video", {"shelter_rw": ("privacy_mask_basic", True)})

@@ -231,7 +231,7 @@ class Host:
         self._channels: list[int] = []
         self._other_brand_channels: list[int] = []
         self._stream_channels: list[int] = []
-        self._sub_channels: dict[int, set[int]] = {}
+        self._sub_channels: dict[int, set[int | None]] = {}
         self._channel_online: dict[int, bool] = {}
         self._channel_online_check: dict[int, bool] = {}
         self._is_doorbell: dict[int, bool] = {}
@@ -507,7 +507,7 @@ class Host:
         """Return the list of indices of stream channels available."""
         return self._stream_channels
 
-    def sub_channels(self, channel: int) -> set[int] | set[None]:
+    def sub_channels(self, channel: int) -> set[int | None]:
         """Return the list of indices of stream channels available."""
         return self._sub_channels.get(channel, {None})
 
@@ -1743,12 +1743,12 @@ class Host:
             self._capabilities["Host"].add("reboot")
 
         # Baichuan capabilities
-        if None in self.baichuan.capabilities:
-            self._capabilities["Host"] = self._capabilities["Host"].union(self.baichuan.capabilities[None])
+        if (bc_host_cap := self.baichuan.capabilities.get(None, {}).get(None)) is not None:
+            self._capabilities["Host"] = self._capabilities["Host"].union(bc_host_cap)
         for channel in self._stream_channels:
             self._capabilities[channel] = set()
-            if channel in self.baichuan.capabilities:
-                self._capabilities[channel] = self._capabilities[channel].union(self.baichuan.capabilities[channel])
+            if (bc_cap := self.baichuan.capabilities.get(channel, {}).get(None)) is not None:
+                self._capabilities[channel] = self._capabilities[channel].union(bc_cap)
 
         # Stream capabilities
         for channel in self._stream_channels:
