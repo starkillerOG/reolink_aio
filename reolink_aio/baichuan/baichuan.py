@@ -184,7 +184,7 @@ class Baichuan:
 
         # supported
         self.capabilities: dict[int | None, set[str]] = {}
-        self._abilities: dict[int | None, XML.Element] = {}
+        self._abilities: dict[int | None, dict[int | None, XML.Element]] = {}
 
         # host states
         self._ports: dict[str, dict[str, int | bool]] = {}
@@ -1841,17 +1841,22 @@ class Baichuan:
             root = XML.fromstring(mess)
             for support in root:
                 for item in support.findall("item"):
-                    # channel item
                     channel = self._get_channel_from_xml_element(item, "chnID")
-                    self._abilities[channel] = item
-                    support.remove(item)
+                    if channel is None:
+                        continue
                     # check for sub channels
                     for sub_item in item.findall("subItem"):
                         sub_channel = get_value_from_xml(sub_item, "chnID", int)
                         if sub_channel is None:
                             continue
                         self.http_api._sub_channels.setdefault(channel, set()).add(sub_channel)
-                self._abilities[None] = support
+                        self._abilities.setdefault(channel, {})[sub_channel] = sub_item
+                        item.remove(sub_item)
+                    # channel item
+                    self._abilities.setdefault(channel, {})[None] = item
+                    support.remove(item)
+
+                self._abilities.setdefault(None, {})[None] = support
 
             # check if HTTP(s) API is supported
             if self.api_version("netPort", no_key_return=55) <= 1:
@@ -1977,7 +1982,7 @@ class Baichuan:
         # Stream capabilities
         RtspVersion = self.api_version("rtsp")
         RtmpVersion = self.api_version("rtmp")
-        noExternStream = self.api_version("noExternStream", None, 0)
+        noExternStream = self.api_version("noExternStream", no_key_return=0)
         coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._stream_channels:
             self.capabilities.setdefault(channel, set())
@@ -2083,7 +2088,7 @@ class Baichuan:
             if (ledVersion >> 19) & 1:  # 20 th bit (524288) shift 19
                 self.capabilities[channel].add("floodlight_event")
 
-            if (self.api_version("recordCfg", channel) >> 7) & 1 or (self.api_version("recordCfg", None) >> 7) & 1:  # 8 th bit (128) shift 7
+            if (self.api_version("recordCfg", channel) >> 7) & 1 or (self.api_version("recordCfg") >> 7) & 1:  # 8 th bit (128) shift 7
                 self.capabilities[channel].add("pre_record")
 
             if self.http_api.is_nvr and self.api_version("reboot", channel) > 0:
@@ -2253,12 +2258,13 @@ class Baichuan:
 
         return capability in self.capabilities[channel]
 
-    def api_version(self, capability: str, channel: int | None = None, no_key_return: int = 0) -> int:
+    def api_version(self, capability: str, channel: int | None = None, sub_channel: int | None = None, no_key_return: int = 0) -> int:
         """Return the api version of a capability, 0=not supported, >0 is supported"""
-        if channel not in self._abilities:
+        ability_xml = self._abilities.get(channel, {}).get(sub_channel)
+        if ability_xml is None:
             return no_key_return
 
-        value = get_value_from_xml(self._abilities[channel], capability, int)
+        value = get_value_from_xml(ability_xml, capability, int)
         if value is None:
             return no_key_return
 
@@ -2267,32 +2273,22 @@ class Baichuan:
     @property
     def abilities(self) -> dict[int | str, Any]:
         """Return the abilities as a dictionary"""
-        abilities_dict: dict[int | str, dict[str, int | str | dict[str, int | str]]] = {}
+        abilities_dict: dict[int | str, Any] = {}
         value: int | str
-        for key, xml in self._abilities.items():
-            pretty_key: str | int = key if key is not None else "Host"
-            abilities_dict[pretty_key] = {}
-            for feature in xml:
-                if feature.tag == "subItem":
-                    sub_channel = get_value_from_xml(feature, "chnID", int)
-                    if sub_channel is None:
-                        continue
-                    sub_dict = {}
-                    for sub_feature in feature:
-                        if sub_feature.text is not None:
-                            try:
-                                value = int(sub_feature.text)
-                            except ValueError:
-                                value = sub_feature.text
-                            sub_dict[sub_feature.tag] = value
-                    abilities_dict[pretty_key][f"sub_channel_{sub_channel}"] = sub_dict
-                    continue
-                if feature.text is not None:
-                    try:
-                        value = int(feature.text)
-                    except ValueError:
-                        value = feature.text
-                    abilities_dict[pretty_key][feature.tag] = value
+        for ch, sub_dict in self._abilities.items():
+            for sub_ch, xml in sub_dict.items():
+                pretty_key: str | int = ch if ch is not None else "Host"
+                dict_to_add: dict[int | str, Any] = abilities_dict.setdefault(pretty_key, {})
+                if sub_ch is not None:
+                    pretty_sub_key = f"sub_channel_{sub_ch}"
+                    dict_to_add = abilities_dict[pretty_key].setdefault(pretty_sub_key, {})
+                for feature in xml:
+                    if feature.text is not None:
+                        try:
+                            value = int(feature.text)
+                        except ValueError:
+                            value = feature.text
+                        dict_to_add[feature.tag] = value
         return abilities_dict
 
     def _analyze_ability_info(self, ability_info: XML.Element, token: str, capability: dict[str, tuple[str, bool]]) -> None:
