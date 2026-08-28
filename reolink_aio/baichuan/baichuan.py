@@ -1933,34 +1933,35 @@ class Baichuan:
             )
 
         for channel in self.http_api._stream_channels:
-            ptz_ver = self.api_version("ptzType", channel)
-            ptz_ctr = self.api_version("ptzControl", channel)
-            if (ptz_ctr >> 4) & 1:  # bit 4 DigitalZoom
-                self._add_capability_once("zoom_basic", channel)
-            if ptz_ver != 0:
-                self._add_capability_once("ptz", channel)
-                if ptz_ver in [1, 2, 5]:
-                    self._add_capability_once("zoom_basic", channel)
-                    if self.api_version("supportPtz3DLocation", channel) > 0:
-                        self._add_capability_once("ptz_3d_zoom", channel)
-                if ptz_ver in [2, 3, 5, 6]:
-                    self._add_capability_once("tilt", channel)
-                if ptz_ver in [2, 3, 5, 6, 7]:
-                    self._add_capability_once("pan_tilt", channel)
-                    self._add_capability_once("pan", channel)
-                    if self.api_version("ptzPreset", channel) > 0:
-                        self._add_capability_once("ptz_preset_basic", channel)
-                    if self.api_version("autoPt", channel) > 0:
-                        self._add_capability_once("ptz_auto", channel)
+            for sub_ch in self.http_api.sub_channels(channel):
+                ptz_ver = self.api_version("ptzType", channel, sub_ch)
+                ptz_ctr = self.api_version("ptzControl", channel, sub_ch)
+                if (ptz_ctr >> 4) & 1:  # bit 4 DigitalZoom
+                    self._add_capability_once("zoom_basic", channel, sub_ch)
+                if ptz_ver != 0:
+                    self._add_capability_once("ptz", channel, sub_ch)
+                    if ptz_ver in [1, 2, 5]:
+                        self._add_capability_once("zoom_basic", channel, sub_ch)
+                        if self.api_version("supportPtz3DLocation", channel, sub_ch) > 0:
+                            self._add_capability_once("ptz_3d_zoom", channel, sub_ch)
+                    if ptz_ver in [2, 3, 5, 6]:
+                        self._add_capability_once("tilt", channel, sub_ch)
+                    if ptz_ver in [2, 3, 5, 6, 7]:
+                        self._add_capability_once("pan_tilt", channel, sub_ch)
+                        self._add_capability_once("pan", channel, sub_ch)
+                        if self.api_version("ptzPreset", channel, sub_ch) > 0:
+                            self._add_capability_once("ptz_preset_basic", channel, sub_ch)
+                        if self.api_version("autoPt", channel, sub_ch) > 0:
+                            self._add_capability_once("ptz_auto", channel, sub_ch)
 
-                    if not (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
-                        self._add_capability_once("ptz_diagonal", channel)
-                    if (ptz_ctr >> 2) & 1:  # 3th bit (4), shift 2
-                        self._add_capability_once("ptz_guard", channel)
-                    if (ptz_ctr >> 3) & 1:  # 4th bit (8), shift 3
-                        self._add_capability_once("ptz_callibrate", channel)
-                    if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
-                        self._add_capability_once("ptz_speed", channel)
+                        if not (ptz_ctr >> 1) & 1:  # 2th bit (2), shift 1
+                            self._add_capability_once("ptz_diagonal", channel, sub_ch)
+                        if (ptz_ctr >> 2) & 1:  # 3th bit (4), shift 2
+                            self._add_capability_once("ptz_guard", channel, sub_ch)
+                        if (ptz_ctr >> 3) & 1:  # 4th bit (8), shift 3
+                            self._add_capability_once("ptz_callibrate", channel, sub_ch)
+                        if (ptz_ctr >> 6) & 1:  # 7th bit (64), shift 6
+                            self._add_capability_once("ptz_speed", channel, sub_ch)
 
         for channel in self.http_api._channels:
             doorbellVersion = self.api_version("doorbellVersion", channel)

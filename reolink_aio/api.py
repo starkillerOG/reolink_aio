@@ -1801,9 +1801,6 @@ class Host:
                     if warnings:
                         _LOGGER.debug("Camera %s reported to support zoom, but zoom range not available", self.camera_name(channel))
 
-            if self.supported(channel, "pan_tilt") or self.supported(channel, "zoom_basic"):
-                self._add_capability_once("ptz_stop", channel)
-
             if len(self._ptz_presets.get(channel, {})) > 0:
                 self._add_capability_once("ptz_presets", channel)
             if len(self._ptz_patrols.get(channel, {})) > 0:
@@ -1811,6 +1808,10 @@ class Host:
 
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._add_capability("autotrack_stream", channel)
+
+            for sub_ch in self.sub_channels(channel):
+                if self.supported(channel, "pan_tilt", sub_ch) or self.supported(channel, "zoom_basic", sub_ch):
+                    self._add_capability_once("ptz_stop", channel, sub_ch)
 
             # DUAL LENS DUAL MOTION MODELS
             if channel not in self._channels and self.model not in DUAL_LENS_DUAL_MOTION_MODELS:
