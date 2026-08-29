@@ -2937,14 +2937,14 @@ class Baichuan:
                 self.http_api._ptz_presets.setdefault(channel, {})[data["name"]] = data["id"]
 
     @http_cmd("GetPtzGuard")
-    async def get_ptz_guard(self, channel: int) -> None:
+    async def get_ptz_guard(self, channel: int, sub_channel: int | None = None) -> None:
         """Get the PTZ Guard settings"""
-        mess = await self.send(cmd_id=332, channel=channel)
+        mess = await self.send(cmd_id=332, channel=channel, sub_channel=sub_channel)
         data = get_keys_from_xml(mess, {"timeout": ("timeout", int), "benable": ("benable", int), "bvalid": ("bexistPos", int)})
         self.http_api._ptz_guard_settings.setdefault(channel, {}).update(data)
 
     @http_cmd("SetPtzGuard")
-    async def set_ptz_guard(self, **kwargs) -> None:
+    async def set_ptz_guard(self, sub_channel: int | None = None, **kwargs) -> None:
         """Set the PTZ Guard settings"""
         param = kwargs["PtzGuard"]
         channel = param["channel"]
@@ -2953,7 +2953,7 @@ class Baichuan:
         else:
             cmd_str = "setGrd"
 
-        await self.get_ptz_guard(channel)
+        await self.get_ptz_guard(channel, sub_channel)
         val = self.http_api._ptz_guard_settings.get(channel, {})
 
         enable = param.get("benable", val.get("benable", 1))
@@ -2961,7 +2961,7 @@ class Baichuan:
         set_pos = param.get("bSaveCurrentPos", 0)
 
         xml = xmls.PtzGuard.format(channel=channel, enable=enable, cmd_str=cmd_str, timeout=timeout, set_pos=set_pos)
-        await self.send(cmd_id=331, channel=channel, body=xml)
+        await self.send(cmd_id=331, channel=channel, sub_channel=sub_channel, body=xml)
 
     async def get_ptz_patrol(self, channel: int) -> None:
         """Get the PTZ patrol info"""
@@ -2989,8 +2989,8 @@ class Baichuan:
         await self.send(cmd_id=445, channel=channel, body=xml)
 
     @http_cmd("PtzCheck")
-    async def ptz_callibrate(self, channel: int) -> None:
-        await self.send(cmd_id=341, channel=channel)
+    async def ptz_callibrate(self, channel: int, sub_channel: int | None = None) -> None:
+        await self.send(cmd_id=341, channel=channel, sub_channel=sub_channel)
 
     @http_cmd("PtzCtrl")
     async def set_ptz_command(self, channel: int, op: str, speed: int | None = None, sub_channel: int | None = None, **kwargs) -> None:

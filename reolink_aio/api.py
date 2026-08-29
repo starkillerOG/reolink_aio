@@ -4686,7 +4686,7 @@ class Host:
         """Guard point return time in seconds"""
         return self._ptz_guard_settings.get(channel, {}).get("timeout", 60)
 
-    async def set_ptz_guard(self, channel: int, command: str | None = None, enable: bool | None = None, time: int | None = None) -> None:
+    async def set_ptz_guard(self, channel: int, sub_channel: int | None = None, command: str | None = None, enable: bool | None = None, time: int | None = None) -> None:
         """Send PTZ guard."""
 
         if channel not in self._stream_channels:
@@ -4709,13 +4709,19 @@ class Host:
         if time is not None:
             params["timeout"] = time
 
+        if sub_channel is not None:
+            return await self.baichuan.set_ptz_guard(PtzGuard=params, sub_channel=sub_channel)
+
         body: typings.reolink_json = [{"cmd": "SetPtzGuard", "action": 0, "param": {"PtzGuard": params}}]
         await self.send_setting(body)
 
-    async def ptz_callibrate(self, channel: int) -> None:
+    async def ptz_callibrate(self, channel: int, sub_channel: int | None = None) -> None:
         """Callibrate PTZ of the camera."""
         if channel not in self._stream_channels:
             raise InvalidParameterError(f"ptz_callibrate: no camera connected to channel '{channel}'")
+
+        if sub_channel is not None:
+            return await self.baichuan.ptz_callibrate(channel, sub_channel)
 
         body: typings.reolink_json = [{"cmd": "PtzCheck", "action": 0, "param": {"channel": channel}}]
         await self.send_setting(body)
