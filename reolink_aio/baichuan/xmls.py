@@ -33,6 +33,13 @@ CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </Extension>
 """
 
+SUB_CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<channelId>{channel}</channelId>
+<subChannel>{sub_channel}</subChannel>
+</Extension>
+"""
+
 UDP_GET_UID_XML = """
 <P2P>
 <C2D_S>

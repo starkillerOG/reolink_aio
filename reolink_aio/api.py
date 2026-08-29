@@ -4620,7 +4620,9 @@ class Host:
         await asyncio.sleep(1)
         await self.baichuan.get_ptz_patrol(channel)
 
-    async def set_ptz_command(self, channel: int, command: str | None = None, preset: int | str | None = None, speed: int | None = None, patrol: int | None = None) -> None:
+    async def set_ptz_command(
+        self, channel: int, sub_channel: int | None = None, command: str | None = None, preset: int | str | None = None, speed: int | None = None, patrol: int | None = None
+    ) -> None:
         """Send PTZ command to the camera, list of possible commands see PtzEnum."""
 
         if channel not in self._stream_channels:
@@ -4645,21 +4647,24 @@ class Host:
         if command is None:
             raise InvalidParameterError("set_ptz_command: No command or preset specified.")
 
+        params = {"channel": channel, "op": command}
+        if speed:
+            params["speed"] = speed
+        if preset is not None:
+            params["id"] = preset
+        if patrol is not None:
+            params["id"] = patrol
+
+        if sub_channel is not None:
+            return await self.baichuan.set_ptz_command(sub_channel=sub_channel, **params)
+
         body: typings.reolink_json = [
             {
                 "cmd": "PtzCtrl",
                 "action": 0,
-                "param": {"channel": channel, "op": command},
+                "param": params,
             }
         ]
-
-        if speed:
-            body[0]["param"]["speed"] = speed
-        if preset is not None:
-            body[0]["param"]["id"] = preset
-        if patrol is not None:
-            body[0]["param"]["id"] = patrol
-
         await self.send_setting(body)
 
     def ptz_pan_position(self, channel: int) -> int | None:

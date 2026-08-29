@@ -244,6 +244,7 @@ class Baichuan:
         self,
         cmd_id: int,
         channel: int | None = None,
+        sub_channel: int | None = None,
         body: str = "",
         extension: str = "",
         enc_type: EncType = EncType.AES,
@@ -270,7 +271,10 @@ class Baichuan:
         if channel is not None:
             if extension:
                 raise InvalidParameterError(f"Baichuan host {self._host}: cannot specify both channel and extension")
-            ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
+            if sub_channel is not None:
+                ext = xmls.SUB_CHANNEL_EXTENSION_XML.format(channel=channel, sub_channel=sub_channel)
+            else:
+                ext = xmls.CHANNEL_EXTENSION_XML.format(channel=channel)
 
         body_bytes = body.encode("utf8")
         ext_bytes = ext.encode("utf8")
@@ -313,7 +317,7 @@ class Baichuan:
             if retry <= 0 or cmd_id == 2:
                 raise
             _LOGGER.debug("%s, trying again", err)
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
         if TYPE_CHECKING:
             assert self._connection is not None
 
@@ -331,12 +335,12 @@ class Baichuan:
                 raise err
             _LOGGER.debug("%s, trying again in 1.5 s", str(err))
             await asyncio.sleep(1.5)  # give the battery cam time to wake
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
         except (ReolinkTimeoutError, ReolinkConnectionError) as err:
             if retry <= 0 or cmd_id == 2:
                 raise
             _LOGGER.debug("%s, trying again", err)
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
 
         # check full message id
         rec_mess_id = int.from_bytes(data[12:16], byteorder="little")
@@ -345,7 +349,7 @@ class Baichuan:
             if retry <= 0:
                 raise UnexpectedDataError(err_str)
             _LOGGER.debug("%s, trying again", str(err_str))
-            return await self.send(cmd_id, channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
@@ -2989,7 +2993,7 @@ class Baichuan:
         await self.send(cmd_id=341, channel=channel)
 
     @http_cmd("PtzCtrl")
-    async def set_ptz_command(self, channel: int, op: str, speed: int | None = None, **kwargs) -> None:
+    async def set_ptz_command(self, channel: int, op: str, speed: int | None = None, sub_channel: int | None = None, **kwargs) -> None:
         xml_base = xmls.PtzControl.format(channel=channel, command=op)
         xml_body = XML.fromstring(xml_base[1:])
 
@@ -3004,7 +3008,7 @@ class Baichuan:
 
         xml = XML.tostring(xml_body, encoding="unicode")
         xml = xmls.XML_HEADER + xml
-        await self.send(cmd_id=18, channel=channel, body=xml)
+        await self.send(cmd_id=18, channel=channel, sub_channel=sub_channel, body=xml)
 
     @http_cmd(["GetAlarm", "GetMdAlarm"])
     async def GetMdAlarm(self, channel: int | None = None, **kwargs) -> None:
