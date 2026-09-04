@@ -187,7 +187,7 @@ class Baichuan:
         self._abilities: dict[int | None, dict[int | None, XML.Element]] = {}
 
         # host states
-        self._ports: dict[str, dict[str, int | bool]] = {}
+        self._ports: dict[str, dict[str, int | bool | str]] = {}
         self._scenes: dict[int, str] = {}
         self._active_scene: int = -1
         self._day_night_state: dict[int, str] = {}
@@ -2488,11 +2488,10 @@ class Baichuan:
                     raise result
 
     @http_cmd("GetNetPort")
-    async def get_ports(self, **_kwargs) -> dict[str, dict[str, int | bool]]:
+    async def get_ports(self, **_kwargs) -> dict[str, dict[str, str | int | bool]]:
         """Get the HTTP(S)/RTSP/RTMP/ONVIF port state"""
         mess = await self.send(cmd_id=37)
 
-        self._ports = {}
         root = XML.fromstring(mess)
         for protocol in root:
             for key in protocol:
@@ -2500,11 +2499,16 @@ class Baichuan:
                 sub_key = key.tag.replace(proto_key, "").lower()
                 if key.text is None:
                     continue
-                self._ports.setdefault(proto_key, {})
-                self._ports[proto_key][sub_key] = int(key.text)
+                value: str | int | bool = key.text
+                if sub_key == "port":
+                    value = int(value)
+                if sub_key == "enable":
+                    value = int(value) == 1
+                self._ports.setdefault(proto_key, {})[sub_key] = value
 
         if (bc_port := self._ports.get("server", {}).get("port")) is not None and bc_port != self.port:
             _LOGGER.warning("Baichuan host %s: baichuan port changed from %s to %s", self._host, self.port, bc_port)
+            assert isinstance(bc_port, int)
             self.port = bc_port
 
         if self.rtsp_port is not None:
@@ -4451,58 +4455,63 @@ class Baichuan:
 
     @property
     def http_port(self) -> int | None:
-        return self._ports.get("http", {}).get("port")
+        value = self._ports.get("http", {}).get("port")
+        assert isinstance(value, int | None)
+        return value
 
     @property
     def https_port(self) -> int | None:
-        return self._ports.get("https", {}).get("port")
+        value = self._ports.get("https", {}).get("port")
+        assert isinstance(value, int | None)
+        return value
 
     @property
     def rtmp_port(self) -> int | None:
-        return self._ports.get("rtmp", {}).get("port")
+        value = self._ports.get("rtmp", {}).get("port")
+        assert isinstance(value, int | None)
+        return value
 
     @property
     def rtsp_port(self) -> int | None:
-        return self._ports.get("rtsp", {}).get("port")
+        value = self._ports.get("rtsp", {}).get("port")
+        assert isinstance(value, int | None)
+        return value
 
     @property
     def onvif_port(self) -> int | None:
-        return self._ports.get("onvif", {}).get("port")
+        value = self._ports.get("onvif", {}).get("port")
+        assert isinstance(value, int | None)
+        return value
 
     @property
     def http_enabled(self) -> bool | None:
-        enabled = self._ports.get("http", {}).get("enable")
-        if enabled is None:
-            return None
-        return enabled == 1
+        value = self._ports.get("http", {}).get("enable")
+        assert isinstance(value, bool | None)
+        return value
 
     @property
     def https_enabled(self) -> bool | None:
-        enabled = self._ports.get("https", {}).get("enable")
-        if enabled is None:
-            return None
-        return enabled == 1
+        value = self._ports.get("https", {}).get("enable")
+        assert isinstance(value, bool | None)
+        return value
 
     @property
     def rtmp_enabled(self) -> bool | None:
-        enabled = self._ports.get("rtmp", {}).get("enable")
-        if enabled is None:
-            return None
-        return enabled == 1
+        value = self._ports.get("rtmp", {}).get("enable")
+        assert isinstance(value, bool | None)
+        return value
 
     @property
     def rtsp_enabled(self) -> bool | None:
-        enabled = self._ports.get("rtsp", {}).get("enable")
-        if enabled is None:
-            return None
-        return enabled == 1
+        value = self._ports.get("rtsp", {}).get("enable")
+        assert isinstance(value, bool | None)
+        return value
 
     @property
     def onvif_enabled(self) -> bool | None:
-        enabled = self._ports.get("onvif", {}).get("enable")
-        if enabled is None:
-            return None
-        return enabled == 1
+        value = self._ports.get("onvif", {}).get("enable")
+        assert isinstance(value, bool | None)
+        return value
 
     @property
     def active_scene_id(self) -> int:
