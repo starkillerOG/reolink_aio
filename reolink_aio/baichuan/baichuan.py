@@ -3621,7 +3621,7 @@ class Baichuan:
             if retry < 0:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: GetDingDongList received channel {rec_channel} while requesting channel {channel}")
             _LOGGER.debug("Baichuan host %s: GetDingDongList received channel %s from a push while requesting channel %s, retrying...", self._host, rec_channel, channel)
-            return self.GetDingDongList(channel=channel, retry=retry)
+            return await self.GetDingDongList(channel=channel, retry=retry)
 
         chime_list = []
         for chime in root.findall(".//dingdongDeviceInfo"):
