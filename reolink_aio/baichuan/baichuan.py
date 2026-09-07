@@ -1793,6 +1793,13 @@ class Baichuan:
             self._battery_close_task = None
 
         if self._logged_in and self._connection is not None:
+            # wait on responses of already send cmds
+            if self._connection.receive_futures:
+                expected_cmd_ids = ", ".join(map(str, self._connection.receive_futures.keys()))
+                _LOGGER.debug("Baichuan host %s: waiting max 5 sec for cmd_id %s before logout...", self._host, expected_cmd_ids)
+                receive_futures = (v for d in self._connection.receive_futures.values() for v in d.values())
+                await asyncio.wait(receive_futures, timeout=5, return_when=asyncio.ALL_COMPLETED)
+
             try:
                 xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
                 await self.send(cmd_id=2, body=xml)
