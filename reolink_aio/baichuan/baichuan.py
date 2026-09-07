@@ -1873,8 +1873,7 @@ class Baichuan:
                 self._abilities.setdefault(None, {})[None] = support
 
             # check if HTTP(s) API is supported
-            if (self.api_version("netPort", no_key_return=55) & 0x3F) <= 1:
-                self.http_api.baichuan_only = True
+            self.http_api.baichuan_only = (self.api_version("netPort", no_key_return=55) & 0x3F) <= 1
 
         # Host capabilities
         self.capabilities.setdefault(None, {}).setdefault(None, set())
