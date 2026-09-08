@@ -4629,7 +4629,7 @@ class Host:
             raise InvalidParameterError(f"set_ptz_command: no camera connected to channel '{channel}'")
         if speed is not None and not isinstance(speed, int):
             raise InvalidParameterError(f"set_ptz_command: speed {speed} is not integer")
-        if speed is not None and not self.supported(channel, "ptz_speed"):
+        if speed is not None and not self.supported(channel, "ptz_speed", sub_channel):
             raise NotSupportedError(f"set_ptz_command: ptz speed on camera {self.camera_name(channel)} is not available")
         command_list = [com.value for com in PtzEnum]
         if command is not None and command not in command_list and patrol is None:
