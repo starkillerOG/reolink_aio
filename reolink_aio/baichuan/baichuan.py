@@ -155,6 +155,8 @@ class Baichuan:
         self._connection: BaichuanTcpConnection | BaichuanUdpConnection | None = None
         self.connection_type: ConnectionEnum = connection_type
         self._login_mutex = asyncio.Lock()
+        self._logging_out = asyncio.Event()  # set = not logging out, unset = busy logging out
+        self._logging_out.set()
         self._loop = asyncio.get_event_loop()
         self._logged_in: bool = False
         self._login_sucess: bool = False
@@ -1666,6 +1668,9 @@ class Baichuan:
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
         async with self._login_mutex:
+            # wait untill any running logout is finished
+            await self._logging_out.wait()
+
             if self._logged_in:
                 return
 
@@ -1782,46 +1787,57 @@ class Baichuan:
         self._first_login = False
 
     async def logout(self) -> None:
-        """Close the TCP session and cleanup"""
-        if self._subscribed and not self.http_api.is_battery:
-            # first call unsubscribe_events
-            _LOGGER.debug("Baichuan host %s: logout called while still subscribed, keeping connection", self._host)
-            return
+        """Close the Baichuan session and cleanup"""
+        try:
+            async with self._login_mutex:
+                # block login untill this logout is complete, since login_mutex is non recursive it can't be used
+                self._logging_out.clear()
 
-        if self._battery_close_task is not None:
-            self._battery_close_task.cancel()
-            self._battery_close_task = None
+            if self._subscribed and not self.http_api.is_battery:
+                # first call unsubscribe_events
+                _LOGGER.debug("Baichuan host %s: logout called while still subscribed, keeping connection", self._host)
+                return
 
-        if self._logged_in and self._connection is not None:
-            # wait on responses of already send cmds
-            if self._connection.receive_futures:
-                expected_cmd_ids = ", ".join(map(str, self._connection.receive_futures.keys()))
-                _LOGGER.debug("Baichuan host %s: waiting max 5 sec for cmd_id %s before logout...", self._host, expected_cmd_ids)
-                receive_futures = (v for d in self._connection.receive_futures.values() for v in d.values())
-                await asyncio.wait(receive_futures, timeout=5, return_when=asyncio.ALL_COMPLETED)
+            if self._battery_close_task is not None:
+                self._battery_close_task.cancel()
+                self._battery_close_task = None
 
-            try:
-                xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
-                await self.send(cmd_id=2, body=xml)
-            except ReolinkConnectionError:
-                _LOGGER.debug("Baichuan host %s: connection closed before logout confirmation", self._host)
-            except ReolinkError as err:
-                _LOGGER.error("Baichuan host %s: failed to logout: %s", self._host, err)
+            if self._logged_in and self._connection is not None:
+                # wait on responses of already send cmds
+                try:
+                    async with asyncio.timeout(5):
+                        while self._connection.receive_futures:
+                            expected_cmd_ids = ", ".join(map(str, self._connection.receive_futures.keys()))
+                            _LOGGER.debug("Baichuan host %s: waiting for cmd_id %s before logout...", self._host, expected_cmd_ids)
+                            receive_futures = (v for d in self._connection.receive_futures.values() for v in d.values())
+                            await asyncio.wait(receive_futures, return_when=asyncio.ALL_COMPLETED)
+                except asyncio.TimeoutError:
+                    _LOGGER.warning("Baichuan host %s: timeout of 5 sec waiting for cmd_id %s, continuing with logout", self._host, expected_cmd_ids)
 
-            try:
-                await self._connection.close()
-            except ConnectionResetError as err:
-                _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
+                try:
+                    xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
+                    await self.send(cmd_id=2, body=xml)
+                except ReolinkConnectionError:
+                    _LOGGER.debug("Baichuan host %s: connection closed before logout confirmation", self._host)
+                except ReolinkError as err:
+                    _LOGGER.error("Baichuan host %s: failed to logout: %s", self._host, err)
 
-        if not self._webhook_subscribed:
-            self._events_active = False
+                try:
+                    await self._connection.close()
+                except ConnectionResetError as err:
+                    _LOGGER.debug("Baichuan host %s: connection already reset when trying to close: %s", self._host, err)
 
-        self._logged_in = False
-        self._last_login = 0  # rest to allow direct new login
-        self._nonce = None
-        self._aes_key = None
-        self._user_hash = None
-        self._password_hash = None
+            if not self._webhook_subscribed:
+                self._events_active = False
+
+            self._logged_in = False
+            self._last_login = 0  # rest to allow direct new login
+            self._nonce = None
+            self._aes_key = None
+            self._user_hash = None
+            self._password_hash = None
+        finally:
+            self._logging_out.set()  # done, allow login again
 
     def register_callback(self, callback_id: str, callback: Callable[[], None], cmd_id: int | None = None, channel: int | None = None) -> None:
         """Register a callback which is called when a push event is received"""
