@@ -967,11 +967,13 @@ class Baichuan:
                 if (abi := data.get("doorbellAbility")) is not None:
                     if (abi >> 1) & 1:  # shift 1
                         ver = self.http_api._api_version.setdefault("supportDoorbellLightKeepOff", {})
-                        assert isinstance(ver, dict)
+                        if TYPE_CHECKING:
+                            assert isinstance(ver, dict)
                         ver[channel] = 1
                     if (abi >> 2) & 1:  # shift 2
                         ver = self.http_api._api_version.setdefault("supportDoorbellLightKeepOn", {})
-                        assert isinstance(ver, dict)
+                        if TYPE_CHECKING:
+                            assert isinstance(ver, dict)
                         ver[channel] = 1
 
             if (ir_brightness := data.get("ir_brightness")) is not None:
@@ -1997,7 +1999,8 @@ class Baichuan:
                 if (doorbellVersion >> 0) & 1 or (doorbellVersion >> 5) & 1:
                     # bit 0 = bidirectional chime, bit 5 = unidirectional chime
                     ver = self.http_api._api_version.setdefault("supportDingDongCtrl", {})
-                    assert isinstance(ver, dict)
+                    if TYPE_CHECKING:
+                        assert isinstance(ver, dict)
                     ver[channel] = 1
                 if (doorbellVersion >> 1) & 1:
                     self._add_capability("hardwired_chime", channel)
@@ -2531,7 +2534,8 @@ class Baichuan:
 
         if (bc_port := self._ports.get("server", {}).get("port")) is not None and bc_port != self.port:
             _LOGGER.warning("Baichuan host %s: baichuan port changed from %s to %s", self._host, self.port, bc_port)
-            assert isinstance(bc_port, int)
+            if TYPE_CHECKING:
+                assert isinstance(bc_port, int)
             self.port = bc_port
 
         if self.rtsp_port is not None:
@@ -4479,61 +4483,71 @@ class Baichuan:
     @property
     def http_port(self) -> int | None:
         value = self._ports.get("http", {}).get("port")
-        assert isinstance(value, int | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, int | None)
         return value
 
     @property
     def https_port(self) -> int | None:
         value = self._ports.get("https", {}).get("port")
-        assert isinstance(value, int | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, int | None)
         return value
 
     @property
     def rtmp_port(self) -> int | None:
         value = self._ports.get("rtmp", {}).get("port")
-        assert isinstance(value, int | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, int | None)
         return value
 
     @property
     def rtsp_port(self) -> int | None:
         value = self._ports.get("rtsp", {}).get("port")
-        assert isinstance(value, int | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, int | None)
         return value
 
     @property
     def onvif_port(self) -> int | None:
         value = self._ports.get("onvif", {}).get("port")
-        assert isinstance(value, int | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, int | None)
         return value
 
     @property
     def http_enabled(self) -> bool | None:
         value = self._ports.get("http", {}).get("enable")
-        assert isinstance(value, bool | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, bool | None)
         return value
 
     @property
     def https_enabled(self) -> bool | None:
         value = self._ports.get("https", {}).get("enable")
-        assert isinstance(value, bool | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, bool | None)
         return value
 
     @property
     def rtmp_enabled(self) -> bool | None:
         value = self._ports.get("rtmp", {}).get("enable")
-        assert isinstance(value, bool | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, bool | None)
         return value
 
     @property
     def rtsp_enabled(self) -> bool | None:
         value = self._ports.get("rtsp", {}).get("enable")
-        assert isinstance(value, bool | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, bool | None)
         return value
 
     @property
     def onvif_enabled(self) -> bool | None:
         value = self._ports.get("onvif", {}).get("enable")
-        assert isinstance(value, bool | None)
+        if TYPE_CHECKING:
+            assert isinstance(value, bool | None)
         return value
 
     @property

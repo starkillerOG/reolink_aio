@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from .const import UNKNOWN
 from .exceptions import UnexpectedDataError
@@ -275,23 +276,28 @@ class SoftwareVersion:
         return False
 
     def __lt__(self, other: object) -> bool:
-        assert isinstance(other, SoftwareVersion)
+        if TYPE_CHECKING:
+            assert isinstance(other, SoftwareVersion)
         return self.is_lower_than(other)
 
     def __le__(self, other: object) -> bool:
-        assert isinstance(other, SoftwareVersion)
+        if TYPE_CHECKING:
+            assert isinstance(other, SoftwareVersion)
         return self.is_lower_or_equal_than(other)
 
     def __gt__(self, other: object) -> bool:
-        assert isinstance(other, SoftwareVersion)
+        if TYPE_CHECKING:
+            assert isinstance(other, SoftwareVersion)
         return self.is_greater_than(other)
 
     def __ge__(self, other: object) -> bool:
-        assert isinstance(other, SoftwareVersion)
+        if TYPE_CHECKING:
+            assert isinstance(other, SoftwareVersion)
         return self.is_greater_or_equal_than(other)
 
     def __eq__(self, other: object) -> bool:
-        assert isinstance(other, SoftwareVersion)
+        if TYPE_CHECKING:
+            assert isinstance(other, SoftwareVersion)
         return self.equals(other)
 
     def generate_str_from_numbers(self) -> str:

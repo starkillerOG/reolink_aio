@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from aiohttp import web
 
@@ -60,7 +61,8 @@ class WebhookServer:
         await site.start()
 
         server = site._server
-        assert isinstance(server, asyncio.Server)
+        if TYPE_CHECKING:
+            assert isinstance(server, asyncio.Server)
         for socket in server.sockets:
             _, self.port = socket.getsockname()
 
