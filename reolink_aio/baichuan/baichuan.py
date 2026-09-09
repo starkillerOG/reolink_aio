@@ -1978,7 +1978,7 @@ class Baichuan:
             if doorbellVersion > 0:
                 self.http_api._is_doorbell[channel] = True
                 self.http_api._visitor_states.setdefault(channel, False)
-                if (doorbellVersion >> 0) & 1:
+                if (doorbellVersion >> 0) & 1 or (doorbellVersion >> 2) & 1:
                     ver = self.http_api._api_version.setdefault("supportDingDongCtrl", {})
                     assert isinstance(ver, dict)
                     ver[channel] = 1
