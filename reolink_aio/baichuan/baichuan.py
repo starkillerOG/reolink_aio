@@ -650,13 +650,29 @@ class Baichuan:
             return None
         return channel
 
-    async def _get_nonce(self) -> str:
+    async def _get_nonce(self, retry: int = RETRY_ATTEMPTS) -> str:
         """Get the nonce needed for the modern login"""
-        # send only a header to receive the nonce (alternatively use legacy login)
-        mess = await self.send(cmd_id=1, enc_type=EncType.BC, message_class="1465")
-        self._nonce = get_value_from_xml(mess, "nonce")
+        retry = retry - 1
+        self._nonce = None
+
+        if self.connection_type == ConnectionEnum.udp:
+            # Try to get the nonce from the UDP connection
+            try:
+                await self._connect_if_needed()
+            except (ReolinkTimeoutError, ReolinkConnectionError) as err:
+                if retry <= 0:
+                    raise
+                _LOGGER.debug("%s, trying again", err)
+                return await self._get_nonce(retry)
+            if self._connection is not None:
+                self._nonce = self._connection.nonce
+
         if self._nonce is None:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
+            # send only a header to receive the nonce (alternatively use legacy login)
+            mess = await self.send(cmd_id=1, enc_type=EncType.BC, message_class="1465")
+            self._nonce = get_value_from_xml(mess, "nonce")
+            if self._nonce is None:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
 
         aes_key_str = md5_str_modern(f"{self._nonce}-{self._password}")[0:16]
         self._aes_key = aes_key_str.encode("utf8")

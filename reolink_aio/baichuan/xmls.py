@@ -61,6 +61,7 @@ UDP_CONNECT_XML = """
 <mtu>{mtu}</mtu>
 <debug>0</debug>
 <p>WIN</p>
+<lver>3</lver>
 </C2D_C>
 </P2P>
 """

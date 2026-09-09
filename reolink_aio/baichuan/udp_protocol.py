@@ -118,6 +118,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             self._protocol.host_id = get_value_from_xml(mess, "did", int)
             self._port = self._protocol.remote_port
             _LOGGER.debug("Baichuan host %s: using remote UDP port %s", self._host, self._port)
+            self.nonce = get_value_from_xml(mess, "nc")
 
     async def drop_connection(self) -> None:
         """Drop the connection without sending a close message"""
