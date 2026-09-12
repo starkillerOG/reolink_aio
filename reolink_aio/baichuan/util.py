@@ -208,6 +208,20 @@ async def i_frame_to_jpeg(frame: bytes, ffmpeg: str = "ffmpeg") -> bytes:
     return await asyncio.shield(_i_frame_to_jpeg_shielded(frame, ffmpeg))
 
 
+def pretty_xml(content: str) -> str:
+    """Style a XML string"""
+    if not content:
+        return content
+
+    try:
+        root = XML.fromstring(content)
+        XML.indent(root, space="")
+        content = f"{XML.tostring(root, encoding='unicode')}\n"
+    except (XML.ParseError, TypeError):
+        pass
+    return content
+
+
 # Decorators
 def http_cmd(cmd: str | list) -> Callable:
     def decorator_http_cmd(func):

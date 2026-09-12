@@ -32,6 +32,7 @@ from .util import (
     decrypt_udp_baichuan,
     encrypt_udp_baichuan,
     get_value_from_xml,
+    pretty_xml,
 )
 
 MAGIC_UDP_CON = "3acf872a"
@@ -240,7 +241,8 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
         recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess)
         recv_mess = recv_payload.decode("utf8")
-        _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, recv_mess)
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, pretty_xml(recv_mess))
         return recv_mess
 
     @property
@@ -511,13 +513,16 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                 mess = decrypted_payload.decode("utf8")
                 root = XML.fromstring(mess)
                 if root.tag != "P2P":
-                    _LOGGER.debug("Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
+                    if _LOGGER.isEnabledFor(logging.DEBUG):
+                        _LOGGER.debug("Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, pretty_xml(mess))
                     return
                 for child in root:
                     if child.tag == "D2C_C_R":
-                        _LOGGER.debug("Baichuan host %s: received UDP connection message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
+                        if _LOGGER.isEnabledFor(logging.DEBUG):
+                            _LOGGER.debug("Baichuan host %s: received UDP connection message with mess_id %s:\n%s", self._host, rec_mess_id, pretty_xml(mess))
                     elif child.tag == "D2C_DISC":
-                        _LOGGER.debug("Baichuan host %s: received UDP disconnect message with mess_id %s:\n%s", self._host, rec_mess_id, mess)
+                        if _LOGGER.isEnabledFor(logging.DEBUG):
+                            _LOGGER.debug("Baichuan host %s: received UDP disconnect message with mess_id %s:\n%s", self._host, rec_mess_id, pretty_xml(mess))
                         self._loop.create_task(self.drop_coroutine)
                     elif child.tag == "D2C_S_R" and len(self.receive_futures.get(-1, {})) == 1 and receive_future is None:
                         exp_mess_id = next(iter(self.receive_futures[-1].keys()))
@@ -532,15 +537,19 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
                         )
                     else:
                         if mess_ids := list(self.receive_futures.get(-1, {}).keys()):
-                            _LOGGER.debug(
-                                "Baichuan host %s: received unknown UDP connection message with mess_id %s, while waiting on mess_id %s dropping:\n%s",
-                                self._host,
-                                rec_mess_id,
-                                mess_ids,
-                                mess,
-                            )
+                            if _LOGGER.isEnabledFor(logging.DEBUG):
+                                _LOGGER.debug(
+                                    "Baichuan host %s: received unknown UDP connection message with mess_id %s, while waiting on mess_id %s dropping:\n%s",
+                                    self._host,
+                                    rec_mess_id,
+                                    mess_ids,
+                                    pretty_xml(mess),
+                                )
                         else:
-                            _LOGGER.debug("Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, mess)
+                            if _LOGGER.isEnabledFor(logging.DEBUG):
+                                _LOGGER.debug(
+                                    "Baichuan host %s: received unknown UDP connection message with mess_id %s, dropping:\n%s", self._host, rec_mess_id, pretty_xml(mess)
+                                )
                 if receive_future is None or receive_future.done():
                     return
 

@@ -76,6 +76,7 @@ from .util import (
     http_cmd,
     i_frame_to_jpeg,
     md5_str_modern,
+    pretty_xml,
 )
 from .webhook_server import WebhookServer
 
@@ -327,7 +328,8 @@ class Baichuan:
         log_mess = ""
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
-                log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, body:\n{self._hide_password(ext + body)}"
+                ext_entr = "\n" if ext and body else ""
+                log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, body:\n{self._style_hide_password(ext) + ext_entr + self._style_hide_password(body)}"
             else:
                 log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, without body"
 
@@ -361,7 +363,7 @@ class Baichuan:
             ch_str = f" ch {channel}" if channel is not None else ""
             payload_str = f" with payload length {len(payload)}" if len(payload) > 0 else ""
             if len(rec_body) > 0:
-                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s%s:\n%s", self._host, cmd_id, ch_str, payload_str, self._hide_password(rec_body))
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s%s%s:\n%s", self._host, cmd_id, ch_str, payload_str, self._style_hide_password(rec_body))
             else:
                 _LOGGER.debug("Baichuan host %s: received cmd_id %s%s status 200:OK without body%s", self._host, cmd_id, ch_str, payload_str)
 
@@ -507,6 +509,12 @@ class Baichuan:
             redacted = redacted.replace(self._password_hash, "<password_md5_hash>")
         return redacted
 
+    def _style_hide_password(self, content: str | bytes | dict | list) -> str:
+        """Style the XML and redact sensitive informtation from the logs"""
+        if isinstance(content, str):
+            content = pretty_xml(content)
+        return self._hide_password(content)
+
     def _push_callback(self, cmd_id: int, data: bytes, len_header: int, payload: bytes) -> None:
         """Callback to parse a received message that was pushed"""
         payload_len = len(payload)
@@ -552,7 +560,7 @@ class Baichuan:
             payload_str = ""
             if payload_len != 0:
                 payload_str = f" with payload length {payload_len}"
-            _LOGGER.debug("Baichuan host %s: received push cmd_id %s%s:\n%s", self._host, cmd_id, payload_str, self._hide_password(rec_body))
+            _LOGGER.debug("Baichuan host %s: received push cmd_id %s%s:\n%s", self._host, cmd_id, payload_str, self._style_hide_password(rec_body))
 
         self._parse_xml(cmd_id, rec_body, payload, mess_id)
 
