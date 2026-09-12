@@ -2047,11 +2047,11 @@ class Baichuan:
                 self._add_capability("stream", channel)
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
                 self._add_capability("snapshot", channel)
-                self._add_capability("clear", channel)
+                self._add_capability("main", channel)
             if noExternStream == 0 and RtmpVersion > 0:
                 self._add_capability("ext_stream", channel)
             if self._has_subStream.get(channel, True):
-                self._add_capability("fluent", channel)
+                self._add_capability("sub", channel)
 
             if self.supported(channel, "zoom_basic"):
                 min_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
