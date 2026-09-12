@@ -536,13 +536,15 @@ class Host:
     def protocol(self) -> str:
         return self._protocol
 
+    def _token_valid(self, margin_sec: int = 5) -> bool:
+        """Return True if a cached session token exists and has not yet expired."""
+        return self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=margin_sec))
+
     @property
     def session_active(self) -> bool:
         if self.baichuan_only:
             return self.baichuan.session_active
-        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=5)):
-            return True
-        return False
+        return self._token_valid(margin_sec=5)
 
     @property
     def timeout(self) -> float:
@@ -1323,7 +1325,7 @@ class Host:
             await self._login_try_ports()
             return  # succes
 
-        if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
+        if self._token_valid(margin_sec=300):
             return  # succes
 
         # check privacy mode
@@ -1332,7 +1334,7 @@ class Host:
 
         await self._login_mutex.acquire()
         try:
-            if self._token is not None and self._lease_time is not None and self._lease_time > (datetime.now() + timedelta(seconds=300)):
+            if self._token_valid(margin_sec=300):
                 _LOGGER.debug(
                     "Host %s:%s, after login mutex aquired, login already completed by another coroutine",
                     self._host,
@@ -1662,6 +1664,32 @@ class Host:
     def clear_token(self) -> None:
         self._token = None
         self._lease_time = None
+
+    async def _ensure_valid_token(self, verify: bool = False) -> None:
+        """Ensure a non-expired session token is cached.
+
+        login() is a no-op when the lease is still valid, so this does not re-authenticate on every call.
+        When verify is True, also confirm the camera still accepts the token: stream URLs are fetched
+        outside of send() and cannot use the 'please login first' retry path.
+        """
+        if not self._token_valid(margin_sec=300):
+            try:
+                await self.login()
+            except LoginPrivacyModeError:
+                return
+        if not verify or not self._token_valid():
+            return
+        try:
+            # Cheap authenticated command so send() can expire+re-login if the camera already dropped the session.
+            await self.send([{"cmd": "GetDevInfo", "action": 0, "param": {}}], expected_response_type="json")
+        except ReolinkError as err:
+            _LOGGER.debug("Host %s:%s: session token check before building stream URL failed: %s", self._host, self._port, err)
+
+    def _stream_auth_query(self, prefer_token: bool) -> str:
+        """Return a stream/VOD auth query fragment that never embeds an expired token."""
+        if prefer_token and self._token_valid():
+            return f"token={self._token}"
+        return f"user={self._username}&password={self._password}"
 
     @property
     def capabilities(self) -> dict[int | None, dict[int | None, set[str]]]:
@@ -3361,14 +3389,9 @@ class Host:
             stream_type = 1
         else:
             stream_type = 0
-        if self._rtmp_auth_method == DEFAULT_RTMP_AUTH_METHOD:
-            # RTMP needs unencoded password
-            return (
-                f"rtmp://{self._host}:{self._rtmp_port}/bcs/"
-                f"channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&user={self._username}&password={self._password}"
-            )
-
-        return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&token={self._token}"
+        # RTMP needs unencoded password. Never embed a stale/expired session token.
+        auth = self._stream_auth_query(prefer_token=self._rtmp_auth_method != DEFAULT_RTMP_AUTH_METHOD)
+        return f"rtmp://{self._host}:{self._rtmp_port}/bcs/channel{channel}_{stream}.bcs?channel={channel}&stream={stream_type}&{auth}"
 
     async def get_encoding(self, channel: int, stream: str = "main") -> str:
         if not self._enc_settings:
@@ -3523,6 +3546,8 @@ class Host:
         if stream not in ["main", "sub", "ext", "autotrack_sub", "autotrack_main", "telephoto_sub", "telephoto_main"]:
             return None
         if (self.protocol == "rtmp" or (stream == "ext" and not self.supported(None, "FLV"))) and not self.baichuan_only:
+            if self._rtmp_auth_method != DEFAULT_RTMP_AUTH_METHOD:
+                await self._ensure_valid_token(verify=True)
             return self.get_rtmp_stream_source(channel, stream)
         if (self.protocol == "flv" or stream in ["autotrack_sub", "telephoto_sub", "ext"]) and not self.baichuan_only:
             return self.get_flv_stream_source(channel, stream)
@@ -3567,7 +3592,9 @@ class Host:
             credentials = f"&user={self._username}&password={self._password}"
         else:
             mime = "video/mp4"
-            credentials = f"&token={self._token}"
+            # Playback/download URLs are fetched outside of send(), so confirm the token is still accepted.
+            await self._ensure_valid_token(verify=True)
+            credentials = f"&{self._stream_auth_query(prefer_token=True)}"
 
         if request_type == VodRequestType.NVR_DOWNLOAD:
             # prepare the file for downloading and overwrite the new filename
