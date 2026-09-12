@@ -187,6 +187,7 @@ class Baichuan:
         # supported
         self.capabilities: dict[int | None, dict[int | None, set[str]]] = {}
         self._abilities: dict[int | None, dict[int | None, XML.Element]] = {}
+        self._has_subStream: dict[int, bool] = {}
 
         # host states
         self._ports: dict[str, dict[str, int | bool | str]] = {}
@@ -1787,12 +1788,14 @@ class Baichuan:
             for ch in range(0, channelBits.bit_length(), 1):
                 if not (channelBits >> ch) & 1:
                     continue
+                encodeTable: dict[str, str] = {}
                 enc_range = self.http_api._enc_range.setdefault(ch, [])
                 enc_data: dict[str, Any] = {"chnBit": channelBits}
                 for encoding in info.findall(".//encodeTable"):
                     stream_type = get_value_from_xml(encoding, "type", str)
                     if stream_type is None:
                         continue
+                    encodeTable[stream_type] = XML.canonicalize(XML.tostring(encoding, encoding="unicode"), exclude_tags={"type"})
                     enc_data[stream_type] = get_keys_from_xml(encoding, {"width": ("width", int), "height": ("height", int)})
                     framerateTable = get_value_from_xml(encoding, "framerateTable", str)
                     if framerateTable is not None:
@@ -1801,6 +1804,7 @@ class Baichuan:
                     if bitrateTable is not None:
                         enc_data[stream_type]["bitRate"] = [int(val) for val in bitrateTable.split(",")]
                 enc_range.append(enc_data)
+                self._has_subStream[ch] = encodeTable.get("mainStream", "main") != encodeTable.get("subStream", "sub")
 
         self._first_login = False
 
@@ -2043,8 +2047,11 @@ class Baichuan:
                 self._add_capability("stream", channel)
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
                 self._add_capability("snapshot", channel)
+                self._add_capability("clear", channel)
             if noExternStream == 0 and RtmpVersion > 0:
                 self._add_capability("ext_stream", channel)
+            if self._has_subStream.get(channel, True):
+                self._add_capability("fluent", channel)
 
             if self.supported(channel, "zoom_basic"):
                 min_zoom = self.http_api._zoom_focus_settings.get(channel, {}).get("zoom", {}).get("min")
