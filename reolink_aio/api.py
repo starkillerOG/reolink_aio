@@ -1087,7 +1087,7 @@ class Host:
                 enc_range = enc_range_i
                 break
 
-        return sorted(enc_range[stream_str]["bitRate"])
+        return sorted(enc_range.get(stream_str, {}).get("bitRate", []))
 
     def frame_rate(self, channel: int, stream: str | None = None) -> int | None:
         if channel not in self._enc_settings:
@@ -1113,7 +1113,7 @@ class Host:
                 enc_range = enc_range_i
                 break
 
-        return sorted(enc_range[stream_str]["frameRate"])
+        return sorted(enc_range.get(stream_str, {}).get("frameRate", []))
 
     def daynight_state(self, channel: int) -> Optional[str]:
         return self._isp_settings.get(channel, {}).get("dayNight")
