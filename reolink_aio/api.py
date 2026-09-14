@@ -1813,8 +1813,9 @@ class Host:
                 if self.supported(channel, "pan_tilt", sub_ch) or self.supported(channel, "zoom_basic", sub_ch):
                     self._add_capability_once("ptz_stop", channel, sub_ch)
 
-            # DUAL LENS DUAL MOTION MODELS
-            if channel not in self._channels and self.model not in DUAL_LENS_DUAL_MOTION_MODELS:
+            # Extra-lens detection is discovered from reported capabilities.
+            has_detection = channel in self._motion_detection_states or any(self._ai_detection_support.get(channel, {}).values())
+            if channel not in self._channels and self.model not in DUAL_LENS_DUAL_MOTION_MODELS and not has_detection:
                 continue
 
             if channel in self._motion_detection_states:
