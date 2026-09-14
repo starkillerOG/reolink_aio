@@ -214,9 +214,9 @@ def pretty_xml(content: str) -> str:
         return content
 
     try:
-        root = XML.fromstring(content)
+        root = XML.fromstring(content.lstrip("\n"))
         XML.indent(root, space="")
-        content = f"{XML.tostring(root, encoding='unicode')}\n"
+        content = f"{XML.tostring(root, encoding='unicode', xml_declaration=True)}\n"
     except (XML.ParseError, TypeError):
         pass
     return content
