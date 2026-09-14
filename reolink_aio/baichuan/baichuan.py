@@ -2598,8 +2598,7 @@ class Baichuan:
         main = XML.SubElement(xml_body, port.value.capitalize() + "Port", version="1.1")
         sub = XML.SubElement(main, "enable")
         sub.text = "1" if enable else "0"
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
 
         await self.send(cmd_id=36, body=xml)
 
@@ -2729,8 +2728,7 @@ class Baichuan:
             if main_frameRate is not None and (xml_main_framerate := xml_main.find(".//frame")) is not None:
                 xml_main_framerate.text = str(main_frameRate)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=57, channel=channel, body=xml)
 
     @http_cmd(["GetImage", "GetIsp"])
@@ -2762,8 +2760,7 @@ class Baichuan:
         if (sharpen := param.get("sharpen")) is not None and (xml_sharpen := xml_body.find("VideoInput/sharpen")) is not None:
             xml_sharpen.text = str(sharpen)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=25, channel=channel, body=xml)
 
     @http_cmd("SetIsp")
@@ -2799,8 +2796,7 @@ class Baichuan:
                 xml_val2.text = "1"
 
         if val is not None:
-            xml = XML.tostring(xml_body, encoding="unicode")
-            xml = xmls.XML_HEADER + xml
+            xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
             await self.send(cmd_id=25, channel=channel, body=xml)
 
         if (val := param.get("dayNightThreshold")) is not None:
@@ -2810,8 +2806,7 @@ class Baichuan:
             if (xml_val := xml_body.find(".//cur")) is not None:
                 xml_val.text = str(val)
 
-            xml = XML.tostring(xml_body, encoding="unicode")
-            xml = xmls.XML_HEADER + xml
+            xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
             await self.send(cmd_id=297, channel=channel, body=xml)
 
     async def snapshot(self, channel: int, iLogicChannel: int = 0, snapType: str = "sub", **_kwargs) -> bytes:
@@ -3064,8 +3059,7 @@ class Baichuan:
                 return
             raise NotSupportedError("PTZ patrol not yet supported")
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=18, channel=channel, sub_channel=sub_channel, body=xml)
 
     @http_cmd(["GetAlarm", "GetMdAlarm"])
@@ -3109,8 +3103,7 @@ class Baichuan:
             raise UnexpectedDataError(f"Baichuan host {self._host}: SetMdAlarm fallback channel {channel} got unexpected data")
         xml_sensitivity.text = str(sensitivity)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=47, channel=channel, body=xml)
 
     @http_cmd("GetAiAlarm")
@@ -3150,8 +3143,7 @@ class Baichuan:
         if stay_time is not None and (xml_stay_time := xml_body.find(".//stayTime")) is not None:
             xml_stay_time.text = str(stay_time)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=343, channel=channel, body=xml)
 
     @http_cmd("GetAiCfg")
@@ -3192,8 +3184,7 @@ class Baichuan:
         if (StopDelay := kwargs.get("aiStopBackTime")) is not None and (xml_StopDelay := xml_body.find(".//smartTrackObjectStopDelay")) is not None:
             xml_StopDelay.text = str(StopDelay)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=300, channel=channel, body=xml)
         if cry_sensitivity is not None:
             await self.GetAiCfg(channel)
@@ -3230,8 +3221,7 @@ class Baichuan:
         if (rightLimit := param.get("LimitRight")) is not None and (xml_rightLimit := xml_body.find(".//rightLimit")) is not None:
             xml_rightLimit.text = str(rightLimit)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=435, channel=channel, body=xml)
 
     async def get_yolo_settings(self, channel: int) -> None:
@@ -3262,8 +3252,7 @@ class Baichuan:
                     xml_delay.text = str(delay)
                 break
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=629, channel=channel, body=xml)
         await self.get_yolo_settings(channel)
 
@@ -3290,8 +3279,7 @@ class Baichuan:
             mode_str = BatteryModeStrEnum[mode].value
             xml_mode_str.text = str(mode_str)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=627, channel=channel, body=xml)
         await self._send_and_parse(cmd_id=626, channel=channel)
 
@@ -3306,8 +3294,7 @@ class Baichuan:
                 raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_powered mode {mode} not in {mode_list}")
             xml_mode.text = mode
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=772, channel=channel, body=xml)
         await self._send_and_parse(cmd_id=771, channel=channel)
 
@@ -3391,8 +3378,7 @@ class Baichuan:
         if (enable := param.get("enable")) is not None and (xml_enable := xml_body.find("Shelter/enable")) is not None:
             xml_enable.text = str(enable)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=53, channel=channel, body=xml)
 
     async def reboot(self, channel: int | None = None) -> None:
@@ -3496,8 +3482,7 @@ class Baichuan:
             if event_flash_time is not None and (xml_flash_time := xml_element.find("flickerDurationSL")) is not None:
                 get_state = True
                 xml_flash_time.text = str(event_flash_time)
-            xml = XML.tostring(xml_body, encoding="unicode")
-            xml = xmls.XML_HEADER + xml
+            xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
             await self.send(cmd_id=290, channel=channel, body=xml)
 
             if get_state:
@@ -3540,8 +3525,7 @@ class Baichuan:
         if ir_brightness is not None and (xml_ir_bright := xml_body.find(".//IRLedBrightness")) is not None:
             xml_ir_bright.text = str(ir_brightness)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=209, channel=channel, body=xml)
 
         if ir_brightness is not None:
@@ -3622,8 +3606,7 @@ class Baichuan:
         if (preAlarm := param.get("preAlarm")) is not None and (xml_preAlarm := xml_body.find(".//preAlarm")) is not None:
             xml_preAlarm.text = str(preAlarm)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=265, channel=channel, body=xml)
 
     async def GetAudioNoise(self, channel: int) -> None:
@@ -3655,8 +3638,7 @@ class Baichuan:
         if level > 0 and (xml_level := xml_body.find(".//level")) is not None:
             xml_level.text = str(level)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=440, channel=channel, body=xml)
         await self.GetAudioNoise(channel)
 
@@ -3854,8 +3836,7 @@ class Baichuan:
         if timeout is not None and (xml_timeout := xml_body.find(".//timeout")) is not None:
             xml_timeout.text = str(timeout)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=428, channel=channel, body=xml)
         await self.GetAutoReply(channel)
 
@@ -3904,8 +3885,7 @@ class Baichuan:
                 xml_packTime.text = str(round(packTime_int / 60))
             if (postRec_int := TIME_STR_TO_INT_SEC.get(postRec)) is not None and (xml_postRec := xml_body.find(".//recordDelayTime")) is not None:
                 xml_postRec.text = str(postRec_int)
-            xml = XML.tostring(xml_body, encoding="unicode")
-            xml = xmls.XML_HEADER + xml
+            xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
             await self.send(cmd_id=55, channel=channel, body=xml)
             if postRec is not None and self.supported(channel, "post_rec_ai"):
                 enable_ai = 1 if postRec == "Auto" else 0
@@ -3952,8 +3932,7 @@ class Baichuan:
             xml_inter.text = str(interval)
             get_state = True
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=213, channel=channel, body=xml)
         if get_state:
             await self.GetPirInfo(channel)
@@ -3979,8 +3958,7 @@ class Baichuan:
         if (enable := param.get("scheduleEnable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
             xml_enable.text = str(enable)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=216, channel=channel, body=xml)
 
     @http_cmd(["GetFtp", "GetFtpV20"])
@@ -4004,8 +3982,7 @@ class Baichuan:
         if (enable := param.get("scheduleEnable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
             xml_enable.text = str(enable)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=71, channel=channel, body=xml)
 
     @http_cmd(["GetPush", "GetPushV20"])
@@ -4033,8 +4010,7 @@ class Baichuan:
         if (enable := param.get("scheduleEnable")) is not None and (xml_enable := xml_body.find(".//enable")) is not None:
             xml_enable.text = str(enable)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=218, channel=channel, body=xml)
 
     @http_cmd(["GetAudioAlarm", "GetAudioAlarmV20"])
@@ -4059,8 +4035,7 @@ class Baichuan:
         if (xml_enable := xml_body.find(".//enable")) is not None:
             xml_enable.text = str(enable)
 
-        xml = XML.tostring(xml_body, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(xml_body, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=231, channel=channel, body=xml)
 
     async def set_tamper(self, channel: int, enable: bool) -> None:
@@ -4168,9 +4143,7 @@ class Baichuan:
         if not location_found:
             raise InvalidParameterError(f"Baichuan host {self._host}: cannot find location {location} in {smart_type} smart AI")
 
-        xml = XML.tostring(root, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
-
+        xml = XML.tostring(root, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=SMART_AI[smart_type][1], channel=channel, body=xml)
 
     def _parse_rule(self, mess: str) -> None:
@@ -4241,8 +4214,7 @@ class Baichuan:
                 if (xml_enable := xml_rule.find("enable")) is not None:
                     xml_enable.text = enabled_str
 
-        xml = XML.tostring(root, encoding="unicode")
-        xml = xmls.XML_HEADER + xml
+        xml = XML.tostring(root, encoding="unicode", xml_declaration=True)
         await self.send(cmd_id=667, channel=channel, body=xml)
         await self.get_rule(rule_id, channel)
 
