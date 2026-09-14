@@ -3046,7 +3046,7 @@ class Baichuan:
     @http_cmd("PtzCtrl")
     async def set_ptz_command(self, channel: int, op: str, speed: int | None = None, sub_channel: int | None = None, **kwargs) -> None:
         xml_base = xmls.PtzControl.format(channel=channel, command=op)
-        xml_body = XML.fromstring(xml_base[1:])
+        xml_body = XML.fromstring(xml_base.lstrip("\n"))
 
         if speed is not None and (xml_speed := xml_body.find(".//PtzControl")) is not None:
             XML.SubElement(xml_speed, "speed").text = str(speed)
