@@ -129,13 +129,13 @@ class BatteryModeIntEnum(Enum):
 class BatteryModeStrEnum(Enum):
     """Options for the str battery mode setting"""
 
-    power_saving = "balancedMoniteringModeV2"
-    detection_priority = "optimizedMoniteringModeV2"
-    extended_recording = "AIDelayModeV2"
-    custom = "diyModeV2"
-    pre_recording = "preRecordModeV2"
-    continuous_recording = "lowFpsRecordModeV2"
-    always_on_custom = "aovDiyModeV2"
+    power_saving = "balancedMoniteringMode"
+    detection_priority = "optimizedMoniteringMode"
+    extended_recording = "AIDelayMode"
+    custom = "diyMode"
+    pre_recording = "preRecordMode"
+    continuous_recording = "lowFpsRecordMode"
+    always_on_custom = "aovDiyMode"
 
 
 class PtzEnum(Enum):

@@ -1044,6 +1044,7 @@ class Host:
         if mode_list := self.baichuan._work_mode_battery_list.get(channel):
             modes = []
             for val in mode_list:
+                val = val.removesuffix("V2")
                 try:
                     modes.append(BatteryModeStrEnum(val).name)
                 except ValueError:

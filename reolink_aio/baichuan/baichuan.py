@@ -1310,6 +1310,7 @@ class Baichuan:
                 except ValueError:
                     _LOGGER.debug("Reolink %s unknown battery mode int %s", self.http_api.nvr_name, bat_mode)
             if (bat_mode_str := data.get("batteryModeStr")) is not None:
+                bat_mode_str = bat_mode_str.removesuffix("V2")
                 try:
                     self._work_mode_battery[channel] = BatteryModeStrEnum(bat_mode_str).name
                 except ValueError:
@@ -3269,6 +3270,8 @@ class Baichuan:
             if mode not in mode_list:
                 raise InvalidParameterError(f"Baichuan host {self._host}: set_work_mode_battery mode {mode} not in {mode_list}")
             mode_str = BatteryModeStrEnum[mode].value
+            mode_list = self._work_mode_battery_list.get(channel, [])
+            mode_str = next((item for item in mode_list if item.startswith(mode_str)), mode_str)  # Add back the V2 if needed
             xml_mode_str.text = str(mode_str)
 
         await self.send(cmd_id=627, channel=channel, body=xml_body)
