@@ -1801,7 +1801,7 @@ class Baichuan:
                     stream_type = get_value_from_xml(encoding, "type", str)
                     if stream_type is None:
                         continue
-                    encodeTable[stream_type] = XML.canonicalize(XML.tostring(encoding, encoding="unicode"), exclude_tags={"type"})
+                    encodeTable[stream_type] = XML.canonicalize(XML.tostring(encoding, encoding="unicode"), exclude_tags={"type", "videoEncType"})
                     enc_data[stream_type] = get_keys_from_xml(encoding, {"width": ("width", int), "height": ("height", int)})
                     framerateTable = get_value_from_xml(encoding, "framerateTable", str)
                     if framerateTable is not None:
