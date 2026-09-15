@@ -2037,7 +2037,7 @@ class Baichuan:
             batteryMode = self.api_version("batteryMode")
             if not self.http_api.is_nvr and batteryMode > 0:
                 self._add_capability("work_mode_battery", channel)
-                if (batteryMode >> 6) & 1 and (batteryMode >> 8) & 1:  # bit 6 and bit 8
+                if (batteryMode >> 6) & 1:  # bit 6
                     self._add_capability("work_mode_powered", channel)
 
     async def get_channel_data(self) -> None:
