@@ -2194,9 +2194,9 @@ class Baichuan:
             if self.http_api._enc_settings.get(channel, {}).get("audio") is not None:
                 self._add_capability("audio", channel)
 
-            if self.http_api.frame_rate(channel) is not None:
+            if self.http_api.frame_rate(channel) is not None and len(self.http_api.frame_rate_list(channel)) > 1:
                 self._add_capability("frame_rate", channel)
-            if self.http_api.bit_rate(channel) is not None:
+            if self.http_api.bit_rate(channel) is not None and len(self.http_api.bit_rate_list(channel)) > 1:
                 self._add_capability("bit_rate", channel)
 
             if (self.api_version("recordCfg") >> 8) & 1:  # bit 8, aiExtendRecord
