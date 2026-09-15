@@ -2553,24 +2553,26 @@ class Host:
                     [
                         {"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetPushV20", "action": 0, "param": {"channel": channel}},
-                        {"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetRecV20", "action": 1, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarmV20", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
+                if self.baichuan.api_version("ftp", no_key_return=1) > 0:
+                    ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
             else:
                 ch_body.extend(
                     [
                         {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetPush", "action": 0, "param": {"channel": channel}},
-                        {"cmd": "GetFtp", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetRec", "action": 1, "param": {"channel": channel}},
                         {"cmd": "GetAudioAlarm", "action": 0, "param": {"channel": channel}},
                         {"cmd": "GetAlarm", "action": 0, "param": {"Alarm": {"channel": channel, "type": "md"}}},
                         {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
+                if self.baichuan.api_version("ftp", no_key_return=1) > 0:
+                    ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
