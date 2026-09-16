@@ -1120,6 +1120,14 @@ class Baichuan:
             if (mode_bc := values.get("mode_bc")) is not None:
                 # Baichuan uses different mode numbers then HTTP, translate
                 values["mode"] = WHITELED_MODE_BC_TO_HTTP.get(mode_bc, mode_bc)
+            if (flash_time_list := root.find(".//flickerDurationListSL")) is not None:
+                durations = [int(d.text) for d in flash_time_list.findall(".//duration") if d.text]
+                if durations:
+                    values["event_flash_time_range"] = (min(durations), max(durations))
+            if (on_time_list := root.find(".//configList")) is not None:
+                durations = [int(d.text) for d in on_time_list.findall(".//duration") if d.text]
+                if durations:
+                    values["event_on_time_range"] = (min(durations), max(durations))
             self.http_api._whiteled_settings.setdefault(channel, {}).update(values)
 
         elif cmd_id == 291:  # Floodlight

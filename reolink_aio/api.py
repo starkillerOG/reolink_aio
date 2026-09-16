@@ -1005,10 +1005,16 @@ class Host:
             return None
         return self._whiteled_settings.get(channel, {}).get("event_on_time")
 
+    def whiteled_event_on_time_range(self, channel: int) -> tuple[int, int]:
+        return self._whiteled_settings.get(channel, {}).get("event_on_time_range", (30, 900))
+
     def whiteled_event_flash_time(self, channel: int) -> int | None:
         if self.whiteled_event_mode(channel) != SpotlightEventModeEnum.flash.value:
             return None
         return self._whiteled_settings.get(channel, {}).get("event_flash_time")
+
+    def whiteled_event_flash_time_range(self, channel: int) -> tuple[int, int]:
+        return self._whiteled_settings.get(channel, {}).get("event_flash_time_range", (10, 30))
 
     def whiteled_schedule(self, channel: int) -> dict | None:
         """Return the spotlight state."""
