@@ -18,7 +18,7 @@ from ..enums import ConnectionEnum
 from ..exceptions import (
     ReolinkConnectionError,
     ReolinkError,
-    ReolinkTimeoutError,
+    ReolinkTimeoutSendACK,
     UnexpectedDataError,
 )
 from . import xmls
@@ -143,7 +143,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         if cmd_id is None or full_mess_id is None:
             return
         if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
-            receive_future.set_exception(ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout waiting on send ACK of cmd_id {cmd_id} seq_id {seq_id}"))
+            receive_future.set_exception(ReolinkTimeoutSendACK(f"Baichuan host {self._host}: Timeout waiting on send ACK of cmd_id {cmd_id} seq_id {seq_id}"))
 
     async def close(self) -> None:
         """close the connection and wait untill close is complete"""

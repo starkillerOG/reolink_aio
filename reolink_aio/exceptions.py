@@ -67,3 +67,7 @@ class ReolinkConnectionError(ReolinkError):
 
 class ReolinkTimeoutError(ReolinkError, AsyncioTimeoutError):
     """Wraps around asyncio.TimeoutError for API calls"""
+
+
+class ReolinkTimeoutSendACK(ReolinkTimeoutError):
+    """Specific timeout waiting on a send acknowledgement"""

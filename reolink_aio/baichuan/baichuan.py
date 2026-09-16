@@ -50,6 +50,7 @@ from ..exceptions import (
     ReolinkConnectionError,
     ReolinkError,
     ReolinkTimeoutError,
+    ReolinkTimeoutSendACK,
     SubscriptionError,
     UnexpectedDataError,
 )
@@ -1827,7 +1828,7 @@ class Baichuan:
             try:
                 xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
                 await self.send(cmd_id=2, body=xml)
-            except ReolinkConnectionError:
+            except (ReolinkConnectionError, ReolinkTimeoutSendACK):
                 _LOGGER.debug("Baichuan host %s: connection closed before logout confirmation", self._host)
             except ReolinkError as err:
                 _LOGGER.error("Baichuan host %s: failed to logout: %s", self._host, err)
