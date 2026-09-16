@@ -1788,31 +1788,8 @@ class Baichuan:
                         self.http_api._stream_channels.append(ch)
                     self.http_api._is_dual_lens = not self.http_api._is_nvr and num_stream_channels > self.http_api._num_channels
 
-        self.http_api._enc_range = {}
-        for info in root.findall(".//StreamInfo"):  # cmd_id 146
-            channelBits = get_value_from_xml(info, "channelBits", int)
-            if channelBits is None:
-                continue
-            for ch in range(0, channelBits.bit_length(), 1):
-                if not (channelBits >> ch) & 1:
-                    continue
-                encodeTable: dict[str, str] = {}
-                enc_range = self.http_api._enc_range.setdefault(ch, [])
-                enc_data: dict[str, Any] = {"chnBit": channelBits}
-                for encoding in info.findall(".//encodeTable"):
-                    stream_type = get_value_from_xml(encoding, "type", str)
-                    if stream_type is None:
-                        continue
-                    encodeTable[stream_type] = XML.canonicalize(XML.tostring(encoding, encoding="unicode"), exclude_tags={"type", "videoEncType"})
-                    enc_data[stream_type] = get_keys_from_xml(encoding, {"width": ("width", int), "height": ("height", int)})
-                    framerateTable = get_value_from_xml(encoding, "framerateTable", str)
-                    if framerateTable is not None:
-                        enc_data[stream_type]["frameRate"] = [int(val) for val in framerateTable.split(",")]
-                    bitrateTable = get_value_from_xml(encoding, "bitrateTable", str)
-                    if bitrateTable is not None:
-                        enc_data[stream_type]["bitRate"] = [int(val) for val in bitrateTable.split(",")]
-                enc_range.append(enc_data)
-                self._has_subStream[ch] = encodeTable.get("mainStream", "main") != encodeTable.get("subStream", "sub")
+        if not self.http_api._enc_range:
+            self._parse_stream_info(root)
 
         self._first_login = False
 
@@ -1888,6 +1865,34 @@ class Baichuan:
             if not self._ext_callback[cmd_id]:
                 self._ext_callback.pop(cmd_id)
 
+    def _parse_stream_info(self, root: XML.Element) -> None:
+        """Parse the stream info from cmd_id 1 or 146, 146 is more reliable"""
+        self.http_api._enc_range = {}
+        for info in root.findall(".//StreamInfo"):
+            channelBits = get_value_from_xml(info, "channelBits", int)
+            if channelBits is None:
+                continue
+            for ch in range(0, channelBits.bit_length(), 1):
+                if not (channelBits >> ch) & 1:
+                    continue
+                encodeTable: dict[str, str] = {}
+                enc_range = self.http_api._enc_range.setdefault(ch, [])
+                enc_data: dict[str, Any] = {"chnBit": channelBits}
+                for encoding in info.findall(".//encodeTable"):
+                    stream_type = get_value_from_xml(encoding, "type", str)
+                    if stream_type is None:
+                        continue
+                    encodeTable[stream_type] = XML.canonicalize(XML.tostring(encoding, encoding="unicode"), exclude_tags={"type", "videoEncType"})
+                    enc_data[stream_type] = get_keys_from_xml(encoding, {"width": ("width", int), "height": ("height", int)})
+                    framerateTable = get_value_from_xml(encoding, "framerateTable", str)
+                    if framerateTable is not None:
+                        enc_data[stream_type]["frameRate"] = [int(val) for val in framerateTable.split(",")]
+                    bitrateTable = get_value_from_xml(encoding, "bitrateTable", str)
+                    if bitrateTable is not None:
+                        enc_data[stream_type]["bitRate"] = [int(val) for val in bitrateTable.split(",")]
+                enc_range.append(enc_data)
+                self._has_subStream[ch] = encodeTable.get("mainStream", "main") != encodeTable.get("subStream", "sub")
+
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
         # Get Baichuan capabilities
@@ -1939,6 +1944,7 @@ class Baichuan:
         host_coroutines: list[tuple[Any, Coroutine]] = []
         host_coroutines.append(("network_info", self.get_network_info()))
         host_coroutines.append(("ability_info", self._get_ability_info()))
+        host_coroutines.append((146, self.send(cmd_id=146)))
         if self.api_version("sceneModeCfg") > 0:
             host_coroutines.append((603, self.send(cmd_id=603)))
         if self.api_version("wifi") > 0:
@@ -1971,7 +1977,9 @@ class Baichuan:
                 if isinstance(result, BaseException):
                     raise result
 
-                if cmd_id == 603:  # sceneListID
+                if cmd_id == 146:  # StreamInfoList
+                    self._parse_stream_info(XML.fromstring(result))
+                elif cmd_id == 603:  # sceneListID
                     self._add_capability("scenes")
                     self._scenes[-1] = "off"
                     self._parse_xml(cmd_id, result)
@@ -2195,9 +2203,11 @@ class Baichuan:
             if self.http_api._enc_settings.get(channel, {}).get("audio") is not None:
                 self._add_capability("audio", channel)
 
-            if self.http_api.frame_rate(channel) is not None and len(self.http_api.frame_rate_list(channel)) > 1:
+            if self.http_api.frame_rate(channel) is not None and (
+                len(self.http_api.frame_rate_list(channel, "main")) > 1 or len(self.http_api.frame_rate_list(channel, "sub")) > 1
+            ):
                 self._add_capability("frame_rate", channel)
-            if self.http_api.bit_rate(channel) is not None and len(self.http_api.bit_rate_list(channel)) > 1:
+            if self.http_api.bit_rate(channel) is not None and (len(self.http_api.bit_rate_list(channel, "main")) > 1 or len(self.http_api.bit_rate_list(channel, "sub")) > 1):
                 self._add_capability("bit_rate", channel)
 
             if (self.api_version("recordCfg") >> 8) & 1:  # bit 8, aiExtendRecord
