@@ -121,6 +121,7 @@ WHITELED_MODE_BC_TO_HTTP = {
     4: -4,  # Floodlight: the schedule_plus has number 4 and a unknown HTTP number
     5: 4,
     6: 5,
+    7: -6,  # Floodlight: the auto_pir has number 7 and a unknown HTTP number
 }
 WHITELED_MODE_HTTP_TO_BC = {v: k for k, v in WHITELED_MODE_BC_TO_HTTP.items()}
 

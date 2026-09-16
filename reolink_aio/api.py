@@ -969,6 +969,8 @@ class Host:
             mode_values.extend([SpotlightModeEnum.adaptive])
             if not (ledCtrl >> 6) & 1 or (ledCtrl >> 13) & 1:  # 7th bit (64), shift 6
                 mode_values.extend([SpotlightModeEnum.autoadaptive])
+        if (ledCtrl >> 22) & 1:  # auto_pir, bit 22
+            mode_values.extend([SpotlightModeEnum.auto_pir])
         return [val.name for val in mode_values]
 
     def whiteled_event_mode(self, channel: int) -> str | None:

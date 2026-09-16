@@ -61,6 +61,7 @@ class SpotlightModeEnum(Enum):
     scheduleplus = -4
     adaptive = 5
     autoadaptive = 4
+    auto_pir = -6
 
 
 class SpotlightEventModeEnum(Enum):
