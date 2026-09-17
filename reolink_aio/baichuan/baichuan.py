@@ -2453,6 +2453,13 @@ class Baichuan:
                 osd["watermark"] = channel_entry["watermark"]
             self.http_api._osd_settings[ch] = {"Osd": osd}
 
+    def _find_channel_xml_element(self, root: XML.Element, tag: str, channel: int) -> XML.Element | None:
+        """Find the xml element with the given tag that belongs to a specific channel"""
+        for xml_element in root.findall(f".//{tag}"):
+            if self._get_channel_from_xml_element(xml_element) == channel:
+                return xml_element
+        return None
+
     @http_cmd("SetOsd")
     async def SetOsd(self, channel: int | None = None, **kwargs) -> None:
         """Set the On Screen Display settings"""
@@ -2464,8 +2471,8 @@ class Baichuan:
 
         mess = await self.send(cmd_id=44, channel=channel)
         root = XML.fromstring(mess)
-        xml_osd_channel = root.find(".//OsdChannelName")
-        xml_osd_time = root.find(".//OsdDatetime")
+        xml_osd_channel = self._find_channel_xml_element(root, "OsdChannelName", channel)
+        xml_osd_time = self._find_channel_xml_element(root, "OsdDatetime", channel)
 
         name_param = param.get("osdChannel", {})
         if xml_osd_channel is not None:
