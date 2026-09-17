@@ -2074,6 +2074,8 @@ class Baichuan:
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
                 self._add_capability("snapshot", channel)
                 self._add_capability("main", channel)
+                if 1 in self.http_api.sub_channels(channel):
+                    self._add_capability("autotrack_snapshot", channel)
             if noExternStream == 0 and RtmpVersion > 0:
                 self._add_capability("ext_stream", channel)
             if self._has_subStream.get(channel, True):

@@ -1817,6 +1817,7 @@ class Host:
 
             if self.is_nvr and self.api_version("supportAutoTrackStream", channel) > 0:
                 self._add_capability("autotrack_stream", channel)
+                self._add_capability("autotrack_snapshot", channel)
 
             for sub_ch in self.sub_channels(channel):
                 if self.supported(channel, "pan_tilt", sub_ch) or self.supported(channel, "zoom_basic", sub_ch):
@@ -3297,11 +3298,14 @@ class Host:
             return None
 
         param: dict[str, Any] = {"cmd": "Snap", "channel": channel}
+        use_baichuan = False
 
         if stream.startswith("autotrack_") or stream.startswith("telephoto_"):
             param["iLogicChannel"] = 1
             stream = stream.removeprefix("autotrack_")
             stream = stream.removeprefix("telephoto_")
+            if 1 in self.sub_channels(channel):
+                use_baichuan = True
 
         if stream.startswith("snapshots_"):
             stream = stream.removeprefix("snapshots_")
@@ -3318,7 +3322,7 @@ class Host:
                 param["width"] = width
                 param["height"] = height
 
-        if self.baichuan_only:
+        if self.baichuan_only or use_baichuan:
             return await self.baichuan.snapshot(**param)
 
         body: typings.reolink_json = [{}]
