@@ -2387,44 +2387,71 @@ class Baichuan:
             return None
         return OSD_POS_BC_TO_HTTP.get((pos_x, pos_y))
 
+    def _parse_osd_channel_name(self, xml_element: XML.Element) -> tuple[int, dict[str, Any]] | None:
+        """Parse a single OsdChannelName xml element into a (channel, Osd-shaped dict) pair"""
+        ch = self._get_channel_from_xml_element(xml_element)
+        if ch is None:
+            return None
+        values = (
+            name := get_value_from_xml(xml_element, "name", str, False),
+            name_pos := self._get_osd_pos(xml_element),
+            enable := get_value_from_xml(xml_element, "enable", int, False),
+            watermark := get_value_from_xml(xml_element, "enWatermark", int, False),
+        )
+        if all(v is None for v in values):
+            return None
+
+        fields = {"name": name, "pos": name_pos, "enable": enable}
+        osd_ch: dict[str, Any] = {k: v for k, v in fields.items() if v is not None}
+        osd: dict[str, Any] = {"channel": ch, "osdChannel": osd_ch}
+        if watermark is not None:
+            osd["watermark"] = watermark
+        return ch, osd
+
+    def _parse_osd_datetime(self, xml_element: XML.Element) -> tuple[int, dict[str, Any]] | None:
+        """Parse a single OsdDatetime xml element into a (channel, Osd-shaped dict) pair"""
+        ch = self._get_channel_from_xml_element(xml_element)
+        if ch is None:
+            return None
+        values = (
+            enable := get_value_from_xml(xml_element, "enable", int, False),
+            date_pos := self._get_osd_pos(xml_element),
+        )
+        if all(v is None for v in values):
+            return None
+
+        fields = {"enable": enable, "pos": date_pos}
+        osd_time: dict[str, Any] = {k: v for k, v in fields.items() if v is not None}
+        return ch, {"osdTime": osd_time}
+
     @http_cmd("GetOsd")
     async def GetOsd(self, channel: int) -> None:
         """Get the On Screen Display settings"""
         mess = await self.send(cmd_id=44, channel=channel)
         root = XML.fromstring(mess)
+        osd_channels: dict[int, dict] = {}
+        osd_times: dict[int, dict] = {}
 
-        if not self.http_api._GetChannelStatus_present or not self.http_api._GetChannelStatus_has_name:
-            for ch_name in root.findall(".//OsdChannelName"):
-                ch = self._get_channel_from_xml_element(ch_name)
-                value = get_value_from_xml(ch_name, "name")
-                if ch is None or value is None:
-                    continue
-                self.http_api._name[ch] = value
+        for xml_ch_name in root.findall(".//OsdChannelName"):
+            if (parsed := self._parse_osd_channel_name(xml_ch_name)) is not None:
+                ch, osd = parsed
+                osd_channels[ch] = osd
 
-        xml_osd_channel = root.find(".//OsdChannelName")
-        xml_osd_time = root.find(".//OsdDatetime")
-        if xml_osd_channel is None or xml_osd_time is None:
-            return
+        for xml_dt_time in root.findall(".//OsdDatetime"):
+            if (parsed := self._parse_osd_datetime(xml_dt_time)) is not None:
+                ch, osd = parsed
+                osd_times[ch] = osd
 
-        osd_channel: dict[str, Any] = {
-            "enable": get_value_from_xml(xml_osd_channel, "enable", int, False),
-            "name": get_value_from_xml(xml_osd_channel, "name", str, False),
-        }
-        name_pos = self._get_osd_pos(xml_osd_channel)
-        if name_pos is not None:
-            osd_channel["pos"] = name_pos
-
-        osd_time: dict[str, Any] = {"enable": get_value_from_xml(xml_osd_time, "enable", int, False)}
-        date_pos = self._get_osd_pos(xml_osd_time)
-        if date_pos is not None:
-            osd_time["pos"] = date_pos
-
-        osd: dict[str, Any] = {"channel": channel, "osdChannel": osd_channel, "osdTime": osd_time}
-        watermark = get_value_from_xml(xml_osd_channel, "enWatermark", int, False)
-        if watermark is not None:
-            osd["watermark"] = watermark
-
-        self.http_api._osd_settings[channel] = {"Osd": osd}
+        for ch in (osd_channels.keys() | osd_times.keys()):
+            channel_entry = osd_channels.get(ch, {})
+            osd: dict[str, Any] = {
+                "channel": ch,
+                "osdChannel": channel_entry.get("osdChannel", {}),
+                "osdTime": osd_times.get(ch, {}).get("osdTime", {}),
+            }
+            if "watermark" in channel_entry:
+                osd["watermark"] = channel_entry["watermark"]
+            self.http_api._osd_settings[ch] = {"Osd": osd}
 
     @http_cmd("SetOsd")
     async def SetOsd(self, channel: int | None = None, **kwargs) -> None:
