@@ -324,6 +324,18 @@ Parsed_VOD_file_name = NamedTuple(
     ],
 )
 
+VOD_file_info = NamedTuple(
+    "VOD_file_info",
+    [
+        ("size", int),
+        ("handle", str),
+        ("file_id", str),
+        ("resolved", bool),
+        ("file_type", Optional[str]),
+        ("contains_audio", bool),
+    ],
+)
+
 VOD_download = NamedTuple(
     "VOD_download",
     [
