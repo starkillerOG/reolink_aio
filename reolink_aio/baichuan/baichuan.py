@@ -2958,7 +2958,18 @@ class Baichuan:
     async def GetUser(self) -> None:
         """Get the user list"""
         xml = xmls.UserList.format(username=self._username)
-        mess = await self.send(cmd_id=58, extension=xml)
+        try:
+            mess = await self.send(cmd_id=58, extension=xml)
+        except ApiError as err:
+            if err.rspCode != 400:
+                raise
+            # Old battery models like the Argus Pro (1st gen) do not implement the user
+            # list query and answer with rspCode 400. A successful Baichuan login already
+            # validated the credentials, so assume the logged in user is an admin,
+            # otherwise the user_level stays "Unknown" and the camera can not be used.
+            _LOGGER.debug("Baichuan host %s: user list not supported, assuming admin user", self._host)
+            self.http_api._users = [{"userName": self._username, "userLevel": "1", "level": "admin"}]
+            return
         root = XML.fromstring(mess)
         self.http_api._users = []
         for user in root.findall(".//User"):
