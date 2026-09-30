@@ -2558,6 +2558,8 @@ class Host:
             if self.api_version("supportBuzzer") > 0:
                 ch_body.append({"cmd": "GetBuzzerAlarmV20", "action": 0, "param": {"channel": channel}})
             if self.api_version("scheduleVersion") >= 1:
+                if self.baichuan.api_version("ftp", no_key_return=1) > 0:
+                    ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
                 ch_body.extend(
                     [
                         {"cmd": "GetEmailV20", "action": 0, "param": {"channel": channel}},
@@ -2567,9 +2569,9 @@ class Host:
                         {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
-                if self.baichuan.api_version("ftp", no_key_return=1) > 0:
-                    ch_body.append({"cmd": "GetFtpV20", "action": 0, "param": {"channel": channel}})
             else:
+                if self.baichuan.api_version("ftp", no_key_return=1) > 0:
+                    ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
                 ch_body.extend(
                     [
                         {"cmd": "GetEmail", "action": 0, "param": {"channel": channel}},
@@ -2580,8 +2582,6 @@ class Host:
                         {"cmd": "GetMdAlarm", "action": 0, "param": {"channel": channel}},
                     ]
                 )
-                if self.baichuan.api_version("ftp", no_key_return=1) > 0:
-                    ch_body.append({"cmd": "GetFtp", "action": 0, "param": {"channel": channel}})
 
             body.extend(ch_body)
             channels.extend([channel] * len(ch_body))
