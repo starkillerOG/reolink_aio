@@ -6484,7 +6484,7 @@ class Host:
                     _LOGGER.debug("Host %s: skipping baichuan fallback for %s of channel %s because it is offline", self._host, cmd, channel)
                     continue
                 # check if baichuan has a fallback function
-                if cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -17]:
+                if cmd not in self.baichuan_cmds and cmd in self.baichuan.cmd_funcs and rsp_code in [-4, -9, -12, -13, -16, -17]:
                     func = self.baichuan.cmd_funcs[cmd]
                     coroutines.append((idx, cmd, func(**args)))
                 elif rsp_code in [-12, -13, -17]:
