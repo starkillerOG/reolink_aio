@@ -2847,6 +2847,10 @@ class Baichuan:
     async def snapshot_past(self, channel: int, time: datetime, snapType: str = "sub", ffmpeg: str = "ffmpeg") -> bytes:
         """Get a JPEG image from a past recording (thumbnail)"""
         end = time + timedelta(seconds=10)
+        if "main" in snapType:
+            snapType = "main"
+        if snapType not in {"sub", "main", "ext"}:
+            snapType = "sub"
         xml = xmls.CoverPreview.format(
             channel=channel,
             stream=snapType,
