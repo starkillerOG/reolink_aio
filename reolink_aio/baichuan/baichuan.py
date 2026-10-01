@@ -2069,6 +2069,8 @@ class Baichuan:
             for sub_channel in self.http_api.sub_channels(channel):
                 self.capabilities.setdefault(channel, {}).setdefault(sub_channel, set())
 
+            self._add_detection_capabilities(channel)
+
             if RtspVersion > 0:
                 self._add_capability("stream", channel)
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
@@ -2121,26 +2123,7 @@ class Baichuan:
             if (SmartaiVersion >> 5) & 1:  # 6th bit (32), shift 5
                 coroutines.append((551, channel, self.send(cmd_id=551, channel=channel)))  # loss/taken item
 
-            if self.api_version("motion", channel, no_key_return=1) > 0:
-                self._add_capability("motion_detection", channel)
-                self.http_api._motion_detection_states.setdefault(channel, False)
-
             aiVersion = self.api_version("aitype", channel)
-            if (aiVersion >> 1) & 1:  # 2th bit (2), shift 1
-                self.http_api._ai_detection_support.setdefault(channel, {})["people"] = True
-                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("people", False)
-            if (aiVersion >> 2) & 1:  # 3th bit (4), shift 2
-                self.http_api._ai_detection_support.setdefault(channel, {})["vehicle"] = True
-                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("vehicle", False)
-            if (aiVersion >> 3) & 1:  # 4th bit (8), shift 3
-                self.http_api._ai_detection_support.setdefault(channel, {})["face"] = True
-                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("face", False)
-            if (aiVersion >> 4) & 1:  # 5th bit (16), shift 4
-                self.http_api._ai_detection_support.setdefault(channel, {})["dog_cat"] = True
-                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("dog_cat", False)
-            if (aiVersion >> 6) & 1:  # 7th bit (64), shift 6
-                self._add_capability("motion_detection", channel)  # other detection (PIR)
-                self.http_api._motion_detection_states.setdefault(channel, False)
             if (aiVersion >> 7) & 1 or (aiVersion >> 22) & 1:  # bit 7 or 22
                 coroutines.append(("GetAiCfg", channel, self.GetAiCfg(channel)))
             if (aiVersion >> 8) & 1:  # 9th bit (256), shift 8
@@ -2149,12 +2132,7 @@ class Baichuan:
                 self._add_capability("ai_sensitivity", channel)
             if (aiVersion >> 13) & 1:  # bit 13
                 self._add_capability("auto_track_limit", channel)
-            if (aiVersion >> 17) & 1:  # 18th bit (131072), shift 17
-                self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
-                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
             if (aiVersion >> 23) & 1:  # 24th bit (8388608), shift 23 Yolo World
-                self.http_api._ai_detection_support.setdefault(channel, {})["package"] = True
-                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault("package", False)
                 self._add_capability("ai_non-motor vehicle", channel)
                 self._add_capability("ai_yolo", channel)
                 if (self.api_version("aiAnimalType", channel) >> 1) & 1:  # 2th bit (2), shift 1
@@ -2331,6 +2309,21 @@ class Baichuan:
                 elif cmd_id == "GetPirInfo":
                     if self.http_api._pir.get(channel, {}).get("interval_max", 0) > 0:
                         self._add_capability("PIR_interval", channel)
+
+    def _add_detection_capabilities(self, channel: int) -> None:
+        """Add motion and object detection reported for a stream channel."""
+        # Older camera channels omit ``motion`` and historically default to
+        # supporting it. Extra stream channels must explicitly advertise it.
+        motion_default = 1 if channel in self.http_api._channels else 0
+        ai_version = self.api_version("aitype", channel)
+        if self.api_version("motion", channel, no_key_return=motion_default) > 0 or (ai_version >> 6) & 1:
+            self._add_capability("motion_detection", channel)
+            self.http_api._motion_detection_states.setdefault(channel, False)
+
+        for bit, detection_type in ((1, "people"), (2, "vehicle"), (3, "face"), (4, "dog_cat"), (17, "package"), (23, "package")):
+            if (ai_version >> bit) & 1:
+                self.http_api._ai_detection_support.setdefault(channel, {})[detection_type] = True
+                self.http_api._ai_detection_states.setdefault(channel, {}).setdefault(detection_type, False)
 
     def _add_capability_once(self, capability: str, channel: int | None = None, sub_channel: int | None = None):
         """Add a capability flag, but make sure it only gets added to at most 1 channel for dual lens cameras."""
