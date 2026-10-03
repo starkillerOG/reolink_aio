@@ -2958,7 +2958,14 @@ class Baichuan:
     async def GetUser(self) -> None:
         """Get the user list"""
         xml = xmls.UserList.format(username=self._username)
-        mess = await self.send(cmd_id=58, extension=xml)
+        try:
+            mess = await self.send(cmd_id=58, extension=xml)
+        except ApiError as err:
+            if err.rspCode != 400:
+                raise
+            _LOGGER.debug("Baichuan host %s: user list not supported, assuming admin user", self._host)
+            self.http_api._users = [{"userName": self._username, "userLevel": "1", "level": "admin"}]
+            return
         root = XML.fromstring(mess)
         self.http_api._users = []
         for user in root.findall(".//User"):
