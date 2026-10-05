@@ -5865,10 +5865,11 @@ class Host:
 
         try:
             json_data = await self.send(body, {"cmd": "Search"}, expected_response_type="json")
-        except InvalidContentTypeError as err:
-            raise InvalidContentTypeError(f"Request VOD files error: {str(err)}") from err
-        except NoDataError as err:
-            raise NoDataError(f"Request VOD files error: {str(err)}") from err
+        except ReolinkError:
+            if status_only:
+                statuses = await self.baichuan.search_vod_days(channel, start, end)
+                return statuses, []
+            raise
 
         statuses = []
         vod_files = []
