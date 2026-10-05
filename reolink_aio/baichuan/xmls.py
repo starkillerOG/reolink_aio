@@ -239,6 +239,36 @@ SetScene = """
 </sceneModeCfg>
 </body>"""
 
+DayRecords = """
+<?xml version='1.0' encoding='utf-8'?>
+<body>
+<DayRecords version="1.1">
+<startTime>
+<year>{start_year}</year>
+<month>{start_month}</month>
+<day>{start_day}</day>
+<hour>{start_hour}</hour>
+<minute>{start_minute}</minute>
+<second>{start_second}</second>
+</startTime>
+<endTime>
+<year>{end_year}</year>
+<month>{end_month}</month>
+<day>{end_day}</day>
+<hour>{end_hour}</hour>
+<minute>{end_minute}</minute>
+<second>{end_second}</second>
+</endTime>
+<DayRecordList>
+<DayRecord>
+<index>0</index>
+<channelId>{channel}</channelId>
+<uid>{uid}</uid>
+</DayRecord>
+</DayRecordList>
+</DayRecords>
+</body>"""
+
 FileInfoListOpen = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
