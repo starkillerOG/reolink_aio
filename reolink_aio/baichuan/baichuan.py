@@ -2094,7 +2094,7 @@ class Baichuan:
             if self.http_api.is_nvr and self.http_api.wifi_connection(channel) and (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
                 coroutines.append(("wifi", channel, self.get_wifi_signal(channel)))
 
-            if self.http_api.api_version("talk", channel) > 0:
+            if self.http_api.api_version("talk", channel) > 0 or (not self.http_api.is_nvr and self.api_version("audioTalk") > 0):
                 coroutines.append((10, channel, self.send(cmd_id=10, channel=channel)))
 
             if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
