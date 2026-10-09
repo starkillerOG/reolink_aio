@@ -86,6 +86,7 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+MIN_LOGIN_INTERVAL = 15  # seconds, protect against continuous login attempts
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
@@ -323,6 +324,9 @@ class Baichuan:
         except (ReolinkTimeoutError, ReolinkConnectionError) as err:
             if retry <= 0 or cmd_id == 2:
                 raise
+            if self._login_throttled():
+                _LOGGER.debug("%s, not trying again, last login was only %.1f s ago", err, time_now() - self._last_login)
+                raise
             _LOGGER.debug("%s, trying again", err)
             return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
         if TYPE_CHECKING:
@@ -346,6 +350,9 @@ class Baichuan:
             return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
         except (ReolinkTimeoutError, ReolinkConnectionError) as err:
             if retry <= 0 or cmd_id == 2:
+                raise
+            if self._login_throttled():
+                _LOGGER.debug("%s, not trying again, last login was only %.1f s ago", err, time_now() - self._last_login)
                 raise
             _LOGGER.debug("%s, trying again", err)
             return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
@@ -1704,6 +1711,10 @@ class Baichuan:
             if self._webhook_server is not None:
                 await self._webhook_server.stop()
 
+    def _login_throttled(self) -> bool:
+        """Not logged in and the login protection does not allow a new login yet (a retry would raise a LoginError)"""
+        return not self._logged_in and time_now() - self._last_login < MIN_LOGIN_INTERVAL
+
     async def login(self) -> None:
         """Login using the Baichuan protocol"""
         async with self._login_mutex:
@@ -1711,7 +1722,7 @@ class Baichuan:
                 return
 
             # protect against continues login attempts
-            if time_now() - self._last_login < 15:
+            if time_now() - self._last_login < MIN_LOGIN_INTERVAL:
                 raise LoginError(f"Baichuan host {self._host}: Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
 
             set_last_login = True
