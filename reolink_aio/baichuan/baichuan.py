@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
 from time import time as time_now
@@ -68,6 +68,7 @@ from .util import (
     AES_IV,
     DEFAULT_BC_PORT,
     HEADER_MAGIC,
+    BcMediaStreamParser,
     EncType,
     PortType,
     decrypt_baichuan,
@@ -89,6 +90,14 @@ _LOGGER = logging.getLogger(__name__)
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
+
+# Live preview video stream (Baichuan, used by battery cameras without RTSP)
+MSG_ID_VIDEO = 3  # start the preview video/audio stream
+MSG_ID_VIDEO_STOP = 4  # stop the preview video/audio stream
+STREAM_TYPE_MAP = {"main": "mainStream", "sub": "subStream"}
+STREAM_FIRST_FRAME_TIMEOUT = 15  # seconds to wait for the first video frame
+STREAM_FRAME_TIMEOUT = 30  # seconds to wait for a next video frame
+STREAM_QUEUE_SIZE = 200  # max buffered frames before the oldest are dropped
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 SMART_AI = {
@@ -125,6 +134,41 @@ WHITELED_MODE_BC_TO_HTTP = {
     7: -6,  # Floodlight: the auto_pir has number 7 and a unknown HTTP number
 }
 WHITELED_MODE_HTTP_TO_BC = {v: k for k, v in WHITELED_MODE_BC_TO_HTTP.items()}
+
+
+class _PreviewStream:
+    """Buffer and demux the pushed media of one active Baichuan preview stream."""
+
+    def __init__(self, queue_size: int = STREAM_QUEUE_SIZE) -> None:
+        self.parser = BcMediaStreamParser()
+        # each item is (Annex-B H.264 frame, is_key_frame); None signals the end
+        self.queue: asyncio.Queue[tuple[bytes, bool] | None] = asyncio.Queue(maxsize=queue_size)
+
+    def feed(self, payload: bytes) -> None:
+        """Demux a received (decrypted) preview payload into the frame queue."""
+        for frame in self.parser.push(payload):
+            if self.queue.full():
+                # drop the oldest frame to keep latency low for live viewing
+                try:
+                    self.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            try:
+                self.queue.put_nowait(frame)
+            except asyncio.QueueFull:
+                pass
+
+    def close(self) -> None:
+        """Signal the consumer that the stream has ended."""
+        if self.queue.full():
+            try:
+                self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        try:
+            self.queue.put_nowait(None)
+        except asyncio.QueueFull:
+            pass
 
 
 class Baichuan:
@@ -232,6 +276,9 @@ class Baichuan:
         # futures
         self._payload_future: dict[int | None, dict[int, asyncio.Future]] = {}
         self._payload_future_data: dict[int | None, bytes] = {}
+
+        # active live preview streams, keyed by the full message id of the request
+        self._video_streams: dict[int, _PreviewStream] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -699,6 +746,13 @@ class Baichuan:
 
     def _parse_xml(self, cmd_id: int, xml: str, payload: bytes = b"", mess_id: int | None = None) -> None:
         """parce received xml"""
+        if cmd_id == MSG_ID_VIDEO and mess_id is not None:
+            # live preview video/audio stream, route the media to the active stream
+            video_stream = self._video_streams.get(mess_id)
+            if video_stream is not None:
+                video_stream.feed(payload)
+                return
+
         root = XML.fromstring(xml)
 
         state: Any
@@ -2909,6 +2963,66 @@ class Baichuan:
         image = await i_frame_to_jpeg(frame, ffmpeg)
 
         return image
+
+    async def baichuan_stream(self, channel: int = 0, stream: str = "main") -> AsyncIterator[bytes]:
+        """Yield Annex-B H.264 video frames from the live preview stream.
+
+        Battery-powered Reolink cameras (Argus, MagiCam, Video Doorbell, ...) do
+        not expose a RTSP/RTMP url; this streams their live video over the
+        Baichuan protocol instead. The preview is started when iteration begins
+        and stopped again when iteration ends, so the camera can go back to
+        sleep. The first yielded frame is always a key-frame, so the resulting
+        byte stream is directly decodable, e.g. piped to ffmpeg or fed to the
+        Home Assistant stream component (no RTSP and no go2rtc needed).
+
+        Example::
+
+            async for frame in host.baichuan.baichuan_stream(channel=0):
+                ffmpeg_process.stdin.write(frame)
+
+        :param channel: the camera channel (0 for a standalone camera)
+        :param stream: "main" for the main stream or "sub" for the sub stream
+        """
+        stream_type = STREAM_TYPE_MAP.get(stream)
+        if stream_type is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: baichuan_stream stream '{stream}' not in {list(STREAM_TYPE_MAP)}")
+
+        # reserve the message id up front (like send_payload) so the pushed media
+        # messages, which echo it back, can be routed to this stream
+        self._mess_id = (self._mess_id + 1) % 16777216
+        mess_id = self._mess_id
+        ch_id = 250  # host level, the channel is selected by channelId in the body
+        full_mess_id = (mess_id << 8) + ch_id
+
+        preview = _PreviewStream()
+        self._video_streams[full_mess_id] = preview
+        body = xmls.Preview.format(channel=channel, handle=channel, stream=stream_type)
+        try:
+            await self.send(cmd_id=MSG_ID_VIDEO, body=body, mess_id=mess_id)
+
+            key_frame_seen = False
+            timeout = STREAM_FIRST_FRAME_TIMEOUT
+            while True:
+                try:
+                    async with asyncio.timeout(timeout):
+                        item = await preview.queue.get()
+                except TimeoutError as err:
+                    raise ReolinkTimeoutError(f"Baichuan host {self._host}: timeout waiting for a video frame of channel {channel}") from err
+                if item is None:
+                    break  # stream was closed
+                frame, key_frame = item
+                if not key_frame_seen:
+                    if not key_frame:
+                        continue  # wait for the first key-frame so the output is decodable
+                    key_frame_seen = True
+                    timeout = STREAM_FRAME_TIMEOUT
+                yield frame
+        finally:
+            self._video_streams.pop(full_mess_id, None)
+            try:
+                await self.send(cmd_id=MSG_ID_VIDEO_STOP, body=body, mess_id=mess_id)
+            except ReolinkError as err:
+                _LOGGER.debug("Baichuan host %s: error while stopping preview stream of channel %s: %s", self._host, channel, err)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:

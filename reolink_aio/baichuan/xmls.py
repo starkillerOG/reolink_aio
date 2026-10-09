@@ -475,6 +475,17 @@ GetAiAlarm = """
 </AiDetectCfg>
 </body>"""
 
+Preview = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<Preview version="1.1">
+<channelId>{channel}</channelId>
+<handle>{handle}</handle>
+<streamType>{stream}</streamType>
+<policy>newestIFrame</policy>
+</Preview>
+</body>"""
+
 Snap = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
