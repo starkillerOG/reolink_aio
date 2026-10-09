@@ -803,6 +803,12 @@ class Host:
 
         return self._audio_alarm_settings[channel]["schedule"]["enable"] == 1
 
+    def audio_alarm_schedule(self, channel: int) -> dict[str, str]:
+        """Siren schedule table: detection type (MD, AI_PEOPLE, AI_VEHICLE, AI_DOG_CAT) -> 168 chars '0'/'1' for 7 days x 24 hours starting on Sunday."""
+        if self.api_version("GetAudioAlarm") < 1:
+            return {}
+        return dict(self._audio_alarm_settings.get(channel, {}).get("schedule", {}).get("table", {}))
+
     def pre_alarm_enabled(self, channel: int) -> bool:
         return self._audio_settings.get(channel, {}).get("preAlarm", False)
 
@@ -898,6 +904,12 @@ class Host:
             return self._recording_settings[channel]["scheduleEnable"] == 1
 
         return self._recording_settings[channel]["schedule"]["enable"] == 1
+
+    def recording_schedule(self, channel: int) -> dict[str, str]:
+        """Recording schedule table: type (MD, AI_PEOPLE, AI_VEHICLE, AI_DOG_CAT, TIMING) -> 168 chars '0'/'1' for 7 days x 24 hours starting on Sunday."""
+        if self.api_version("GetRec") < 1:
+            return {}
+        return dict(self._recording_settings.get(channel, {}).get("schedule", {}).get("table", {}))
 
     @property
     def recording_packing_time(self) -> str:
@@ -5015,6 +5027,30 @@ class Host:
 
         await self.send_setting(body)
 
+    def _merge_schedule_table(self, func: str, channel: int, current: dict[str, str], table: dict[str, str]) -> dict[str, str]:
+        """Validate a (partial) schedule table and merge it into a copy of the current table."""
+        if not current:
+            raise NotSupportedError(f"{func}: schedule table on camera {self.camera_name(channel)} is not available")
+        for key, value in table.items():
+            if key not in current:
+                raise InvalidParameterError(f"{func}: unknown schedule type '{key}' on camera {self.camera_name(channel)}, available: {list(current)}")
+            if not isinstance(value, str) or len(value) != len(current[key]) or set(value) - {"0", "1"}:
+                raise InvalidParameterError(f"{func}: schedule for '{key}' on camera {self.camera_name(channel)} must be a string of {len(current[key])} '0'/'1' characters")
+        return {**current, **table}
+
+    async def set_recording_schedule(self, channel: int, table: dict[str, str]) -> None:
+        """Set (part of) the recording schedule table, format as returned by recording_schedule."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_recording_schedule: no camera connected to channel '{channel}'")
+        if not (self.supported(channel, "recording") or (self.supported(None, "recording") and channel == 0)):
+            raise NotSupportedError(f"set_recording_schedule: recording on camera {self.camera_name(channel)} is not available")
+        table = self._merge_schedule_table("set_recording_schedule", channel, self.recording_schedule(channel), table)
+
+        rec_settings = self._recording_settings[channel]
+        params = {**rec_settings, "schedule": {**rec_settings["schedule"], "table": table}}
+        body = [{"cmd": "SetRecV20", "action": 0, "param": {"Rec": params}}]
+        await self.send_setting(body)
+
     async def set_recording_packing_time(self, value: str) -> None:
         """Set the recording packing time."""
         if not self.supported(None, "pak_time"):
@@ -5470,6 +5506,17 @@ class Host:
                 }
             ]
 
+        await self.send_setting(body)
+
+    async def set_audio_alarm_schedule(self, channel: int, table: dict[str, str]) -> None:
+        """Set (part of) the siren schedule table, format as returned by audio_alarm_schedule."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"set_audio_alarm_schedule: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "siren"):
+            raise NotSupportedError(f"set_audio_alarm_schedule: AudioAlarm on camera {self.camera_name(channel)} is not available")
+        table = self._merge_schedule_table("set_audio_alarm_schedule", channel, self.audio_alarm_schedule(channel), table)
+
+        body = [{"cmd": "SetAudioAlarmV20", "action": 0, "param": {"Audio": {"schedule": {"channel": channel, "table": table}}}}]
         await self.send_setting(body)
 
     async def set_siren(self, channel: int | None = None, enable: bool = True, duration: int | None = 2) -> None:
