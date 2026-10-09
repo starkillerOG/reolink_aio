@@ -339,7 +339,7 @@ class Baichuan:
         try:
             data, len_header, payload = await self._connection.send(header + enc_body_bytes, cmd_id, full_mess_id, channel, log_mess)
         except ApiError as err:
-            if retry <= 0 or err.rspCode != 400:
+            if retry <= 0 or err.rspCode != 400 or cmd_id == 2:
                 raise err
             _LOGGER.debug("%s, trying again in 1.5 s", str(err))
             await asyncio.sleep(1.5)  # give the battery cam time to wake
@@ -1834,8 +1834,7 @@ class Baichuan:
                 _LOGGER.warning("Baichuan host %s: timeout of 5 sec waiting for cmd_id %s, continuing with logout", self._host, expected_cmd_ids)
 
             try:
-                xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
-                await self.send(cmd_id=2, body=xml)
+                await self.send(cmd_id=2, body=xmls.LOGOUT_XML)
             except (ReolinkConnectionError, ReolinkTimeoutSendACK):
                 _LOGGER.debug("Baichuan host %s: connection closed before logout confirmation", self._host)
             except ReolinkError as err:
