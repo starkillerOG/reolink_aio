@@ -1,635 +1,435 @@
-"""Tests for two-way audio (talk) implementation."""
+"""Tests for two-way audio (talk) over Baichuan."""
 
 from __future__ import annotations
 
+import asyncio
+import math
+import random
 import struct
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
+from xml.etree import ElementTree as XML
 
-from reolink_aio.baichuan.audio import (
-    BC_MEDIA_ADPCM_MAGIC,
-    build_bc_media_frame,
-    encode_pcm_to_adpcm,
-)
+from Cryptodome.Cipher import AES
+
+from reolink_aio.baichuan import baichuan as bc_module
+from reolink_aio.baichuan.audio import AdpcmEncoder, bcmedia_adpcm_frame
 from reolink_aio.baichuan.baichuan import Baichuan
-
-
-class _TalkRecordingTransport:
-    """Transport that records writes without setting response futures (fire-and-forget)."""
-
-    def __init__(self) -> None:
-        self.writes: list[bytes] = []
-
-    def write(self, data: bytes) -> None:
-        self.writes.append(data)
-
-    def is_closing(self) -> bool:
-        return False
-
-
-class _SendRecordingTransport:
-    """Transport that records writes and resolves response futures (for send())."""
-
-    def __init__(self, protocol, response_body: str = "") -> None:
-        self._protocol = protocol
-        self._response_body = response_body
-        self.writes: list[bytes] = []
-
-    def write(self, data: bytes) -> None:
-        self.writes.append(data)
-        cmd_id = int.from_bytes(data[4:8], byteorder="little")
-        mess_id = int.from_bytes(data[12:16], byteorder="little")
-        if cmd_id in self._protocol.receive_futures and mess_id in self._protocol.receive_futures[cmd_id]:
-            self._protocol.receive_futures[cmd_id][mess_id].set_result((data[:24], 24, b""))
-
-    def is_closing(self) -> bool:
-        return False
-
-
-# --- ADPCM Encoder Tests ---
-
-
-class TestAdpcmEncoder(unittest.TestCase):
-    def test_empty_input(self) -> None:
-        result = encode_pcm_to_adpcm(b"")
-        self.assertEqual(result, [])
-
-    def test_single_byte_ignored(self) -> None:
-        """A single byte is not a complete 16-bit sample."""
-        result = encode_pcm_to_adpcm(b"\x00")
-        self.assertEqual(result, [])
-
-    def test_silence_single_block(self) -> None:
-        """1024 zero samples should produce one block."""
-        pcm = b"\x00\x00" * 1024
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=1024)
-        self.assertEqual(len(blocks), 1)
-
-    def test_block_structure(self) -> None:
-        """Verify preamble format and data size."""
-        pcm = b"\x00\x00" * 1024
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=1024)
-        block = blocks[0]
-
-        # Block should be 4-byte preamble + 512 bytes of nibble data
-        self.assertEqual(len(block), 4 + 512)
-
-        # Preamble: predictor (i16 LE) + step_index (u8) + reserved (u8)
-        predictor, step_index, reserved = struct.unpack("<hBB", block[:4])
-        self.assertEqual(reserved, 0)
-        self.assertGreaterEqual(step_index, 0)
-        self.assertLessEqual(step_index, 88)
-
-    def test_silence_encodes_to_zero_nibbles(self) -> None:
-        """All-zero PCM with zero initial state should produce all-zero nibbles."""
-        pcm = b"\x00\x00" * 1024
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=1024)
-        block = blocks[0]
-
-        # Preamble should be zeros (predictor=0, step_index=0)
-        self.assertEqual(block[:4], b"\x00\x00\x00\x00")
-
-        # All nibbles should be zero (difference is always 0)
-        for byte in block[4:]:
-            self.assertEqual(byte, 0)
-
-    def test_multiple_blocks(self) -> None:
-        """Input longer than samples_per_block should produce multiple blocks."""
-        pcm = b"\x00\x00" * 2048
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=1024)
-        self.assertEqual(len(blocks), 2)
-        for block in blocks:
-            self.assertEqual(len(block), 4 + 512)
-
-    def test_partial_last_block(self) -> None:
-        """Input not a multiple of samples_per_block produces a smaller last block."""
-        # 1536 samples: 1 full block (1024) + 1 partial (512)
-        pcm = b"\x00\x00" * 1536
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=1024)
-        self.assertEqual(len(blocks), 2)
-        self.assertEqual(len(blocks[0]), 4 + 512)  # Full block
-        self.assertEqual(len(blocks[1]), 4 + 256)  # 512 samples = 256 nibble bytes
-
-    def test_non_zero_pcm_produces_non_zero_nibbles(self) -> None:
-        """A loud tone should produce non-zero ADPCM nibbles."""
-        # Simple sawtooth: ramps from 0 to 32000
-        samples = [int(32000 * i / 1024) for i in range(1024)]
-        pcm = struct.pack(f"<{len(samples)}h", *samples)
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=1024)
-        self.assertEqual(len(blocks), 1)
-        # At least some data bytes should be non-zero
-        data = blocks[0][4:]
-        self.assertTrue(any(b != 0 for b in data))
-
-    def test_predictor_stays_in_range(self) -> None:
-        """Predictor should never exceed 16-bit signed range."""
-        # Extreme input: alternating min/max
-        samples = [32767, -32768] * 512
-        pcm = struct.pack(f"<{len(samples)}h", *samples)
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=1024)
-        # Just verify it completes without error — predictor clamping works
-        self.assertEqual(len(blocks), 1)
-
-    def test_small_block_size(self) -> None:
-        """Verify encoder works with small block sizes."""
-        pcm = b"\x00\x00" * 8
-        blocks = encode_pcm_to_adpcm(pcm, samples_per_block=4)
-        self.assertEqual(len(blocks), 2)
-        # 4 samples = 4 nibbles = 2 bytes + 4 preamble = 6
-        for block in blocks:
-            self.assertEqual(len(block), 4 + 2)
-
-
-# --- BcMedia Frame Tests ---
-
-
-class TestBcMediaFrame(unittest.TestCase):
-    def test_frame_magic(self) -> None:
-        """Frame should start with '01wb' magic."""
-        block = b"\x00" * (4 + 512)  # Fake ADPCM block
-        frame = build_bc_media_frame(block)
-        self.assertEqual(frame[:4], BC_MEDIA_ADPCM_MAGIC)
-
-    def test_frame_payload_size(self) -> None:
-        """payload_size should be data_len + 4."""
-        block = b"\x00" * (4 + 512)  # 516 bytes
-        frame = build_bc_media_frame(block)
-        payload_size_1 = struct.unpack("<H", frame[4:6])[0]
-        payload_size_2 = struct.unpack("<H", frame[6:8])[0]
-        self.assertEqual(payload_size_1, 516 + 4)  # data + sub_header
-        self.assertEqual(payload_size_1, payload_size_2)
-
-    def test_frame_sub_magic(self) -> None:
-        """Sub-magic should be 0x0001."""
-        block = b"\x00" * (4 + 512)
-        frame = build_bc_media_frame(block)
-        sub_magic = struct.unpack("<H", frame[8:10])[0]
-        self.assertEqual(sub_magic, 0x0001)
-
-    def test_frame_half_block_size(self) -> None:
-        """half_block_size should be (data_len - 4) / 2."""
-        block = b"\x00" * (4 + 512)
-        frame = build_bc_media_frame(block)
-        half_block = struct.unpack("<H", frame[10:12])[0]
-        self.assertEqual(half_block, 256)  # (516 - 4) / 2 = 256
-
-    def test_frame_8byte_alignment(self) -> None:
-        """Data portion (data + padding) should be 8-byte aligned."""
-        # 516 data → padding = (8 - 516 % 8) % 8 = 4 → data+padding = 520
-        block = b"\x00" * 516
-        frame = build_bc_media_frame(block)
-        data_plus_padding = len(frame) - 12  # subtract 12-byte header
-        self.assertEqual(data_plus_padding % 8, 0)
-
-    def test_frame_no_padding_needed(self) -> None:
-        """Data that's already 8-byte aligned needs no padding."""
-        # 520 bytes → 520 % 8 = 0
-        block = b"\x00" * 520
-        frame = build_bc_media_frame(block)
-        # 12 header + 520 data = 532, 532 % 8 = 4 → no wait, padding is based on data_len not total
-        # padding = (8 - 520 % 8) % 8 = 0
-        self.assertEqual(len(frame), 12 + 520)
-
-    def test_frame_contains_data(self) -> None:
-        """ADPCM data should appear after the 12-byte header."""
-        block = bytes(range(256)) * 2 + bytes(4)  # 516 bytes
-        frame = build_bc_media_frame(block)
-        self.assertEqual(frame[12 : 12 + len(block)], block)
-
-    def test_typical_block_frame_size(self) -> None:
-        """Typical 8kHz/1024-sample block: 516 data → 532 total."""
-        block = b"\x00" * 516  # 4 preamble + 512 nibble bytes
-        frame = build_bc_media_frame(block)
-        # 12 header + 516 data + 4 padding = 532
-        self.assertEqual(len(frame), 532)
-
-
-# --- send_binary_no_reply Tests ---
-
-
-class TestSendBinaryNoReply(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
-        self.bc = Baichuan(
-            host="127.0.0.1",
-            username="user",
-            password="password",
-            http_api=SimpleNamespace(nvr_name="test", _updating=False),
-        )
-        self.bc._logged_in = True
-        self.bc._aes_key = b"0123456789abcdef"  # 16-byte key for AES-128
-        self.transport = _TalkRecordingTransport()
-        self.bc._protocol = SimpleNamespace(receive_futures={})
-        self.bc._transport = self.transport
-        self.bc._connect_if_needed = AsyncMock()
-
-    async def test_header_cmd_id(self) -> None:
-        """cmd_id in the header should match the argument."""
-        await self.bc.send_binary_no_reply(cmd_id=202, channel=0, binary_body=b"\x00" * 100)
-
-        written = self.transport.writes[0]
-        cmd_id = int.from_bytes(written[4:8], byteorder="little")
-        self.assertEqual(cmd_id, 202)
-
-    async def test_header_message_class_1464(self) -> None:
-        """Message class 1464 produces a 24-byte header."""
-        await self.bc.send_binary_no_reply(cmd_id=202, channel=0, binary_body=b"\x00" * 100)
-
-        written = self.transport.writes[0]
-        message_class = written[18:20].hex()
-        self.assertEqual(message_class, "1464")
-
-    async def test_payload_offset_equals_encrypted_extension_length(self) -> None:
-        """payload_offset should equal the length of the AES-encrypted extension."""
-        await self.bc.send_binary_no_reply(cmd_id=202, channel=0, binary_body=b"\xAA" * 50)
-
-        written = self.transport.writes[0]
-        payload_offset = int.from_bytes(written[20:24], byteorder="little")
-        mess_len = int.from_bytes(written[8:12], byteorder="little")
-
-        self.assertEqual(mess_len, payload_offset + 50)
-        self.assertGreater(payload_offset, 0)
-
-    async def test_raw_payload_is_not_encrypted(self) -> None:
-        """The binary body should appear as-is (not encrypted) in the write."""
-        marker = b"\xDE\xAD\xBE\xEF" * 10  # 40 bytes of recognizable data
-        await self.bc.send_binary_no_reply(cmd_id=202, channel=0, binary_body=marker)
-
-        written = self.transport.writes[0]
-        self.assertTrue(written.endswith(marker))
-
-    async def test_extension_is_encrypted(self) -> None:
-        """The extension XML should be AES-encrypted (different from plaintext)."""
-        await self.bc.send_binary_no_reply(cmd_id=202, channel=0, binary_body=b"\x00" * 10)
-
-        written = self.transport.writes[0]
-        payload_offset = int.from_bytes(written[20:24], byteorder="little")
-        enc_ext = written[24 : 24 + payload_offset]
-
-        self.assertNotIn(b"channelId", enc_ext)
-
-    async def test_mess_id_increments(self) -> None:
-        """Each call should increment the message ID."""
-        self.bc._mess_id = 100
-        await self.bc.send_binary_no_reply(cmd_id=202, channel=0, binary_body=b"\x00")
-        await self.bc.send_binary_no_reply(cmd_id=202, channel=0, binary_body=b"\x00")
-
-        id1 = int.from_bytes(self.transport.writes[0][12:16], byteorder="little")
-        id2 = int.from_bytes(self.transport.writes[1][12:16], byteorder="little")
-        self.assertNotEqual(id1, id2)
-
-
-# --- talk() Orchestration Tests ---
-
-
-class TestTalkOrchestration(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
-        self.bc = Baichuan(
-            host="127.0.0.1",
-            username="user",
-            password="password",
-            http_api=SimpleNamespace(nvr_name="test", _updating=False),
-        )
-        self.bc._logged_in = True
-        self.bc._aes_key = b"0123456789abcdef"
-        self.transport = _TalkRecordingTransport()
-        self.protocol = SimpleNamespace(receive_futures={})
-        self.bc._protocol = self.protocol
-        self.bc._transport = self.transport
-        self.bc._connect_if_needed = AsyncMock()
-
-        # Mock send() to avoid full protocol handling
-        self.send_calls: list[dict] = []
-
-        async def mock_send(cmd_id, channel=None, body="", **kwargs):
-            self.send_calls.append({"cmd_id": cmd_id, "channel": channel, "body": body})
-            return "<ok/>"
-
-        self.bc.send = mock_send
-
-    async def test_talk_sends_talk_config_first(self) -> None:
-        """talk() should send TalkConfig (cmd_id=201) before audio frames."""
-        pcm = b"\x00\x00" * 1024  # 1 block of silence
-        await self.bc.talk(channel=0, audio_data=pcm)
-
-        # First send should be TalkConfig
-        self.assertEqual(self.send_calls[0]["cmd_id"], 201)
-        self.assertIn("TalkConfig", self.send_calls[0]["body"])
-
-    async def test_talk_sends_talk_reset_at_end(self) -> None:
-        """talk() should send TalkReset (cmd_id=11) when done."""
-        pcm = b"\x00\x00" * 1024
-        await self.bc.talk(channel=0, audio_data=pcm)
-
-        # Last send should be TalkReset
-        self.assertEqual(self.send_calls[-1]["cmd_id"], 11)
-
-    async def test_talk_sends_audio_frames(self) -> None:
-        """talk() should write audio frames via send_binary_no_reply."""
-        pcm = b"\x00\x00" * 1024
-        await self.bc.talk(channel=0, audio_data=pcm)
-
-        # Should have at least one transport write (audio frame)
-        self.assertGreater(len(self.transport.writes), 0)
-
-    async def test_talk_uses_config_from_talk_ability(self) -> None:
-        """talk() should use cached TalkAbility config."""
-        self.bc._talk_config[0] = {
-            "sample_rate": 16000,
-            "block_size": 2048,
-            "duplex": "HDX",
-            "stream_mode": "mixAudioStream",
-        }
-        pcm = b"\x00\x00" * 2048
-        await self.bc.talk(channel=0, audio_data=pcm)
-
-        # TalkConfig body should contain the cached values
-        body = self.send_calls[0]["body"]
-        self.assertIn("<sampleRate>16000</sampleRate>", body)
-        self.assertIn("<lengthPerEncoder>2048</lengthPerEncoder>", body)
-        self.assertIn("<duplex>HDX</duplex>", body)
-
-    async def test_talk_parameter_overrides(self) -> None:
-        """Explicit sample_rate/block_size should override TalkAbility."""
-        self.bc._talk_config[0] = {
-            "sample_rate": 8000,
-            "block_size": 1024,
-            "duplex": "FDX",
-            "stream_mode": "followVideoStream",
-        }
-        pcm = b"\x00\x00" * 2048
-        await self.bc.talk(channel=0, audio_data=pcm, sample_rate=16000, block_size=2048)
-
-        body = self.send_calls[0]["body"]
-        self.assertIn("<sampleRate>16000</sampleRate>", body)
-        self.assertIn("<lengthPerEncoder>2048</lengthPerEncoder>", body)
-
-    async def test_talk_reset_on_error(self) -> None:
-        """TalkReset should be sent even if audio sending fails."""
-        async def failing_send_binary(cmd_id, channel=None, binary_body=b""):
-            raise ConnectionError("fake error")
-
-        self.bc.send_binary_no_reply = failing_send_binary
-
-        pcm = b"\x00\x00" * 1024
-        with self.assertRaises(ConnectionError):
-            await self.bc.talk(channel=0, audio_data=pcm)
-
-        # TalkReset (cmd_id=11) should still be sent
-        reset_calls = [c for c in self.send_calls if c["cmd_id"] == 11]
-        self.assertEqual(len(reset_calls), 1)
-
-
-# --- build_bcmedia_adpcm Tests ---
-
-
-class TestBuildBcmediaAdpcm(unittest.TestCase):
-    """Tests for Baichuan.build_bcmedia_adpcm() (our split-API framing helper)."""
-
-    def _make_block(self, lpe: int = 1024) -> bytes:
-        """Return a minimal valid ADPCM block for the given lengthPerEncoder."""
-        return b"\x00" * (4 + lpe // 2)
-
-    def test_magic_bytes(self) -> None:
-        """Frame should start with the ADPCM magic (0x62773130 LE = bytes 30 31 77 62)."""
-        block = self._make_block()
-        payload = Baichuan.build_bcmedia_adpcm([block])
-        self.assertEqual(payload[:4], struct.pack("<I", 0x62773130))
-
-    def test_payload_size_field(self) -> None:
-        """payload_size should be len(block) + 4, duplicated in bytes 4-8."""
-        block = self._make_block(1024)  # 4 + 512 = 516 bytes
-        payload = Baichuan.build_bcmedia_adpcm([block])
-        ps1 = struct.unpack("<H", payload[4:6])[0]
-        ps2 = struct.unpack("<H", payload[6:8])[0]
-        self.assertEqual(ps1, len(block) + 4)
-        self.assertEqual(ps1, ps2)
-
-    def test_sub_magic(self) -> None:
-        """Sub-magic field should be 0x0100 (confirmed from pcap)."""
-        block = self._make_block()
-        payload = Baichuan.build_bcmedia_adpcm([block])
-        sub_magic = struct.unpack("<H", payload[8:10])[0]
-        self.assertEqual(sub_magic, 0x0100)
-
-    def test_half_block_is_2(self) -> None:
-        """half_block field is always 2 (confirmed from Ghidra)."""
-        block = self._make_block()
-        payload = Baichuan.build_bcmedia_adpcm([block])
-        half_block = struct.unpack("<H", payload[10:12])[0]
-        self.assertEqual(half_block, 2)
-
-    def test_block_data_follows_header(self) -> None:
-        """ADPCM block data should appear immediately after the 12-byte frame header."""
-        block = bytes(range(100)) + b"\x00" * (4 + 512 - 100)
-        payload = Baichuan.build_bcmedia_adpcm([block])
-        self.assertEqual(payload[12 : 12 + len(block)], block)
-
-    def test_8byte_alignment(self) -> None:
-        """Total frame length should always be a multiple of 8."""
-        for lpe in [160, 320, 512, 1024]:
-            block = self._make_block(lpe)
-            payload = Baichuan.build_bcmedia_adpcm([block])
-            self.assertEqual(len(payload) % 8, 0, f"lpe={lpe}: frame length {len(payload)} not 8-byte aligned")
-
-    def test_no_padding_when_already_aligned(self) -> None:
-        """No padding bytes when payload_size is already a multiple of 8."""
-        # For lpe=1024: block = 4 + 512 = 516, payload_size = 520, 520 % 8 = 0 → no padding
-        block = self._make_block(1024)
-        payload = Baichuan.build_bcmedia_adpcm([block])
-        expected_len = 12 + len(block)  # 12 header + 516 data + 0 padding
-        self.assertEqual(len(payload), expected_len)
-
-    def test_multiple_blocks_concatenated(self) -> None:
-        """Multiple blocks should produce concatenated BcMedia frames."""
-        block = self._make_block()
-        payload = Baichuan.build_bcmedia_adpcm([block, block, block])
-        # Each frame: 12 header + 516 data = 528 bytes (520 payload_size, no padding needed)
-        single_frame_len = 12 + len(block)
-        self.assertEqual(len(payload), 3 * single_frame_len)
-
-    def test_empty_block_list(self) -> None:
-        """Empty block list returns empty bytes."""
-        self.assertEqual(Baichuan.build_bcmedia_adpcm([]), b"")
-
-
-# --- get_talk_ability / start_talk / stop_talk / send_talk_data Tests ---
-
-
-class TestSplitTalkApi(unittest.IsolatedAsyncioTestCase):
-    """Tests for the get_talk_ability / start_talk / stop_talk / send_talk_data split API."""
-
-    _TALK_ABILITY_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+from reolink_aio.baichuan.util import AES_IV, HEADER_MAGIC
+from reolink_aio.exceptions import ApiError, ReolinkError, ReolinkTimeoutError
+
+# TalkAbility (cmd_id 10) as returned by a Reolink Video Doorbell PoE
+TALK_ABILITY_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 <body>
 <TalkAbility version="1.1">
 <duplexList><duplex>FDX</duplex></duplexList>
-<audioStreamModeList><audioStreamMode>followVideoStream</audioStreamMode></audioStreamModeList>
-<audioConfigList>
-<audioConfig>
-<priority>0</priority>
-<audioType>adpcm</audioType>
-<sampleRate>16000</sampleRate>
-<samplePrecision>16</samplePrecision>
-<lengthPerEncoder>1024</lengthPerEncoder>
-<soundTrack>mono</soundTrack>
-</audioConfig>
-</audioConfigList>
+<audioStreamModeList>
+<audioStreamMode>followVideoStream</audioStreamMode>
+<audioStreamMode>mixAudioStream</audioStreamMode>
+</audioStreamModeList>
+<audioConfigList><audioConfig>
+<priority>0</priority><audioType>adpcm</audioType><sampleRate>16000</sampleRate>
+<samplePrecision>16</samplePrecision><lengthPerEncoder>1024</lengthPerEncoder><soundTrack>mono</soundTrack>
+</audioConfig></audioConfigList>
 </TalkAbility>
-</body>"""
+</body>
+"""
 
+AES_KEY = b"0123456789ABCDEF"
+
+_STEPS = [
+    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143,
+    157, 173, 190, 209, 230, 253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411,
+    1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+    11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
+]  # fmt: skip
+_INDEX = [-1, -1, -1, -1, 2, 4, 6, 8]
+
+
+def decode_block(block: bytes) -> list[int]:
+    """Reference IMA ADPCM decoder for one DVI-4 block."""
+    predictor, index, _ = struct.unpack("<hBB", block[:4])
+    out = [predictor]
+    for byte in block[4:]:
+        for code in (byte & 0x0F, byte >> 4):
+            step = _STEPS[index]
+            diff = step >> 3
+            if code & 4:
+                diff += step
+            if code & 2:
+                diff += step >> 1
+            if code & 1:
+                diff += step >> 2
+            predictor = max(-32768, min(32767, predictor - diff if code & 8 else predictor + diff))
+            index = max(0, min(88, index + _INDEX[code & 7]))
+            out.append(predictor)
+    return out
+
+
+def sweep(n_samples: int, rate: int = 16000) -> bytes:
+    """Speech-like test signal: a 200-3000 Hz sweep with a slow amplitude envelope."""
+    samples = []
+    phase = 0.0
+    for i in range(n_samples):
+        t = i / rate
+        phase += 2 * math.pi * (200 + 2800 * (i / n_samples)) / rate
+        samples.append(int(12000 * (0.6 + 0.4 * math.sin(2 * math.pi * 3 * t)) * math.sin(phase)))
+    return struct.pack(f"<{n_samples}h", *samples)
+
+
+class TestAdpcmEncoder(unittest.TestCase):
+    def test_block_size(self) -> None:
+        encoder = AdpcmEncoder(1024)
+        self.assertEqual(encoder.samples_per_block, 1025)
+        blocks = encoder.encode(b"\x00\x00" * 1025 * 3)
+        self.assertEqual([len(block) for block in blocks], [516, 516, 516])
+
+    def test_round_trip_quality(self) -> None:
+        pcm = sweep(1025 * 16)
+        blocks = AdpcmEncoder(1024).encode(pcm)
+        decoded = [sample for block in blocks for sample in decode_block(block)]
+        original = struct.unpack(f"<{len(pcm) // 2}h", pcm)
+        signal = sum(x * x for x in original)
+        noise = sum((x - y) ** 2 for x, y in zip(original, decoded))
+        self.assertGreater(10 * math.log10(signal / noise), 18)
+
+    def test_streaming_matches_one_shot(self) -> None:
+        pcm = sweep(1025 * 10 + 300)
+        expected = AdpcmEncoder(1024).encode(pcm)
+        encoder = AdpcmEncoder(1024)
+        blocks: list[bytes] = []
+        rnd = random.Random(1)
+        pos = 0
+        while pos < len(pcm):
+            size = rnd.randint(1, 3000)  # includes odd sizes that split a sample
+            blocks += encoder.encode(pcm[pos : pos + size])
+            pos += size
+        self.assertEqual(blocks, expected)
+
+    def test_step_index_carries_over_between_blocks(self) -> None:
+        blocks = AdpcmEncoder(1024).encode(sweep(1025 * 2))
+        self.assertEqual(blocks[0][2], 0)
+        self.assertGreater(blocks[1][2], 0)
+
+    def test_flush_pads_last_block(self) -> None:
+        encoder = AdpcmEncoder(1024)
+        self.assertEqual(encoder.encode(b"\x10\x00" * 100), [])
+        blocks = encoder.flush()
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(len(blocks[0]), 516)
+        self.assertEqual(encoder.flush(), [])
+
+    def test_invalid_length_per_encoder(self) -> None:
+        with self.assertRaises(ValueError):
+            AdpcmEncoder(1023)
+        with self.assertRaises(ValueError):
+            AdpcmEncoder(0)
+
+
+class TestBcMediaFrame(unittest.TestCase):
+    def test_frame_matches_reolink_client(self) -> None:
+        block = AdpcmEncoder(1024).encode(b"\x00\x00" * 1025)[0]
+        frame = bcmedia_adpcm_frame(block)
+        # header as sent by the Reolink client: "01wb", 520, 520, 0x0100, 2
+        self.assertEqual(frame[:12], bytes.fromhex("303177620802080200010200"))
+        self.assertEqual(frame[12:], block)
+        self.assertEqual(len(frame), 528)
+
+    def test_frame_padding(self) -> None:
+        block = AdpcmEncoder(1000).encode(b"\x00\x00" * 1001)[0]
+        frame = bcmedia_adpcm_frame(block)
+        self.assertEqual(len(frame) % 8, 0)
+        self.assertEqual(struct.unpack("<H", frame[4:6])[0], len(block) + 4)
+
+
+class _FakeConnection:
+    def __init__(self) -> None:
+        self.writes: list[bytes] = []
+
+    async def send_without_wait(self, data: bytes, cmd_id: int | None = None, timeout: float = 15) -> None:
+        self.writes.append(data)
+
+
+class TalkTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        self.bc = Baichuan(
-            host="127.0.0.1",
-            username="user",
-            password="password",
-            http_api=SimpleNamespace(nvr_name="test", _updating=False),
-        )
+        self.bc = Baichuan("1.2.3.4", "admin", "password", http_api=SimpleNamespace(nvr_name="test", _updating=False))  # type: ignore[arg-type]
+        self.bc._aes_key = AES_KEY
         self.bc._logged_in = True
-        self.bc._aes_key = b"0123456789abcdef"
-        self.transport = _TalkRecordingTransport()
-        self.bc._protocol = SimpleNamespace(receive_futures={})
-        self.bc._transport = self.transport
-        self.bc._connect_if_needed = AsyncMock()
+        self.connection = _FakeConnection()
+        self.bc._connection = self.connection  # type: ignore[assignment]
+        self.bc._connect_if_needed = AsyncMock()  # type: ignore[method-assign]
+        self.sent: list[tuple[int, str]] = []
+        self.bc.send = AsyncMock(side_effect=self._send)  # type: ignore[method-assign]
 
-        self.send_calls: list[dict] = []
+        # fake clock so pacing does not slow down the tests
+        self.clock = 1000.0
+        self.sleeps: list[float] = []
+        real_sleep = asyncio.sleep
 
-        async def mock_send(cmd_id, channel=None, body="", **kwargs):
-            self.send_calls.append({"cmd_id": cmd_id, "channel": channel, "body": body})
-            if cmd_id == 10:
-                return self._TALK_ABILITY_XML
-            return "<ok/>"
+        async def fake_sleep(delay: float, *_args) -> None:
+            self.sleeps.append(delay)
+            self.clock += delay
+            await real_sleep(0)
 
-        self.bc.send = mock_send
+        self.enterContext(patch.object(bc_module, "monotonic", lambda: self.clock))
+        self.enterContext(patch.object(bc_module.asyncio, "sleep", fake_sleep))
 
-    async def test_get_talk_ability_parses_sample_rate(self) -> None:
-        ability = await self.bc.get_talk_ability(channel=0)
+    async def _send(self, cmd_id: int, channel: int | None = None, body: str = "", **_kwargs) -> str:
+        self.sent.append((cmd_id, body))
+        if cmd_id == 10:
+            return TALK_ABILITY_XML
+        return ""
+
+    def ack_all(self) -> None:
+        session = self.bc._talk_sessions[0]
+        header = bytes.fromhex(HEADER_MAGIC) + (202).to_bytes(4, "little") + bytes(4) + session.full_mess_id.to_bytes(4, "little") + bytes.fromhex("c8000000") + bytes(4)
+        for _ in range(session.blocks_sent - session.blocks_acked):
+            self.bc._push_callback(202, header, 24, b"")
+
+
+class TestTalkSession(TalkTestCase):
+    async def test_parse_talk_ability(self) -> None:
+        ability = self.bc._parse_talk_ability(XML.fromstring(TALK_ABILITY_XML))
+        self.assertEqual(ability, {"duplex": "FDX", "audio_stream_mode": "followVideoStream", "sample_rate": 16000, "length_per_encoder": 1024})
+        self.assertIsNone(self.bc._parse_talk_ability(XML.fromstring("<body><TalkAbility/></body>")))
+        self.assertIsNone(self.bc._parse_talk_ability(XML.fromstring(TALK_ABILITY_XML.replace("adpcm", "aac"))))
+
+    async def test_start_talk_sends_talk_config(self) -> None:
+        ability = await self.bc.start_talk(0)
         self.assertEqual(ability["sample_rate"], 16000)
+        self.assertEqual(self.bc.talk_sample_rate(0), 16000)
+        self.assertEqual([cmd for cmd, _ in self.sent], [10, 201])
+        config = XML.fromstring(self.sent[1][1]).find("TalkConfig")
+        assert config is not None
+        self.assertEqual(config.findtext("channelId"), "0")
+        self.assertEqual(config.findtext("duplex"), "FDX")
+        self.assertEqual(config.findtext("audioStreamMode"), "followVideoStream")
+        self.assertEqual(config.findtext("audioConfig/audioType"), "adpcm")
+        self.assertEqual(config.findtext("audioConfig/sampleRate"), "16000")
+        self.assertEqual(config.findtext("audioConfig/lengthPerEncoder"), "1024")
 
-    async def test_get_talk_ability_parses_length_per_encoder(self) -> None:
-        ability = await self.bc.get_talk_ability(channel=0)
-        self.assertEqual(ability["length_per_encoder"], 1024)
+    async def test_start_talk_resets_busy_session(self) -> None:
+        calls = 0
 
-    async def test_get_talk_ability_parses_duplex(self) -> None:
-        ability = await self.bc.get_talk_ability(channel=0)
-        self.assertEqual(ability["duplex"], "FDX")
+        async def busy_once(cmd_id: int, channel: int | None = None, body: str = "", **_kwargs) -> str:
+            nonlocal calls
+            self.sent.append((cmd_id, body))
+            if cmd_id == 201 and calls == 0:
+                calls += 1
+                raise ApiError("busy", rspCode=422)
+            return TALK_ABILITY_XML if cmd_id == 10 else ""
 
-    async def test_get_talk_ability_parses_audio_stream_mode(self) -> None:
-        ability = await self.bc.get_talk_ability(channel=0)
-        self.assertEqual(ability["audio_stream_mode"], "followVideoStream")
+        self.bc.send = AsyncMock(side_effect=busy_once)  # type: ignore[method-assign]
+        await self.bc.start_talk(0)
+        self.assertEqual([cmd for cmd, _ in self.sent], [10, 201, 11, 201])
+        self.assertEqual(self.sent[1][1], self.sent[3][1])
 
-    async def test_start_talk_sends_cmd_id_10_then_201(self) -> None:
-        """start_talk() must call TalkAbility (10) then TalkConfig (201)."""
-        await self.bc.start_talk(channel=0)
-        self.assertEqual(self.send_calls[0]["cmd_id"], 10)
-        self.assertEqual(self.send_calls[1]["cmd_id"], 201)
+    async def test_start_talk_in_use_by_other_client(self) -> None:
+        async def busy(cmd_id: int, channel: int | None = None, body: str = "", **_kwargs) -> str:
+            self.sent.append((cmd_id, body))
+            if cmd_id == 201:
+                raise ApiError("busy", rspCode=422)
+            return TALK_ABILITY_XML if cmd_id == 10 else ""
 
-    async def test_start_talk_uses_camera_sample_rate(self) -> None:
-        """TalkConfig body should use the sample_rate from TalkAbility (not a default)."""
-        await self.bc.start_talk(channel=0)
-        body = self.send_calls[1]["body"]
-        self.assertIn("<sampleRate>16000</sampleRate>", body)
+        self.bc.send = AsyncMock(side_effect=busy)  # type: ignore[method-assign]
+        with self.assertRaisesRegex(ReolinkError, "in use by another client"):
+            await self.bc.start_talk(0)
+        self.assertEqual([cmd for cmd, _ in self.sent], [10, 201, 11, 201])
+        self.assertNotIn(0, self.bc._talk_sessions)
 
-    async def test_start_talk_returns_ability_dict(self) -> None:
-        ability = await self.bc.start_talk(channel=0)
-        self.assertEqual(ability["sample_rate"], 16000)
-        self.assertEqual(ability["length_per_encoder"], 1024)
+    async def test_start_talk_other_error_raises(self) -> None:
+        self.bc.send = AsyncMock(side_effect=ApiError("denied", rspCode=401))  # type: ignore[method-assign]
+        with self.assertRaises(ApiError):
+            await self.bc.start_talk(0)
+        self.assertNotIn(0, self.bc._talk_sessions)
 
-    async def test_stop_talk_sends_cmd_id_11(self) -> None:
-        await self.bc.stop_talk(channel=0)
-        self.assertEqual(self.send_calls[0]["cmd_id"], 11)
+    async def test_start_talk_twice_raises(self) -> None:
+        await self.bc.start_talk(0)
+        with self.assertRaises(ReolinkError):
+            await self.bc.start_talk(0)
 
-    async def test_send_talk_data_calls_send_binary_no_reply(self) -> None:
-        """send_talk_data() should fire the audio payload via send_binary_no_reply."""
-        marker = b"\xAB\xCD" * 20
-        await self.bc.send_talk_data(channel=0, bcmedia_data=marker)
+    async def test_send_without_session_raises(self) -> None:
+        with self.assertRaises(ReolinkError):
+            await self.bc.send_talk_audio(0, b"\x00\x00" * 2000)
 
-        self.assertEqual(len(self.transport.writes), 1)
-        self.assertTrue(self.transport.writes[0].endswith(marker))
+    async def test_audio_frames_on_the_wire(self) -> None:
+        await self.bc.start_talk(0)
+        session = self.bc._talk_sessions[0]
+        pcm = sweep(1025 * 3)
+        await self.bc.send_talk_audio(0, pcm)
+        self.assertEqual(len(self.connection.writes), 3)
 
-    async def test_send_talk_data_uses_cmd_202(self) -> None:
-        await self.bc.send_talk_data(channel=0, bcmedia_data=b"\x00" * 8)
-        written = self.transport.writes[0]
-        cmd_id = int.from_bytes(written[4:8], byteorder="little")
-        self.assertEqual(cmd_id, 202)
+        expected_frames = [bcmedia_adpcm_frame(block) for block in AdpcmEncoder(1024).encode(pcm)]
+        for data, frame in zip(self.connection.writes, expected_frames):
+            self.assertEqual(data[0:4].hex(), HEADER_MAGIC)
+            self.assertEqual(int.from_bytes(data[4:8], "little"), 202)
+            self.assertEqual(int.from_bytes(data[12:16], "little"), session.full_mess_id)
+            self.assertEqual(data[12], 1)  # channel 0 + 1
+            self.assertEqual(data[16:20].hex(), "00001464")
+            ext_len = int.from_bytes(data[20:24], "little")
+            self.assertEqual(int.from_bytes(data[8:12], "little"), ext_len + len(frame))
+            ext = AES.new(key=AES_KEY, mode=AES.MODE_CFB, iv=AES_IV, segment_size=128).decrypt(data[24 : 24 + ext_len]).decode()
+            self.assertIn("<binaryData>1</binaryData>", ext)
+            self.assertIn("<channelId>0</channelId>", ext)
+            self.assertEqual(data[24 + ext_len :], frame)  # audio payload is sent unencrypted
+
+    async def test_pacing_stays_close_to_real_time(self) -> None:
+        await self.bc.start_talk(0)
+        session = self.bc._talk_sessions[0]
+        send_times: list[float] = []
+
+        async def record(data: bytes, cmd_id: int | None = None, timeout: float = 15) -> None:
+            send_times.append(self.clock)
+
+        self.connection.send_without_wait = record  # type: ignore[method-assign]
+        for _ in range(40):
+            await self.bc.send_talk_audio(0, sweep(1025))
+            session.blocks_acked = session.blocks_sent
+        start = send_times[0]
+        for i, sent_at in enumerate(send_times):
+            ahead = start + i * session.block_time - sent_at
+            self.assertLessEqual(ahead, bc_module.TALK_LEAD + 1e-6)
+            self.assertGreaterEqual(ahead, 0)
+        self.assertAlmostEqual(ahead, bc_module.TALK_LEAD, places=6)
+
+    async def test_pacing_restarts_after_underrun(self) -> None:
+        await self.bc.start_talk(0)
+        session = self.bc._talk_sessions[0]
+        await self.bc.send_talk_audio(0, sweep(1025 * 2))
+        self.clock += 10  # producer stalls, the camera plays out everything
+        sent_before = len(self.connection.writes)
+        sleeps_before = len(self.sleeps)
+        await self.bc.send_talk_audio(0, sweep(1025 * 3))
+        self.assertEqual(len(self.connection.writes), sent_before + 3)
+        # no burst of catch-up, but no waiting on the stale clock either
+        self.assertTrue(all(delay <= session.block_time for delay in self.sleeps[sleeps_before:]))
+
+    async def test_acks_release_flow_control(self) -> None:
+        await self.bc.start_talk(0)
+        session = self.bc._talk_sessions[0]
+        task = asyncio.create_task(self.bc.send_talk_audio(0, b"\x00\x00" * 1025 * (bc_module.TALK_MAX_IN_FLIGHT + 2)))
+        for _ in range(50):
+            await asyncio.sleep(0)
+        self.assertEqual(session.blocks_sent, bc_module.TALK_MAX_IN_FLIGHT)
+        self.assertFalse(task.done())
+        self.ack_all()
+        await asyncio.wait_for(task, 1)
+        self.assertEqual(session.blocks_sent, bc_module.TALK_MAX_IN_FLIGHT + 2)
+
+    async def test_missing_acks_time_out(self) -> None:
+        await self.bc.start_talk(0)
+        with patch.object(bc_module, "TALK_ACK_TIMEOUT", 0.05):
+            with self.assertRaises(ReolinkTimeoutError):
+                await self.bc.send_talk_audio(0, b"\x00\x00" * 1025 * (bc_module.TALK_MAX_IN_FLIGHT + 1))
+
+    async def test_ack_for_unknown_session_is_ignored(self) -> None:
+        header = bytes.fromhex(HEADER_MAGIC) + (202).to_bytes(4, "little") + bytes(4) + (12345).to_bytes(4, "little") + bytes.fromhex("c8000000") + bytes(4)
+        self.bc._push_callback(202, header, 24, b"")
+
+    async def test_stop_talk_flushes_and_waits_for_playout(self) -> None:
+        await self.bc.start_talk(0)
+        session = self.bc._talk_sessions[0]
+        await self.bc.send_talk_audio(0, sweep(1025 * 2 + 500))
+        self.assertEqual(len(self.connection.writes), 2)
+        await self.bc.stop_talk(0)
+        self.assertEqual(len(self.connection.writes), 3)  # remaining 500 samples padded into a last block
+        assert session.start is not None
+        self.assertGreaterEqual(self.clock, session.start + 3 * session.block_time + bc_module.TALK_PLAYOUT_MARGIN - 1e-6)
+        self.assertEqual(self.sent[-1][0], 11)
+        self.assertNotIn(0, self.bc._talk_sessions)
+
+    async def test_stop_talk_without_wait(self) -> None:
+        await self.bc.start_talk(0)
+        await self.bc.send_talk_audio(0, sweep(500))
+        clock = self.clock
+        await self.bc.stop_talk(0, wait=False)
+        self.assertEqual(self.connection.writes, [])
+        self.assertEqual(self.clock, clock)
+        self.assertEqual(self.sent[-1][0], 11)
+        self.assertNotIn(0, self.bc._talk_sessions)
+
+    async def test_talk_plays_clip(self) -> None:
+        await self.bc.talk(0, sweep(1025 * 4))
+        self.assertEqual([cmd for cmd, _ in self.sent], [10, 201, 11])
+        self.assertEqual(len(self.connection.writes), 4)
+        self.assertNotIn(0, self.bc._talk_sessions)
+
+    async def test_battery_connection_kept_open_while_talking(self) -> None:
+        await self.bc.start_talk(0)
+        self.bc._connection = SimpleNamespace(time_send=0, receive_futures={})  # type: ignore[assignment]
+        self.bc.logout = AsyncMock()  # type: ignore[method-assign]
+        real_sleep = asyncio.sleep
+        sleeps: list[float] = []
+
+        async def end_talk_after_first_sleep(delay: float, *_args) -> None:
+            sleeps.append(delay)
+            self.bc._talk_sessions.clear()  # talk ends, the next round may close the idle connection
+            await real_sleep(0)
+
+        with patch.object(bc_module.asyncio, "sleep", end_talk_after_first_sleep):
+            await self.bc._battery_close_loop()
+        self.assertEqual(sleeps, [bc_module.BATTERY_CLOSE_TIME])  # not closed while talking
+        self.bc.logout.assert_awaited_once()
+
+    async def test_talk_resets_session_on_error(self) -> None:
+        async def broken(data: bytes, cmd_id: int | None = None, timeout: float = 15) -> None:
+            raise ReolinkError("connection lost")
+
+        self.connection.send_without_wait = broken  # type: ignore[method-assign]
+        with self.assertRaises(ReolinkError):
+            await self.bc.talk(0, sweep(1025 * 4))
+        self.assertEqual(self.sent[-1][0], 11)
+        self.assertNotIn(0, self.bc._talk_sessions)
 
 
-# --- Capability Detection Tests ---
+
+class _FakeStream:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+
+    async def read(self, size: int = -1) -> bytes:
+        size = len(self.data) if size < 0 else size
+        chunk, self.data = self.data[:size], self.data[size:]
+        return chunk
 
 
-class TestTwoWayAudioCapability(unittest.IsolatedAsyncioTestCase):
-    """Tests for two_way_audio capability detection from TalkAbility (cmd_id=10)."""
+class _FakeProcess:
+    def __init__(self, stdout: bytes, returncode: int = 0, stderr: bytes = b"") -> None:
+        self.stdout = _FakeStream(stdout)
+        self.stderr = _FakeStream(stderr)
+        self._returncode = returncode
+        self.returncode: int | None = None
 
-    async def _make_baichuan(self) -> Baichuan:
-        bc = Baichuan(
-            host="127.0.0.1",
-            username="user",
-            password="password",
-            http_api=SimpleNamespace(nvr_name="test", _updating=False),
-        )
-        bc.capabilities[0] = set()
-        return bc
+    async def wait(self) -> int:
+        self.returncode = self._returncode
+        return self._returncode
 
-    def _process_cmd10(self, bc: Baichuan, xml: str) -> None:
-        """Simulate the get_channel_data() processing of a cmd_id=10 result."""
-        from xml.etree import ElementTree as XML
-        root = XML.fromstring(xml)
-        for audio in root.findall(".//audioStreamMode"):
-            if audio.text == "mixAudioStream":
-                bc.capabilities[0].add("two_way_audio")
-        audio_cfg = root.find(".//audioConfig")
-        if audio_cfg is not None:
-            bc.capabilities[0].add("two_way_audio")
-            bc._talk_config[0] = {
-                "sample_rate": int(audio_cfg.findtext("sampleRate", "8000")),
-                "block_size": int(audio_cfg.findtext("lengthPerEncoder", "1024")),
-                "duplex": root.findtext(".//duplex", "FDX"),
-                "stream_mode": root.findtext(".//audioStreamMode", "followVideoStream"),
-            }
+    def kill(self) -> None:
+        self.returncode = -9
 
-    async def test_follow_video_stream_sets_capability(self) -> None:
-        """Cameras using followVideoStream (e.g. E1) must also be detected."""
-        bc = await self._make_baichuan()
-        xml = """<body><TalkAbility version="1.1">
-            <duplexList><duplex>FDX</duplex></duplexList>
-            <audioStreamModeList><audioStreamMode>followVideoStream</audioStreamMode></audioStreamModeList>
-            <audioConfigList><audioConfig>
-                <audioType>adpcm</audioType><sampleRate>16000</sampleRate>
-                <samplePrecision>16</samplePrecision><lengthPerEncoder>1024</lengthPerEncoder>
-                <soundTrack>mono</soundTrack>
-            </audioConfig></audioConfigList>
-        </TalkAbility></body>"""
-        self._process_cmd10(bc, xml)
-        self.assertIn("two_way_audio", bc.capabilities[0])
 
-    async def test_mix_audio_stream_sets_capability(self) -> None:
-        """Cameras using mixAudioStream should still be detected."""
-        bc = await self._make_baichuan()
-        xml = """<body><TalkAbility version="1.1">
-            <duplexList><duplex>FDX</duplex></duplexList>
-            <audioStreamModeList><audioStreamMode>mixAudioStream</audioStreamMode></audioStreamModeList>
-            <audioConfigList><audioConfig>
-                <audioType>adpcm</audioType><sampleRate>8000</sampleRate>
-                <samplePrecision>16</samplePrecision><lengthPerEncoder>320</lengthPerEncoder>
-                <soundTrack>mono</soundTrack>
-            </audioConfig></audioConfigList>
-        </TalkAbility></body>"""
-        self._process_cmd10(bc, xml)
-        self.assertIn("two_way_audio", bc.capabilities[0])
+class TestPlayAudioFile(TalkTestCase):
+    async def test_streams_decoded_audio(self) -> None:
+        pcm = sweep(1025 * 5 + 100)
+        exec_mock = AsyncMock(return_value=_FakeProcess(pcm))
+        with patch.object(bc_module.asyncio, "create_subprocess_exec", exec_mock):
+            await self.bc.play_audio_file(0, "http://ha.local/api/tts_proxy/abc.mp3", ffmpeg="/usr/bin/ffmpeg")
+        command = exec_mock.call_args.args
+        self.assertEqual(command[0], "/usr/bin/ffmpeg")
+        self.assertIn("http://ha.local/api/tts_proxy/abc.mp3", command)
+        self.assertEqual(command[command.index("-ar") + 1], "16000")
+        self.assertEqual([cmd for cmd, _ in self.sent], [10, 201, 11])
+        self.assertEqual(len(self.connection.writes), 6)  # 5 full blocks + the padded remainder
+        self.assertNotIn(0, self.bc._talk_sessions)
 
-    async def test_correct_sample_rate_stored(self) -> None:
-        """_talk_config should store the camera's actual sample_rate."""
-        bc = await self._make_baichuan()
-        xml = """<body><TalkAbility version="1.1">
-            <duplexList><duplex>FDX</duplex></duplexList>
-            <audioStreamModeList><audioStreamMode>followVideoStream</audioStreamMode></audioStreamModeList>
-            <audioConfigList><audioConfig>
-                <audioType>adpcm</audioType><sampleRate>16000</sampleRate>
-                <samplePrecision>16</samplePrecision><lengthPerEncoder>1024</lengthPerEncoder>
-                <soundTrack>mono</soundTrack>
-            </audioConfig></audioConfigList>
-        </TalkAbility></body>"""
-        self._process_cmd10(bc, xml)
-        self.assertEqual(bc._talk_config[0]["sample_rate"], 16000)
+    async def test_decode_error_does_not_start_talk(self) -> None:
+        exec_mock = AsyncMock(return_value=_FakeProcess(b"", returncode=1, stderr=b"No such file"))
+        with patch.object(bc_module.asyncio, "create_subprocess_exec", exec_mock):
+            with self.assertRaisesRegex(ReolinkError, "No such file"):
+                await self.bc.play_audio_file(0, "/missing.mp3")
+        self.assertNotIn(201, [cmd for cmd, _ in self.sent])
+        self.assertEqual(self.connection.writes, [])
 
 
 if __name__ == "__main__":
