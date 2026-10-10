@@ -17,8 +17,6 @@ LOGIN_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 LOGOUT_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 <body>
 <LoginUser version="1.1">
-<userName>{userName}</userName>
-<password>{password}</password>
 <userVer>1</userVer>
 </LoginUser>
 </body>
