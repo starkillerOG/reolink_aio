@@ -1675,10 +1675,14 @@ class Baichuan:
                 if self._connection is None or not self._logged_in:
                     break
 
+                if self._talk_sessions:
+                    # talk audio is sent without a response, keep the connection open while talking
+                    await asyncio.sleep(BATTERY_CLOSE_TIME)
+                    continue
+
                 now = time_now()
                 sleep_t = min(BATTERY_CLOSE_TIME - (now - self._connection.time_send), BATTERY_CLOSE_TIME)
-                if self._connection.receive_futures or self._talk_sessions:
-                    # waiting on a response or talking (talk audio is sent without a response)
+                if self._connection.receive_futures:
                     sleep_t = BATTERY_CLOSE_TIME
                 elif sleep_t < 0.05:
                     _LOGGER.debug("Baichuan host %s: closing connection to preserve battery life", self._host)
