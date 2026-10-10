@@ -45,6 +45,7 @@ from ..exceptions import (
     CredentialsInvalidError,
     InvalidContentTypeError,
     InvalidParameterError,
+    LoginAccountDeviceError,
     LoginError,
     NotSupportedError,
     ReolinkConnectionError,
@@ -682,6 +683,13 @@ class Baichuan:
         if self._nonce is None:
             # send only a header to receive the nonce (alternatively use legacy login)
             mess = await self.send(cmd_id=1, enc_type=EncType.BC, message_class="1465")
+            sig_ver = get_value_from_xml(mess, "sigVer")
+            if sig_ver == "v3":
+                raise LoginAccountDeviceError(
+                    f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
+                    "please switch the device back to a 'local device' by resetting it, for more instructions see "
+                    "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
+                )
             self._nonce = get_value_from_xml(mess, "nonce")
             if self._nonce is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
@@ -1723,6 +1731,8 @@ class Baichuan:
                 # get nonce and try tcp/udp connection
                 try:
                     nonce = await self._get_nonce()
+                except LoginAccountDeviceError:
+                    raise
                 except ReolinkError as err:
                     if not try_connections:
                         raise
