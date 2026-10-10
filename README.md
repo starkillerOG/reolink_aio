@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
 ### Battery camera live video stream
 Battery-powered Reolink cameras (Argus, MagiCam, Video Doorbell, ...) do not expose a RTSP/RTMP url, so until now only snapshots were available for them.
-`host.baichuan.baichuan_stream()` provides their live video over the Baichuan protocol as an async generator of Annex-B H.264 frames. The preview is
+`host.baichuan.baichuan_stream()` provides their live video over the Baichuan protocol as an async generator of Annex-B H.264 or H.265 frames (the encoding of the stream, see `host.get_encoding()`). The preview is
 started when iteration begins and stopped again when it ends (so the camera can go back to sleep); the first yielded frame is always a key-frame, so the
 output is directly decodable (e.g. piped to ffmpeg, no RTSP and no go2rtc needed). Pass `stream="main"` or `stream="sub"` to select the stream.
 ````python
@@ -153,9 +153,10 @@ async def record_battery_cam():
     host = Host(host="192.168.1.109", username="admin", password="admin1234")
     # connect and obtain/cache device settings and capabilities
     await host.get_host_data()
-    # decode the live H.264 stream of channel 0 into a 10 second mp4 using ffmpeg
+    # decode the live stream of channel 0 into a 10 second mp4 using ffmpeg
+    codec = "hevc" if await host.get_encoding(0, "main") == "h265" else "h264"
     ffmpeg = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-y", "-f", "h264", "-i", "pipe:0", "-c", "copy", "out.mp4",
+        "ffmpeg", "-y", "-f", codec, "-i", "pipe:0", "-c", "copy", "out.mp4",
         stdin=asyncio.subprocess.PIPE,
     )
     stream = host.baichuan.baichuan_stream(channel=0, stream="main")

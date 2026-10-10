@@ -4,11 +4,13 @@ import unittest
 from reolink_aio.baichuan.util import BcMediaStreamParser
 
 
-def _video_chunk(magic: bytes, payload: bytes, add_header: bytes = b"") -> bytes:
-    """Build a BcMedia video chunk (magic + "H264" + header + payload)."""
+def _video_chunk(
+    magic: bytes, payload: bytes, add_header: bytes = b"", codec: bytes = b"H264"
+) -> bytes:
+    """Build a BcMedia video chunk (magic + codec + header + payload)."""
     return (
         magic
-        + b"H264"
+        + codec
         + len(payload).to_bytes(4, "little")
         + len(add_header).to_bytes(4, "little")
         + (12345).to_bytes(4, "little")  # microseconds
@@ -86,6 +88,32 @@ class TestBcMediaStreamParser(unittest.TestCase):
         # the last byte completes the final frame
         rest = parser.push(data[-1:])
         self.assertEqual([frame for frame, _ in rest], [P_FRAME + b"second"])
+
+    def test_h265_frames(self) -> None:
+        """H.265 (e.g. a 4K main stream) is demuxed the same way as H.264."""
+        hevc_i_frame = (
+            b"\x00\x00\x00\x01\x40\x01vps\x00\x00\x00\x01\x42\x01sps"
+            + b"\x00\x00\x00\x01\x26\x01"
+            + bytes(range(150))
+        )
+        hevc_p_frame = b"\x00\x00\x00\x01\x02\x01" + bytes(range(80))
+        data = (
+            STREAM_INFO
+            + _video_chunk(b"00dc", hevc_i_frame, codec=b"H265")
+            + _audio_chunk(b"aac")
+            + _video_chunk(b"01dc", hevc_p_frame, codec=b"H265")
+        )
+        self.assertEqual(
+            BcMediaStreamParser().push(data),
+            [(hevc_i_frame, True), (hevc_p_frame, False)],
+        )
+
+    def test_key_frames_on_other_channels(self) -> None:
+        """The first magic digit is the channel ("10dc"/"11dc" on a NVR/Hub channel 1)."""
+        data = _video_chunk(b"10dc", I_FRAME) + _video_chunk(b"11dc", P_FRAME)
+        self.assertEqual(
+            BcMediaStreamParser().push(data), [(I_FRAME, True), (P_FRAME, False)]
+        )
 
 
 if __name__ == "__main__":

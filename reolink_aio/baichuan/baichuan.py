@@ -141,7 +141,7 @@ class _PreviewStream:
 
     def __init__(self, queue_size: int = STREAM_QUEUE_SIZE) -> None:
         self.parser = BcMediaStreamParser()
-        # each item is (Annex-B H.264 frame, is_key_frame); None signals the end
+        # each item is (Annex-B H.264/H.265 frame, is_key_frame); None signals the end
         self.queue: asyncio.Queue[tuple[bytes, bool] | None] = asyncio.Queue(maxsize=queue_size)
 
     def feed(self, payload: bytes) -> None:
@@ -1696,7 +1696,8 @@ class Baichuan:
 
                 now = time_now()
                 sleep_t = min(BATTERY_CLOSE_TIME - (now - self._connection.time_send), BATTERY_CLOSE_TIME)
-                if self._connection.receive_futures:
+                if self._connection.receive_futures or self._video_streams:
+                    # waiting on a response or streaming video (the stream is only received)
                     sleep_t = BATTERY_CLOSE_TIME
                 elif sleep_t < 0.05:
                     _LOGGER.debug("Baichuan host %s: closing connection to preserve battery life", self._host)
@@ -2965,7 +2966,7 @@ class Baichuan:
         return image
 
     async def baichuan_stream(self, channel: int = 0, stream: str = "main") -> AsyncIterator[bytes]:
-        """Yield Annex-B H.264 video frames from the live preview stream.
+        """Yield Annex-B H.264 or H.265 video frames from the live preview stream.
 
         Battery-powered Reolink cameras (Argus, MagiCam, Video Doorbell, ...) do
         not expose a RTSP/RTMP url; this streams their live video over the
@@ -2974,6 +2975,8 @@ class Baichuan:
         sleep. The first yielded frame is always a key-frame, so the resulting
         byte stream is directly decodable, e.g. piped to ffmpeg or fed to the
         Home Assistant stream component (no RTSP and no go2rtc needed).
+        The codec follows the encoding of the stream, see ``Host.get_encoding``
+        (a 4K main stream is usually H.265).
 
         Example::
 
