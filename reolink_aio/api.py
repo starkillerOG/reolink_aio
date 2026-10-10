@@ -27,6 +27,7 @@ from aiortsp.rtsp.errors import RTSPError  # type: ignore
 from orjson import JSONDecodeError  # pylint: disable=no-name-in-module
 from orjson import dumps as json_dumps  # pylint: disable=no-name-in-module
 from orjson import loads as json_loads  # pylint: disable=no-name-in-module
+from yarl import URL
 
 from . import templates, typings
 from .baichuan import AI_DETECTS as AI_DETECTS_BC
@@ -75,6 +76,12 @@ from .exceptions import (
     ReolinkTimeoutError,
     SubscriptionError,
     UnexpectedDataError,
+)
+from .http_crypto import (
+    HttpCrypto,
+    digest_response,
+    new_cnonce,
+    parse_digest_challenge,
 )
 from .software_version import MINIMUM_FIRMWARE, NewSoftwareVersion, SoftwareVersion
 from .utils import (
@@ -154,6 +161,8 @@ class Host:
     ) -> None:
         self._send_mutex = asyncio.Lock()
         self._login_mutex = asyncio.Lock()
+        self._http_crypto: HttpCrypto | None = None
+        self._digest_login: bool = False
         self._long_poll_mutex = asyncio.Lock()
 
         ##############################################################################
@@ -1372,6 +1381,10 @@ class Host:
             ]
             param = {"cmd": "Login"}
 
+            if self._digest_login:
+                await self._login_digest()
+                return  # succes
+
             try:
                 json_data = await self.send(body, param, expected_response_type="json")
             except ApiError as err:
@@ -1384,6 +1397,13 @@ class Host:
                 raise LoginError(f"Error receiving Reolink login response of host {self._host}:{self._port}") from err
 
             _LOGGER.debug("Got login response from %s:%s: %s", self._host, self._port, json_data)
+
+            if json_data[0].get("code") != 0 and json_data[0].get("error", {}).get("rspCode") == -503:
+                # Newer firmware (e.g. Home Hub) denies the legacy plaintext login, the encrypted "Version 1" digest login is required.
+                _LOGGER.debug("Host %s:%s denied the legacy login (-503), trying the digest login", self._host, self._port)
+                await self._login_digest()
+                self._digest_login = True
+                return  # succes
 
             try:
                 if json_data[0]["code"] != 0:
@@ -1408,6 +1428,76 @@ class Host:
             return  # succes
         finally:
             self._login_mutex.release()
+
+    async def _login_digest(self) -> None:
+        """Login using the encrypted "Version 1" HTTP digest login, the login mutex must be owned by the caller."""
+        if self._aiohttp_session.closed:
+            self._aiohttp_session = self._get_aiohttp_session()
+        param = {"cmd": "Login"}
+
+        async def post(body: typings.reolink_json) -> tuple[aiohttp.ClientResponse, str]:
+            try:
+                async with asyncio.timeout(self.timeout + 5):
+                    async with self._send_mutex:
+                        response = await self._aiohttp_session.post(url=self._url, json=body, params=param, allow_redirects=False, timeout=self._timeout)
+                    text = await response.text(encoding="utf-8")
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                raise LoginError(f"Client connector error during digest login of host {self._host}:{self._port}: {str(err)}") from err
+            response.release()
+            return response, text
+
+        # Step 1: request a challenge
+        response, text = await post([{"cmd": "Login", "action": 0, "param": {"Version": 1}}])
+        challenge = response.headers.get("WWW-Authenticate", "")
+        if response.status != 200 or not challenge.startswith("Digest"):
+            raise LoginError(f"Host {self._host}:{self._port} did not return a digest challenge during login, HTTP status {response.status}, response: {text}")
+        chal = parse_digest_challenge(challenge)
+        try:
+            realm, nonce, qop = chal["realm"], chal["nonce"], chal["qop"]
+        except KeyError as err:
+            raise LoginError(f"Host {self._host}:{self._port} returned an incomplete digest challenge") from err
+        nc = chal.get("nc", "00000001")
+        cnonce = new_cnonce()
+        crypto = HttpCrypto(self._username, self._password, nonce, cnonce)
+
+        # Step 2: answer the challenge
+        digest = {
+            "UserName": self._username,
+            "Realm": realm,
+            "Method": "POST",
+            "Uri": "cgi-bin/api.cgi?cmd=Login",
+            "Nonce": nonce,
+            "Nc": nc,
+            "Cnonce": cnonce,
+            "Qop": qop,
+            "Response": digest_response(self._username, self._password, realm, nonce, nc, cnonce, qop),
+        }
+        response, text = await post([{"cmd": "Login", "action": 0, "param": {"Version": 1, "Digest": digest}}])
+        if response.status != 200:
+            raise LoginError(f"API returned HTTP status ERROR code {response.status}/{response.reason} during digest login of host {self._host}:{self._port}")
+
+        decrypted = crypto.decrypt(text)  # None for a plaintext (error) response
+        try:
+            json_data = json_loads(text if decrypted is None else decrypted)
+            if json_data[0]["code"] != 0:
+                rsp_code = json_data[0].get("error", {}).get("rspCode")
+                detail = json_data[0].get("error", {}).get("detail")
+                if rsp_code in (-7, -105, -502):
+                    raise CredentialsInvalidError(f"Host {self._host}:{self._port}: Invalid credentials during digest login, '{detail}' ({rsp_code})")
+                raise LoginError(f"API returned error code {rsp_code}/'{detail}' during digest login of host {self._host}:{self._port}")
+            token = json_data[0]["value"]["Token"]
+            crypto.init_counts(token)
+            self._lease_time = datetime.now() + timedelta(seconds=float(token["leaseTime"]))
+            self._token = str(token["name"])
+        except ReolinkError:
+            self.clear_token()
+            raise
+        except Exception as err:
+            self.clear_token()
+            raise LoginError(f"Digest login error, unknown response format from host {self._host}:{self._port}") from err
+        self._http_crypto = crypto
+
+        _LOGGER.debug("Logged in using digest login at host %s:%s. Leasetime %s", self._host, self._port, self._lease_time.strftime("%d-%m-%Y %H:%M"))
 
     async def _login_try_ports(self) -> None:
         if self.baichuan_only:
@@ -1670,6 +1760,7 @@ class Host:
 
     def clear_token(self) -> None:
         self._token = None
+        self._http_crypto = None
         self._lease_time = None
 
     @property
@@ -6094,6 +6185,14 @@ class Host:
         retry: int,
     ) -> aiohttp.ClientResponse: ...
 
+    def _request_target(self, crypto: HttpCrypto | None, param: dict[str, Any]) -> tuple[str | URL, dict[str, Any] | None]:
+        """Get the url and params to use, with an encrypted session all params except the token are encrypted."""
+        if crypto is None:
+            return self._url, param
+        encrypt = crypto.encrypted_query({key: value for key, value in param.items() if key != "token"})
+        # build the url like the web UI does, without percent-encoding the base64 characters
+        return URL(f"{self._url}?token={self._token}&encrypt={encrypt}", encoded=True), None
+
     async def send_chunk(
         self,
         body: typings.reolink_json,
@@ -6121,6 +6220,7 @@ class Host:
 
         if not param:
             param = {}
+        crypto = None if cur_command == "Login" else self._http_crypto
         if cur_command == "Login":
             param["token"] = "null"
         elif self._token is not None:
@@ -6170,13 +6270,15 @@ class Host:
             if expected_response_type == "image/jpeg":
                 async with asyncio.timeout(self.timeout + 5):
                     async with self._send_mutex:
-                        response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=self._timeout)
+                        url, params = self._request_target(crypto, param)
+                        response = await self._aiohttp_session.get(url=url, params=params, allow_redirects=False, timeout=self._timeout)
 
                     data = await response.read()  # returns bytes
             elif expected_response_type == "application/octet-stream":
                 async with self._send_mutex:
                     dl_timeout = aiohttp.ClientTimeout(connect=self.timeout, sock_read=self.timeout)
-                    response = await self._aiohttp_session.get(url=self._url, params=param, allow_redirects=False, timeout=dl_timeout)
+                    url, params = self._request_target(crypto, param)
+                    response = await self._aiohttp_session.get(url=url, params=params, allow_redirects=False, timeout=dl_timeout)
 
                 data = ""  # Response will be a file and be large, pass the response instead of reading it here.
                 if response.content_type == "text/html":
@@ -6187,9 +6289,21 @@ class Host:
 
                 async with asyncio.timeout(self.timeout + 5):
                     async with self._send_mutex:
-                        response = await self._aiohttp_session.post(url=self._url, json=filtered_body, params=param, allow_redirects=False, timeout=self._timeout)
+                        url, params = self._request_target(crypto, param)
+                        if crypto is None:
+                            response = await self._aiohttp_session.post(url=url, json=filtered_body, params=params, allow_redirects=False, timeout=self._timeout)
+                        else:
+                            response = await self._aiohttp_session.post(
+                                url=url,
+                                data=crypto.encrypt(json_dumps(filtered_body).decode("utf8")),
+                                headers={"Content-Type": "application/json"},
+                                allow_redirects=False,
+                                timeout=self._timeout,
+                            )
 
                     data = await response.text(encoding="utf-8")  # returns str
+                    if crypto is not None and data and not data.lstrip().startswith(("[", "{")):
+                        data = crypto.decrypt(data) or data  # errors (e.g. "please login first") are returned as plaintext
 
             if _LOGGER.isEnabledFor(logging.DEBUG):
                 _LOGGER.debug(
