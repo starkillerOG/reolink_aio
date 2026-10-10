@@ -1917,7 +1917,7 @@ class Baichuan:
         # Get Baichuan capabilities
         try:
             mess = await self.send(cmd_id=199)
-        except CredentialsInvalidError:
+        except (CredentialsInvalidError, LoginAccountDeviceError):
             raise
         except ReolinkError as err:
             _LOGGER.debug("Baichuan host %s: Could not obtain abilities (cmd_id 199): %s", self._host, str(err).replace(f"Baichuan host {self._host}: ", ""))

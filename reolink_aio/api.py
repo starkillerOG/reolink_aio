@@ -65,6 +65,7 @@ from .exceptions import (
     CredentialsInvalidError,
     InvalidContentTypeError,
     InvalidParameterError,
+    LoginAccountDeviceError,
     LoginError,
     LoginFirmwareError,
     LoginPrivacyModeError,
@@ -1437,7 +1438,7 @@ class Host:
         # check if HTTP(s) API is supported
         try:
             await self.baichuan.get_host_data()
-        except CredentialsInvalidError:
+        except (CredentialsInvalidError, LoginAccountDeviceError):
             raise
         except ReolinkError as exc:
             _LOGGER.debug("%s, can not check if HTTP api is supported", exc)
@@ -1449,7 +1450,7 @@ class Host:
         # see which ports are enabled using baichuan protocol on port 9000
         try:
             await self.baichuan.get_ports()
-        except CredentialsInvalidError:
+        except (CredentialsInvalidError, LoginAccountDeviceError):
             raise
         except ReolinkError as exc:
             _LOGGER.debug(exc)
@@ -1555,7 +1556,7 @@ class Host:
         # see which ports are enabled using baichuan protocol on port 9000
         try:
             await self.baichuan.get_ports()
-        except CredentialsInvalidError:
+        except (CredentialsInvalidError, LoginAccountDeviceError):
             raise
         except ReolinkError as exc:
             _LOGGER.debug(exc)
