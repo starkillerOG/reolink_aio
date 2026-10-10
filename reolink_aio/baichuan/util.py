@@ -169,6 +169,77 @@ def get_keys_from_xml(xml: str | XML.Element, keys: list[str] | dict[str, tuple[
     return result
 
 
+# BcMedia container (Reolink Baichuan live-preview / replay video stream)
+BC_MEDIA_VIDEO_CODECS = (b"H264", b"H265")
+BC_MEDIA_VIDEO_HEADER_LEN = 24  # magic(4) + codec(4) + frame_len(4) + add_header_len(4) + microsec(4) + unknown(4)
+BC_MEDIA_AUDIO_HEADER_LEN = 8  # magic(4) + frame_len(2) + unknown(2)
+BC_MEDIA_MAX_FRAME_SIZE = 8 * 1024 * 1024  # sanity limit for a single frame
+
+
+class BcMediaStreamParser:
+    """Incrementally demux a Reolink Baichuan "BcMedia" byte stream.
+
+    Battery-powered Reolink cameras (Argus, MagiCam, ...) do not expose
+    RTSP/RTMP; their live video is streamed over the Baichuan protocol wrapped
+    in the BcMedia container. Feed the (already decrypted) payloads of the
+    consecutive cmd_id 3 preview messages to :meth:`push`; it returns the
+    contained, directly decodable Annex-B H.264 or H.265 video frames. Audio
+    frames, stream-info headers and inter-frame padding are skipped.
+
+    Each BcMedia video chunk is: magic ("<ch>0dc" = I-frame, "<ch>1dc" = P-frame,
+    <ch> the channel digit) + codec ("H264" or "H265") + frame_len (uint32 LE) + additional_header_len
+    (uint32 LE) + microseconds (uint32 LE) + unknown (uint32 LE), followed by
+    additional_header_len bytes and then frame_len bytes of Annex-B video.
+    """
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+
+    def push(self, data: bytes) -> list[tuple[bytes, bool]]:
+        """Add received payload bytes and return a list of (frame, key_frame) tuples."""
+        if data:
+            self._buffer += data
+        buffer = self._buffer
+        size = len(buffer)
+        idx = 0
+        frames: list[tuple[bytes, bool]] = []
+        # A chunk needs at least 8 bytes before it can be identified.
+        while idx + 8 <= size:
+            magic = buffer[idx + 2 : idx + 4]
+            if magic == b"dc" and buffer[idx + 4 : idx + 8] in BC_MEDIA_VIDEO_CODECS:
+                # Video frame: "<ch>0dc" = I-frame (key-frame), "<ch>1dc" = P-frame, <ch> = channel digit
+                if idx + 16 > size:
+                    break  # wait for the full frame header with its length fields
+                frame_len = int.from_bytes(buffer[idx + 8 : idx + 12], "little")
+                add_header_len = int.from_bytes(buffer[idx + 12 : idx + 16], "little")
+                if frame_len > BC_MEDIA_MAX_FRAME_SIZE or add_header_len > BC_MEDIA_MAX_FRAME_SIZE:
+                    idx += 1  # not a real header, resync on the next magic
+                    continue
+                header_len = BC_MEDIA_VIDEO_HEADER_LEN + add_header_len
+                end = idx + header_len + frame_len
+                if end > size:
+                    break  # wait for the rest of the frame
+                key_frame = buffer[idx + 1 : idx + 2] == b"0"
+                frames.append((bytes(buffer[idx + header_len : end]), key_frame))
+                idx = end
+                continue
+            if magic == b"wb" and buffer[idx : idx + 1] == b"0":
+                # Audio frame ("0?wb"): skip (video-only output)
+                frame_len = int.from_bytes(buffer[idx + 4 : idx + 6], "little")
+                end = idx + BC_MEDIA_AUDIO_HEADER_LEN + frame_len
+                if end > size:
+                    break
+                idx = end
+                continue
+            # Stream-info header ("1001"/"1002"), inter-frame padding or not yet
+            # in sync: advance a byte and keep scanning for the next known magic.
+            idx += 1
+        # Drop what we consumed, keep a tail that may hold a split chunk header.
+        if idx:
+            del self._buffer[:idx]
+        return frames
+
+
 async def _i_frame_to_jpeg_shielded(frame: bytes, ffmpeg: str) -> bytes:
     """Convert a i-frame from a Reolink stream to a JPEG image"""
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-f", "image2", "pipe:1"]
