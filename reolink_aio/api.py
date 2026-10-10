@@ -5472,6 +5472,50 @@ class Host:
 
         await self.send_setting(body)
 
+    def talk_sample_rate(self, channel: int) -> int | None:
+        """Sample rate of the PCM audio to send to the camera speaker, None if two-way audio is not supported."""
+        return self.baichuan.talk_sample_rate(channel)
+
+    async def start_talk(self, channel: int) -> dict[str, Any]:
+        """Start a two-way audio (talk) session on the camera speaker.
+
+        Returns the audio format the camera expects, e.g. {"sample_rate": 16000, ...}.
+        Stream 16 bit signed little endian mono PCM at that sample rate with
+        send_talk_audio() and end the session with stop_talk().
+        """
+        if channel not in self._channels:
+            raise InvalidParameterError(f"start_talk: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "talk"):
+            raise NotSupportedError(f"start_talk: two-way audio not supported on camera {self.camera_name(channel)}")
+
+        return await self.baichuan.start_talk(channel)
+
+    async def send_talk_audio(self, channel: int, pcm: bytes) -> None:
+        """Send 16 bit signed little endian mono PCM audio to the active talk session."""
+        await self.baichuan.send_talk_audio(channel, pcm)
+
+    async def stop_talk(self, channel: int, wait: bool = True) -> None:
+        """Stop the talk session, by default after the remaining audio has been played."""
+        await self.baichuan.stop_talk(channel, wait)
+
+    async def talk(self, channel: int, pcm: bytes) -> None:
+        """Play 16 bit signed little endian mono PCM, at talk_sample_rate(), on the camera speaker."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"talk: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "talk"):
+            raise NotSupportedError(f"talk: two-way audio not supported on camera {self.camera_name(channel)}")
+
+        await self.baichuan.talk(channel, pcm)
+
+    async def play_audio_file(self, channel: int, source: str, ffmpeg: str = "ffmpeg") -> None:
+        """Play an audio file or url (e.g. TTS) on the camera speaker, decoded with ffmpeg."""
+        if channel not in self._channels:
+            raise InvalidParameterError(f"play_audio_file: no camera connected to channel '{channel}'")
+        if not self.supported(channel, "talk"):
+            raise NotSupportedError(f"play_audio_file: two-way audio not supported on camera {self.camera_name(channel)}")
+
+        await self.baichuan.play_audio_file(channel, source, ffmpeg)
+
     async def set_siren(self, channel: int | None = None, enable: bool = True, duration: int | None = 2) -> None:
         if channel not in self._channels and channel is not None:
             raise InvalidParameterError(f"set_siren: no camera connected to channel '{channel}'")

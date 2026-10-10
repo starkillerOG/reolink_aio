@@ -7,6 +7,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
+from time import monotonic
 from time import time as time_now
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, overload
 from xml.etree import ElementTree as XML
@@ -62,6 +63,7 @@ from ..utils import (
     to_reolink_time_id,
 )
 from . import xmls
+from .audio import TalkSession, bcmedia_adpcm_frame
 from .tcp_protocol import BaichuanTcpConnection
 from .udp_protocol import BaichuanUdpConnection
 from .util import (
@@ -89,6 +91,10 @@ _LOGGER = logging.getLogger(__name__)
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
+TALK_LEAD = 0.25  # seconds of audio kept buffered in the camera ahead of playback
+TALK_MAX_IN_FLIGHT = 16  # unacknowledged talk audio frames before waiting on the camera
+TALK_ACK_TIMEOUT = 5  # seconds
+TALK_PLAYOUT_MARGIN = 1.5  # seconds, the camera plays about 1 s behind, resetting the session earlier cuts off the end
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 SMART_AI = {
@@ -220,6 +226,8 @@ class Baichuan:
         self._siren_state: dict[int, bool] = {}
         self._siren_play_time: dict[int | None, float] = {}
         self._noise_reduction: dict[int, int] = {}
+        self._talk_ability: dict[int, dict[str, Any]] = {}
+        self._talk_sessions: dict[int, TalkSession] = {}
         self._ai_yolo_600: dict[int, dict[str, bool]] = {}
         self._ai_yolo_696: dict[int, dict[str, bool]] = {}
         self._ai_yolo_sub_type: dict[int, dict[str, str | None]] = {}
@@ -429,6 +437,27 @@ class Baichuan:
 
         return (rec_body, payload)
 
+    async def send_binary(self, cmd_id: int, channel: int, payload: bytes, full_mess_id: int) -> None:
+        """Send a binary payload without waiting on the reply.
+
+        Only the extension XML is encrypted, the binary payload is sent as-is.
+        Used to stream two-way audio frames (cmd_id 202), which the camera
+        acknowledges asynchronously using the same message id.
+        """
+        ext = self._aes_encrypt(xmls.BINARY_EXTENSION_XML.format(channel=channel).encode("utf8"))
+        header = (
+            bytes.fromhex(HEADER_MAGIC)
+            + cmd_id.to_bytes(4, byteorder="little")
+            + (len(ext) + len(payload)).to_bytes(4, byteorder="little")
+            + full_mess_id.to_bytes(4, byteorder="little")
+            + bytes.fromhex("00001464")
+            + len(ext).to_bytes(4, byteorder="little")
+        )
+        await self._connect_if_needed()
+        if TYPE_CHECKING:
+            assert self._connection is not None
+        await self._connection.send_without_wait(header + ext + payload, cmd_id)
+
     def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
         if not body:
@@ -522,6 +551,12 @@ class Baichuan:
         """Callback to parse a received message that was pushed"""
         payload_len = len(payload)
         mess_id: int = int.from_bytes(data[12:16], byteorder="little")
+
+        if cmd_id == 202:  # two-way audio frame acknowledgement
+            for session in self._talk_sessions.values():
+                if session.full_mess_id == mess_id:
+                    session.acknowledge()
+            return
 
         # decryption
         try:
@@ -1640,6 +1675,11 @@ class Baichuan:
                 if self._connection is None or not self._logged_in:
                     break
 
+                if self._talk_sessions:
+                    # talk audio is sent without a response, keep the connection open while talking
+                    await asyncio.sleep(BATTERY_CLOSE_TIME)
+                    continue
+
                 now = time_now()
                 sleep_t = min(BATTERY_CLOSE_TIME - (now - self._connection.time_send), BATTERY_CLOSE_TIME)
                 if self._connection.receive_futures:
@@ -2269,6 +2309,9 @@ class Baichuan:
                     for audio in root.findall(".//audioStreamMode"):
                         if audio.text == "mixAudioStream":
                             self._add_capability("two_way_audio", channel)
+                    if (talk_ability := self._parse_talk_ability(root)) is not None:
+                        self._talk_ability[channel] = talk_ability
+                        self._add_capability("talk", channel)
                 if cmd_id == 483:  # hardwired chime
                     self._add_capability("hardwired_chime", channel)
                 if cmd_id == 527:  # crossline detection
@@ -3662,6 +3705,173 @@ class Baichuan:
 
         await self.send(cmd_id=440, channel=channel, body=xml_body)
         await self.GetAudioNoise(channel)
+
+    def _parse_talk_ability(self, root: XML.Element) -> dict[str, Any] | None:
+        """Parse a TalkAbility (cmd_id 10) response, None if it has no usable audio config."""
+        for audio_cfg in root.findall(".//audioConfig"):
+            if audio_cfg.findtext("audioType") != "adpcm":
+                continue
+            modes = [mode.text for mode in root.findall(".//audioStreamMode") if mode.text]
+            return {
+                "duplex": root.findtext(".//duplex", "FDX"),
+                "audio_stream_mode": "followVideoStream" if "followVideoStream" in modes or not modes else modes[0],
+                "sample_rate": int(audio_cfg.findtext("sampleRate", "16000")),
+                "length_per_encoder": int(audio_cfg.findtext("lengthPerEncoder", "1024")),
+            }
+        return None
+
+    def talk_sample_rate(self, channel: int) -> int | None:
+        """Sample rate of the PCM audio to send to the camera speaker, None if unknown."""
+        if (ability := self._talk_ability.get(channel)) is None:
+            return None
+        return ability["sample_rate"]
+
+    async def get_talk_ability(self, channel: int) -> dict[str, Any]:
+        """Get the two-way audio format the camera speaker expects (cmd_id 10)."""
+        mess = await self.send(cmd_id=10, channel=channel)
+        ability = self._parse_talk_ability(XML.fromstring(mess))
+        if ability is None:
+            raise NotSupportedError(f"Baichuan host {self._host}: two-way audio not supported on channel {channel}")
+        self._talk_ability[channel] = ability
+        return ability
+
+    async def start_talk(self, channel: int) -> dict[str, Any]:
+        """Start a two-way audio (talk) session on the camera speaker (cmd_id 201).
+
+        Returns the audio format the camera expects. Stream 16 bit signed little
+        endian mono PCM at the returned sample_rate with send_talk_audio and end
+        the session with stop_talk.
+        """
+        if channel in self._talk_sessions:
+            raise ReolinkError(f"Baichuan host {self._host}: talk session already active on channel {channel}")
+        ability = self._talk_ability.get(channel) or await self.get_talk_ability(channel)
+        body = xmls.TALK_CONFIG_XML.format(channel=channel, **ability)
+        try:
+            await self.send(cmd_id=201, channel=channel, body=body)
+        except ApiError as err:
+            if err.rspCode not in [421, 422]:
+                raise
+            # a talk session is still open, reset it in case it is a leftover of this connection and try again
+            _LOGGER.debug("Baichuan host %s: talk busy (%s) on channel %s, resetting the talk session", self._host, err.rspCode, channel)
+            await self.send(cmd_id=11, channel=channel)
+            try:
+                await self.send(cmd_id=201, channel=channel, body=body)
+            except ApiError as retry_err:
+                if retry_err.rspCode in [421, 422]:
+                    raise ReolinkError(f"Baichuan host {self._host}: two-way audio on channel {channel} is in use by another client") from retry_err
+                raise
+
+        # all audio frames of the session use the same message id, the camera acknowledges each frame with it
+        self._mess_id = (self._mess_id + 1) % 16777216
+        full_mess_id = (self._mess_id << 8) + channel + 1
+        self._talk_sessions[channel] = TalkSession(full_mess_id, ability["sample_rate"], ability["length_per_encoder"])
+        return dict(ability)
+
+    async def send_talk_audio(self, channel: int, pcm: bytes) -> None:
+        """Send 16 bit signed little endian mono PCM audio to the active talk session.
+
+        The audio is ADPCM encoded and paced to real time, keeping a small buffer
+        in the camera, so this returns about when the audio has been handed over.
+        PCM that does not fill a whole ADPCM block is kept for the next call.
+        """
+        session = self._talk_sessions.get(channel)
+        if session is None:
+            raise ReolinkError(f"Baichuan host {self._host}: no talk session active on channel {channel}, call start_talk first")
+        async with session.lock:
+            for block in session.encoder.encode(pcm):
+                await self._send_talk_block(channel, session, block)
+
+    async def _send_talk_block(self, channel: int, session: TalkSession, block: bytes) -> None:
+        """Send one ADPCM block paced to real time (cmd_id 202)."""
+        now = monotonic()
+        if session.start is None or now > session.start + session.blocks_sent * session.block_time:
+            # first block, or the camera already played everything: (re)start the clock
+            session.start = now - session.blocks_sent * session.block_time
+        delay = session.start + session.blocks_sent * session.block_time - TALK_LEAD - now
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+        if session.blocks_sent - session.blocks_acked >= TALK_MAX_IN_FLIGHT:
+            try:
+                async with asyncio.timeout(TALK_ACK_TIMEOUT):
+                    while session.blocks_sent - session.blocks_acked >= TALK_MAX_IN_FLIGHT:
+                        session.ack_event.clear()
+                        await session.ack_event.wait()
+            except asyncio.TimeoutError as err:
+                raise ReolinkTimeoutError(f"Baichuan host {self._host}: camera stopped acknowledging talk audio on channel {channel}") from err
+
+        await self.send_binary(cmd_id=202, channel=channel, payload=bcmedia_adpcm_frame(block), full_mess_id=session.full_mess_id)
+        session.blocks_sent += 1
+
+    async def stop_talk(self, channel: int, wait: bool = True) -> None:
+        """Stop the two-way audio session (cmd_id 11).
+
+        The camera drops whatever audio is still buffered when the session is
+        reset, so by default the remaining audio is sent and played out first.
+        """
+        session = self._talk_sessions.get(channel)
+        try:
+            if session is not None and wait:
+                async with session.lock:
+                    for block in session.encoder.flush():
+                        await self._send_talk_block(channel, session, block)
+                if session.start is not None:
+                    playout = session.start + session.blocks_sent * session.block_time + TALK_PLAYOUT_MARGIN - monotonic()
+                    if playout > 0:
+                        await asyncio.sleep(playout)
+        finally:
+            self._talk_sessions.pop(channel, None)
+            await self.send(cmd_id=11, channel=channel)
+
+    async def talk(self, channel: int, pcm: bytes) -> None:
+        """Play 16 bit signed little endian mono PCM on the camera speaker.
+
+        The PCM must be at the talk sample rate, see talk_sample_rate or start_talk.
+        """
+        await self.start_talk(channel)
+        try:
+            await self.send_talk_audio(channel, pcm)
+        except BaseException:
+            await self.stop_talk(channel, wait=False)
+            raise
+        await self.stop_talk(channel)
+
+    async def play_audio_file(self, channel: int, source: str, ffmpeg: str = "ffmpeg") -> None:
+        """Play an audio file or url on the camera speaker, decoded with ffmpeg.
+
+        Anything ffmpeg can read works, e.g. a TTS mp3 url or a local wav file.
+        The audio is streamed to the camera while it is being decoded.
+        """
+        sample_rate = self.talk_sample_rate(channel) or (await self.get_talk_ability(channel))["sample_rate"]
+        command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", source, "-vn", "-ac", "1", "-ar", str(sample_rate), "-f", "s16le", "pipe:1"]
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        assert process.stdout and process.stderr
+        talking = False
+        try:
+            chunk = await process.stdout.read(8192)
+            if chunk:
+                await self.start_talk(channel)
+                talking = True
+            while chunk:
+                await self.send_talk_audio(channel, chunk)
+                chunk = await process.stdout.read(8192)
+            if await process.wait() != 0:
+                stderr_data = await process.stderr.read()
+                raise UnexpectedDataError(f"Baichuan host {self._host}: ffmpeg could not decode audio '{source}': {stderr_data.decode()}")
+        except BaseException:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+            if talking:
+                await self.stop_talk(channel, wait=False)
+            raise
+        if talking:
+            await self.stop_talk(channel)
 
     @http_cmd("GetDingDongList")
     async def GetDingDongList(self, channel: int | None = None, retry: int = 3, **_kwargs) -> None:
