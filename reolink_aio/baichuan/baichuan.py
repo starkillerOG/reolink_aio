@@ -656,6 +656,56 @@ class Baichuan:
                 self._keepalive_interval = max(MIN_KEEP_ALLIVE_INTERVAL, min(time_since_recv - 2, self._keepalive_interval - 1))
                 _LOGGER.debug("Baichuan host %s: reducing keepalive interval from %.2f to %.2f s", self._host, origianal_keepalive, self._keepalive_interval)
 
+    @staticmethod
+    def _merge_lens_alarm_events(event_list: XML.Element) -> list[XML.Element]:
+        """Merge the AlarmEvents of one channel that come per lens (subChannel), like a dual lens camera behind a Home Hub.
+
+        Otherwise the event of the second lens overwrites the detection of the first lens.
+        """
+        events: list[XML.Element] = []
+        merged: dict[str | None, XML.Element] = {}
+        for event in event_list:
+            if event.tag != "AlarmEvent" or event.find("subChannel") is None:
+                events.append(event)
+                continue
+            channel_id = event.findtext("channelId")
+            if (first := merged.get(channel_id)) is None:
+                merged[channel_id] = event
+                events.append(event)
+                continue
+            for key in ("status", "AItype"):
+                first_elem = first.find(key)
+                elem = event.find(key)
+                if elem is None:
+                    continue
+                if first_elem is None:
+                    first_elem = XML.SubElement(first, key)
+                values: list[str] = []
+                for text in (first_elem.text, elem.text):
+                    for value in (text or "").split(","):
+                        value = value.strip()
+                        if value and value != "none" and value not in values:
+                            values.append(value)
+                first_elem.text = ",".join(values) or "none"
+            if (smart_list := event.find("smartAiTypeList")) is not None:
+                if (first_smart_list := first.find("smartAiTypeList")) is None:
+                    first_smart_list = XML.SubElement(first, "smartAiTypeList")
+                for smart_ai in smart_list:
+                    smart_type = smart_ai.findtext("type")
+                    same_type = next((item for item in first_smart_list if smart_type is not None and item.findtext("type") == smart_type), None)
+                    if same_type is None:
+                        first_smart_list.append(smart_ai)
+                        continue
+                    # same smart AI type on both lenses: combine the detected location bits and sub lists
+                    index = smart_ai.find("index")
+                    same_index = same_type.find("index")
+                    if index is not None and same_index is not None and (index.text or "").isdigit() and (same_index.text or "").isdigit():
+                        same_index.text = str(int(same_index.text or 0) | int(index.text or 0))
+                    elif index is not None and same_index is None:
+                        same_type.append(index)
+                    same_type.extend(smart_ai.findall("subList"))
+        return events
+
     def _get_channel_from_xml_element(self, xml_element: XML.Element, key: str = "channelId") -> int | None:
         channel = get_value_from_xml(xml_element, key, int)
         if channel not in self.http_api._stream_channels and channel not in self.http_api._channels:
@@ -749,7 +799,7 @@ class Baichuan:
 
         elif cmd_id == 33:  # Motion/AI/Visitor/Tamper event | DayNightEvent
             for event_list in root:
-                for event in event_list:
+                for event in self._merge_lens_alarm_events(event_list):
                     channel = self._get_channel_from_xml_element(event)
                     if channel is None:
                         continue
