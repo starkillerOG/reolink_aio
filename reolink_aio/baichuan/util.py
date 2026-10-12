@@ -45,15 +45,19 @@ class PortType(Enum):
     onvif = "onvif"
 
 
+def _xor_baichuan(buf: bytes, offset: int) -> bytes:
+    """XOR a message with the baichuan TCP keystream, encryption and decryption are the same operation"""
+    buf_len = len(buf)
+    # The key repeats every len(XML_KEY) bytes, build the full keystream once and XOR all bytes at once as big integers
+    key = bytes(XML_KEY[(offset + idx) % len(XML_KEY)] ^ offset for idx in range(len(XML_KEY)))
+    keystream = (key * (buf_len // len(key) + 1))[:buf_len]
+    result = int.from_bytes(buf, "big") ^ int.from_bytes(keystream, "big")  # python int does not have a size limit
+    return result.to_bytes(buf_len, "big")
+
+
 def decrypt_baichuan(buf: bytes, offset: int) -> str:
     """Decrypt a received message using the baichuan TCP protocol"""
-    offset = offset % 256
-    decrypted = b""
-    for idx, byte in enumerate(buf):
-        key = XML_KEY[(offset + idx) % len(XML_KEY)]
-        char = byte ^ key ^ (offset)
-        decrypted += char.to_bytes()
-    return decrypted.decode("utf8")
+    return _xor_baichuan(buf, offset % 256).decode("utf8")
 
 
 def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
@@ -64,12 +68,7 @@ def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
     if isinstance(buf, str):
         buf = buf.encode("utf8")
 
-    encrypt = b""
-    for idx, char in enumerate(buf):
-        key = XML_KEY[(offset + idx) % len(XML_KEY)]
-        byte = char ^ key ^ (offset)
-        encrypt += byte.to_bytes()
-    return encrypt
+    return _xor_baichuan(buf, offset)
 
 
 def decrypt_udp_baichuan(buf: bytes, offset: int) -> bytes:
