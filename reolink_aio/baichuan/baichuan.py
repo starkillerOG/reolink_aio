@@ -1843,7 +1843,7 @@ class Baichuan:
                     while self._connection.receive_futures:
                         expected_cmd_ids = ", ".join(map(str, self._connection.receive_futures.keys()))
                         _LOGGER.debug("Baichuan host %s: waiting for cmd_id %s before logout...", self._host, expected_cmd_ids)
-                        receive_futures = (v for d in self._connection.receive_futures.values() for v in d.values())
+                        receive_futures = [v for d in self._connection.receive_futures.values() for v in d.values()]
                         await asyncio.wait(receive_futures, return_when=asyncio.ALL_COMPLETED)
             except asyncio.TimeoutError:
                 _LOGGER.warning("Baichuan host %s: timeout of 5 sec waiting for cmd_id %s, continuing with logout", self._host, expected_cmd_ids)
