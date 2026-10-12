@@ -238,7 +238,7 @@ class Baichuan:
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
         if self._connection is None or self._connection.con_type != self.connection_type:
-            if self.connection_type == ConnectionEnum.udp:
+            if self.connection_type in {ConnectionEnum.udp, ConnectionEnum.udp_tcp}:
                 self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback, uid=self.http_api.uid)
             elif self.connection_type == ConnectionEnum.tcp:
                 self._connection = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
@@ -669,7 +669,7 @@ class Baichuan:
         retry = retry - 1
         self._nonce = None
 
-        if self.connection_type == ConnectionEnum.udp:
+        if self.connection_type in {ConnectionEnum.udp, ConnectionEnum.udp_tcp}:
             # Try to get the nonce from the UDP connection
             try:
                 await self._connect_if_needed()
@@ -1947,7 +1947,8 @@ class Baichuan:
             # check if HTTP(s) API is supported
             netPort = self.api_version("netPort", no_key_return=55)
             self.http_api.baichuan_only = (netPort & 0x3F) <= 1
-            #upd_tcp_connection supported: bool(netPort & 0x40)
+            if bool(netPort & 0x40):
+                self.connection_type = ConnectionEnum.udp_tcp
 
         # Host capabilities
         self.capabilities.setdefault(None, {}).setdefault(None, set())
