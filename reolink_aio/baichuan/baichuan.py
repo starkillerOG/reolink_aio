@@ -673,17 +673,16 @@ class Baichuan:
         retry = retry - 1
         self._nonce = None
 
-        if self.connection_type in {ConnectionEnum.udp, ConnectionEnum.udp_tcp}:
-            # Try to get the nonce from the UDP connection
-            try:
-                await self._connect_if_needed()
-            except (ReolinkTimeoutError, ReolinkConnectionError) as err:
-                if retry <= 0:
-                    raise
-                _LOGGER.debug("%s, trying again", err)
-                return await self._get_nonce(retry)
-            if self._connection is not None:
-                self._nonce = self._connection.nonce
+        # First connect, it may already provide the nonce
+        try:
+            await self._connect_if_needed()
+        except (ReolinkTimeoutError, ReolinkConnectionError) as err:
+            if retry <= 0:
+                raise
+            _LOGGER.debug("%s, trying again", err)
+            return await self._get_nonce(retry)
+        if self._connection is not None:
+            self._nonce = self._connection.nonce
 
         if self._nonce is None:
             # send only a header to receive the nonce (alternatively use legacy login)
