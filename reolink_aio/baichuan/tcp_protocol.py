@@ -15,7 +15,13 @@ class BaichuanTcpConnection(BaichuanBaseConnection):
 
     _transport: asyncio.Transport
 
-    def __init__(self, host: str, port: int, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
+    ) -> None:
         super().__init__(host, port, push_callback, close_callback)
         self.con_type = ConnectionEnum.tcp
 
@@ -38,10 +44,10 @@ class BaichuanTcpClientProtocol(BaichuanBaseClientProtocol, asyncio.Protocol):
         loop: asyncio.AbstractEventLoop,
         host: str,
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
-        close_callback: Callable[[], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
     ) -> None:
         super().__init__(loop, host, push_callback, close_callback)
-        self._type: str = "TCP"
+        self.con_type = ConnectionEnum.tcp
 
     def data_received(self, data: bytes) -> None:
         """Data received callback"""

@@ -58,7 +58,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         host: str,
         port: int = 0,
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
-        close_callback: Callable[[], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
         uid: str = UNKNOWN,
     ) -> None:
         super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
@@ -270,13 +270,13 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         drop_coroutine: Coroutine,
         cancel_ack_timeout: Callable[[int], None],
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
-        close_callback: Callable[[], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
     ) -> None:
         super().__init__(loop, host, push_callback, close_callback)
         self.drop_coroutine = drop_coroutine
         self.cancel_ack_timeout = cancel_ack_timeout
         self._loop = loop
-        self._type: str = "UDP"
+        self.con_type = ConnectionEnum.udp
         self._udp_data: bytes = b""
         self.remote_port: int = UDP_CONNECT_PORT
         self.host_id: int | None = None

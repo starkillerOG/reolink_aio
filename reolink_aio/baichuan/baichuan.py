@@ -613,8 +613,12 @@ class Baichuan:
 
         self._parse_xml(cmd_id, xml)
 
-    def _close_callback(self) -> None:
+    def _close_callback(self, con_type: ConnectionEnum) -> None:
         """Callback for when the connection is closed"""
+        if con_type != self.connection_type:
+            _LOGGER.debug("Baichuan host %s: closed unused %s connection", self._host, con_type.value.upper())
+            return
+
         self._logged_in = False
         if self._webhook_subscribed or self.http_api.is_battery:
             return
