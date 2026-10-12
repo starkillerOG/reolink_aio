@@ -69,7 +69,7 @@ class BaichuanBaseConnection:
                 async with self._mutex:
                     if self.connection_open:
                         return  # connection already opened in the meantime
-
+                    _LOGGER.debug("Baichuan host %s: opening %s connection...", self._host, self.con_type.value.upper())
                     self.nonce = None
                     self._transport, self._protocol = await self._create_connection()
         except asyncio.TimeoutError as err:

@@ -242,9 +242,57 @@ class Baichuan:
                 self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback, uid=self.http_api.uid)
             elif self.connection_type == ConnectionEnum.tcp:
                 self._connection = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
+            elif self.connection_type == ConnectionEnum.unknown:
+                await self._connect_find_type()
             else:
                 raise ReolinkConnectionError(f"Baichuan host {self._host}: invalid connection type '{self.connection_type}'")
         await self._connection.connect()
+
+    async def _connect_find_type(self) -> None:
+        """Open a TCP and a UDP connection concurrently, the first connection that succeeds is used"""
+        if self.connection_type != ConnectionEnum.unknown:
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: _connect_find_type should only be used with {ConnectionEnum.unknown}")
+
+        tcp_con = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
+        udp_con = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback, uid=self.http_api.uid)
+        tasks: dict[asyncio.Task, BaichuanTcpConnection | BaichuanUdpConnection] = {
+            self._loop.create_task(tcp_con.connect()): tcp_con,
+            self._loop.create_task(udp_con.connect()): udp_con,
+        }
+
+        error: ReolinkError | None = None
+        try:
+            pending = set(tasks)
+            while pending and self.connection_type == ConnectionEnum.unknown:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        task.result()
+                    except ReolinkError as err:
+                        if pending or len(done) > 1:  # last error gets thrown
+                            _LOGGER.debug("%s, %s connection failed", err, tasks[task].con_type.value.upper())
+                        if not isinstance(error, LoginAccountDeviceError):
+                            error = err  # keep the more informative account device error
+                        continue
+                    if self.connection_type == ConnectionEnum.unknown:
+                        self._connection = tasks[task]
+                        self.connection_type = self._connection.con_type
+        finally:
+            for task, con in tasks.items():
+                if con is self._connection:
+                    continue
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)  # wait for the cancelation
+                # close the unused (possibly partially opened) connection in the background
+                self._loop.create_task(con.drop_connection())
+
+        if self.connection_type == ConnectionEnum.unknown:
+            if TYPE_CHECKING:
+                assert error is not None
+            raise error
+
+        _LOGGER.debug("Baichuan host %s: using %s connection", self._host, self.connection_type.value.upper())
 
     async def send(
         self,
@@ -1727,27 +1775,9 @@ class Baichuan:
                 raise LoginError(f"Baichuan host {self._host}: Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
 
             set_last_login = True
-            try_connections = self.connection_type == ConnectionEnum.unknown
-            if try_connections:
-                self.connection_type = ConnectionEnum.tcp
-
             try:
-                # get nonce and try tcp/udp connection
-                try:
-                    nonce = await self._get_nonce()
-                except LoginAccountDeviceError:
-                    raise
-                except ReolinkError as err:
-                    if not try_connections:
-                        raise
-                    _LOGGER.debug("%s, TCP connection failed, trying UDP connection...", err)
-                    await self._logout_no_mutex()
-                    self.connection_type = ConnectionEnum.udp
-                    try:
-                        nonce = await self._get_nonce()
-                    except ReolinkError:
-                        self.connection_type = ConnectionEnum.unknown
-                        raise
+                # get nonce
+                nonce = await self._get_nonce()
 
                 # modern login
                 self._user_hash = md5_str_modern(f"{self._username}{nonce}")
