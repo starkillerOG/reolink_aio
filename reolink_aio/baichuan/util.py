@@ -20,6 +20,8 @@ UDP_KEY = [
     0x863f1a2b, 0xa5c6f7d8, 0x8371e1b4, 0x17f2d3a5,
 ]  # fmt: skip
 AES_IV = b"0123456789abcdef"
+LCG_MULTIPLIER = 1664525
+LCG_INCREMENT = 1013904223
 
 
 T = TypeVar("T")
@@ -90,6 +92,16 @@ def encrypt_udp_baichuan(buf: str, offset: int) -> bytes:
         key_bytes.extend(shift_k_byte.to_bytes(4, "little"))
 
     return bytes(byte ^ k_byte for byte, k_byte in zip(buf.encode("utf8"), cycle(key_bytes)))
+
+
+def xor_baichuan_v3(buf: bytes, magic: int, version: int, sid: int) -> bytes:
+    """Encrypt/decrypt a baichuan UDP_TCP V3 payload, XOR with a LCG keystream seeded by the header"""
+    state = (magic ^ (version << 24) ^ (sid << 16) ^ len(buf)) & 0xFFFFFFFF
+    out = bytearray(len(buf))
+    for idx, byte in enumerate(buf):
+        state = (state * LCG_MULTIPLIER + LCG_INCREMENT) & 0xFFFFFFFF
+        out[idx] = byte ^ (state >> 24)
+    return bytes(out)
 
 
 def calc_crc(data: bytes) -> bytes:
