@@ -663,7 +663,7 @@ class Baichuan:
 
     def _close_callback(self, con_type: ConnectionEnum) -> None:
         """Callback for when the connection is closed"""
-        if con_type != self.connection_type:
+        if self._connection is not None and con_type != self._connection.con_type:  # self.connection_type may change to indicate better connection next time
             _LOGGER.debug("Baichuan host %s: closed unused %s connection", self._host, con_type.value.upper())
             return
 
