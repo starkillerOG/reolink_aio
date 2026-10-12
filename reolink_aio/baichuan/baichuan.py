@@ -237,7 +237,7 @@ class Baichuan:
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
-        if self._connection is None or self._connection.con_type != self.connection_type:
+        if self._connection is None or self.connection_type == ConnectionEnum.unknown:
             if self.connection_type in {ConnectionEnum.udp, ConnectionEnum.udp_tcp}:
                 self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback, uid=self.http_api.uid)
             elif self.connection_type == ConnectionEnum.tcp:
