@@ -2283,6 +2283,8 @@ class Baichuan:
                     for audio in root.findall(".//audioStreamMode"):
                         if audio.text == "mixAudioStream":
                             self._add_capability("two_way_audio", channel)
+                        if audio.text == "followVideoStream" and get_value_from_xml(root, "duplex") == "FDX":
+                            self._add_capability("two_way_audio", channel)
                 if cmd_id == 483:  # hardwired chime
                     self._add_capability("hardwired_chime", channel)
                 if cmd_id == 527:  # crossline detection
