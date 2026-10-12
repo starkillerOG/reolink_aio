@@ -198,6 +198,7 @@ class Baichuan:
         self._day_night_state: dict[int, str] = {}
         self._dev_type: str = ""
         self._wired_power: bool = False
+        self._new_firmware: int = 0
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -1976,6 +1977,8 @@ class Baichuan:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
         if self.api_version("timeFormat") > 0:
             self._add_capability("sync_time")
+        if self.api_version("upgrade") > 0:
+            self._add_capability("update")
 
         if self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
@@ -3422,6 +3425,12 @@ class Baichuan:
 
         await self.send(cmd_id=53, channel=channel, body=xml_body)
 
+    @http_cmd("CheckFirmware")
+    async def CheckFirmware(self, **_kwargs) -> None:
+        """Let the host check online if new firmware is available"""
+        mess = await self.send(cmd_id=197)
+        self._new_firmware = get_value_from_xml(mess, "hasNewFirmware", int) or 0
+
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
         if not self.http_api.supported(channel, "reboot"):
@@ -4675,6 +4684,11 @@ class Baichuan:
 
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
+
+    @property
+    def new_firmware(self) -> int:
+        """Result of the last online firmware check of the host, 0 = no new firmware, 1 = new firmware available"""
+        return self._new_firmware
 
     def privacy_mode(self, channel: int | None = None) -> bool | None:
         if channel is None:

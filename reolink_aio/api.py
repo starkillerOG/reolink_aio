@@ -2968,7 +2968,10 @@ class Host:
             try:
                 async with asyncio.timeout(15):
                     json_data = await self.send(body, expected_response_type="json")
-                new_firmware = json_data[0].get("value", {}).get("newFirmware", 0)
+                if json_data[0].get("Baichuan_fallback_succes"):
+                    new_firmware = self.baichuan.new_firmware
+                else:
+                    new_firmware = json_data[0].get("value", {}).get("newFirmware", 0)
             except (InvalidContentTypeError, LoginPrivacyModeError) as err:
                 _LOGGER.debug("CheckFirmware: %s", str(err))
             except NoDataError:
