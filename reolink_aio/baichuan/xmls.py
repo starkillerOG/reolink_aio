@@ -212,6 +212,14 @@ SetPrivacyMode = """
 </sleepState>
 </body>"""
 
+OnlineUpdate = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<OnlineUpdate version="1.1">
+<needUpdate>1</needUpdate>
+</OnlineUpdate>
+</body>"""
+
 GetSceneInfo = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>

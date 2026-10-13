@@ -3472,7 +3472,8 @@ class Baichuan:
         """Get the status of a running online firmware upgrade of the host"""
         mess = await self.send(cmd_id=227)
         data = get_keys_from_xml(mess, {"state": ("state", str), "downloadSize": ("downloadSize", int), "packetSize": ("packetSize", int)})
-        if data.get("state", "stopped") == "stopped":
+        # possible states: none, downloading, updating, stopped, timeout, finish, imgerror
+        if data.get("state") not in ["downloading", "updating"]:
             self._upgrade_state = False
             return
         packet_size = data.get("packetSize", 0)
@@ -3480,6 +3481,11 @@ class Baichuan:
             self._upgrade_state = 0
             return
         self._upgrade_state = min(round(100 * data.get("downloadSize", 0) / packet_size), 100)
+
+    @http_cmd("UpgradeOnline")
+    async def UpgradeOnline(self, **_kwargs) -> None:
+        """Start an online firmware upgrade of the host"""
+        await self.send(cmd_id=191, body=xmls.OnlineUpdate)
 
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
