@@ -3257,6 +3257,9 @@ class Host:
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response") from err
 
+        if json_data[0].get("Baichuan_fallback_succes"):
+            return self.baichuan._upgrade_state
+
         if json_data[0]["code"] != 0:
             return False
 

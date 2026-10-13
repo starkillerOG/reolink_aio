@@ -199,6 +199,7 @@ class Baichuan:
         self._dev_type: str = ""
         self._wired_power: bool = False
         self._new_firmware: int = 0
+        self._upgrade_state: int | bool = False  # online upgrade progress in %, False = not in progress
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -3465,6 +3466,20 @@ class Baichuan:
         """Let the host check online if new firmware is available"""
         mess = await self.send(cmd_id=197)
         self._new_firmware = get_value_from_xml(mess, "hasNewFirmware", int) or 0
+
+    @http_cmd("UpgradeStatus")
+    async def UpgradeStatus(self, **_kwargs) -> None:
+        """Get the status of a running online firmware upgrade of the host"""
+        mess = await self.send(cmd_id=227)
+        data = get_keys_from_xml(mess, {"state": ("state", str), "downloadSize": ("downloadSize", int), "packetSize": ("packetSize", int)})
+        if data.get("state", "stopped") == "stopped":
+            self._upgrade_state = False
+            return
+        packet_size = data.get("packetSize", 0)
+        if packet_size <= 0:
+            self._upgrade_state = 0
+            return
+        self._upgrade_state = min(round(100 * data.get("downloadSize", 0) / packet_size), 100)
 
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
