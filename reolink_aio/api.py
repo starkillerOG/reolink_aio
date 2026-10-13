@@ -2472,8 +2472,15 @@ class Host:
         if not self._stream_channels:
             self._stream_channels = self._channels.copy()
 
+        was_baichuan_only = self.baichuan_only
+
         # Baichuan capabilities
         await self.baichuan.get_host_data()
+
+        if was_baichuan_only and not self.baichuan_only:
+            # Baichuan reported HTTP(s) API support, re-read the host data (including the abilities) over HTTP(s)
+            _LOGGER.debug("Host %s: Baichuan reported HTTP(s) API support, re-reading host data over HTTP(s)", self._host)
+            return await self.get_host_data()
 
         self.construct_capabilities(warnings=False)
 
