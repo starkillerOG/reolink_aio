@@ -16,6 +16,7 @@ from xml.etree import ElementTree as XML
 from ..const import TIMEOUT, UNKNOWN
 from ..enums import ConnectionEnum
 from ..exceptions import (
+    LoginAccountDeviceError,
     ReolinkConnectionError,
     ReolinkError,
     ReolinkTimeoutSendACK,
@@ -57,7 +58,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         host: str,
         port: int = 0,
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
-        close_callback: Callable[[], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
         uid: str = UNKNOWN,
     ) -> None:
         super().__init__(host, UDP_CONNECT_PORT, push_callback, close_callback)
@@ -120,6 +121,13 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             self._port = self._protocol.remote_port
             _LOGGER.debug("Baichuan host %s: using remote UDP port %s", self._host, self._port)
             self.nonce = get_value_from_xml(mess, "nc")
+            pl = get_value_from_xml(mess, "pl")
+            if pl is not None and "X25519" in pl:
+                raise LoginAccountDeviceError(
+                    f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
+                    "please switch the device back to a 'local device' by resetting it, for more instructions see "
+                    "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
+                )
 
     async def drop_connection(self) -> None:
         """Drop the connection without sending a close message"""
@@ -262,13 +270,13 @@ class BaichuanUdpClientProtocol(BaichuanBaseClientProtocol, asyncio.DatagramProt
         drop_coroutine: Coroutine,
         cancel_ack_timeout: Callable[[int], None],
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
-        close_callback: Callable[[], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
     ) -> None:
         super().__init__(loop, host, push_callback, close_callback)
         self.drop_coroutine = drop_coroutine
         self.cancel_ack_timeout = cancel_ack_timeout
         self._loop = loop
-        self._type: str = "UDP"
+        self.con_type = ConnectionEnum.udp
         self._udp_data: bytes = b""
         self.remote_port: int = UDP_CONNECT_PORT
         self.host_id: int | None = None

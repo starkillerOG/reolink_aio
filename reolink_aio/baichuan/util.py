@@ -20,6 +20,8 @@ UDP_KEY = [
     0x863f1a2b, 0xa5c6f7d8, 0x8371e1b4, 0x17f2d3a5,
 ]  # fmt: skip
 AES_IV = b"0123456789abcdef"
+LCG_MULTIPLIER = 1664525
+LCG_INCREMENT = 1013904223
 
 
 T = TypeVar("T")
@@ -43,15 +45,19 @@ class PortType(Enum):
     onvif = "onvif"
 
 
+def _xor_baichuan(buf: bytes, offset: int) -> bytes:
+    """XOR a message with the baichuan TCP keystream, encryption and decryption are the same operation"""
+    buf_len = len(buf)
+    # The key repeats every len(XML_KEY) bytes, build the full keystream once and XOR all bytes at once as big integers
+    key = bytes(XML_KEY[(offset + idx) % len(XML_KEY)] ^ offset for idx in range(len(XML_KEY)))
+    keystream = (key * (buf_len // len(key) + 1))[:buf_len]
+    result = int.from_bytes(buf, "big") ^ int.from_bytes(keystream, "big")  # python int does not have a size limit
+    return result.to_bytes(buf_len, "big")
+
+
 def decrypt_baichuan(buf: bytes, offset: int) -> str:
     """Decrypt a received message using the baichuan TCP protocol"""
-    offset = offset % 256
-    decrypted = b""
-    for idx, byte in enumerate(buf):
-        key = XML_KEY[(offset + idx) % len(XML_KEY)]
-        char = byte ^ key ^ (offset)
-        decrypted += char.to_bytes()
-    return decrypted.decode("utf8")
+    return _xor_baichuan(buf, offset % 256).decode("utf8")
 
 
 def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
@@ -62,12 +68,7 @@ def encrypt_baichuan(buf: str | bytes, offset: int) -> bytes:
     if isinstance(buf, str):
         buf = buf.encode("utf8")
 
-    encrypt = b""
-    for idx, char in enumerate(buf):
-        key = XML_KEY[(offset + idx) % len(XML_KEY)]
-        byte = char ^ key ^ (offset)
-        encrypt += byte.to_bytes()
-    return encrypt
+    return _xor_baichuan(buf, offset)
 
 
 def decrypt_udp_baichuan(buf: bytes, offset: int) -> bytes:
@@ -90,6 +91,16 @@ def encrypt_udp_baichuan(buf: str, offset: int) -> bytes:
         key_bytes.extend(shift_k_byte.to_bytes(4, "little"))
 
     return bytes(byte ^ k_byte for byte, k_byte in zip(buf.encode("utf8"), cycle(key_bytes)))
+
+
+def xor_baichuan_v3(buf: bytes, magic: int, version: int, sid: int) -> bytes:
+    """Encrypt/decrypt a baichuan UDP_TCP V3 payload, XOR with a LCG keystream seeded by the header"""
+    state = (magic ^ (version << 24) ^ (sid << 16) ^ len(buf)) & 0xFFFFFFFF
+    out = bytearray(len(buf))
+    for idx, byte in enumerate(buf):
+        state = (state * LCG_MULTIPLIER + LCG_INCREMENT) & 0xFFFFFFFF
+        out[idx] = byte ^ (state >> 24)
+    return bytes(out)
 
 
 def calc_crc(data: bytes) -> bytes:

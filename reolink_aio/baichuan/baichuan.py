@@ -46,6 +46,7 @@ from ..exceptions import (
     CredentialsInvalidError,
     InvalidContentTypeError,
     InvalidParameterError,
+    LoginAccountDeviceError,
     LoginError,
     NotSupportedError,
     ReolinkConnectionError,
@@ -203,6 +204,7 @@ class Baichuan:
         self._day_night_state: dict[int, str] = {}
         self._dev_type: str = ""
         self._wired_power: bool = False
+        self._new_firmware: int = 0
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -243,14 +245,62 @@ class Baichuan:
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
-        if self._connection is None or self._connection.con_type != self.connection_type:
-            if self.connection_type == ConnectionEnum.udp:
+        if self._connection is None or self.connection_type == ConnectionEnum.unknown:
+            if self.connection_type in {ConnectionEnum.udp, ConnectionEnum.udp_tcp}:
                 self._connection = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback, uid=self.http_api.uid)
             elif self.connection_type == ConnectionEnum.tcp:
                 self._connection = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
+            elif self.connection_type == ConnectionEnum.unknown:
+                await self._connect_find_type()
             else:
                 raise ReolinkConnectionError(f"Baichuan host {self._host}: invalid connection type '{self.connection_type}'")
         await self._connection.connect()
+
+    async def _connect_find_type(self) -> None:
+        """Open a TCP and a UDP connection concurrently, the first connection that succeeds is used"""
+        if self.connection_type != ConnectionEnum.unknown:
+            raise ReolinkConnectionError(f"Baichuan host {self._host}: _connect_find_type should only be used with {ConnectionEnum.unknown}")
+
+        tcp_con = BaichuanTcpConnection(self._host, self.port, self._push_callback, self._close_callback)
+        udp_con = BaichuanUdpConnection(self._host, 0, self._push_callback, self._close_callback, uid=self.http_api.uid)
+        tasks: dict[asyncio.Task, BaichuanTcpConnection | BaichuanUdpConnection] = {
+            self._loop.create_task(tcp_con.connect()): tcp_con,
+            self._loop.create_task(udp_con.connect()): udp_con,
+        }
+
+        error: ReolinkError | None = None
+        try:
+            pending = set(tasks)
+            while pending and self.connection_type == ConnectionEnum.unknown:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        task.result()
+                    except ReolinkError as err:
+                        if pending or len(done) > 1:  # last error gets thrown
+                            _LOGGER.debug("%s, %s connection failed", err, tasks[task].con_type.value.upper())
+                        if not isinstance(error, LoginAccountDeviceError):
+                            error = err  # keep the more informative account device error
+                        continue
+                    if self.connection_type == ConnectionEnum.unknown:
+                        self._connection = tasks[task]
+                        self.connection_type = self._connection.con_type
+        finally:
+            for task, con in tasks.items():
+                if con is self._connection:
+                    continue
+                if not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)  # wait for the cancelation
+                # close the unused (possibly partially opened) connection in the background
+                self._loop.create_task(con.drop_connection())
+
+        if self.connection_type == ConnectionEnum.unknown:
+            if TYPE_CHECKING:
+                assert error is not None
+            raise error
+
+        _LOGGER.debug("Baichuan host %s: using %s connection", self._host, self.connection_type.value.upper())
 
     async def send(
         self,
@@ -347,7 +397,7 @@ class Baichuan:
         try:
             data, len_header, payload = await self._connection.send(header + enc_body_bytes, cmd_id, full_mess_id, channel, log_mess)
         except ApiError as err:
-            if retry <= 0 or err.rspCode != 400:
+            if retry <= 0 or err.rspCode != 400 or cmd_id == 2:
                 raise err
             _LOGGER.debug("%s, trying again in 1.5 s", str(err))
             await asyncio.sleep(1.5)  # give the battery cam time to wake
@@ -646,8 +696,12 @@ class Baichuan:
 
         self._parse_xml(cmd_id, xml)
 
-    def _close_callback(self) -> None:
+    def _close_callback(self, con_type: ConnectionEnum) -> None:
         """Callback for when the connection is closed"""
+        if self._connection is not None and con_type != self._connection.con_type:  # self.connection_type may change to indicate better connection next time
+            _LOGGER.debug("Baichuan host %s: closed unused %s connection", self._host, con_type.value.upper())
+            return
+
         self._logged_in = False
         if self._webhook_subscribed or self.http_api.is_battery:
             return
@@ -702,21 +756,27 @@ class Baichuan:
         retry = retry - 1
         self._nonce = None
 
-        if self.connection_type == ConnectionEnum.udp:
-            # Try to get the nonce from the UDP connection
-            try:
-                await self._connect_if_needed()
-            except (ReolinkTimeoutError, ReolinkConnectionError) as err:
-                if retry <= 0:
-                    raise
-                _LOGGER.debug("%s, trying again", err)
-                return await self._get_nonce(retry)
-            if self._connection is not None:
-                self._nonce = self._connection.nonce
+        # First connect, it may already provide the nonce
+        try:
+            await self._connect_if_needed()
+        except (ReolinkTimeoutError, ReolinkConnectionError) as err:
+            if retry <= 0:
+                raise
+            _LOGGER.debug("%s, trying again", err)
+            return await self._get_nonce(retry)
+        if self._connection is not None:
+            self._nonce = self._connection.nonce
 
         if self._nonce is None:
             # send only a header to receive the nonce (alternatively use legacy login)
             mess = await self.send(cmd_id=1, enc_type=EncType.BC, message_class="1465")
+            sig_ver = get_value_from_xml(mess, "sigVer")
+            if sig_ver == "v3":
+                raise LoginAccountDeviceError(
+                    f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
+                    "please switch the device back to a 'local device' by resetting it, for more instructions see "
+                    "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
+                )
             self._nonce = get_value_from_xml(mess, "nonce")
             if self._nonce is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
@@ -1755,25 +1815,9 @@ class Baichuan:
                 raise LoginError(f"Baichuan host {self._host}: Last login attempt was only {time_now() - self._last_login} sec ago, not allowing another attempt")
 
             set_last_login = True
-            try_connections = self.connection_type == ConnectionEnum.unknown
-            if try_connections:
-                self.connection_type = ConnectionEnum.tcp
-
             try:
-                # get nonce and try tcp/udp connection
-                try:
-                    nonce = await self._get_nonce()
-                except ReolinkError as err:
-                    if not try_connections:
-                        raise
-                    _LOGGER.debug("%s, TCP connection failed, trying UDP connection...", err)
-                    await self._logout_no_mutex()
-                    self.connection_type = ConnectionEnum.udp
-                    try:
-                        nonce = await self._get_nonce()
-                    except ReolinkError:
-                        self.connection_type = ConnectionEnum.unknown
-                        raise
+                # get nonce
+                nonce = await self._get_nonce()
 
                 # modern login
                 self._user_hash = md5_str_modern(f"{self._username}{nonce}")
@@ -1868,14 +1912,13 @@ class Baichuan:
                     while self._connection.receive_futures:
                         expected_cmd_ids = ", ".join(map(str, self._connection.receive_futures.keys()))
                         _LOGGER.debug("Baichuan host %s: waiting for cmd_id %s before logout...", self._host, expected_cmd_ids)
-                        receive_futures = (v for d in self._connection.receive_futures.values() for v in d.values())
+                        receive_futures = [v for d in self._connection.receive_futures.values() for v in d.values()]
                         await asyncio.wait(receive_futures, return_when=asyncio.ALL_COMPLETED)
             except asyncio.TimeoutError:
                 _LOGGER.warning("Baichuan host %s: timeout of 5 sec waiting for cmd_id %s, continuing with logout", self._host, expected_cmd_ids)
 
             try:
-                xml = xmls.LOGOUT_XML.format(userName=self._username, password=self._password)
-                await self.send(cmd_id=2, body=xml)
+                await self.send(cmd_id=2, body=xmls.LOGOUT_XML)
             except (ReolinkConnectionError, ReolinkTimeoutSendACK):
                 _LOGGER.debug("Baichuan host %s: connection closed before logout confirmation", self._host)
             except ReolinkError as err:
@@ -1947,7 +1990,7 @@ class Baichuan:
         # Get Baichuan capabilities
         try:
             mess = await self.send(cmd_id=199)
-        except CredentialsInvalidError:
+        except (CredentialsInvalidError, LoginAccountDeviceError):
             raise
         except ReolinkError as err:
             _LOGGER.debug("Baichuan host %s: Could not obtain abilities (cmd_id 199): %s", self._host, str(err).replace(f"Baichuan host {self._host}: ", ""))
@@ -1974,7 +2017,10 @@ class Baichuan:
                 self._abilities.setdefault(None, {})[None] = support
 
             # check if HTTP(s) API is supported
-            self.http_api.baichuan_only = (self.api_version("netPort", no_key_return=55) & 0x3F) <= 1
+            netPort = self.api_version("netPort", no_key_return=55)
+            self.http_api.baichuan_only = (netPort & 0x3F) <= 1
+            if bool(netPort & 0x40):
+                self.connection_type = ConnectionEnum.udp_tcp
 
         # Host capabilities
         self.capabilities.setdefault(None, {}).setdefault(None, set())
@@ -2006,6 +2052,8 @@ class Baichuan:
             host_coroutines.append(("dingdonglist", self.GetDingDongList()))
         if self.api_version("timeFormat") > 0:
             self._add_capability("sync_time")
+        if self.api_version("upgrade") > 0:
+            self._add_capability("update")
 
         if self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
@@ -2134,7 +2182,11 @@ class Baichuan:
             if self.http_api.is_nvr and self.http_api.wifi_connection(channel) and (self.http_api.api_version("supportWiFi", channel) > 0 or self.http_api._is_hub):
                 coroutines.append(("wifi", channel, self.get_wifi_signal(channel)))
 
-            if self.http_api.api_version("talk", channel) > 0 or (not self.http_api.is_nvr and self.api_version("audioTalk") > 0):
+            if (
+                self.http_api.api_version("talk", channel) > 0
+                or self.api_version("ipcAudioTalk", channel) > 0
+                or (not self.http_api.is_nvr and self.api_version("audioTalk") > 0)
+            ):
                 coroutines.append((10, channel, self.send(cmd_id=10, channel=channel)))
 
             if (self.http_api.is_nvr or self.privacy_mode() is not None) and self.api_version("remoteAbility", channel) > 0:
@@ -2308,6 +2360,8 @@ class Baichuan:
                     root = XML.fromstring(result)
                     for audio in root.findall(".//audioStreamMode"):
                         if audio.text == "mixAudioStream":
+                            self._add_capability("two_way_audio", channel)
+                        if audio.text == "followVideoStream" and get_value_from_xml(root, "duplex") == "FDX":
                             self._add_capability("two_way_audio", channel)
                     if (talk_ability := self._parse_talk_ability(root)) is not None:
                         self._talk_ability[channel] = talk_ability
@@ -3448,6 +3502,12 @@ class Baichuan:
             xml_enable.text = str(enable)
 
         await self.send(cmd_id=53, channel=channel, body=xml_body)
+
+    @http_cmd("CheckFirmware")
+    async def CheckFirmware(self, **_kwargs) -> None:
+        """Let the host check online if new firmware is available"""
+        mess = await self.send(cmd_id=197)
+        self._new_firmware = get_value_from_xml(mess, "hasNewFirmware", int) or 0
 
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
@@ -4869,6 +4929,11 @@ class Baichuan:
 
     def sw_version(self, channel: int | None = None) -> str | None:
         return self._dev_info.get(channel, {}).get("firmwareVersion")
+
+    @property
+    def new_firmware(self) -> int:
+        """Result of the last online firmware check of the host, 0 = no new firmware, 1 = new firmware available"""
+        return self._new_firmware
 
     def privacy_mode(self, channel: int | None = None) -> bool | None:
         if channel is None:

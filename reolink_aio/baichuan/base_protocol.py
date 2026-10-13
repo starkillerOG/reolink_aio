@@ -28,7 +28,13 @@ send_response_t = tuple[bytes, int, bytes]
 class BaichuanBaseConnection:
     """Reolink Baichuan base connection."""
 
-    def __init__(self, host: str, port: int, push_callback: Callable[[int, bytes, int, bytes], None] | None = None, close_callback: Callable[[], None] | None = None) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
+    ) -> None:
         self.con_type = ConnectionEnum.unknown
         self._loop = asyncio.get_event_loop()
         self._host = host
@@ -63,7 +69,7 @@ class BaichuanBaseConnection:
                 async with self._mutex:
                     if self.connection_open:
                         return  # connection already opened in the meantime
-
+                    _LOGGER.debug("Baichuan host %s: opening %s connection...", self._host, self.con_type.value.upper())
                     self.nonce = None
                     self._transport, self._protocol = await self._create_connection()
         except asyncio.TimeoutError as err:
@@ -223,10 +229,10 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         loop: asyncio.AbstractEventLoop,
         host: str,
         push_callback: Callable[[int, bytes, int, bytes], None] | None = None,
-        close_callback: Callable[[], None] | None = None,
+        close_callback: Callable[[ConnectionEnum], None] | None = None,
     ) -> None:
         self._host: str = host
-        self._type: str = "Base"
+        self.con_type: ConnectionEnum = ConnectionEnum.unknown
         self._data: bytes = b""
         self._data_chunk: bytes = b""
 
@@ -245,22 +251,22 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         """Connection callback"""
         self.time_connect = time_now()
         self._transport = transport
-        _LOGGER.debug("Baichuan host %s: opened %s connection", self._host, self._type)
+        _LOGGER.debug("Baichuan host %s: opened %s connection", self._host, self.con_type.value.upper())
 
     def connection_lost(self, exc: Exception | None = None) -> None:
         """Connection lost callback"""
         if self.receive_futures:
             if exc is None:
                 expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
-                exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost {self._type} connection while waiting for cmd_id {expected_cmd_ids}")
+                exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost {self.con_type.value.upper()} connection while waiting for cmd_id {expected_cmd_ids}")
             for val in self.receive_futures.values():
                 for receive_future in val.values():
                     if receive_future.done():
                         continue
                     receive_future.set_exception(exc)
-        _LOGGER.debug("Baichuan host %s: closed %s connection", self._host, self._type)
+        _LOGGER.debug("Baichuan host %s: closed %s connection", self._host, self.con_type.value.upper())
         if self._close_callback is not None:
-            self._close_callback()
+            self._close_callback(self.con_type)
         self.close_future.set_result(True)
 
     def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None, mess_id: int | None = None) -> None:

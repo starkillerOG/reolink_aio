@@ -33,6 +33,10 @@ class LoginError(ReolinkError):
     """Raised when a login attempt fails for another reason than the credentials"""
 
 
+class LoginAccountDeviceError(LoginError):
+    """Raised when a login attempt fails because the device is configured as 'account device' instead of 'local device'"""
+
+
 class LoginPrivacyModeError(LoginError):
     """Raised when a login attempt fails because privacy mode is turned on"""
 

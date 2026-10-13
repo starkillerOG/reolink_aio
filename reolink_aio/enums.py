@@ -40,6 +40,7 @@ class ConnectionEnum(Enum):
     unknown = "unknown"
     tcp = "tcp"
     udp = "udp"
+    udp_tcp = "udp_tcp"  # Baichuan V3
 
 
 class ExposureEnum(Enum):
