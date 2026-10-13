@@ -1350,7 +1350,7 @@ class Host:
                 )
                 return  # succes, in case multiple async coroutine are waiting on login_mutex.acquire
 
-            await self.logout(login_mutex_owned=True)  # Ensure there would be no "max session" error
+            await self._logout_http(login_mutex_owned=True)  # Ensure there would be no "max session" error
 
             _LOGGER.debug(
                 "Host %s:%s, trying to login with user %s...",
@@ -1504,7 +1504,7 @@ class Host:
         except ReolinkError:
             pass
 
-        # retry login now that the port is open, this will also logout the baichuan session
+        # retry login now that the port is open
         try:
             await self.login()
             return
@@ -1599,7 +1599,7 @@ class Host:
         else:
             raise LoginError(f"Failed to open HTTP(s) port on host '{self._host}' using baichuan, altough no errors returned by API") from first_exc
 
-        # retry login now that the port is open, this will also logout the baichuan session
+        # retry login now that the port is open
         try:
             await self.login()
             return
@@ -1625,6 +1625,12 @@ class Host:
             raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
 
     async def logout(self, login_mutex_owned: bool = False) -> None:
+        """Logout of both the HTTP(s) API and the Baichuan session"""
+        await self._logout_http(login_mutex_owned)
+        await self.baichuan.logout()
+
+    async def _logout_http(self, login_mutex_owned: bool = False) -> None:
+        """Logout of the HTTP(s) API only, keeping the Baichuan session"""
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
 
         if not login_mutex_owned:
@@ -1658,8 +1664,6 @@ class Host:
         finally:
             if not login_mutex_owned:
                 self._login_mutex.release()
-
-        await self.baichuan.logout()
 
     async def expire_session(self, unsubscribe: bool = True) -> None:
         if self._lease_time is not None:
