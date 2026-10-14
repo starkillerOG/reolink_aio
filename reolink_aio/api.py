@@ -3138,6 +3138,13 @@ class Host:
 
             len_pak = len(firmware_pak)
 
+            if self.baichuan_only:
+                self._sw_upload_progress[channel] = 5
+                await self.baichuan.upload_firmware(firmware_pak, firmware_name, channel)
+                _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
+                await self.wait_untill_firmware_update_complete(channel)
+                return
+
             # Check if firmware is correct
             param: dict[str, str | int] = {"restoreCfg": 0, "fileName": firmware_name}
             if self.is_nvr:

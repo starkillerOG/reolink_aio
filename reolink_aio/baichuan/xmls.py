@@ -35,6 +35,12 @@ SUB_CHANNEL_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
 </Extension>
 """
 
+BINARY_DATA_EXTENSION_XML = """<?xml version="1.0" encoding="UTF-8" ?>
+<Extension version="1.1">
+<binaryData>1</binaryData>
+</Extension>
+"""
+
 UDP_GET_UID_XML = """
 <P2P>
 <C2D_S>
@@ -210,6 +216,17 @@ SetPrivacyMode = """
 <operate>2</operate>
 <sleep>{enable}</sleep>
 </sleepState>
+</body>"""
+
+UpgradeFileInfo = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<ConfigFileInfo version="1.1">
+<fileName>{file_name}</fileName>
+<fileSize>{file_size}</fileSize>
+<updateParameter>{update_parameter}</updateParameter>
+<channelBits>{channel_bits}</channelBits>
+</ConfigFileInfo>
 </body>"""
 
 OnlineUpdate = """

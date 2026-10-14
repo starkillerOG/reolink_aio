@@ -7,6 +7,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
+from math import ceil
 from time import time as time_now
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, overload
 from xml.etree import ElementTree as XML
@@ -3499,6 +3500,23 @@ class Baichuan:
     async def UpgradeOnline(self, **_kwargs) -> None:
         """Start an online firmware upgrade of the host"""
         await self.send(cmd_id=191, body=xmls.OnlineUpdate)
+
+    async def upload_firmware(self, firmware: bytes, file_name: str, channel: int | None = None) -> None:
+        """Upload a firmware file (.pak) to the host or to a channel of a NVR and start the upgrade"""
+        # Send the file info to prepare the upgrade
+        mess_id = (self._mess_id + 1) % 16777216
+        channel_bits = 0 if channel is None else 1 << channel
+        xml = xmls.UpgradeFileInfo.format(file_name=file_name, file_size=len(firmware), update_parameter=0, channel_bits=channel_bits)
+        await self.send(cmd_id=67, body=xml, mess_id=mess_id, retry=1)
+
+        # Send the firmware in chunks, all using the same mess_id
+        chunk_size = MAX_MESS_SIZE - 24 - len(xmls.BINARY_DATA_EXTENSION_XML.encode("utf8"))
+        n_chunks = ceil(len(firmware) / chunk_size)
+        for chunk in range(n_chunks):
+            firm_chunk = firmware[chunk * chunk_size : (chunk + 1) * chunk_size]
+            _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, n_chunks, self.http_api.camera_name(channel))
+            await self.send(cmd_id=67, extension=xmls.BINARY_DATA_EXTENSION_XML, payload=firm_chunk, mess_id=mess_id, retry=1)
+            self.http_api._sw_upload_progress[channel] = 5 + round(((chunk + 1) / n_chunks) * 55)
 
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
