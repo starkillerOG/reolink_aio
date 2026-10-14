@@ -147,6 +147,7 @@ class Baichuan:
         self._username: str = username
         self._password: str = password
         self._nonce: str | None = None
+        self._sig_ver_v3: bool = False
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
@@ -721,6 +722,7 @@ class Baichuan:
         """Get the nonce needed for the modern login"""
         retry = retry - 1
         self._nonce = None
+        self._sig_ver_v3 = False
 
         # First connect, it may already provide the nonce
         try:
@@ -736,13 +738,8 @@ class Baichuan:
         if self._nonce is None:
             # send only a header to receive the nonce (alternatively use legacy login)
             mess = await self.send(cmd_id=1, enc_type=EncType.BC, message_class="1465")
-            sig_ver = get_value_from_xml(mess, "sigVer")
-            if sig_ver == "v3":
-                raise LoginAccountDeviceError(
-                    f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
-                    "please switch the device back to a 'local device' by resetting it, for more instructions see "
-                    "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
-                )
+            # account devices advertise sigVer v3, but so do some local devices that still accept the modern login
+            self._sig_ver_v3 = get_value_from_xml(mess, "sigVer") == "v3"
             self._nonce = get_value_from_xml(mess, "nonce")
             if self._nonce is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
@@ -1791,6 +1788,12 @@ class Baichuan:
                     if err.rspCode == 401:
                         set_last_login = False  # Allow direct throwing of the CredentialsInvalidError again
                         raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login") from err
+                    if self._sig_ver_v3:
+                        raise LoginAccountDeviceError(
+                            f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
+                            "please switch the device back to a 'local device' by resetting it, for more instructions see "
+                            "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
+                        ) from err
                     raise
                 self._logged_in = True
                 self._login_sucess = True
