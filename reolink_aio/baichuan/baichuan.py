@@ -302,6 +302,7 @@ class Baichuan:
         sub_channel: int | None = None,
         body: str | XML.Element = "",
         extension: str = "",
+        payload: bytes = b"",
         enc_type: EncType = EncType.AES,
         message_class: str = "1464",
         ch_id: int | None = None,
@@ -337,7 +338,7 @@ class Baichuan:
         body_bytes = body.encode("utf8")
         ext_bytes = ext.encode("utf8")
         ext_len = len(ext_bytes)
-        mess_len = ext_len + len(body_bytes)
+        mess_len = ext_len + len(body_bytes) + len(payload)
         payload_offset = ext_len
         if mess_id is None:
             self._mess_id = (self._mess_id + 1) % 16777216
@@ -360,6 +361,8 @@ class Baichuan:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param message_class '{message_class}'")
 
         enc_body_bytes = b""
+        if payload and message_class != "1464":
+            raise InvalidParameterError(f"Baichuan host {self._host}: a binary payload requires message_class '1464'")
         if mess_len > 0:
             if enc_type == EncType.BC:
                 enc_body_bytes = encrypt_baichuan(ext_bytes, ch_id) + encrypt_baichuan(body_bytes, ch_id)  # enc_offset = ch_id
@@ -367,6 +370,7 @@ class Baichuan:
                 enc_body_bytes = self._aes_encrypt(ext_bytes) + self._aes_encrypt(body_bytes)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
+            enc_body_bytes += payload
 
         # send message
         try:
@@ -375,7 +379,7 @@ class Baichuan:
             if retry <= 0 or cmd_id == 2:
                 raise
             _LOGGER.debug("%s, trying again", err)
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
         if TYPE_CHECKING:
             assert self._connection is not None
 
@@ -383,23 +387,26 @@ class Baichuan:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
                 ext_entr = "\n" if ext and body else ""
-                log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, body:\n{self._style_hide_password(ext) + ext_entr + self._style_hide_password(body)}"
+                payload_str = f" with payload length {len(payload)}" if payload else ""
+                log_mess = (
+                    f"Baichuan host {self._host}: writing cmd_id {cmd_id}{payload_str}, body:\n{self._style_hide_password(ext) + ext_entr + self._style_hide_password(body)}"
+                )
             else:
                 log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, without body"
 
         try:
-            data, len_header, payload = await self._connection.send(header + enc_body_bytes, cmd_id, full_mess_id, channel, log_mess)
+            data, len_header, rec_payload = await self._connection.send(header + enc_body_bytes, cmd_id, full_mess_id, channel, log_mess)
         except ApiError as err:
             if retry <= 0 or err.rspCode != 400 or cmd_id == 2:
                 raise err
             _LOGGER.debug("%s, trying again in 1.5 s", str(err))
             await asyncio.sleep(1.5)  # give the battery cam time to wake
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
         except (ReolinkTimeoutError, ReolinkConnectionError) as err:
             if retry <= 0 or cmd_id == 2:
                 raise
             _LOGGER.debug("%s, trying again", err)
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
 
         # check full message id
         rec_mess_id = int.from_bytes(data[12:16], byteorder="little")
@@ -408,14 +415,14 @@ class Baichuan:
             if retry <= 0:
                 raise UnexpectedDataError(err_str)
             _LOGGER.debug("%s, trying again", str(err_str))
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             ch_str = f" ch {channel}" if channel is not None else ""
-            payload_str = f" with payload length {len(payload)}" if len(payload) > 0 else ""
+            payload_str = f" with payload length {len(rec_payload)}" if len(rec_payload) > 0 else ""
             if len(rec_body) > 0:
                 _LOGGER.debug("Baichuan host %s: received cmd_id %s%s%s:\n%s", self._host, cmd_id, ch_str, payload_str, self._style_hide_password(rec_body))
             else:
