@@ -90,6 +90,7 @@ _LOGGER = logging.getLogger(__name__)
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
+MAX_MESS_SIZE = 38000  # bytes, max size of message including header. If mess size exceeds 40.000, the connection is closed by the camera.
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 SMART_AI = {
@@ -359,6 +360,11 @@ class Baichuan:
             header = bytes.fromhex(HEADER_MAGIC) + cmd_id_bytes + mess_len_bytes + mess_id_bytes + bytes.fromhex(status_code + message_class) + payload_offset_bytes
         else:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param message_class '{message_class}'")
+
+        if len(header) + mess_len > MAX_MESS_SIZE:
+            raise InvalidParameterError(
+                f"Baichuan host {self._host}: cmd_id {cmd_id} message size {len(header) + mess_len} exceeds the maximum of {MAX_MESS_SIZE} bytes"
+            )
 
         enc_body_bytes = b""
         if payload and message_class != "1464":
