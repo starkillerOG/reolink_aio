@@ -1090,7 +1090,7 @@ class Host:
 
         enc_range = self._enc_range[channel][0]
         height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
-        ch_bit = pow(2, channel)
+        ch_bit = 1 << channel
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
             if (enc_range_i.get("chnBit", ch_bit) >> channel) & 1 and height == enc_range_i.get(stream_str, {}).get("height", height):
@@ -1116,7 +1116,7 @@ class Host:
 
         enc_range = self._enc_range[channel][0]
         height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
-        ch_bit = pow(2, channel)
+        ch_bit = 1 << channel
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
             if (enc_range_i.get("chnBit", ch_bit) >> channel) & 1 and height == enc_range_i.get(stream_str, {}).get("height", height):
@@ -3144,7 +3144,7 @@ class Host:
                 if channel is None:
                     ipcChnBit = 0
                 else:
-                    ipcChnBit = pow(2, channel)
+                    ipcChnBit = 1 << channel
                 param["ipcChnBit"] = str(ipcChnBit)
                 param["fileSize"] = len_pak
             body = [{"cmd": "UpgradePrepare", "action": 0, "param": param}]
