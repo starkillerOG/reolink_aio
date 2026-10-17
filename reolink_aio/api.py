@@ -1090,7 +1090,7 @@ class Host:
 
         enc_range = self._enc_range[channel][0]
         height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
-        ch_bit = pow(2, channel)
+        ch_bit = 1 << channel
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
             if (enc_range_i.get("chnBit", ch_bit) >> channel) & 1 and height == enc_range_i.get(stream_str, {}).get("height", height):
@@ -1116,7 +1116,7 @@ class Host:
 
         enc_range = self._enc_range[channel][0]
         height = self._enc_settings.get(channel, {}).get(stream_str, {}).get("height", 0)
-        ch_bit = pow(2, channel)
+        ch_bit = 1 << channel
         # search for the correct encoding range
         for enc_range_i in self._enc_range[channel]:
             if (enc_range_i.get("chnBit", ch_bit) >> channel) & 1 and height == enc_range_i.get(stream_str, {}).get("height", height):
@@ -1350,7 +1350,7 @@ class Host:
                 )
                 return  # succes, in case multiple async coroutine are waiting on login_mutex.acquire
 
-            await self.logout(login_mutex_owned=True)  # Ensure there would be no "max session" error
+            await self._logout_http(login_mutex_owned=True)  # Ensure there would be no "max session" error
 
             _LOGGER.debug(
                 "Host %s:%s, trying to login with user %s...",
@@ -1504,7 +1504,7 @@ class Host:
         except ReolinkError:
             pass
 
-        # retry login now that the port is open, this will also logout the baichuan session
+        # retry login now that the port is open
         try:
             await self.login()
             return
@@ -1599,7 +1599,7 @@ class Host:
         else:
             raise LoginError(f"Failed to open HTTP(s) port on host '{self._host}' using baichuan, altough no errors returned by API") from first_exc
 
-        # retry login now that the port is open, this will also logout the baichuan session
+        # retry login now that the port is open
         try:
             await self.login()
             return
@@ -1625,6 +1625,12 @@ class Host:
             raise LoginError(f"Failed to login after opening HTTPs and RTMP port on host '{self._host}' using baichuan protocol: {exc}") from exc
 
     async def logout(self, login_mutex_owned: bool = False) -> None:
+        """Logout of both the HTTP(s) API and the Baichuan session"""
+        await self._logout_http(login_mutex_owned)
+        await self.baichuan.logout()
+
+    async def _logout_http(self, login_mutex_owned: bool = False) -> None:
+        """Logout of the HTTP(s) API only, keeping the Baichuan session"""
         body = [{"cmd": "Logout", "action": 0, "param": {}}]
 
         if not login_mutex_owned:
@@ -1658,8 +1664,6 @@ class Host:
         finally:
             if not login_mutex_owned:
                 self._login_mutex.release()
-
-        await self.baichuan.logout()
 
     async def expire_session(self, unsubscribe: bool = True) -> None:
         if self._lease_time is not None:
@@ -2468,8 +2472,15 @@ class Host:
         if not self._stream_channels:
             self._stream_channels = self._channels.copy()
 
+        was_baichuan_only = self.baichuan_only
+
         # Baichuan capabilities
         await self.baichuan.get_host_data()
+
+        if was_baichuan_only and not self.baichuan_only:
+            # Baichuan reported HTTP(s) API support, re-read the host data (including the abilities) over HTTP(s)
+            _LOGGER.debug("Host %s: Baichuan reported HTTP(s) API support, re-reading host data over HTTP(s)", self._host)
+            return await self.get_host_data()
 
         self.construct_capabilities(warnings=False)
 
@@ -3127,13 +3138,20 @@ class Host:
 
             len_pak = len(firmware_pak)
 
+            if self.baichuan_only:
+                self._sw_upload_progress[channel] = 5
+                await self.baichuan.upload_firmware(firmware_pak, firmware_name, channel)
+                _LOGGER.debug("Finished uploading firmware to %s", self.camera_name(channel))
+                await self.wait_untill_firmware_update_complete(channel)
+                return
+
             # Check if firmware is correct
             param: dict[str, str | int] = {"restoreCfg": 0, "fileName": firmware_name}
             if self.is_nvr:
                 if channel is None:
                     ipcChnBit = 0
                 else:
-                    ipcChnBit = pow(2, channel)
+                    ipcChnBit = 1 << channel
                 param["ipcChnBit"] = str(ipcChnBit)
                 param["fileSize"] = len_pak
             body = [{"cmd": "UpgradePrepare", "action": 0, "param": param}]
@@ -3256,6 +3274,9 @@ class Host:
             raise InvalidContentTypeError(f"Update progress: {str(err)}") from err
         except NoDataError as err:
             raise NoDataError(f"Host: {self._host}:{self._port}: error obtaining update progress response") from err
+
+        if json_data[0].get("Baichuan_fallback_succes"):
+            return self.baichuan._upgrade_state
 
         if json_data[0]["code"] != 0:
             return False

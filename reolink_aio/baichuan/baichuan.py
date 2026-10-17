@@ -7,6 +7,7 @@ import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
+from math import ceil
 from time import monotonic
 from time import time as time_now
 from typing import TYPE_CHECKING, Any, Coroutine, Literal, overload
@@ -92,6 +93,7 @@ _LOGGER = logging.getLogger(__name__)
 KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
+MAX_MESS_SIZE = 38000  # bytes, max size of message including header. If mess size exceeds 40.000, the connection is closed by the camera.
 TALK_LEAD = 0.25  # seconds of audio kept buffered in the camera ahead of playback
 TALK_MAX_IN_FLIGHT = 16  # unacknowledged talk audio frames before waiting on the camera
 TALK_ACK_TIMEOUT = 5  # seconds
@@ -205,6 +207,7 @@ class Baichuan:
         self._dev_type: str = ""
         self._wired_power: bool = False
         self._new_firmware: int = 0
+        self._upgrade_state: int | bool = False  # online upgrade progress in %, False = not in progress
 
         # channel states
         self._dev_info: dict[int | None, dict[str, str]] = {}
@@ -309,6 +312,7 @@ class Baichuan:
         sub_channel: int | None = None,
         body: str | XML.Element = "",
         extension: str = "",
+        payload: bytes = b"",
         enc_type: EncType = EncType.AES,
         message_class: str = "1464",
         ch_id: int | None = None,
@@ -344,7 +348,7 @@ class Baichuan:
         body_bytes = body.encode("utf8")
         ext_bytes = ext.encode("utf8")
         ext_len = len(ext_bytes)
-        mess_len = ext_len + len(body_bytes)
+        mess_len = ext_len + len(body_bytes) + len(payload)
         payload_offset = ext_len
         if mess_id is None:
             self._mess_id = (self._mess_id + 1) % 16777216
@@ -366,7 +370,14 @@ class Baichuan:
         else:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param message_class '{message_class}'")
 
+        if len(header) + mess_len > MAX_MESS_SIZE:
+            raise InvalidParameterError(
+                f"Baichuan host {self._host}: cmd_id {cmd_id} message size {len(header) + mess_len} exceeds the maximum of {MAX_MESS_SIZE} bytes"
+            )
+
         enc_body_bytes = b""
+        if payload and message_class != "1464":
+            raise InvalidParameterError(f"Baichuan host {self._host}: a binary payload requires message_class '1464'")
         if mess_len > 0:
             if enc_type == EncType.BC:
                 enc_body_bytes = encrypt_baichuan(ext_bytes, ch_id) + encrypt_baichuan(body_bytes, ch_id)  # enc_offset = ch_id
@@ -374,6 +385,7 @@ class Baichuan:
                 enc_body_bytes = self._aes_encrypt(ext_bytes) + self._aes_encrypt(body_bytes)
             else:
                 raise InvalidParameterError(f"Baichuan host {self._host}: invalid param enc_type '{enc_type}'")
+            enc_body_bytes += payload
 
         # send message
         try:
@@ -382,7 +394,7 @@ class Baichuan:
             if retry <= 0 or cmd_id == 2:
                 raise
             _LOGGER.debug("%s, trying again", err)
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
         if TYPE_CHECKING:
             assert self._connection is not None
 
@@ -390,23 +402,26 @@ class Baichuan:
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if mess_len > 0:
                 ext_entr = "\n" if ext and body else ""
-                log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, body:\n{self._style_hide_password(ext) + ext_entr + self._style_hide_password(body)}"
+                payload_str = f" with payload length {len(payload)}" if payload else ""
+                log_mess = (
+                    f"Baichuan host {self._host}: writing cmd_id {cmd_id}{payload_str}, body:\n{self._style_hide_password(ext) + ext_entr + self._style_hide_password(body)}"
+                )
             else:
                 log_mess = f"Baichuan host {self._host}: writing cmd_id {cmd_id}, without body"
 
         try:
-            data, len_header, payload = await self._connection.send(header + enc_body_bytes, cmd_id, full_mess_id, channel, log_mess)
+            data, len_header, rec_payload = await self._connection.send(header + enc_body_bytes, cmd_id, full_mess_id, channel, log_mess)
         except ApiError as err:
             if retry <= 0 or err.rspCode != 400 or cmd_id == 2:
                 raise err
             _LOGGER.debug("%s, trying again in 1.5 s", str(err))
             await asyncio.sleep(1.5)  # give the battery cam time to wake
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
         except (ReolinkTimeoutError, ReolinkConnectionError) as err:
             if retry <= 0 or cmd_id == 2:
                 raise
             _LOGGER.debug("%s, trying again", err)
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
 
         # check full message id
         rec_mess_id = int.from_bytes(data[12:16], byteorder="little")
@@ -415,14 +430,14 @@ class Baichuan:
             if retry <= 0:
                 raise UnexpectedDataError(err_str)
             _LOGGER.debug("%s, trying again", str(err_str))
-            return await self.send(cmd_id, channel, sub_channel, body, extension, enc_type, message_class, ch_id, mess_id, retry)
+            return await self.send(cmd_id, channel, sub_channel, body, extension, payload, enc_type, message_class, ch_id, mess_id, retry)
 
         # decryption
         rec_body = self._decrypt(data, len_header, cmd_id, enc_type)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             ch_str = f" ch {channel}" if channel is not None else ""
-            payload_str = f" with payload length {len(payload)}" if len(payload) > 0 else ""
+            payload_str = f" with payload length {len(rec_payload)}" if len(rec_payload) > 0 else ""
             if len(rec_body) > 0:
                 _LOGGER.debug("Baichuan host %s: received cmd_id %s%s%s:\n%s", self._host, cmd_id, ch_str, payload_str, self._style_hide_password(rec_body))
             else:
@@ -3508,6 +3523,43 @@ class Baichuan:
         """Let the host check online if new firmware is available"""
         mess = await self.send(cmd_id=197)
         self._new_firmware = get_value_from_xml(mess, "hasNewFirmware", int) or 0
+
+    @http_cmd("UpgradeStatus")
+    async def UpgradeStatus(self, **_kwargs) -> None:
+        """Get the status of a running online firmware upgrade of the host"""
+        mess = await self.send(cmd_id=227)
+        data = get_keys_from_xml(mess, {"state": ("state", str), "downloadSize": ("downloadSize", int), "packetSize": ("packetSize", int)})
+        # possible states: none, downloading, updating, stopped, timeout, finish, imgerror
+        if data.get("state") not in ["downloading", "updating"]:
+            self._upgrade_state = False
+            return
+        packet_size = data.get("packetSize", 0)
+        if packet_size <= 0:
+            self._upgrade_state = 0
+            return
+        self._upgrade_state = min(round(100 * data.get("downloadSize", 0) / packet_size), 100)
+
+    @http_cmd("UpgradeOnline")
+    async def UpgradeOnline(self, **_kwargs) -> None:
+        """Start an online firmware upgrade of the host"""
+        await self.send(cmd_id=191, body=xmls.OnlineUpdate)
+
+    async def upload_firmware(self, firmware: bytes, file_name: str, channel: int | None = None) -> None:
+        """Upload a firmware file (.pak) to the host or to a channel of a NVR and start the upgrade"""
+        # Send the file info to prepare the upgrade
+        mess_id = (self._mess_id + 1) % 16777216
+        channel_bits = 0 if channel is None else 1 << channel
+        xml = xmls.UpgradeFileInfo.format(file_name=file_name, file_size=len(firmware), update_parameter=0, channel_bits=channel_bits)
+        await self.send(cmd_id=67, body=xml, mess_id=mess_id, retry=1)
+
+        # Send the firmware in chunks, all using the same mess_id
+        chunk_size = MAX_MESS_SIZE - 24 - len(xmls.BINARY_DATA_EXTENSION_XML.encode("utf8"))
+        n_chunks = ceil(len(firmware) / chunk_size)
+        for chunk in range(n_chunks):
+            firm_chunk = firmware[chunk * chunk_size : (chunk + 1) * chunk_size]
+            _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, n_chunks, self.http_api.camera_name(channel))
+            await self.send(cmd_id=67, extension=xmls.BINARY_DATA_EXTENSION_XML, payload=firm_chunk, mess_id=mess_id, retry=1)
+            self.http_api._sw_upload_progress[channel] = 5 + round(((chunk + 1) / n_chunks) * 55)
 
     async def reboot(self, channel: int | None = None) -> None:
         """Reboot the host device"""
