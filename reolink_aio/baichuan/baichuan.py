@@ -3068,17 +3068,30 @@ class Baichuan:
             "country_code": get_value_from_xml(mess, "countryCode", str),
         }
 
-    async def set_wifi(self, channel: int, ssid: str, password: str, wifi_channel: int = 0) -> None:
+    async def set_wifi(self, channel: int, ssid: str, password: str, wifi_channel: int = 0, check: bool = True) -> None:
         """Change the WiFi network the camera connects to (Baichuan cmd 117).
 
         Only the SSID, password and channel are changed; the camera's current security
         type, frequency policy, mode, NVR-SSID flag and country code are read from the
         device (cmd 116) and preserved. ``wifi_channel`` 0 means automatic.
 
-        WARNING: the camera does not validate the request. If the SSID or password is
-        wrong, or the new network is out of range, the camera drops off WiFi and has to
+        If ``check`` is True (the default), the target ``ssid`` must first be visible in a
+        scan of nearby networks; if it is not, this raises instead of writing, to avoid
+        knocking the camera offline. Pass ``check=False`` to skip the scan, for example for
+        a hidden/non-broadcast SSID.
+
+        WARNING: the camera does not validate the request itself. If the SSID or password
+        is wrong, or the new network is out of range, the camera drops off WiFi and has to
         be factory-reset to recover - so this only applies to WiFi models.
         """
+        if check:
+            scan = await self.send(cmd_id=116, channel=channel, body=xmls.WifiSSID.replace("<scanAp>0</scanAp>", "<scanAp>1</scanAp>"))
+            visible = [name.text for udid in XML.fromstring(scan).findall(".//udidList/udid") if (name := udid.find("name")) is not None and name.text]
+            if ssid not in visible:
+                raise InvalidParameterError(
+                    f"Baichuan host {self._host}: SSID '{ssid}' was not found in the WiFi scan {visible}, "
+                    "refusing to set it since the camera could lose connection, pass check=False to override (e.g. a hidden SSID)"
+                )
         current = await self.get_wifi_config(channel)
         body = xmls.WifiSet.format(
             ssid=ssid,
