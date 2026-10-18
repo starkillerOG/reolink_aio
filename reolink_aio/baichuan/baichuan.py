@@ -3051,6 +3051,31 @@ class Baichuan:
         mess = await self.send(cmd_id=116, channel=channel, body=xmls.WifiSSID)
         get_value_from_xml(mess, "ssid", str)
 
+    async def scan_wifi(self, channel: int) -> list[dict[str, Any]]:
+        """Scan for nearby WiFi access points (read-only).
+
+        Returns a list of access points, each a dict with ``ssid`` (str), ``signal``
+        (int, dBm), ``encrypted`` (bool) and ``type`` (int). Uses Baichuan cmd 116 with
+        ``scanAp=1`` (``get_wifi_ssid`` uses ``scanAp=0``). The camera performs the scan,
+        so it only works on WiFi models.
+        """
+        mess = await self.send(cmd_id=116, channel=channel, body=xmls.WifiScan)
+        root = XML.fromstring(mess)
+        access_points: list[dict[str, Any]] = []
+        for udid in root.findall(".//udidList/udid"):
+            ssid = get_value_from_xml(udid, "name", str)
+            if not ssid:
+                continue
+            access_points.append(
+                {
+                    "ssid": ssid,
+                    "signal": get_value_from_xml(udid, "signal", int),
+                    "encrypted": bool(get_value_from_xml(udid, "encrypt", int)),
+                    "type": get_value_from_xml(udid, "type", int),
+                }
+            )
+        return access_points
+
     async def get_wifi_signal(self, channel: int | None = None) -> None:
         """Get the wifi signal of the host"""
         mess = await self.send(cmd_id=115, channel=channel)

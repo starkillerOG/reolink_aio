@@ -405,6 +405,14 @@ WifiSSID = """
 </Wifi>
 </body>"""
 
+WifiScan = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<Wifi version="1.1">
+<scanAp>1</scanAp>
+</Wifi>
+</body>"""
+
 PreRecord = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
