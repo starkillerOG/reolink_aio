@@ -3051,6 +3051,47 @@ class Baichuan:
         mess = await self.send(cmd_id=116, channel=channel, body=xmls.WifiSSID)
         get_value_from_xml(mess, "ssid", str)
 
+    async def get_wifi_config(self, channel: int) -> dict[str, Any]:
+        """Get the camera's current WiFi configuration (read-only).
+
+        Returns the SSID, channel, security type, frequency policy, mode and country
+        code. The password is redacted by the camera and is not returned. Uses the same
+        Baichuan cmd 116 (scanAp=0) as ``get_wifi_ssid``, parsing the full response.
+        """
+        mess = await self.send(cmd_id=116, channel=channel, body=xmls.WifiSSID)
+        return {
+            "ssid": get_value_from_xml(mess, "ssid", str),
+            "channel": get_value_from_xml(mess, "channel", int),
+            "type": get_value_from_xml(mess, "type", int),
+            "freq_policy": get_value_from_xml(mess, "freqPolicy", int),
+            "mode": get_value_from_xml(mess, "mode", str),
+            "country_code": get_value_from_xml(mess, "countryCode", str),
+        }
+
+    async def set_wifi(self, channel: int, ssid: str, password: str, wifi_channel: int = 0) -> None:
+        """Change the WiFi network the camera connects to (Baichuan cmd 117).
+
+        Only the SSID, password and channel are changed; the camera's current security
+        type, frequency policy, mode, NVR-SSID flag and country code are read from the
+        device (cmd 116) and preserved. ``wifi_channel`` 0 means automatic.
+
+        WARNING: the camera does not validate the request. If the SSID or password is
+        wrong, or the new network is out of range, the camera drops off WiFi and has to
+        be factory-reset to recover - so this only applies to WiFi models.
+        """
+        current = await self.get_wifi_config(channel)
+        body = xmls.WifiSet.format(
+            ssid=ssid,
+            password=password,
+            wifi_channel=wifi_channel,
+            freq_policy=current["freq_policy"] if current["freq_policy"] is not None else 1,
+            mode=current["mode"] or "station",
+            wifi_type=current["type"] if current["type"] is not None else 1,
+            is_nvr_ssid=0,
+            country_code=current["country_code"] or "",
+        )
+        await self.send(cmd_id=117, channel=channel, body=body)
+
     async def get_wifi_signal(self, channel: int | None = None) -> None:
         """Get the wifi signal of the host"""
         mess = await self.send(cmd_id=115, channel=channel)

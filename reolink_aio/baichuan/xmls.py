@@ -405,6 +405,21 @@ WifiSSID = """
 </Wifi>
 </body>"""
 
+WifiSet = """
+<?xml version="1.0" encoding="UTF-8" ?>
+<body>
+<Wifi version="1.1">
+<freqPolicy>{freq_policy}</freqPolicy>
+<mode>{mode}</mode>
+<ssid>{ssid}</ssid>
+<key>{password}</key>
+<channel>{wifi_channel}</channel>
+<type>{wifi_type}</type>
+<isNVRSsid>{is_nvr_ssid}</isNVRSsid>
+<countryCode>{country_code}</countryCode>
+</Wifi>
+</body>"""
+
 PreRecord = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
