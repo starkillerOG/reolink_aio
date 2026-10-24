@@ -1553,6 +1553,10 @@ class Baichuan:
                 _LOGGER.debug("Reolink %s webhook event, sleeping: True", self.http_api.nvr_name)
             self.http_api._sleep[channel] = True
             cmd_ids.add(145)
+            if self._tamper_states.get(channel, False):
+                # Reset tamper state when going to sleep
+                self._tamper_states[channel] = False
+                cmd_ids.add(33)
 
         elif event == "wake":
             if self.http_api._sleep.get(channel):
