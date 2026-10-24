@@ -220,6 +220,7 @@ class Host:
         self._latest_sw_model_version: dict[str, NewSoftwareVersion] = {}
         self._latest_sw_version: dict[int | None, NewSoftwareVersion | str | Literal[False]] = {}
         self._sw_upload_progress: dict[int | None, int] = {}
+        self._new_online_firmware: int = 0
         self._updating: bool = False
         self._startup: bool = True
         self._new_devices: bool = False
@@ -2983,6 +2984,7 @@ class Host:
                     new_firmware = self.baichuan.new_firmware
                 else:
                     new_firmware = json_data[0].get("value", {}).get("newFirmware", 0)
+                self._new_online_firmware = new_firmware
             except (InvalidContentTypeError, LoginPrivacyModeError) as err:
                 _LOGGER.debug("CheckFirmware: %s", str(err))
             except NoDataError:
@@ -3035,10 +3037,7 @@ class Host:
         return {key: self.firmware_update_available(key) for key in ch_list}
 
     def firmware_update_available(self, channel: int | None = None) -> Literal[False] | NewSoftwareVersion | str:
-        if channel not in self._latest_sw_version:
-            return False
-
-        return self._latest_sw_version[channel]
+        return self._latest_sw_version.get(channel, False)
 
     async def update_firmware(self, channel: int | None = None) -> None:
         """Start update of firmware using API or direct upload."""
@@ -3063,20 +3062,27 @@ class Host:
 
             if channel is None:
                 # Online Updgrade of channels not yet available
-                body = [{"cmd": "UpgradeOnline"}]
-                try:
-                    await self.send_setting(body)
-                    await self._wait_untill_online_update_complete()
-                    await self.wait_untill_firmware_update_complete(channel)
-                    return
-                except ApiError as err:
-                    if err.rspCode == -30:  # same version
-                        _LOGGER.debug(
-                            "Reolink device API could not find new firmware, "
-                            "tring to download from the Reolink download center (https://reolink.com/download-center) and upload directly",
-                        )
-                    else:
-                        _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
+                if self._new_online_firmware == 1:
+                    body = [{"cmd": "UpgradeOnline"}]
+                    try:
+                        await self.send_setting(body)
+                        await self._wait_untill_online_update_complete()
+                        await self.wait_untill_firmware_update_complete(channel)
+                        return
+                    except ApiError as err:
+                        if err.rspCode == -30:  # same version
+                            _LOGGER.debug(
+                                "Reolink device API could not find new firmware, "
+                                "tring to download from the Reolink download center (https://reolink.com/download-center) and upload directly",
+                            )
+                        else:
+                            _LOGGER.debug("UpgradeOnline: returned error, tyring direct upload next: %s", err)
+                else:
+                    _LOGGER.debug(
+                        "Check Firmware did not report new online firmware for %s, "
+                        "trying to download from the Reolink download center (https://reolink.com/download-center) and upload directly",
+                        self.nvr_name,
+                    )
 
             self._sw_upload_progress[channel] = 3
             await self.upload_firmware(channel)
