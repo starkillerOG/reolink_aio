@@ -363,9 +363,7 @@ class Baichuan:
             raise InvalidParameterError(f"Baichuan host {self._host}: invalid param message_class '{message_class}'")
 
         if len(header) + mess_len > MAX_MESS_SIZE:
-            raise InvalidParameterError(
-                f"Baichuan host {self._host}: cmd_id {cmd_id} message size {len(header) + mess_len} exceeds the maximum of {MAX_MESS_SIZE} bytes"
-            )
+            raise InvalidParameterError(f"Baichuan host {self._host}: cmd_id {cmd_id} message size {len(header) + mess_len} exceeds the maximum of {MAX_MESS_SIZE} bytes")
 
         enc_body_bytes = b""
         if payload and message_class != "1464":
@@ -3513,7 +3511,9 @@ class Baichuan:
         chunk_size = MAX_MESS_SIZE - 24 - len(xmls.BINARY_DATA_EXTENSION_XML.encode("utf8"))
         n_chunks = ceil(len(firmware) / chunk_size)
         for chunk in range(n_chunks):
-            firm_chunk = firmware[chunk * chunk_size : (chunk + 1) * chunk_size]
+            chunk_start = chunk * chunk_size
+            chunk_end = (chunk + 1) * chunk_size
+            firm_chunk = firmware[chunk_start:chunk_end]
             _LOGGER.debug("Sending Reolink firmware chunk %i of total %i chunks to %s", chunk + 1, n_chunks, self.http_api.camera_name(channel))
             await self.send(cmd_id=67, extension=xmls.BINARY_DATA_EXTENSION_XML, payload=firm_chunk, mess_id=mess_id, retry=1)
             self.http_api._sw_upload_progress[channel] = 5 + round(((chunk + 1) / n_chunks) * 55)
