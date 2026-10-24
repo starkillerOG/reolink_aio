@@ -18,7 +18,6 @@ from xml.etree import ElementTree as XML
 from ..const import TIMEOUT, UNKNOWN
 from ..enums import ConnectionEnum
 from ..exceptions import (
-    LoginAccountDeviceError,
     ReolinkConnectionError,
     ReolinkError,
     ReolinkTimeoutSendACK,
@@ -143,11 +142,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
             self.nonce = get_value_from_xml(mess, "nc")
             pl = get_value_from_xml(mess, "pl")
             if pl is not None and "X25519" in pl:
-                raise LoginAccountDeviceError(
-                    f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
-                    "please switch the device back to a 'local device' by resetting it, for more instructions see "
-                    "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
-                )
+                self.account_device = True  # login may be blocked, LoginAccountDeviceError is raised if login fails
 
     async def drop_connection(self) -> None:
         """Drop the connection without sending a close message"""

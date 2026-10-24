@@ -149,6 +149,7 @@ class Baichuan:
         self._username: str = username
         self._password: str = password
         self._nonce: str | None = None
+        self._account_device: bool = False
         self._user_hash: str | None = None
         self._password_hash: str | None = None
         self._aes_key: bytes | None = None
@@ -733,6 +734,7 @@ class Baichuan:
         """Get the nonce needed for the modern login"""
         retry = retry - 1
         self._nonce = None
+        self._account_device = False
 
         # First connect, it may already provide the nonce
         try:
@@ -744,25 +746,30 @@ class Baichuan:
             return await self._get_nonce(retry)
         if self._connection is not None:
             self._nonce = self._connection.nonce
+            self._account_device = self._connection.account_device
 
         if self._nonce is None:
             # send only a header to receive the nonce (alternatively use legacy login)
             mess = await self.send(cmd_id=1, enc_type=EncType.BC, message_class="1465")
-            sig_ver = get_value_from_xml(mess, "sigVer")
-            if sig_ver == "v3":
-                raise LoginAccountDeviceError(
-                    f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
-                    "please switch the device back to a 'local device' by resetting it, for more instructions see "
-                    "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
-                )
+            if get_value_from_xml(mess, "sigVer") == "v3":
+                self._account_device = True  # login may be blocked, LoginAccountDeviceError is raised if login fails
             self._nonce = get_value_from_xml(mess, "nonce")
             if self._nonce is None:
+                if self._account_device:
+                    raise self._account_device_error()
                 raise UnexpectedDataError(f"Baichuan host {self._host}: could not find nonce in response:\n{mess}")
 
         aes_key_str = md5_str_modern(f"{self._nonce}-{self._password}")[0:16]
         self._aes_key = aes_key_str.encode("utf8")
 
         return self._nonce
+
+    def _account_device_error(self) -> LoginAccountDeviceError:
+        return LoginAccountDeviceError(
+            f"Baichuan host {self._host}: is setup as 'account device' which blocks local login, "
+            "please switch the device back to a 'local device' by resetting it, for more instructions see "
+            "https://support.reolink.com/articles/61043321354265-Introduction-to-Reolink-Local-Device-and-Account-Device/"
+        )
 
     async def _send_and_parse(self, cmd_id: int, channel: int | None = None) -> None:
         """Send the command and parse the response"""
@@ -1803,6 +1810,12 @@ class Baichuan:
                     if err.rspCode == 401:
                         set_last_login = False  # Allow direct throwing of the CredentialsInvalidError again
                         raise CredentialsInvalidError(f"Baichuan host {self._host}: Invalid credentials during login") from err
+                    if self._account_device:  # Normally rspCode 406 is returned when setup as Account device
+                        raise self._account_device_error() from err
+                    raise
+                except ReolinkError as err:
+                    if self._account_device:
+                        raise self._account_device_error() from err
                     raise
                 self._logged_in = True
                 self._login_sucess = True

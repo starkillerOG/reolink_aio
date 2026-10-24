@@ -48,6 +48,7 @@ class BaichuanBaseConnection:
         self._protocol: BaichuanBaseClientProtocol | None = None
         self.time_send: float = 0
         self.nonce: str | None = None
+        self.account_device: bool = False
 
     async def connect(self):
         """Initialize the protocol and make the connection if needed."""
@@ -71,6 +72,7 @@ class BaichuanBaseConnection:
                         return  # connection already opened in the meantime
                     _LOGGER.debug("Baichuan host %s: opening %s connection...", self._host, self.con_type.value.upper())
                     self.nonce = None
+                    self.account_device = False
                     self._transport, self._protocol = await self._create_connection()
         except asyncio.TimeoutError as err:
             raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
