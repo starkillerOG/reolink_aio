@@ -2102,7 +2102,7 @@ class Baichuan:
                     # cmd_id 483 makes the chime rattle a bit, just assume its supported
 
             if self.http_api.is_nvr:
-                batteryMode = self.api_version("batteryMode", channel)  # behind a NVR/Hub the camera has its own abilities
+                batteryMode = self.api_version("batteryMode", channel)
             else:
                 batteryMode = self.api_version("batteryMode")
             if batteryMode > 0:
