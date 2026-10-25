@@ -2977,6 +2977,7 @@ class Host:
         if None in ch_list and self.supported(None, "update"):
             body = [{"cmd": "CheckFirmware"}]
 
+            self._new_online_firmware = 0
             try:
                 async with asyncio.timeout(15):
                     json_data = await self.send(body, expected_response_type="json")
