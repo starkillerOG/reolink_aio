@@ -2130,8 +2130,11 @@ class Baichuan:
                     self._add_capability("hardwired_chime", channel)
                     # cmd_id 483 makes the chime rattle a bit, just assume its supported
 
-            batteryMode = self.api_version("batteryMode")
-            if not self.http_api.is_nvr and batteryMode > 0:
+            if self.http_api.is_nvr:
+                batteryMode = self.api_version("batteryMode", channel)
+            else:
+                batteryMode = self.api_version("batteryMode")
+            if batteryMode > 0:
                 self._add_capability("work_mode_battery", channel)
                 if (batteryMode >> 6) & 1:  # bit 6
                     self._add_capability("work_mode_powered", channel)
