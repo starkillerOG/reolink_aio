@@ -28,6 +28,8 @@ send_response_t = tuple[bytes, int, bytes]
 class BaichuanBaseConnection:
     """Reolink Baichuan base connection."""
 
+    _connect_timeout: int | float = TIMEOUT  # seconds, give up opening the connection if it is not established within this time
+
     def __init__(
         self,
         host: str,
@@ -66,7 +68,7 @@ class BaichuanBaseConnection:
                 _LOGGER.warning("Baichuan host %s: Previous receive futures did not finish before opening a new connection", self._host)
 
         try:
-            async with asyncio.timeout(TIMEOUT):
+            async with asyncio.timeout(self._connect_timeout):
                 async with self._mutex:
                     if self.connection_open:
                         return  # connection already opened in the meantime
@@ -75,7 +77,9 @@ class BaichuanBaseConnection:
                     self.account_device = False
                     self._transport, self._protocol = await self._create_connection()
         except asyncio.TimeoutError as err:
-            raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error") from err
+            raise ReolinkConnectionError(
+                f"Baichuan host {self._host}: Timeout of {self._connect_timeout} sec opening {self.con_type.value.upper()} connection to port {self._port}"
+            ) from err
         except (ConnectionResetError, OSError) as err:
             raise ReolinkConnectionError(f"Baichuan host {self._host}: Connection error: {str(err)}") from err
 

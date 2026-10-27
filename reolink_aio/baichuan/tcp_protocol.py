@@ -14,6 +14,7 @@ class BaichuanTcpConnection(BaichuanBaseConnection):
     """Reolink Baichuan TCP connection."""
 
     _transport: asyncio.Transport
+    _connect_timeout = 10  # seconds, give up opening the TCP connection if it is not established within this time
 
     def __init__(
         self,
