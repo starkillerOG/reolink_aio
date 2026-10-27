@@ -48,7 +48,7 @@ UDP_MAX_RESENDS = 3  # number of resends after a timeout before giving up
 UDP_RESEND_MIN_INTERVAL = 0.1  # seconds, minimal time between resends of a packet requested by ACKs
 UDP_SEND_WINDOW = 10  # maximum number of send packets waiting on an ACK, the camera drops packets if too many are send at once
 UDP_CON_RESEND_INTERVAL = 0.5  # seconds, resend a UDP connection message (C2D_S/C2D_C) if no response is received within this time
-UDP_CON_TIMEOUT = 5  # seconds, give up on a UDP connection message (C2D_S/C2D_C) if no response is received within this time
+UDP_CON_TIMEOUT = 10  # seconds, give up on a UDP connection message (C2D_S/C2D_C) if no response is received within this time
 
 _LOGGER = logging.getLogger(__name__)
 
