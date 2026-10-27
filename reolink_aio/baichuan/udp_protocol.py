@@ -47,6 +47,7 @@ UDP_RESEND_TIMEOUT = 1.0  # seconds, resend a packet if no ACK is received withi
 UDP_MAX_RESENDS = 3  # number of resends after a timeout before giving up
 UDP_RESEND_MIN_INTERVAL = 0.1  # seconds, minimal time between resends of a packet requested by ACKs
 UDP_SEND_WINDOW = 10  # maximum number of send packets waiting on an ACK, the camera drops packets if too many are send at once
+UDP_CON_RESEND_INTERVAL = 0.5  # seconds, resend a UDP connection message (C2D_S/C2D_C) if no response is received within this time
 UDP_CON_TIMEOUT = 5  # seconds, give up on a UDP connection message (C2D_S/C2D_C) if no response is received within this time
 
 _LOGGER = logging.getLogger(__name__)
@@ -312,11 +313,25 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         cmd_id = -1
         log_mess = f"Baichuan host {self._host}:{self._local_port}>{self._port}: send UDP message: {body}"
 
-        recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess, timeout=UDP_CON_TIMEOUT)
+        # UDP connection messages are not acknowledged, resend them untill a response is received
+        resend_task = self._loop.create_task(self._resend_udp_con(mess, trans_id))
+        try:
+            recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess, timeout=UDP_CON_TIMEOUT)
+        finally:
+            resend_task.cancel()
         recv_mess = recv_payload.decode("utf8")
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, pretty_xml(recv_mess))
         return recv_mess
+
+    async def _resend_udp_con(self, mess: bytes, trans_id: int) -> None:
+        """Periodically resend a UDP connection message"""
+        while True:
+            await asyncio.sleep(UDP_CON_RESEND_INTERVAL)
+            if self._transport is None:
+                return
+            _LOGGER.debug("Baichuan host %s: no response on UDP connection message with mess_id %s, resending", self._host, trans_id)
+            self._transport.sendto(mess, (self._host, self._port))
 
     @property
     def udp_connected(self) -> bool:
