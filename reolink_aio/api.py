@@ -1417,31 +1417,14 @@ class Host:
         original_port = self._port
         original_https = self._use_https
 
-        # try HTTPs port
-        first_exc = None
-        self._port = 443
-        self.enable_https(True)
-        try:
-            await self.login()
-            return
-        except LoginError as exc:
-            first_exc = exc
-
-        # try HTTP port
-        self._port = 80
-        self.enable_https(False)
-        try:
-            await self.login()
-            return
-        except LoginError:
-            pass
-
         # check if HTTP(s) API is supported
+        baichuan_available = True
         try:
-            await self.baichuan.get_host_data()
+            await self.baichuan.get_abilities()
         except (CredentialsInvalidError, LoginAccountDeviceError):
             raise
         except ReolinkError as exc:
+            baichuan_available = False
             _LOGGER.debug("%s, can not check if HTTP api is supported", exc)
         if self.baichuan_only:
             self._port = None
@@ -1449,14 +1432,41 @@ class Host:
             return
 
         # see which ports are enabled using baichuan protocol on port 9000
-        try:
-            await self.baichuan.get_ports()
-        except (CredentialsInvalidError, LoginAccountDeviceError):
-            raise
-        except ReolinkError as exc:
-            _LOGGER.debug(exc)
-            # Raise original exception instead of the retry fallback exception
-            raise first_exc from exc
+        if baichuan_available:
+            try:
+                await self.baichuan.get_ports()
+            except (CredentialsInvalidError, LoginAccountDeviceError):
+                raise
+            except ReolinkError as exc:
+                baichuan_available = False
+                _LOGGER.debug(exc)
+
+        # If there are HTTP(s) ports enabled, try them.
+        ports_to_try: list[tuple[int, bool]] = []
+        if baichuan_available:
+            if self.baichuan.https_enabled:
+                ports_to_try.append((self.baichuan.https_port or 443, True))
+            if self.baichuan.http_enabled:
+                ports_to_try.append((self.baichuan.http_port or 80, False))
+        if not baichuan_available or (self.baichuan.https_enabled is None and self.baichuan.http_enabled is None):
+            ports_to_try.extend([(443, True), (80, False)])
+
+        first_exc: LoginError | None = None
+        for port, https in ports_to_try:
+            self._port = port
+            self.enable_https(https)
+            try:
+                await self.login()
+                return
+            except LoginError as exc:
+                if first_exc is None:
+                    first_exc = exc
+
+        if first_exc is None:
+            first_exc = LoginError(f"HTTP(s) ports not enabled on host '{self._host}'")
+        if not baichuan_available:
+            # can not open ports without the baichuan protocol
+            raise first_exc
 
         # check privacy mode
         try:
@@ -1490,11 +1500,11 @@ class Host:
             # give the camera some time to startup the HTTP API server
             await asyncio.sleep(5)
 
-        if self.baichuan.https_enabled and self.baichuan.https_port is not None:
-            self._port = self.baichuan.https_port
+        if self.baichuan.https_enabled:
+            self._port = self.baichuan.https_port or 443
             self.enable_https(True)
-        elif self.baichuan.http_enabled and self.baichuan.http_port is not None:
-            self._port = self.baichuan.http_port
+        elif self.baichuan.http_enabled:
+            self._port = self.baichuan.http_port or 80
             self.enable_https(False)
         else:
             raise LoginError(f"Failed to open HTTPs port on host '{self._host}' using baichuan, altough no errors returned by API") from first_exc
@@ -6150,6 +6160,8 @@ class Host:
 
         if not is_login_logout:
             await self._login_open_port()
+            if self.baichuan_only:  # another check needed in case this is the first command
+                return await self._baichuan_alternative(body, expected_response_type)
 
         if not param:
             param = {}
