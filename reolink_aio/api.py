@@ -89,6 +89,7 @@ MANUFACTURER = "Reolink"
 DEFAULT_STREAM = "sub"
 DEFAULT_PROTOCOL = "rtmp"
 DEFAULT_TIMEOUT = 30  # seconds
+SOCK_CONNECT_TIMEOUT = 10  # seconds, give up opening the TCP connection of a HTTP(s) request if it is not established within this time
 RETRY_ATTEMPTS = 3
 MAX_CHUNK_ITEMS = 35
 DEFAULT_RTMP_AUTH_METHOD = "PASSWORD"
@@ -182,7 +183,7 @@ class Host:
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
         # Connection session
-        self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout, connect=timeout, sock_connect=timeout, sock_read=timeout)
+        self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout, connect=timeout, sock_connect=min(timeout, SOCK_CONNECT_TIMEOUT), sock_read=timeout)
         self._aiohttp_session_internall: bool = True
         if aiohttp_get_session_callback is not None:
             self._get_aiohttp_session = aiohttp_get_session_callback
