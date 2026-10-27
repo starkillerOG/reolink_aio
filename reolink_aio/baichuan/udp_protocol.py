@@ -47,6 +47,7 @@ UDP_RESEND_TIMEOUT = 1.0  # seconds, resend a packet if no ACK is received withi
 UDP_MAX_RESENDS = 3  # number of resends after a timeout before giving up
 UDP_RESEND_MIN_INTERVAL = 0.1  # seconds, minimal time between resends of a packet requested by ACKs
 UDP_SEND_WINDOW = 10  # maximum number of send packets waiting on an ACK, the camera drops packets if too many are send at once
+UDP_CON_TIMEOUT = 5  # seconds, give up on a UDP connection message (C2D_S/C2D_C) if no response is received within this time
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -279,14 +280,14 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
 
         return bytes.fromhex(MAGIC_UDP_BC) + host_id_bytes + bytes.fromhex("00000000") + mess_id_bytes + mess_len_bytes
 
-    async def _send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
+    async def _send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "", timeout: int | float = TIMEOUT) -> send_response_t:
         """Send a message and wait for the response"""
-        return await super().send(data, cmd_id, full_mess_id, channel, log_mess)
+        return await super().send(data, cmd_id, full_mess_id, channel, log_mess, timeout)
 
-    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
+    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "", timeout: int | float = TIMEOUT) -> send_response_t:
         """Wrap the BC message in a UDP header, send the message and wait for the response"""
         udp_header = await self._construct_udp_header(len(data))
-        return await self._send(udp_header + data, cmd_id, full_mess_id, channel, log_mess)
+        return await self._send(udp_header + data, cmd_id, full_mess_id, channel, log_mess, timeout)
 
     async def send_without_wait(self, data: bytes, cmd_id: int | None = None, timeout: int | float = TIMEOUT) -> None:
         """Wrap the BC message in a UDP header, send a message without waiting"""
@@ -311,7 +312,7 @@ class BaichuanUdpConnection(BaichuanBaseConnection):
         cmd_id = -1
         log_mess = f"Baichuan host {self._host}:{self._local_port}>{self._port}: send UDP message: {body}"
 
-        recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess)
+        recv_payload, _, _ = await self._send(mess, cmd_id, trans_id, log_mess=log_mess, timeout=UDP_CON_TIMEOUT)
         recv_mess = recv_payload.decode("utf8")
         if _LOGGER.isEnabledFor(logging.DEBUG):
             _LOGGER.debug("Baichuan host %s:%s<%s: received UDP message:\n%s", self._host, self._local_port, self._port, pretty_xml(recv_mess))

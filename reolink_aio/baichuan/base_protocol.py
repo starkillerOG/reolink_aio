@@ -124,7 +124,7 @@ class BaichuanBaseConnection:
             _LOGGER.debug("Baichuan host %s: writing %s without waiting got cancelled", self._host, cmd_str)
             raise
 
-    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "") -> send_response_t:
+    async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "", timeout: int | float = TIMEOUT) -> send_response_t:
         """Send a message and wait for the response"""
         # check for simultaneous cmd_ids with same full_mess_id
         if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
@@ -149,7 +149,7 @@ class BaichuanBaseConnection:
             _LOGGER.debug(log_mess)
 
         try:
-            async with asyncio.timeout(TIMEOUT):
+            async with asyncio.timeout(timeout):
                 async with self._mutex:
                     self._write(data, cmd_id, full_mess_id)
                 response = await self.receive_futures[cmd_id][full_mess_id]
