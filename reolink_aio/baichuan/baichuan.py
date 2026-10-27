@@ -1975,42 +1975,46 @@ class Baichuan:
                 enc_range.append(enc_data)
                 self._has_subStream[ch] = encodeTable.get("mainStream", "main") != encodeTable.get("subStream", "sub")
 
+    async def get_abilities(self) -> None:
+        """Fetch the Baichuan abilities and check if the HTTP(s) API is supported."""
+        mess = await self.send(cmd_id=199)
+
+        root = XML.fromstring(mess)
+        for support in root:
+            for item in support.findall("item"):
+                channel = self._get_channel_from_xml_element(item, "chnID")
+                if channel is None:
+                    continue
+                # check for sub channels
+                self.http_api._sub_channels.setdefault(channel, {None})
+                for sub_item in item.findall("subItem"):
+                    sub_channel = get_value_from_xml(sub_item, "chnID", int)
+                    if sub_channel is None:
+                        continue
+                    self.http_api._sub_channels[channel].add(sub_channel)
+                    self._abilities.setdefault(channel, {})[sub_channel] = sub_item
+                    item.remove(sub_item)
+                # channel item
+                self._abilities.setdefault(channel, {})[None] = item
+                support.remove(item)
+
+            self._abilities.setdefault(None, {})[None] = support
+
+        # check if HTTP(s) API is supported
+        netPort = self.api_version("netPort", no_key_return=55)
+        self.http_api.baichuan_only = (netPort & 0x3F) <= 1
+        if bool(netPort & 0x40):
+            self.connection_type = ConnectionEnum.udp_tcp
+
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
         # Get Baichuan capabilities
         try:
-            mess = await self.send(cmd_id=199)
+            await self.get_abilities()
         except (CredentialsInvalidError, LoginAccountDeviceError):
             raise
         except ReolinkError as err:
             _LOGGER.debug("Baichuan host %s: Could not obtain abilities (cmd_id 199): %s", self._host, str(err).replace(f"Baichuan host {self._host}: ", ""))
-        else:
-            root = XML.fromstring(mess)
-            for support in root:
-                for item in support.findall("item"):
-                    channel = self._get_channel_from_xml_element(item, "chnID")
-                    if channel is None:
-                        continue
-                    # check for sub channels
-                    self.http_api._sub_channels.setdefault(channel, {None})
-                    for sub_item in item.findall("subItem"):
-                        sub_channel = get_value_from_xml(sub_item, "chnID", int)
-                        if sub_channel is None:
-                            continue
-                        self.http_api._sub_channels[channel].add(sub_channel)
-                        self._abilities.setdefault(channel, {})[sub_channel] = sub_item
-                        item.remove(sub_item)
-                    # channel item
-                    self._abilities.setdefault(channel, {})[None] = item
-                    support.remove(item)
-
-                self._abilities.setdefault(None, {})[None] = support
-
-            # check if HTTP(s) API is supported
-            netPort = self.api_version("netPort", no_key_return=55)
-            self.http_api.baichuan_only = (netPort & 0x3F) <= 1
-            if bool(netPort & 0x40):
-                self.connection_type = ConnectionEnum.udp_tcp
 
         # Host capabilities
         self.capabilities.setdefault(None, {}).setdefault(None, set())
@@ -2021,11 +2025,11 @@ class Baichuan:
         if self.api_version("reboot") > 0:
             self._add_capability("reboot")
         if (io_inputs := self.api_version("IOInputPortNum")) > 0:
-            channel = None if self.http_api._is_nvr else 0
-            self._io_inputs[channel] = list(range(0, io_inputs))
+            io_channel = None if self.http_api._is_nvr else 0
+            self._io_inputs[io_channel] = list(range(0, io_inputs))
         if (io_outputs := self.api_version("IOOutputPortNum")) > 0:
-            channel = None if self.http_api._is_nvr else 0
-            self._io_outputs[channel] = list(range(0, io_outputs))
+            io_channel = None if self.http_api._is_nvr else 0
+            self._io_outputs[io_channel] = list(range(0, io_outputs))
         host_coroutines: list[tuple[Any, Coroutine]] = []
         host_coroutines.append(("network_info", self.get_network_info()))
         host_coroutines.append(("ability_info", self._get_ability_info()))
