@@ -64,6 +64,7 @@ from ..utils import (
     to_reolink_time_id,
 )
 from . import xmls
+from .media_decoder import decode_media_stream, i_frame_to_jpeg
 from .tcp_protocol import BaichuanTcpConnection
 from .udp_protocol import BaichuanUdpConnection
 from .util import (
@@ -77,7 +78,6 @@ from .util import (
     get_keys_from_xml,
     get_value_from_xml,
     http_cmd,
-    i_frame_to_jpeg,
     md5_str_modern,
     pretty_xml,
 )
@@ -2960,46 +2960,12 @@ class Baichuan:
         )
         _mess, payload = await self.send_payload(cmd_id=298, body=xml)
 
-        # parse stream header
-        stream_header = payload[0:32]
-        magic = stream_header[0:4]
-        # width = int.from_bytes(stream_header[8:12], byteorder="little")
-        # height = int.from_bytes(stream_header[12:16], byteorder="little")
-        # frame_rate = stream_header[17]
-        # start_year = 1900 + stream_header[18]
-        if magic != b"1001":
-            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past payload did not start with stream header magic b'1001' but with {magic!r}")
+        stream = decode_media_stream(payload, first_i_frame_only=True)
+        if not stream.i_frame_indices:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past no i-frame found in media stream, first bytes: {payload[0:30]!r}")
 
-        # search magic
-        try:
-            # search magic
-            start = payload[32::].index(b"00dc")
-        except ValueError as err:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past frame magic b'00dc' not found, first bytes: {payload[32:62]!r}") from err
-        idx = 32 + start
-
-        # parse frame header
-        idx_start = idx + 12
-        idx_end = idx_start + 4
-        header_len = 24 + int.from_bytes(payload[idx_start:idx_end], byteorder="little")
-        idx_end = idx + header_len
-        frame_header = payload[idx:idx_end]
-        idx += header_len
-        # magic = frame_header[0:4]
-        # encoding = frame_header[4:8].decode("utf8")
-        frame_len = int.from_bytes(frame_header[8:12], byteorder="little")
-        # frame_time = int.from_bytes(frame_header[24:28], byteorder="little")
-        # frame_microsecond = int.from_bytes(frame_header[16:20], byteorder="little")
-        # formatted_time = datetime.fromtimestamp(frame_time).strftime("%Y-%m-%d %H:%M:%S")
-
-        # extract frame
-        idx_end = idx + frame_len
-        frame = payload[idx:idx_end]
-        idx += frame_len
-
-        image = await i_frame_to_jpeg(frame, ffmpeg)
-
-        return image
+        frame = stream.video_frames[stream.i_frame_indices[0]]
+        return await i_frame_to_jpeg(frame, ffmpeg)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
