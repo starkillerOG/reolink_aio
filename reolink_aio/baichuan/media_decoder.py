@@ -33,6 +33,13 @@ class MediaStream:
     audio_frames: list[bytes] = field(default_factory=list)
     skipped_bytes: int = 0
 
+    async def to_jpeg(self, ffmpeg: str = "ffmpeg") -> bytes:
+        """Convert the first i-frame of the stream to a JPEG image using ffmpeg"""
+        if not self.i_frame_indices:
+            raise UnexpectedDataError("Media stream does not contain a i-frame to convert to a JPEG image")
+        frame = self.video_frames[self.i_frame_indices[0]]
+        return await asyncio.shield(_run_ffmpeg(["-i", "pipe:0", "-f", "image2", "pipe:1"], frame, ffmpeg, "Reolink frame to JPEG image"))
+
 
 async def _run_ffmpeg(args: list[str], stdin: bytes, ffmpeg: str, description: str) -> bytes:
     """Run ffmpeg feeding stdin and return stdout"""
@@ -50,11 +57,6 @@ async def _run_ffmpeg(args: list[str], stdin: bytes, ffmpeg: str, description: s
     if process.returncode != 0:
         raise UnexpectedDataError(f"Unexpected error while converting {description} using ffmpeg: {stderr.decode(errors='replace')}")
     return stdout
-
-
-async def i_frame_to_jpeg(frame: bytes, ffmpeg: str = "ffmpeg") -> bytes:
-    """Convert a i-frame from a Reolink stream to a JPEG image"""
-    return await asyncio.shield(_run_ffmpeg(["-i", "pipe:0", "-f", "image2", "pipe:1"], frame, ffmpeg, "Reolink frame to JPEG image"))
 
 
 def decode_media_stream(payload: bytes, first_i_frame_only: bool = False) -> MediaStream:

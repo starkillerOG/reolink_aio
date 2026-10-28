@@ -64,7 +64,7 @@ from ..utils import (
     to_reolink_time_id,
 )
 from . import xmls
-from .media_decoder import decode_media_stream, i_frame_to_jpeg
+from .media_decoder import decode_media_stream
 from .tcp_protocol import BaichuanTcpConnection
 from .udp_protocol import BaichuanUdpConnection
 from .util import (
@@ -2961,11 +2961,7 @@ class Baichuan:
         _mess, payload = await self.send_payload(cmd_id=298, body=xml)
 
         stream = decode_media_stream(payload, first_i_frame_only=True)
-        if not stream.i_frame_indices:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past no i-frame found in media stream, first bytes: {payload[0:30]!r}")
-
-        frame = stream.video_frames[stream.i_frame_indices[0]]
-        return await i_frame_to_jpeg(frame, ffmpeg)
+        return await stream.to_jpeg(ffmpeg)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
