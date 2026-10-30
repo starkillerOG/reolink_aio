@@ -39,6 +39,8 @@ class MediaStream:
     i_frame_indices: list[int] = field(default_factory=list)
     audio_frames: list[bytes] = field(default_factory=list)
     skipped_bytes: int = 0
+    duplicate_frames: int = 0
+    skipped_audio_frames: int = 0
 
     async def to_jpeg(self, ffmpeg: str = "ffmpeg") -> bytes:
         """Convert the first i-frame of the stream to a JPEG image using ffmpeg"""
@@ -57,7 +59,7 @@ class MediaStream:
         """Mux the stream into an MPEG transport stream, keeping the timestamp of each video frame"""
         if not self.video_frames:
             raise UnexpectedDataError("Media stream has no video frames")
-        audio = self.audio_codec == "aac" and len(self.audio_frames[0]) > 2
+        audio = self.audio_codec == "aac" and bool(self.audio_frames) and len(self.audio_frames[0]) > 2
         if self.audio_frames and not audio:
             _LOGGER.debug("Media stream audio codec '%s' not supported for mp4, dropping audio", self.audio_codec)
         muxer = MpegTsMuxer(self.video_codec, audio)
@@ -89,6 +91,13 @@ def decode_media_stream(payload: bytes, first_i_frame_only: bool = False) -> Med
             if idx + 24 > len(payload):
                 break
             codec, frame_len, add_header_len, microseconds = struct.unpack_from("<4sIII", payload, idx + 4)
+            start = idx + 24 + add_header_len
+            end = start + frame_len
+            if stream.video_frames and len(stream.video_frames[-1]) == frame_len and stream.video_frames[-1] == payload[start:end]:
+                # camera sometimes sends the same frame twice, skip the duplicate
+                stream.duplicate_frames += 1
+                idx = end + (-frame_len % 8)
+                continue
             stream.video_codec = codec.decode("utf8", errors="replace")
             stream.frame_microseconds.append(microseconds)
             if stream.start_time is None and add_header_len >= 4 and idx + 28 <= len(payload):
@@ -99,9 +108,7 @@ def decode_media_stream(payload: bytes, first_i_frame_only: bool = False) -> Med
             if magic == MAGIC_VIDEO[0]:
                 stream.i_frame_indices.append(len(stream.video_frames))
             # extract frame, frames are padded to 8 bytes
-            idx += 24 + add_header_len
-            end = idx + frame_len
-            stream.video_frames.append(payload[idx:end])
+            stream.video_frames.append(payload[start:end])
             idx = end + (-frame_len % 8)
             if first_i_frame_only and stream.i_frame_indices:
                 break
@@ -111,7 +118,11 @@ def decode_media_stream(payload: bytes, first_i_frame_only: bool = False) -> Med
             (frame_len,) = struct.unpack_from("<H", payload, idx + 4)
             idx += 8
             end = idx + frame_len
-            stream.audio_frames.append(payload[idx:end])
+            if stream.video_frames:
+                stream.audio_frames.append(payload[idx:end])
+            else:
+                # pre-record audio sent before the first video frame, drop it to keep audio in sync with video
+                stream.skipped_audio_frames += 1
             idx = end + (-frame_len % 8)
         else:
             # unknown data, search next magic
@@ -124,6 +135,10 @@ def decode_media_stream(payload: bytes, first_i_frame_only: bool = False) -> Med
         _LOGGER.debug("Media stream truncated, last frame is %s bytes short", idx - len(payload))
     if stream.skipped_bytes:
         _LOGGER.debug("Media stream decoder skipped %s bytes of unknown data", stream.skipped_bytes)
+    if stream.duplicate_frames:
+        _LOGGER.debug("Media stream decoder skipped %s duplicate video frames", stream.duplicate_frames)
+    if stream.skipped_audio_frames:
+        _LOGGER.debug("Media stream decoder dropped %s audio frames received before the first video frame", stream.skipped_audio_frames)
     return stream
 
 
