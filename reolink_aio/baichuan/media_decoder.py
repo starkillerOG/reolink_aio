@@ -8,7 +8,7 @@ import struct
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ..exceptions import UnexpectedDataError
+from ..exceptions import InvalidParameterError, UnexpectedDataError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -129,16 +129,19 @@ def decode_media_stream(payload: bytes, first_i_frame_only: bool = False) -> Med
 
 async def _run_ffmpeg(args: list[str], stdin: bytes, ffmpeg: str, description: str) -> bytes:
     """Run ffmpeg feeding stdin and return stdout"""
-    process = await asyncio.create_subprocess_exec(
-        ffmpeg,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        *args,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError as err:
+        raise InvalidParameterError(f"ffmpeg not found at '{ffmpeg}', ffmpeg needs to be installed for converting {description}") from err
     stdout, stderr = await process.communicate(stdin)
     if process.returncode != 0:
         raise UnexpectedDataError(f"Unexpected error while converting {description} using ffmpeg: {stderr.decode(errors='replace')}")
