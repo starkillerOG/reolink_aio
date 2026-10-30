@@ -33,7 +33,8 @@ class AdpcmEncoder:
     """Streaming IMA ADPCM encoder producing DVI-4 blocks.
 
     Each block is a 4 byte header (first sample as i16 LE, step index, 0)
-    followed by `length_per_encoder` 4-bit codes, so a block holds
+    followed by `length_per_encoder` 4-bit codes (two per byte, the first one
+    in the high nibble as in DVI-4 and the Reolink client), so a block holds
     `length_per_encoder + 1` samples (1025 samples = 64 ms at 16 kHz for the
     usual 1024). The step index carries over between blocks like one
     continuous stream. PCM that does not fill a whole block is kept for the
@@ -68,7 +69,7 @@ class AdpcmEncoder:
         predictor = samples[0]
         index = self._index
         block = bytearray(struct.pack("<hBB", predictor, index, 0))
-        low: int | None = None
+        first: int | None = None
         for sample in samples[1:]:
             step = _STEP_TABLE[index]
             diff = sample - predictor
@@ -90,11 +91,11 @@ class AdpcmEncoder:
                 delta += step >> 2
             predictor = max(-32768, min(32767, predictor - delta if code & 8 else predictor + delta))
             index = max(0, min(88, index + _INDEX_TABLE[code & 7]))
-            if low is None:
-                low = code
+            if first is None:
+                first = code
             else:
-                block.append(low | (code << 4))
-                low = None
+                block.append((first << 4) | code)  # DVI-4 (RFC 3551): first sample in the high nibble, like the Reolink client
+                first = None
         self._index = index
         return bytes(block)
 
