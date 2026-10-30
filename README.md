@@ -106,6 +106,34 @@ if __name__ == "__main__":
     asyncio.run(print_mac_address())
 ````
 
+### Two-way audio example
+Cameras and doorbells with a speaker can play audio, e.g. a TTS message, over the Baichuan protocol (no RTSP or go2rtc needed).
+`play_audio_file` decodes anything ffmpeg can read, `start_talk`/`send_talk_audio`/`stop_talk` stream live audio, like a microphone.
+````python
+from reolink_aio.api import Host
+import asyncio
+
+async def talk_demo():
+    host = Host(host="192.168.1.109", username="admin", password="admin1234")
+    await host.get_host_data()
+    if not host.supported(0, "talk"):
+        return
+
+    # play a file or url on the speaker of channel 0
+    await host.play_audio_file(0, "http://192.168.1.11:8123/api/tts_proxy/message.mp3")
+
+    # or stream 16 bit mono PCM at the camera sample rate (e.g. from a microphone)
+    audio_format = await host.start_talk(0)
+    pcm = b"\x00\x00" * audio_format["sample_rate"]  # 1 s of silence
+    await host.send_talk_audio(0, pcm)
+    await host.stop_talk(0)
+
+    await host.logout()
+
+if __name__ == "__main__":
+    asyncio.run(talk_demo())
+````
+
 ### TCP push event example
 This is an example of how to receive TCP push events.
 The callback will be called each time a push is received.
