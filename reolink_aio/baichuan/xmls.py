@@ -277,6 +277,21 @@ DayRecords = """
 </DayRecords>
 </body>"""
 
+FileInfoListDownload = """
+<?xml version='1.0' encoding='utf-8'?>
+<body>
+<FileInfoList version="1.1">
+<FileInfo>
+<uid>{uid}</uid>
+<logicChnBitmap>255</logicChnBitmap>
+<channelId>{channel}</channelId>
+<supportSub>0</supportSub>
+<streamType>{stream_type}</streamType>
+{time_range}
+</FileInfo>
+</FileInfoList>
+</body>"""
+
 FileInfoListOpen = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>

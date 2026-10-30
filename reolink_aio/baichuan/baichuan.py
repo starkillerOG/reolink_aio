@@ -1015,7 +1015,7 @@ class Baichuan:
             if self.http_api.api_version("GetRec") >= 1:
                 rec_set["scheduleEnable"] = enable
 
-        elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
+        elif cmd_id in {109, 143, 298}:  # 109=Snapshot, 143=Download, 298=CoverPreview
             if mess_id is None:
                 _LOGGER.warning("Reolink %s Baichuan push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
                 return
@@ -4585,6 +4585,20 @@ class Baichuan:
         # await self.send(cmd_id=16, body=xml_file_info)
 
         return vod_type_dict, vod_dict
+
+    async def download_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> bytes:
+        """Download the recording of a channel between start and end and return it as a fragmented mp4 file content"""
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+        if uid == UNKNOWN:
+            raise InvalidParameterError(f"Baichuan host {self._host}: download_mp4: cannot get UID for channel {channel}")
+        stream = "main" if "main" in stream else "sub"
+
+        xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=f"{stream}Stream", time_range=xml_time_range(start, end))
+        _mess, payload = await self.send_payload(cmd_id=143, channel=channel, body=xml)
+
+        media = decode_media_stream(payload)
+        return await media.to_mp4(ffmpeg)
 
     @property
     def events_active(self) -> bool:
