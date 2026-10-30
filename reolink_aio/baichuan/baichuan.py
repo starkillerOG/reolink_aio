@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from calendar import monthrange
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
@@ -80,6 +81,7 @@ from .util import (
     i_frame_to_jpeg,
     md5_str_modern,
     pretty_xml,
+    xml_time_range,
 )
 from .webhook_server import WebhookServer
 
@@ -2942,22 +2944,7 @@ class Baichuan:
             snapType = "main"
         if snapType not in {"sub", "main", "ext"}:
             snapType = "sub"
-        xml = xmls.CoverPreview.format(
-            channel=channel,
-            stream=snapType,
-            start_year=time.year,
-            start_month=time.month,
-            start_day=time.day,
-            start_hour=time.hour,
-            start_minute=time.minute,
-            start_second=time.second,
-            end_year=end.year,
-            end_month=end.month,
-            end_day=end.day,
-            end_hour=end.hour,
-            end_minute=end.minute,
-            end_second=end.second,
-        )
+        xml = xmls.CoverPreview.format(channel=channel, stream=snapType, time_range=xml_time_range(time, end))
         _mess, payload = await self.send_payload(cmd_id=298, body=xml)
 
         # parse stream header
@@ -4459,28 +4446,14 @@ class Baichuan:
             month = int((month_year - 0.5) % 12 + 0.5)
             year = start.year + int((month_year - 0.5) / 12)
             start_day = 1
-            end_day = 31
+            end_day = monthrange(year, month)[1]
             if month_year == start.month:
                 start_day = start.day
             if month_year == end_month:
                 end_day = end.day
 
-            xml = xmls.DayRecords.format(
-                channel=channel,
-                uid=uid,
-                start_year=year,
-                start_month=month,
-                start_day=start_day,
-                start_hour=0,
-                start_minute=0,
-                start_second=0,
-                end_year=year,
-                end_month=month,
-                end_day=end_day,
-                end_hour=23,
-                end_minute=59,
-                end_second=59,
-            )
+            time_range = xml_time_range(datetime(year, month, start_day, 0, 0, 0), datetime(year, month, end_day, 23, 59, 59))
+            xml = xmls.DayRecords.format(channel=channel, uid=uid, time_range=time_range)
             coroutines.append((year, month, self.send(cmd_id=142, channel=channel, body=xml)))
 
         result: list[VOD_search_status] = []
@@ -4531,23 +4504,7 @@ class Baichuan:
             if request_i > 50:
                 _LOGGER.warning("Baichuan host %s: search_vod_type took more then 50 itterations, quitting", self._host)
                 break
-            xml = xmls.FindRecVideoOpen.format(
-                channel=channel,
-                uid=uid,
-                stream_type=stream_type,
-                start_year=start.year,
-                start_month=start.month,
-                start_day=start.day,
-                start_hour=start.hour,
-                start_minute=start.minute,
-                start_second=start.second,
-                end_year=end.year,
-                end_month=end.month,
-                end_day=end.day,
-                end_hour=end.hour,
-                end_minute=end.minute,
-                end_second=end.second,
-            )
+            xml = xmls.FindRecVideoOpen.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(start, end))
             mess = await self.send(cmd_id=272, channel=channel, body=xml)
             fileHandle = get_value_from_xml(mess, "fileHandle")
 
@@ -4657,23 +4614,7 @@ class Baichuan:
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
-        # xml = xmls.FileInfoListOpen.format(
-        #    channel=channel,
-        #    uid=uid,
-        #    stream_type=stream_type,
-        #    start_year=start.year,
-        #    start_month=start.month,
-        #    start_day=start.day,
-        #    start_hour=start.hour,
-        #    start_minute=start.minute,
-        #    start_second=start.second,
-        #    end_year=end.year,
-        #    end_month=end.month,
-        #    end_day=end.day,
-        #    end_hour=end.hour,
-        #    end_minute=end.minute,
-        #    end_second=end.second,
-        # )
+        # xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, time_range=xml_time_range(start, end))
         # mess = await self.send(cmd_id=14, body=xml)
         # handle = get_value_from_xml(mess, "handle")
 

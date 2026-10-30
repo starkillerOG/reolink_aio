@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from enum import Enum
 from hashlib import md5
 from itertools import cycle
@@ -217,6 +218,28 @@ async def _i_frame_to_jpeg_shielded(frame: bytes, ffmpeg: str) -> bytes:
 async def i_frame_to_jpeg(frame: bytes, ffmpeg: str = "ffmpeg") -> bytes:
     """Convert a i-frame from a Reolink stream to a JPEG image"""
     return await asyncio.shield(_i_frame_to_jpeg_shielded(frame, ffmpeg))
+
+
+def xml_time_range(start: datetime, end: datetime) -> str:
+    """Generate the startTime and endTime XML block for a baichuan request"""
+    return (
+        f"<startTime>\n"
+        f"<year>{start.year}</year>\n"
+        f"<month>{start.month}</month>\n"
+        f"<day>{start.day}</day>\n"
+        f"<hour>{start.hour}</hour>\n"
+        f"<minute>{start.minute}</minute>\n"
+        f"<second>{start.second}</second>\n"
+        f"</startTime>\n"
+        f"<endTime>\n"
+        f"<year>{end.year}</year>\n"
+        f"<month>{end.month}</month>\n"
+        f"<day>{end.day}</day>\n"
+        f"<hour>{end.hour}</hour>\n"
+        f"<minute>{end.minute}</minute>\n"
+        f"<second>{end.second}</second>\n"
+        f"</endTime>"
+    )
 
 
 def pretty_xml(content: str) -> str:
