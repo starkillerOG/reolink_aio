@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..exceptions import InvalidParameterError, UnexpectedDataError
@@ -25,27 +24,27 @@ PES_START_CODE = b"\x00\x00\x01"
 AAC_SAMPLE_RATES = (96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350, 16000, 16000, 16000)
 
 
-@dataclass
 class MediaStream:
     """Decoded Baichuan media stream"""
 
-    width: int = 0
-    height: int = 0
-    start_time: datetime | None = None
-    video_codec: str | None = None
-    audio_codec: str | None = None
-    video_frames: list[bytes] = field(default_factory=list)
-    frame_microseconds: list[int] = field(default_factory=list)
-    i_frame_indices: list[int] = field(default_factory=list)
-    audio_frames: list[bytes] = field(default_factory=list)
-    skipped_bytes: int = 0
-    duplicate_frames: int = 0
-    skipped_audio_frames: int = 0
-    first_i_frame_only: bool = False  # stop decoding after the first i-frame
-    # decoder state
-    _pending: list[bytes] = field(default_factory=list, init=False, repr=False, compare=False)  # received data not yet decoded
-    _pending_len: int = field(default=0, init=False, repr=False, compare=False)
-    _needed: int = field(default=8, init=False, repr=False, compare=False)  # number of pending bytes needed to decode the next item
+    def __init__(self, first_i_frame_only: bool = False) -> None:
+        self.first_i_frame_only = first_i_frame_only  # stop decoding after the first i-frame
+        self.width: int = 0
+        self.height: int = 0
+        self.start_time: datetime | None = None
+        self.video_codec: str | None = None
+        self.audio_codec: str | None = None
+        self.video_frames: list[bytes] = []
+        self.frame_microseconds: list[int] = []
+        self.i_frame_indices: list[int] = []
+        self.audio_frames: list[bytes] = []
+        self.skipped_bytes: int = 0
+        self.duplicate_frames: int = 0
+        self.skipped_audio_frames: int = 0
+        # decoder state
+        self._pending: list[bytes] = []  # received data not yet decoded
+        self._pending_len: int = 0
+        self._needed: int = 8  # number of pending bytes needed to decode the next item
 
     def decode_chunk(self, chunk: bytes, final: bool = True) -> None:
         """Decode a chunk of Baichuan media stream, final=True (default) for the last chunk or a complete stream."""
