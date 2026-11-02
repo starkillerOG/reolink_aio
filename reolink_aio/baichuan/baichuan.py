@@ -65,7 +65,7 @@ from ..utils import (
     to_reolink_time_id,
 )
 from . import xmls
-from .media_decoder import decode_media_stream
+from .media_decoder import MediaStream
 from .tcp_protocol import BaichuanTcpConnection
 from .udp_protocol import BaichuanUdpConnection
 from .util import (
@@ -2947,8 +2947,9 @@ class Baichuan:
         xml = xmls.CoverPreview.format(channel=channel, stream=snapType, time_range=xml_time_range(time, end))
         _mess, payload = await self.send_payload(cmd_id=298, body=xml)
 
-        stream = decode_media_stream(payload, first_i_frame_only=True)
-        return await stream.to_jpeg(ffmpeg)
+        media = MediaStream(first_i_frame_only=True)
+        media.decode_chunk(payload)
+        return await media.to_jpeg(ffmpeg)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
@@ -4597,7 +4598,8 @@ class Baichuan:
         xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=f"{stream}Stream", time_range=xml_time_range(start, end))
         _mess, payload = await self.send_payload(cmd_id=143, channel=channel, body=xml)
 
-        media = decode_media_stream(payload)
+        media = MediaStream()
+        media.decode_chunk(payload)
         return await media.to_mp4(ffmpeg)
 
     @property

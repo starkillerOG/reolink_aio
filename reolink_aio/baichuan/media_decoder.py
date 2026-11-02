@@ -41,6 +41,104 @@ class MediaStream:
     skipped_bytes: int = 0
     duplicate_frames: int = 0
     skipped_audio_frames: int = 0
+    first_i_frame_only: bool = False  # stop decoding after the first i-frame
+    # decoder state
+    _pending: list[bytes] = field(default_factory=list, init=False, repr=False, compare=False)  # received data not yet decoded
+    _pending_len: int = field(default=0, init=False, repr=False, compare=False)
+    _needed: int = field(default=8, init=False, repr=False, compare=False)  # number of pending bytes needed to decode the next item
+
+    def decode_chunk(self, chunk: bytes, final: bool = True) -> None:
+        """Decode a chunk of Baichuan media stream, final=True (default) for the last chunk or a complete stream."""
+        if self.first_i_frame_only and self.i_frame_indices:
+            return
+        if chunk:
+            self._pending.append(chunk)
+            self._pending_len += len(chunk)
+        if self._pending_len < self._needed and not final:
+            return  # not enough bytes, wait for more
+
+        data = b"".join(self._pending)
+        self._needed = 8
+        idx = 0
+        while idx + 8 <= len(data):
+            (magic,) = struct.unpack_from("<4s", data, idx)
+            if magic in MAGIC_STREAM_HEADER:
+                # parse stream header
+                if idx + 32 > len(data):
+                    self._needed = 32
+                    break
+                self.width, self.height = struct.unpack_from("<II", data, idx + 8)
+                idx += 32
+            elif magic in MAGIC_VIDEO:
+                # parse frame header
+                if idx + 24 > len(data):
+                    self._needed = 24
+                    break
+                codec, frame_len, add_header_len, microseconds = struct.unpack_from("<4sIII", data, idx + 4)
+                start = idx + 24 + add_header_len
+                end = start + frame_len
+                next_idx = end + (-frame_len % 8)  # frames are padded to 8 bytes
+                if next_idx > len(data):
+                    self._needed = next_idx - idx
+                    break
+                frame = data[start:end]
+                if self.video_frames and frame == self.video_frames[-1]:
+                    # camera sometimes sends the same frame twice, skip the duplicate
+                    self.duplicate_frames += 1
+                    idx = next_idx
+                    continue
+                self.video_codec = codec.decode("utf8", errors="replace")
+                if self.start_time is None and add_header_len >= 4 and idx + 28 <= len(data):
+                    try:
+                        self.start_time = datetime.fromtimestamp(struct.unpack_from("<I", data, idx + 24)[0])
+                    except (OverflowError, OSError, ValueError):
+                        pass
+                if magic == MAGIC_VIDEO[0]:
+                    self.i_frame_indices.append(len(self.video_frames))
+                self.video_frames.append(frame)
+                self.frame_microseconds.append(microseconds)
+                idx = next_idx
+                if self.first_i_frame_only and self.i_frame_indices:
+                    break
+            elif magic in MAGIC_AUDIO:
+                # parse audio header
+                (frame_len,) = struct.unpack_from("<H", data, idx + 4)
+                start = idx + 8
+                end = start + frame_len
+                next_idx = end + (-frame_len % 8)  # frames are padded to 8 bytes
+                if next_idx > len(data):
+                    self._needed = next_idx - idx
+                    break
+                self.audio_codec = MAGIC_AUDIO[magic]
+                if self.video_frames:
+                    self.audio_frames.append(data[start:end])
+                else:
+                    # pre-record audio sent before the first video frame, drop it to keep audio in sync with video
+                    self.skipped_audio_frames += 1
+                idx = next_idx
+            else:
+                # unknown data, search next magic, if not found keep the last 3 bytes since a magic could be split over two chunks
+                found = [pos for search in MAGICS if (pos := data.find(search, idx + 1)) != -1]
+                next_idx = min(found, default=len(data) - 3)
+                self.skipped_bytes += next_idx - idx
+                idx = next_idx
+
+        done = self.first_i_frame_only and self.i_frame_indices
+        if final and not done:
+            # incomplete (truncated) data at the end of the stream
+            self.skipped_bytes += len(data) - idx
+        rest = b"" if final or done else data[idx:]
+        self._pending = [rest] if rest else []
+        self._pending_len = len(rest)
+
+        if not final:
+            return
+        if self.skipped_bytes:
+            _LOGGER.debug("Media stream decoder skipped %s bytes of unknown data", self.skipped_bytes)
+        if self.duplicate_frames:
+            _LOGGER.debug("Media stream decoder skipped %s duplicate video frames", self.duplicate_frames)
+        if self.skipped_audio_frames:
+            _LOGGER.debug("Media stream decoder dropped %s audio frames received before the first video frame", self.skipped_audio_frames)
 
     async def to_jpeg(self, ffmpeg: str = "ffmpeg") -> bytes:
         """Convert the first i-frame of the stream to a JPEG image using ffmpeg"""
@@ -74,74 +172,6 @@ class MediaStream:
             frames.extend((TS_PTS_OFFSET + idx * duration, muxer.audio, frame, 1) for idx, frame in enumerate(self.audio_frames))
         frames.sort(key=lambda frame: (frame[0], frame[3]))  # sort on pts (timestamp) first, if equal first video then audio.
         return muxer.header() + b"".join(encoder_fn(pts, data) for pts, encoder_fn, data, _order in frames)
-
-
-def decode_media_stream(payload: bytes, first_i_frame_only: bool = False) -> MediaStream:
-    """Decode a Baichuan media stream into its video and audio frames"""
-    stream = MediaStream()
-    idx = 0
-    while idx + 8 <= len(payload):
-        (magic,) = struct.unpack_from("<4s", payload, idx)
-        if magic in MAGIC_STREAM_HEADER:
-            # parse stream header
-            if idx + 16 > len(payload):
-                break
-            stream.width, stream.height = struct.unpack_from("<II", payload, idx + 8)
-            idx += 32
-        elif magic in MAGIC_VIDEO:
-            # parse frame header
-            if idx + 24 > len(payload):
-                break
-            codec, frame_len, add_header_len, microseconds = struct.unpack_from("<4sIII", payload, idx + 4)
-            start = idx + 24 + add_header_len
-            end = start + frame_len
-            if stream.video_frames and len(stream.video_frames[-1]) == frame_len and stream.video_frames[-1] == payload[start:end]:
-                # camera sometimes sends the same frame twice, skip the duplicate
-                stream.duplicate_frames += 1
-                idx = end + (-frame_len % 8)
-                continue
-            stream.video_codec = codec.decode("utf8", errors="replace")
-            stream.frame_microseconds.append(microseconds)
-            if stream.start_time is None and add_header_len >= 4 and idx + 28 <= len(payload):
-                try:
-                    stream.start_time = datetime.fromtimestamp(struct.unpack_from("<I", payload, idx + 24)[0])
-                except (OverflowError, OSError, ValueError):
-                    pass
-            if magic == MAGIC_VIDEO[0]:
-                stream.i_frame_indices.append(len(stream.video_frames))
-            # extract frame, frames are padded to 8 bytes
-            stream.video_frames.append(payload[start:end])
-            idx = end + (-frame_len % 8)
-            if first_i_frame_only and stream.i_frame_indices:
-                break
-        elif magic in MAGIC_AUDIO:
-            # parse audio header
-            stream.audio_codec = MAGIC_AUDIO[magic]
-            (frame_len,) = struct.unpack_from("<H", payload, idx + 4)
-            idx += 8
-            end = idx + frame_len
-            if stream.video_frames:
-                stream.audio_frames.append(payload[idx:end])
-            else:
-                # pre-record audio sent before the first video frame, drop it to keep audio in sync with video
-                stream.skipped_audio_frames += 1
-            idx = end + (-frame_len % 8)
-        else:
-            # unknown data, search next magic
-            found = [pos for search in MAGICS if (pos := payload.find(search, idx + 1)) != -1]
-            next_idx = min(found, default=len(payload))
-            stream.skipped_bytes += next_idx - idx
-            idx = next_idx
-
-    if idx > len(payload):
-        _LOGGER.debug("Media stream truncated, last frame is %s bytes short", idx - len(payload))
-    if stream.skipped_bytes:
-        _LOGGER.debug("Media stream decoder skipped %s bytes of unknown data", stream.skipped_bytes)
-    if stream.duplicate_frames:
-        _LOGGER.debug("Media stream decoder skipped %s duplicate video frames", stream.duplicate_frames)
-    if stream.skipped_audio_frames:
-        _LOGGER.debug("Media stream decoder dropped %s audio frames received before the first video frame", stream.skipped_audio_frames)
-    return stream
 
 
 async def _run_ffmpeg(args: list[str], stdin: bytes, ffmpeg: str, description: str) -> bytes:
