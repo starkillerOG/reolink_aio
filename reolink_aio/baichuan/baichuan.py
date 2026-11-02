@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from calendar import monthrange
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime, timedelta
 from inspect import getmembers
 from math import ceil
@@ -4598,9 +4598,14 @@ class Baichuan:
         xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=f"{stream}Stream", time_range=xml_time_range(start, end))
         _mess, payload = await self.send_payload(cmd_id=143, channel=channel, body=xml)
 
+        async def chunks() -> AsyncIterator[bytes]:
+            yield payload
+
         media = MediaStream()
-        media.decode_chunk(payload)
-        return await media.to_mp4(ffmpeg)
+        mp4_parts: list[bytes] = []
+        async for part in media.stream_mp4(chunks(), ffmpeg):
+            mp4_parts.append(part)
+        return b"".join(mp4_parts)
 
     @property
     def events_active(self) -> bool:
