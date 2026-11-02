@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from collections.abc import AsyncIterable, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterable
 from datetime import datetime
 
 from ..exceptions import InvalidParameterError, UnexpectedDataError
@@ -156,7 +156,7 @@ class MediaStream:
         frame = self.video_frames[self.i_frame_indices[0]]
         return await asyncio.shield(_run_ffmpeg(["-i", "pipe:0", "-f", "image2", "pipe:1"], frame, ffmpeg, "Reolink frame to JPEG image"))
 
-    async def stream_mp4(self, chunks: AsyncIterable[bytes], ffmpeg: str = "ffmpeg") -> AsyncIterator[bytes]:
+    async def stream_mp4(self, chunks: AsyncIterable[bytes], ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
         """
         Decode chunks of a Baichuan media stream and remux them (without re-encoding) into a fragmented mp4 using ffmpeg, yields the mp4 data as it becomes available.
         Frames are removed from this MediaStream once passed to ffmpeg to limit memory usage.
@@ -182,6 +182,7 @@ class MediaStream:
             if process.returncode is None:
                 process.kill()
                 await process.wait()
+            await asyncio.gather(writer, return_exceptions=True)  # wait until the writer stopped reading the chunks
 
     async def _write_mpegts(self, chunks: AsyncIterable[bytes], stdin: asyncio.StreamWriter) -> None:
         """Decode the chunks and write them as MPEG-TS to ffmpeg stdin"""
