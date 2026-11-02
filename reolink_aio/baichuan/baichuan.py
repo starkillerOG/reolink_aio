@@ -239,7 +239,7 @@ class Baichuan:
 
         # futures
         self._payload_future: dict[int | None, dict[int, asyncio.Future]] = {}
-        self._payload_future_data: dict[int | None, bytes] = {}
+        self._payload_future_data: dict[int | None, list[bytes]] = {}
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -474,7 +474,7 @@ class Baichuan:
             ) from err
 
         self._payload_future.setdefault(ch_id, {})[full_mess_id] = self._loop.create_future()
-        self._payload_future_data[full_mess_id] = b""
+        self._payload_future_data[full_mess_id] = []
 
         try:
             rec_body = await self.send(cmd_id=cmd_id, channel=channel, body=body, extension=extension, mess_id=mess_id)
@@ -619,8 +619,8 @@ class Baichuan:
                             mess_id,
                         )
                         return
-                    payload_future.set_result(payload_future_data)
-                    self._payload_future_data[mess_id] = b""
+                    payload_future.set_result(b"".join(payload_future_data))
+                    self._payload_future_data[mess_id] = []
             else:
                 _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body but with %s bytes payload", self._host, cmd_id, payload_len)
             return
@@ -1028,10 +1028,10 @@ class Baichuan:
                 )
                 return
             if len(payload) <= 0:
-                payload_future.set_result(payload_future_data)
-                self._payload_future_data[mess_id] = b""
+                payload_future.set_result(b"".join(payload_future_data))
+                self._payload_future_data[mess_id] = []
                 return
-            self._payload_future_data[mess_id] = payload_future_data + payload
+            payload_future_data.append(payload)  # list instead of bytes to prevent copying all received data for every message
             return
 
         elif cmd_id == 145:  # ChannelInfoList: Sleep status
