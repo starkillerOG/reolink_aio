@@ -239,7 +239,7 @@ class Baichuan:
         self._io_input: dict[int | None, dict[int, bool]] = {}
 
         # payloads
-        self._payload_lock: dict[int, asyncio.Lock] = {}  # one payload request at a time per ch_id
+        self._payload_lock: dict[tuple[int, int], asyncio.Lock] = {}  # one payload request at a time per (cmd_id, ch_id)
         self._payload_queue: dict[tuple[int, int], asyncio.Queue[bytes]] = {}  # received payload chunks per (cmd_id, full_mess_id), an empty chunk marks the end
 
     async def _connect_if_needed(self):
@@ -478,14 +478,15 @@ class Baichuan:
 
         full_mess_id = (mess_id << 8) + ch_id
 
-        # protect the camera from sending multiple payloads simultaneously on the same channel
-        lock = self._payload_lock.setdefault(ch_id, asyncio.Lock())
+        # protect the camera from sending multiple payloads of the same cmd_id simultaneously on the same channel
+        lock = self._payload_lock.setdefault((cmd_id, ch_id), asyncio.Lock())
         try:
             async with asyncio.timeout(TIMEOUT):
                 await lock.acquire()
         except asyncio.TimeoutError as err:
             raise ReolinkError(
-                f"Baichuan host {self._host}: timeout waiting for the previous payload request of channel {channel} to finish, cannot receive multiple payloads simultaneously"
+                f"Baichuan host {self._host}: timeout waiting for the previous cmd_id {cmd_id} payload request of channel {channel} to finish, "
+                "cannot receive multiple payloads simultaneously"
             ) from err
         payload_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._payload_queue[(cmd_id, full_mess_id)] = payload_queue
@@ -522,16 +523,16 @@ class Baichuan:
                 # do not await in the finally, that would delay cancellation
                 self._loop.create_task(self._stop_payload_stream(stop_cmd_id, channel, lock))
             else:
-                lock.release()  # allow the next payload request on this channel
+                lock.release()  # allow the next payload request of this cmd_id on this channel
 
     async def _stop_payload_stream(self, stop_cmd_id: int, channel: int | None, lock: asyncio.Lock) -> None:
-        """Abort a streamed payload and release the channel for other payload requests afterwards"""
+        """Abort a streamed payload and release the lock for the next payload request afterwards"""
         try:
             await self.send(cmd_id=stop_cmd_id, channel=channel)
         except ReolinkError as err:
             _LOGGER.debug("Baichuan host %s: failed to abort payload with cmd_id %s channel %s: %s", self._host, stop_cmd_id, channel, err)
         finally:
-            lock.release()  # allow the next payload request on this channel
+            lock.release()  # allow the next payload request of this cmd_id on this channel
 
     def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
