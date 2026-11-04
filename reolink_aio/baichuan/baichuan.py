@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from calendar import monthrange
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
+from contextlib import aclosing
 from datetime import datetime, timedelta
 from inspect import getmembers
 from math import ceil
@@ -65,6 +66,7 @@ from ..utils import (
     to_reolink_time_id,
 )
 from . import xmls
+from .media_decoder import MediaStream
 from .tcp_protocol import BaichuanTcpConnection
 from .udp_protocol import BaichuanUdpConnection
 from .util import (
@@ -78,7 +80,6 @@ from .util import (
     get_keys_from_xml,
     get_value_from_xml,
     http_cmd,
-    i_frame_to_jpeg,
     md5_str_modern,
     pretty_xml,
     xml_time_range,
@@ -237,9 +238,9 @@ class Baichuan:
         self._io_outputs: dict[int | None, list[int]] = {}
         self._io_input: dict[int | None, dict[int, bool]] = {}
 
-        # futures
-        self._payload_future: dict[int | None, dict[int, asyncio.Future]] = {}
-        self._payload_future_data: dict[int | None, bytes] = {}
+        # payloads
+        self._payload_lock: dict[tuple[int, int | None], asyncio.Lock] = {}  # one payload request at a time per (cmd_id, ch_id), ch_id None for the whole device
+        self._payload_queue: dict[tuple[int, int], asyncio.Queue[bytes]] = {}  # received payload chunks per (cmd_id, full_mess_id), an empty chunk marks the end
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -446,6 +447,28 @@ class Baichuan:
         extension: str = "",
     ) -> tuple[str, bytes]:
         """Generic send method which expects a binary payload as return."""
+        responses: list[str] = []
+        payload: list[bytes] = []
+        async for chunk in self.send_payload_stream(cmd_id, channel, body, extension, on_response=responses.append):
+            payload.append(chunk)
+        return (responses[0], b"".join(payload))
+
+    async def send_payload_stream(
+        self,
+        cmd_id: int,
+        channel: int | None = None,
+        body: str = "",
+        extension: str = "",
+        on_response: Callable[[str], None] | None = None,
+        stop_cmd_id: int | None = None,
+        lock_per_device: bool = False,
+    ) -> AsyncGenerator[bytes, None]:
+        """
+        Generic send method which yields the binary payload in chunks while it is being received.
+        stop_cmd_id is send to the camera to abort the payload if the consumer stops before the end of the payload.
+        on_response is called with the body of the response to the command, before the payload is received.
+        lock_per_device allows only one payload of this cmd_id at a time for the whole device instead of per channel.
+        """
         mess_id = (self._mess_id + 1) % 16777216
         self._mess_id = mess_id
 
@@ -457,43 +480,61 @@ class Baichuan:
 
         full_mess_id = (mess_id << 8) + ch_id
 
-        # check for simultaneous payload requests of the same channel
+        # protect the camera from sending multiple payloads of the same cmd_id simultaneously on the same channel (or device)
+        lock = self._payload_lock.setdefault((cmd_id, None if lock_per_device else ch_id), asyncio.Lock())
         try:
             async with asyncio.timeout(TIMEOUT):
-                while payload_future_dict := self._payload_future.get(ch_id, {}):
-                    try:
-                        for payload_future in payload_future_dict.values():
-                            await payload_future
-                    except Exception:
-                        pass
-                    if self._payload_future.get(ch_id, {}):
-                        await asyncio.sleep(0.010)
+                await lock.acquire()
         except asyncio.TimeoutError as err:
             raise ReolinkError(
-                f"Baichuan host {self._host}: payload future is already set and timeout waiting for it to finish, cannot receive multiple payloads simultaneously"
+                f"Baichuan host {self._host}: timeout waiting for the previous cmd_id {cmd_id} payload request of channel {channel} to finish, "
+                "cannot receive multiple payloads simultaneously"
             ) from err
+        payload_queue: asyncio.Queue[bytes] = asyncio.Queue()
+        self._payload_queue[(cmd_id, full_mess_id)] = payload_queue
 
-        self._payload_future.setdefault(ch_id, {})[full_mess_id] = self._loop.create_future()
-        self._payload_future_data[full_mess_id] = b""
-
+        finished = False
         try:
-            rec_body = await self.send(cmd_id=cmd_id, channel=channel, body=body, extension=extension, mess_id=mess_id)
-
-            async with asyncio.timeout(TIMEOUT):
-                payload = await self._payload_future[ch_id][full_mess_id]
-        except asyncio.TimeoutError as err:
-            raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error waiting on payload for cmd_id {cmd_id} channel {channel}") from err
+            # send the cmd_id
+            try:
+                rec_body = await self.send(cmd_id=cmd_id, channel=channel, body=body, extension=extension, mess_id=mess_id)
+            except ReolinkError:
+                finished = True  # the camera did not start sending the payload
+                raise
+            # set the received body
+            if on_response is not None:
+                on_response(rec_body)
+            # stream the payload
+            while True:
+                try:
+                    async with asyncio.timeout(TIMEOUT):
+                        chunk = await payload_queue.get()
+                except asyncio.TimeoutError as err:
+                    raise ReolinkTimeoutError(f"Baichuan host {self._host}: Timeout error waiting on payload for cmd_id {cmd_id} channel {channel}") from err
+                if not chunk:
+                    finished = True
+                    return  # end of the payload, only when sending a empty chunk b""
+                yield chunk
         except asyncio.CancelledError:
             _LOGGER.debug("Baichuan host %s: cmd_id %s channel %s mess_id %s got cancelled", self._host, cmd_id, channel, full_mess_id)
             raise
         finally:
-            self._payload_future_data.pop(full_mess_id, None)
-            if (pay_future := self._payload_future[ch_id].get(full_mess_id)) is not None:
-                if not pay_future.done():
-                    pay_future.cancel()
-            self._payload_future[ch_id].pop(full_mess_id, None)
+            # also runs when the consumer stops early or is cancelled
+            self._payload_queue.pop((cmd_id, full_mess_id), None)  # drop remaining chunks of this payload
+            if not finished and stop_cmd_id is not None:
+                # do not await in the finally, that would delay cancellation
+                self._loop.create_task(self._stop_payload_stream(stop_cmd_id, channel, lock))
+            else:
+                lock.release()  # allow the next payload request of this cmd_id on this channel
 
-        return (rec_body, payload)
+    async def _stop_payload_stream(self, stop_cmd_id: int, channel: int | None, lock: asyncio.Lock) -> None:
+        """Abort a streamed payload and release the lock for the next payload request afterwards"""
+        try:
+            await self.send(cmd_id=stop_cmd_id, channel=channel)
+        except ReolinkError as err:
+            _LOGGER.debug("Baichuan host %s: failed to abort payload with cmd_id %s channel %s: %s", self._host, stop_cmd_id, channel, err)
+        finally:
+            lock.release()  # allow the next payload request of this cmd_id on this channel
 
     def _aes_encrypt(self, body: bytes) -> bytes:
         """Encrypt a message using AES encryption"""
@@ -592,7 +633,7 @@ class Baichuan:
         # decryption
         try:
             rec_body = self._decrypt(data, len_header, cmd_id)
-            if payload_len != 0:
+            if payload_len != 0 and rec_body:
                 encryptLen = get_value_from_xml(rec_body.lower(), "encryptlen", int)
                 if encryptLen is not None:
                     payload = self._aes_decrypt(payload[0:encryptLen], b"", decode=False) + payload[encryptLen::]
@@ -600,38 +641,33 @@ class Baichuan:
             _LOGGER.debug(err)
             return
 
-        if len(rec_body) == 0:
-            if payload_len == 0:
-                if cmd_id == 234:  # UDP heartbeat
-                    if self._connection is not None:
-                        self._connection.send_heartbeat_response(mess_id)
-                    return
-                _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body", self._host, cmd_id)
-                if (payload_future_data := self._payload_future_data.get(mess_id)) is not None:
-                    ch_id = mess_id % 256
-                    payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
-                    if payload_future is None:
-                        _LOGGER.debug(
-                            "Reolink %s Baichuan push cmd_id %s ch_id %s mess_id %s received with payload without payload_future",
-                            self.http_api.nvr_name,
-                            cmd_id,
-                            ch_id,
-                            mess_id,
-                        )
-                        return
-                    payload_future.set_result(payload_future_data)
-                    self._payload_future_data[mess_id] = b""
-            else:
-                _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body but with %s bytes payload", self._host, cmd_id, payload_len)
-            return
+        payload_queue = self._payload_queue.get((cmd_id, mess_id))
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
-            payload_str = ""
-            if payload_len != 0:
-                payload_str = f" with payload length {payload_len}"
-            _LOGGER.debug("Baichuan host %s: received push cmd_id %s%s:\n%s", self._host, cmd_id, payload_str, self._style_hide_password(rec_body))
+            if payload_queue is not None:
+                end_str = "" if payload_len else ", end of payload"
+                _LOGGER.debug("Baichuan host %s: received cmd_id %s mess_id %s payload of %s bytes%s", self._host, cmd_id, mess_id, payload_len, end_str)
+            elif len(rec_body) == 0:
+                if payload_len != 0:
+                    _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body but with %s bytes payload without payload_queue", self._host, cmd_id, payload_len)
+                elif cmd_id != 234:  # UDP heartbeat is logged elsewhere
+                    _LOGGER.debug("Baichuan host %s: received push cmd_id %s without body", self._host, cmd_id)
+            else:
+                payload_str = ""
+                if payload_len != 0:
+                    payload_str = f" mess_id {mess_id} with payload length {payload_len} without payload_queue"
+                _LOGGER.debug("Baichuan host %s: received push cmd_id %s%s:\n%s", self._host, cmd_id, payload_str, self._style_hide_password(rec_body))
 
-        self._parse_xml(cmd_id, rec_body, payload, mess_id)
+        if payload_queue is not None:
+            payload_queue.put_nowait(payload)  # an empty payload marks the end
+            return
+
+        if len(rec_body) == 0:
+            if cmd_id == 234 and payload_len == 0 and self._connection is not None:  # UDP heartbeat
+                self._connection.send_heartbeat_response(mess_id)
+            return
+
+        self._parse_xml(cmd_id, rec_body, mess_id=mess_id)
 
     def webhook_push_callback(self, data: bytes) -> None:
         """Callback to parse a received message that was pushed through the webhook"""
@@ -779,7 +815,7 @@ class Baichuan:
         mess_id = channel + 1 if channel is not None else None
         self._parse_xml(cmd_id, rec_body, mess_id=mess_id)
 
-    def _parse_xml(self, cmd_id: int, xml: str, payload: bytes = b"", mess_id: int | None = None) -> None:
+    def _parse_xml(self, cmd_id: int, xml: str, mess_id: int | None = None) -> None:
         """parce received xml"""
         root = XML.fromstring(xml)
 
@@ -1014,25 +1050,6 @@ class Baichuan:
             rec_set["schedule"]["channel"] = channel
             if self.http_api.api_version("GetRec") >= 1:
                 rec_set["scheduleEnable"] = enable
-
-        elif cmd_id in {109, 298}:  # 109=Snapshot, 298=CoverPreview
-            if mess_id is None:
-                _LOGGER.warning("Reolink %s Baichuan push cmd_id %s received with payload without mess_id", self.http_api.nvr_name, cmd_id)
-                return
-            ch_id = mess_id % 256
-            payload_future = self._payload_future.get(ch_id, {}).get(mess_id)
-            payload_future_data = self._payload_future_data.get(mess_id)
-            if payload_future is None or payload_future_data is None:
-                _LOGGER.debug(
-                    "Reolink %s Baichuan push cmd_id %s ch_id %s mess_id %s received with payload without payload_future", self.http_api.nvr_name, cmd_id, ch_id, mess_id
-                )
-                return
-            if len(payload) <= 0:
-                payload_future.set_result(payload_future_data)
-                self._payload_future_data[mess_id] = b""
-                return
-            self._payload_future_data[mess_id] = payload_future_data + payload
-            return
 
         elif cmd_id == 145:  # ChannelInfoList: Sleep status
             for event in root.findall(".//ChannelInfo"):
@@ -2947,46 +2964,9 @@ class Baichuan:
         xml = xmls.CoverPreview.format(channel=channel, stream=snapType, time_range=xml_time_range(time, end))
         _mess, payload = await self.send_payload(cmd_id=298, body=xml)
 
-        # parse stream header
-        stream_header = payload[0:32]
-        magic = stream_header[0:4]
-        # width = int.from_bytes(stream_header[8:12], byteorder="little")
-        # height = int.from_bytes(stream_header[12:16], byteorder="little")
-        # frame_rate = stream_header[17]
-        # start_year = 1900 + stream_header[18]
-        if magic != b"1001":
-            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past payload did not start with stream header magic b'1001' but with {magic!r}")
-
-        # search magic
-        try:
-            # search magic
-            start = payload[32::].index(b"00dc")
-        except ValueError as err:
-            raise UnexpectedDataError(f"Baichuan host {self._host}: snapshot_past frame magic b'00dc' not found, first bytes: {payload[32:62]!r}") from err
-        idx = 32 + start
-
-        # parse frame header
-        idx_start = idx + 12
-        idx_end = idx_start + 4
-        header_len = 24 + int.from_bytes(payload[idx_start:idx_end], byteorder="little")
-        idx_end = idx + header_len
-        frame_header = payload[idx:idx_end]
-        idx += header_len
-        # magic = frame_header[0:4]
-        # encoding = frame_header[4:8].decode("utf8")
-        frame_len = int.from_bytes(frame_header[8:12], byteorder="little")
-        # frame_time = int.from_bytes(frame_header[24:28], byteorder="little")
-        # frame_microsecond = int.from_bytes(frame_header[16:20], byteorder="little")
-        # formatted_time = datetime.fromtimestamp(frame_time).strftime("%Y-%m-%d %H:%M:%S")
-
-        # extract frame
-        idx_end = idx + frame_len
-        frame = payload[idx:idx_end]
-        idx += frame_len
-
-        image = await i_frame_to_jpeg(frame, ffmpeg)
-
-        return image
+        media = MediaStream(first_i_frame_only=True)
+        media.decode_chunk(payload)
+        return await media.to_jpeg(ffmpeg)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
@@ -4623,6 +4603,30 @@ class Baichuan:
         # await self.send(cmd_id=16, body=xml_file_info)
 
         return vod_type_dict, vod_dict
+
+    async def stream_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
+        """Download the recording of a channel between start and end and yield it as fragmented mp4 data while it is being received"""
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+        if uid == UNKNOWN:
+            raise InvalidParameterError(f"Baichuan host {self._host}: stream_mp4: cannot get UID for channel {channel}")
+        stream = "main" if "main" in stream else "sub"
+
+        xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=f"{stream}Stream", time_range=xml_time_range(start, end))
+        media = MediaStream()
+        # NVRs do not support multiple downloads simultaneously, also not on different channels
+        download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
+        # aclosing: directly stop ffmpeg and the download when the consumer stops early, instead of when the generators are garbage collected
+        async with aclosing(download) as chunks, aclosing(media.stream_mp4(chunks, ffmpeg)) as mp4_stream:
+            async for part in mp4_stream:
+                yield part
+
+    async def download_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> bytes:
+        """Download the recording of a channel between start and end and return it as a fragmented mp4 file content"""
+        mp4_parts: list[bytes] = []
+        async for part in self.stream_mp4(channel, start, end, stream, ffmpeg):
+            mp4_parts.append(part)
+        return b"".join(mp4_parts)
 
     @property
     def events_active(self) -> bool:
