@@ -239,7 +239,7 @@ class Baichuan:
         self._io_input: dict[int | None, dict[int, bool]] = {}
 
         # payloads
-        self._payload_lock: dict[tuple[int, int], asyncio.Lock] = {}  # one payload request at a time per (cmd_id, ch_id)
+        self._payload_lock: dict[tuple[int, int | None], asyncio.Lock] = {}  # one payload request at a time per (cmd_id, ch_id), ch_id None for the whole device
         self._payload_queue: dict[tuple[int, int], asyncio.Queue[bytes]] = {}  # received payload chunks per (cmd_id, full_mess_id), an empty chunk marks the end
 
     async def _connect_if_needed(self):
@@ -461,11 +461,13 @@ class Baichuan:
         extension: str = "",
         on_response: Callable[[str], None] | None = None,
         stop_cmd_id: int | None = None,
+        lock_per_device: bool = False,
     ) -> AsyncGenerator[bytes, None]:
         """
         Generic send method which yields the binary payload in chunks while it is being received.
         stop_cmd_id is send to the camera to abort the payload if the consumer stops before the end of the payload.
         on_response is called with the body of the response to the command, before the payload is received.
+        lock_per_device allows only one payload of this cmd_id at a time for the whole device instead of per channel.
         """
         mess_id = (self._mess_id + 1) % 16777216
         self._mess_id = mess_id
@@ -478,8 +480,8 @@ class Baichuan:
 
         full_mess_id = (mess_id << 8) + ch_id
 
-        # protect the camera from sending multiple payloads of the same cmd_id simultaneously on the same channel
-        lock = self._payload_lock.setdefault((cmd_id, ch_id), asyncio.Lock())
+        # protect the camera from sending multiple payloads of the same cmd_id simultaneously on the same channel (or device)
+        lock = self._payload_lock.setdefault((cmd_id, None if lock_per_device else ch_id), asyncio.Lock())
         try:
             async with asyncio.timeout(TIMEOUT):
                 await lock.acquire()
@@ -4612,7 +4614,8 @@ class Baichuan:
 
         xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=f"{stream}Stream", time_range=xml_time_range(start, end))
         media = MediaStream()
-        download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144)
+        # NVRs do not support multiple downloads simultaneously, also not on different channels
+        download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
         # aclosing: directly stop ffmpeg and the download when the consumer stops early, instead of when the generators are garbage collected
         async with aclosing(download) as chunks, aclosing(media.stream_mp4(chunks, ffmpeg)) as mp4_stream:
             async for part in mp4_stream:
