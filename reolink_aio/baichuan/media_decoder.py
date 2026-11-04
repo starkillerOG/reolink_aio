@@ -27,6 +27,7 @@ AAC_SAMPLE_RATES = (96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 1600
 STREAM_READ_SIZE = 65536  # 64 KB
 STREAM_MAX_CHUNK_SIZE = 262144  # 256 KB, decoding and muxing runs in the event loop, larger chunks are split so a single step does not block the event loop for too long
 STREAM_MAX_AUDIO_WAIT = 2_000_000  # microseconds of video to buffer at the start of streaming, waiting for audio to be known for the MPEG-TS header
+AUDIO_RESYNC = 90000  # 1 second in 90 kHz units, move the audio forward to the video when it is further behind (gap between recordings)
 
 
 class MediaStream:
@@ -43,6 +44,7 @@ class MediaStream:
         self.frame_us: list[int] = []  # frame_microseconds
         self.i_frame_indices: list[int] = []
         self.audio_frames: list[bytes] = []
+        self.audio_us: list[int] = []  # timestamp of the last video frame when the audio frame was received
         self.skipped_bytes: int = 0
         self.duplicate_frames: int = 0
         self.skipped_audio_frames: int = 0
@@ -54,7 +56,7 @@ class MediaStream:
         self._muxer: MpegTsMuxer | None = None
         self._start_frame_us: int = 0  # timestamp of the first video frame
         self._audio_duration: int = 0  # duration of an audio frame in 90 kHz units, 0 if audio is not muxed
-        self._audio_count: int = 0  # number of audio frames muxed
+        self._audio_pts: int = TS_PTS_OFFSET  # timestamp of the next audio frame in 90 kHz units
 
     def decode_chunk(self, chunk: bytes, final: bool = True) -> None:
         """Decode a chunk of Baichuan media stream, final=True (default) for the last chunk or a complete stream."""
@@ -121,6 +123,7 @@ class MediaStream:
                 self.audio_codec = MAGIC_AUDIO[magic]
                 if self.video_frames:
                     self.audio_frames.append(data[start:end])
+                    self.audio_us.append(self.frame_us[-1])
                 else:
                     # pre-record audio sent before the first video frame, drop it to keep audio in sync with video
                     self.skipped_audio_frames += 1
@@ -231,16 +234,21 @@ class MediaStream:
         video = zip(self.frame_us[video_idx:], self.video_frames[video_idx:])  # only references, bytes are not copied
         frames = [(_video_pts(us, start), muxer.video, frame, 0) for us, frame in video]
         if self._audio_duration:
-            duration, count = self._audio_duration, self._audio_count
-            frames.extend((TS_PTS_OFFSET + (count + idx) * duration, muxer.audio, frame, 1) for idx, frame in enumerate(self.audio_frames))
+            for us, frame in zip(self.audio_us, self.audio_frames):
+                # audio timestamps are counted on, after a gap between recordings move them forward to the video timestamps
+                video_pts = _video_pts(us, start)
+                if video_pts - self._audio_pts > AUDIO_RESYNC:
+                    self._audio_pts = video_pts
+                frames.append((self._audio_pts, muxer.audio, frame, 1))
+                self._audio_pts += self._audio_duration
         frames.sort(key=lambda frame: (frame[0], frame[3]))  # sort on pts (timestamp) first, if equal first video then audio.
-        self._audio_count += len(self.audio_frames)
 
         # remove the muxed frames to limit memory usage, keep last frame for duplicate detection and no audio before first frame check
         muxed = len(self.video_frames) - 1
         del self.video_frames[:muxed], self.frame_us[:muxed]
         self.i_frame_indices[:] = [idx - muxed for idx in self.i_frame_indices if idx >= muxed]
         self.audio_frames.clear()
+        self.audio_us.clear()
         return header + b"".join(encoder_fn(pts, data) for pts, encoder_fn, data, _order in frames)
 
 
