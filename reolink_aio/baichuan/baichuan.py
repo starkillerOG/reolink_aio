@@ -4663,7 +4663,9 @@ class Baichuan:
             raise InvalidParameterError(f"Baichuan host {self._host}: stream_mp4: cannot get UID for channel {channel}")
         stream = "main" if "main" in stream else "sub"
 
-        xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=f"{stream}Stream", time_range=xml_time_range(start, end))
+        # supportSub=1 is needed for the subStream, otherwise for instance the E1 sends the mainStream
+        support_sub = 1 if stream == "sub" else 0
+        xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=f"{stream}Stream", support_sub=support_sub, time_range=xml_time_range(start, end))
         media = MediaStream()
         # NVRs do not support multiple downloads simultaneously, also not on different channels
         download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
