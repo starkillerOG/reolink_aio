@@ -7,7 +7,7 @@ import logging
 from calendar import monthrange
 from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from inspect import getmembers
 from math import ceil
 from time import time as time_now
@@ -4594,15 +4594,66 @@ class Baichuan:
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
-        # xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, time_range=xml_time_range(start, end))
-        # mess = await self.send(cmd_id=14, body=xml)
-        # handle = get_value_from_xml(mess, "handle")
-
-        # xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
-        # await self.send(cmd_id=15, body=xml_file_info)
-        # await self.send(cmd_id=16, body=xml_file_info)
-
         return vod_type_dict, vod_dict
+
+    async def search_vod_files(self, channel: int, start: datetime, end: datetime, stream: str = "main") -> list[VOD_file]:
+        """Search the recording files between start and end, returns the same format as the HTTP Search.
+
+        Used for cameras without HTTP API (baichuan_only), for instance the E1 which also does not support cmd_id 272 used by search_vod_type.
+        """
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+        if uid == UNKNOWN:
+            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_files: cannot get UID for channel {channel}")
+        if stream not in {"main", "sub"}:
+            raise NotSupportedError(f"Baichuan host {self._host}: search_vod_files: stream '{stream}' not supported, only 'main' and 'sub'")
+        stream_type = f"{stream}Stream"
+
+        xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(start, end))
+        mess = await self.send(cmd_id=14, channel=channel, body=xml)
+        handle = get_value_from_xml(mess, "handle")
+        if handle is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: search_vod_files: no file handle received for channel {channel}")
+
+        tzinfo = self.http_api.timezone()
+        vod_files: list[VOD_file] = []
+        xml = xmls.FileInfoList.format(channel=channel, uid=uid, handle=handle)
+        try:
+            # each cmd_id 15 response contains the next page of files, a response without files marks the end
+            for _ in range(100):
+                mess = await self.send(cmd_id=15, channel=channel, body=xml)
+                items = XML.fromstring(mess).findall(".//FileInfo")
+                if not items:
+                    break
+                for item in items:
+                    if get_value_from_xml(item, "streamType") not in {None, stream_type}:
+                        continue  # a mainStream search also returns the subStream files
+                    name = get_value_from_xml(item, "Id") or get_value_from_xml(item, "name")
+                    start_file = self._xml_time_to_datetime(item.find("startTime"))
+                    end_file = self._xml_time_to_datetime(item.find("endTime"))
+                    if not name or start_file is None or end_file is None:
+                        continue
+                    size = ((get_value_from_xml(item, "sizeH", int) or 0) << 32) + (get_value_from_xml(item, "sizeL", int) or 0)
+                    # the HTTP Search PlaybackTime is in UTC, start and end time are in the local time of the camera
+                    playback = start_file if tzinfo is None else start_file.replace(tzinfo=tzinfo).astimezone(timezone.utc)
+                    data = {
+                        "type": stream,
+                        "StartTime": datetime_to_reolink_time(start_file),
+                        "EndTime": datetime_to_reolink_time(end_file),
+                        "PlaybackTime": datetime_to_reolink_time(playback),
+                        "name": name,
+                        "size": str(size),
+                    }
+                    vod_files.append(VOD_file(data, tzinfo))
+            else:
+                _LOGGER.warning("Baichuan host %s: search_vod_files took more then 100 itterations, quitting", self._host)
+        finally:
+            try:
+                await self.send(cmd_id=16, channel=channel, body=xml)
+            except ReolinkError as err:
+                _LOGGER.debug("Baichuan host %s: search_vod_files: error while closing the file search: %s", self._host, err)
+
+        return vod_files
 
     async def stream_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
         """Download the recording of a channel between start and end and yield it as fragmented mp4 data while it is being received"""

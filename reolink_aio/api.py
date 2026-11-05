@@ -5871,6 +5871,9 @@ class Host:
             stream = stream.removeprefix("autotrack_")
             stream = stream.removeprefix("telephoto_")
 
+        if self.baichuan_only:
+            return await self._request_vod_files_baichuan(channel, start, end, status_only, stream, iLogicChannel, trigger, trigger_dict)
+
         times = [(start, end)]
         if status_only:
             times = []
@@ -5967,6 +5970,33 @@ class Host:
         for file in vod_files:
             file.bc_triggers = trigger_dict.get(file.start_time_id)
 
+        return statuses, vod_files
+
+    async def _request_vod_files_baichuan(
+        self,
+        channel: int,
+        start: datetime,
+        end: datetime,
+        status_only: bool,
+        stream: str,
+        iLogicChannel: int,
+        trigger: typings.VOD_trigger | None,
+        trigger_dict: dict[str, typings.VOD_trigger],
+    ) -> tuple[list[typings.VOD_search_status], list[typings.VOD_file]]:
+        """Search VOD-files using the Baichuan protocol, for cameras without HTTP API."""
+        statuses = await self.baichuan.search_vod_days(channel, start, end)
+        if status_only:
+            return statuses, []
+        if iLogicChannel:
+            raise NotSupportedError(f"Request VOD files: stream '{stream}' of logical channel {iLogicChannel} not supported without HTTP API on {self._host}")
+
+        vod_files = await self.baichuan.search_vod_files(channel, start, end, stream)
+        if trigger is not None:
+            # search_vod_type failed (not supported by for instance the E1), filter on the triggers parsed from the file names
+            return [], [file for file in vod_files if trigger in file.triggers]
+
+        for file in vod_files:
+            file.bc_triggers = trigger_dict.get(file.start_time_id)
         return statuses, vod_files
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:

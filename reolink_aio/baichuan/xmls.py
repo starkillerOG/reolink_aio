@@ -301,7 +301,7 @@ FileInfoListOpen = """
 <searchAITrack>1</searchAITrack>
 <channelId>{channel}</channelId>
 <logicChnBitmap>255</logicChnBitmap>
-<streamType>mainStream</streamType>
+<streamType>{stream_type}</streamType>
 <recordType>manual, sched, io, md, people, face, vehicle, dog_cat, visitor, other, package</recordType>
 {time_range}
 </FileInfo>
