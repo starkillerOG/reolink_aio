@@ -4607,8 +4607,23 @@ class Baichuan:
             raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_files: cannot get UID for channel {channel}")
         if stream not in {"main", "sub"}:
             raise NotSupportedError(f"Baichuan host {self._host}: search_vod_files: stream '{stream}' not supported, only 'main' and 'sub'")
-        stream_type = f"{stream}Stream"
 
+        # the file search returns no files at all when the time range crosses midnight (E1), so search per day
+        vod_files: list[VOD_file] = []
+        names: set[str] = set()
+        day_start = start
+        while day_start <= end:
+            day_end = min(end, day_start.replace(hour=23, minute=59, second=59, microsecond=0))
+            for vod_file in await self._search_vod_files_day(channel, uid, day_start, day_end, stream):
+                if vod_file.file_name not in names:  # a recording crossing midnight is found on both days
+                    names.add(vod_file.file_name)
+                    vod_files.append(vod_file)
+            day_start = day_start.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        return vod_files
+
+    async def _search_vod_files_day(self, channel: int, uid: str, start: datetime, end: datetime, stream: str) -> list[VOD_file]:
+        """Search the recording files between start and end, which should be on the same day"""
+        stream_type = f"{stream}Stream"
         xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(start, end))
         mess = await self.send(cmd_id=14, channel=channel, body=xml)
         handle = get_value_from_xml(mess, "handle")
