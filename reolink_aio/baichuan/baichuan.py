@@ -4625,9 +4625,11 @@ class Baichuan:
         else:
             stream_type = "subStream"
 
+        # supportSub=1 is needed for the subStream, otherwise for instance the E1 sends the mainStream
+        support_sub = 1 if stream_type == "subStream" else 0
         download_start = start
         while True:
-            xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(download_start, end))
+            xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, support_sub=support_sub, time_range=xml_time_range(download_start, end))
             # NVRs do not support multiple downloads simultaneously, also not on different channels
             download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
             async with aclosing(download):
