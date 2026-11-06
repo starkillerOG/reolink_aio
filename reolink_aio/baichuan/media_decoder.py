@@ -49,10 +49,13 @@ class MediaStream:
         self.skipped_bytes: int = 0
         self.duplicate_frames: int = 0
         self.skipped_audio_frames: int = 0
+        self.overlap_frames: int = 0  # video and audio frames of an overlapping recording that were skipped
         # decoder state
         self._pending: list[bytes] = []  # received data not yet decoded
         self._pending_len: int = 0
         self._needed: int = 8  # number of pending bytes needed to decode the next item
+        self._last_i_frame_time: int | None = None  # unix time of the last decoded i-frame
+        self._skip_until_us: int | None = None  # skip frames of an overlapping recording until an i-frame after this timestamp
         # muxer state
         self._muxer: MpegTsMuxer | None = None
         self._start_frame_us: int = 0  # timestamp of the first video frame
@@ -99,13 +102,29 @@ class MediaStream:
                     self.duplicate_frames += 1
                     idx = next_idx
                     continue
+                i_frame = magic == MAGIC_VIDEO[0]
+                frame_time = struct.unpack_from("<I", data, idx + 24)[0] if add_header_len >= 4 else None
+                if i_frame and frame_time is not None and self.frame_us and self._last_i_frame_time is not None:
+                    if frame_time <= self._last_i_frame_time and _us_before(microseconds, self.frame_us[-1]):
+                        # the next recording overlaps the previous one in time (the timestamps jump back),
+                        # skip it until it passes the last frame, a recording download from for instance the E1 can contain overlapping recordings
+                        self._skip_until_us = self.frame_us[-1]
+                if self._skip_until_us is not None:
+                    if i_frame and _us_before(self._skip_until_us, microseconds):
+                        self._skip_until_us = None
+                    else:
+                        self.overlap_frames += 1
+                        idx = next_idx
+                        continue
+                if i_frame and frame_time is not None:
+                    self._last_i_frame_time = frame_time
                 self.video_codec = codec.decode("utf8", errors="replace")
                 if self.start_time is None and add_header_len >= 4 and idx + 28 <= len(data):
                     try:
                         self.start_time = datetime.fromtimestamp(struct.unpack_from("<I", data, idx + 24)[0])
                     except (OverflowError, OSError, ValueError):
                         pass
-                if magic == MAGIC_VIDEO[0]:
+                if i_frame:
                     self.i_frame_indices.append(len(self.video_frames))
                 self.video_frames.append(frame)
                 self.frame_us.append(microseconds)
@@ -122,7 +141,9 @@ class MediaStream:
                     self._needed = next_idx - idx
                     break
                 self.audio_codec = MAGIC_AUDIO[magic]
-                if self.video_frames:
+                if self._skip_until_us is not None:
+                    self.overlap_frames += 1  # audio of an overlapping recording
+                elif self.video_frames:
                     self.audio_frames.append(data[start:end])
                     self.audio_us.append(self.frame_us[-1])
                 else:
@@ -150,6 +171,8 @@ class MediaStream:
             _LOGGER.debug("Media stream decoder skipped %s bytes of unknown data", self.skipped_bytes)
         if self.duplicate_frames:
             _LOGGER.debug("Media stream decoder skipped %s duplicate video frames", self.duplicate_frames)
+        if self.overlap_frames:
+            _LOGGER.debug("Media stream decoder skipped %s video/audio frames of overlapping recordings", self.overlap_frames)
         if self.skipped_audio_frames:
             _LOGGER.debug("Media stream decoder dropped %s audio frames received before the first video frame", self.skipped_audio_frames)
 
@@ -343,6 +366,11 @@ class MpegTsMuxer:
         # update the counter for the next time and return
         self._counters[pid] = (counter + 1 + len(starts)) & 0x0F
         return b"".join(packets)
+
+
+def _us_before(microseconds: int, reference: int) -> bool:
+    """Check if a frame timestamp is before the reference timestamp, the 32 bit microsecond timestamps can wrap around"""
+    return (microseconds - reference) & 0xFFFFFFFF >= 0x80000000
 
 
 def _video_pts(microseconds: int, start: int) -> int:

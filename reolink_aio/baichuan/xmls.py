@@ -285,7 +285,7 @@ FileInfoListDownload = """
 <uid>{uid}</uid>
 <logicChnBitmap>255</logicChnBitmap>
 <channelId>{channel}</channelId>
-<supportSub>0</supportSub>
+<supportSub>{support_sub}</supportSub>
 <streamType>{stream_type}</streamType>
 {time_range}
 </FileInfo>
@@ -301,7 +301,7 @@ FileInfoListOpen = """
 <searchAITrack>1</searchAITrack>
 <channelId>{channel}</channelId>
 <logicChnBitmap>255</logicChnBitmap>
-<streamType>mainStream</streamType>
+<streamType>{stream_type}</streamType>
 <recordType>manual, sched, io, md, people, face, vehicle, dog_cat, visitor, other, package</recordType>
 {time_range}
 </FileInfo>
