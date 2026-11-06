@@ -123,9 +123,10 @@ class Reolink_timezone(dtc.tzinfo):
                 __date = dtc.date(year, _month, 1)
             else:
                 __date = dtc.date(year, month, 1) + dtc.timedelta(weeks=week)
-            if __date.weekday() < weekday:
+            # step back to the last occurrence of the weekday before __date
+            if __date.weekday() <= weekday:
                 __date -= dtc.timedelta(weeks=1)
-            __date += dtc.timedelta(days=__date.weekday() - weekday)
+            __date += dtc.timedelta(days=weekday - __date.weekday())
             return __date
 
         def _datetime(year: int):
@@ -211,6 +212,13 @@ class Reolink_timezone(dtc.tzinfo):
             __dt = __dt.replace(tzinfo=None)
         return __dt
 
+    def _is_dst(self, __dt: dtc.datetime) -> bool:
+        start, end = self._year_cache[__dt.year]
+        if start <= end:
+            return start <= __dt <= end
+        # southern hemisphere, DST spans the turn of the year
+        return __dt >= start or __dt <= end
+
     def utcoffset(self, __dt: dtc.datetime | None) -> dtc.timedelta:
         if not (isinstance(__dt, dtc.datetime) or __dt is None):
             raise TypeError("utcoffset() argument must be a datetime instance or None")
@@ -218,8 +226,7 @@ class Reolink_timezone(dtc.tzinfo):
         if __dt is None:
             return self._offset
         __dt = self._normalize(__dt)
-        start, end = self._year_cache[__dt.year]
-        if start <= __dt <= end:
+        if self._is_dst(__dt):
             return self._offset + self._dst
         return self._offset
 
@@ -230,8 +237,7 @@ class Reolink_timezone(dtc.tzinfo):
         if __dt is None:
             return self._dst
         __dt = self._normalize(__dt)
-        start, end = self._year_cache[__dt.year]
-        if start <= __dt <= end:
+        if self._is_dst(__dt):
             return self._dst
         return dtc.timedelta(0)
 
