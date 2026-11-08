@@ -17,7 +17,7 @@ class _RecordingTransport:
         self.writes.append(data)
         cmd_id = int.from_bytes(data[4:8], byteorder="little")
         mess_id = int.from_bytes(data[12:16], byteorder="little")
-        self._protocol.receive_futures[cmd_id][mess_id].set_result((data[:24], 24, b""))
+        self._protocol.receive_futures[(cmd_id, mess_id)].set_result((data[:24], 24, b""))
 
     def is_closing(self) -> bool:
         return False

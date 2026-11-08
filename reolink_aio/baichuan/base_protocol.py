@@ -23,6 +23,7 @@ from .util import HEADER_MAGIC
 _LOGGER = logging.getLogger(__name__)
 
 send_response_t = tuple[bytes, int, bytes]
+receive_futures_t = dict[tuple[int, int], asyncio.Future[send_response_t]]  # (cmd_id, full_mess_id): rec_future
 
 
 class BaichuanBaseConnection:
@@ -131,14 +132,14 @@ class BaichuanBaseConnection:
     async def send(self, data: bytes, cmd_id: int, full_mess_id: int, channel: int | None = None, log_mess: str = "", timeout: int | float = TIMEOUT) -> send_response_t:
         """Send a message and wait for the response"""
         # check for simultaneous cmd_ids with same full_mess_id
-        if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
+        if (receive_future := self.receive_futures.get((cmd_id, full_mess_id))) is not None:
             try:
                 async with asyncio.timeout(TIMEOUT):
                     try:
                         await receive_future
                     except Exception:
                         pass
-                    while self.receive_futures.get(cmd_id, {}).get(full_mess_id) is not None:
+                    while (cmd_id, full_mess_id) in self.receive_futures:
                         await asyncio.sleep(0.010)
             except asyncio.TimeoutError as err:
                 raise ReolinkError(
@@ -147,7 +148,7 @@ class BaichuanBaseConnection:
                 ) from err
 
         # set the receive future
-        self.receive_futures.setdefault(cmd_id, {})[full_mess_id] = self._loop.create_future()
+        self.receive_futures[(cmd_id, full_mess_id)] = self._loop.create_future()
 
         if log_mess:
             _LOGGER.debug(log_mess)
@@ -156,7 +157,7 @@ class BaichuanBaseConnection:
             async with asyncio.timeout(timeout):
                 async with self._mutex:
                     self._write(data, cmd_id, full_mess_id)
-                response = await self.receive_futures[cmd_id][full_mess_id]
+                response = await self.receive_futures[(cmd_id, full_mess_id)]
         except ReolinkTimeoutError:
             if self.con_type == ConnectionEnum.udp:
                 # most likely the camera has gone to sleep and the connection is lost, reastablish a fresh connection.
@@ -177,13 +178,10 @@ class BaichuanBaseConnection:
             _LOGGER.debug("Baichuan host %s: cmd_id %s mess_id %s got cancelled", self._host, cmd_id, full_mess_id)
             raise
         finally:
-            if (receive_future := self.receive_futures.get(cmd_id, {}).get(full_mess_id)) is not None:
+            if (receive_future := self.receive_futures.pop((cmd_id, full_mess_id), None)) is not None:
                 if not receive_future.done():
                     receive_future.cancel()
-                self.receive_futures[cmd_id].pop(full_mess_id, None)
-                if not self.receive_futures[cmd_id]:
-                    self.time_send = self.time_recv
-                    self.receive_futures.pop(cmd_id, None)
+                self.time_send = self.time_recv
 
         return response
 
@@ -209,10 +207,16 @@ class BaichuanBaseConnection:
         return self._transport is not None and self._protocol is not None and not self._transport.is_closing()
 
     @property
-    def receive_futures(self) -> dict[int, dict[int, asyncio.Future[send_response_t]]]:
+    def receive_futures(self) -> receive_futures_t:
         if self._protocol is None:
             return {}
         return self._protocol.receive_futures
+
+    @property
+    def expected_cmd_ids(self) -> str:
+        if self._protocol is None:
+            return ""
+        return self._protocol.expected_cmd_ids
 
     @property
     def time_recv(self) -> float:
@@ -244,7 +248,7 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
 
         self._transport: asyncio.BaseTransport | None = None
 
-        self.receive_futures: dict[int, dict[int, asyncio.Future[send_response_t]]] = {}  # expected_cmd_id: rec_future
+        self.receive_futures: receive_futures_t = {}
         self.close_future: asyncio.Future = loop.create_future()
         self._close_callback = close_callback
         self._push_callback = push_callback
@@ -252,6 +256,11 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         self.time_connect: float = 0
 
         self._log_once: list[str] = []
+
+    @property
+    def expected_cmd_ids(self) -> str:
+        """String of the unique cmd_ids that are waiting on a response, for logging"""
+        return ", ".join(map(str, dict.fromkeys(cmd_id for cmd_id, _ in self.receive_futures)))
 
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         """Connection callback"""
@@ -263,13 +272,11 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         """Connection lost callback"""
         if self.receive_futures:
             if exc is None:
-                expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
-                exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost {self.con_type.value.upper()} connection while waiting for cmd_id {expected_cmd_ids}")
-            for val in self.receive_futures.values():
-                for receive_future in val.values():
-                    if receive_future.done():
-                        continue
-                    receive_future.set_exception(exc)
+                exc = ReolinkConnectionError(f"Baichuan host {self._host}: lost {self.con_type.value.upper()} connection while waiting for cmd_id {self.expected_cmd_ids}")
+            for receive_future in self.receive_futures.values():
+                if receive_future.done():
+                    continue
+                receive_future.set_exception(exc)
         _LOGGER.debug("Baichuan host %s: closed %s connection", self._host, self.con_type.value.upper())
         if self._close_callback is not None:
             self._close_callback(self.con_type)
@@ -278,17 +285,14 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
     def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None, mess_id: int | None = None) -> None:
         """Set a error message to the future or log the error"""
         self._data = b""
-        if self.receive_futures and (cmd_id is None or cmd_id in self.receive_futures):
+        cmd_futures = [future for (rec_cmd_id, _), future in self.receive_futures.items() if cmd_id is None or rec_cmd_id == cmd_id]
+        if cmd_futures:
             exc = exc_class(f"Baichuan host {self._host}: received a message {err_mess}")
-            if cmd_id is None:
-                for val in self.receive_futures.values():
-                    for receive_future in val.values():
-                        receive_future.set_exception(exc)
-            elif mess_id is None or mess_id not in self.receive_futures[cmd_id]:
-                for receive_future in self.receive_futures[cmd_id].values():
-                    receive_future.set_exception(exc)
+            if cmd_id is not None and mess_id is not None and (receive_future := self.receive_futures.get((cmd_id, mess_id))) is not None:
+                receive_future.set_exception(exc)
             else:
-                self.receive_futures[cmd_id][mess_id].set_exception(exc)
+                for receive_future in cmd_futures:
+                    receive_future.set_exception(exc)
         else:
             _LOGGER.debug("Baichuan host %s: received unrequested message %s, dropping", self._host, err_mess)
 
@@ -386,7 +390,7 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
             self._data = b""
 
         # extract receive future
-        receive_future = self.receive_futures.get(rec_cmd_id, {}).get(rec_mess_id)
+        receive_future = self.receive_futures.get((rec_cmd_id, rec_mess_id))
 
         try:
             # check status code
@@ -407,7 +411,6 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
                 if self._push_callback is not None:
                     self._push_callback(rec_cmd_id, self._data_chunk, len_header, payload)
                 elif self.receive_futures:
-                    expected_cmd_ids = ", ".join(map(str, self.receive_futures.keys()))
                     ch_id = int.from_bytes(self._data_chunk[12:13], byteorder="little")
                     _LOGGER.debug(
                         "Baichuan host %s: received unrequested message with cmd_id %s ch_id %s, mess_id %s, while waiting on cmd_id %s, dropping and waiting for next data",
@@ -415,7 +418,7 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
                         rec_cmd_id,
                         ch_id,
                         rec_mess_id,
-                        expected_cmd_ids,
+                        self.expected_cmd_ids,
                     )
                 else:
                     _LOGGER.debug("Baichuan host %s: received unrequested message with cmd_id %s, dropping", self._host, rec_cmd_id)
