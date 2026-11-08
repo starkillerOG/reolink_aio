@@ -4617,7 +4617,8 @@ class Baichuan:
         # NVRs do not support multiple downloads simultaneously, also not on different channels
         download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
         # aclosing: directly stop ffmpeg and the download when the consumer stops early, instead of when the generators are garbage collected
-        async with aclosing(download) as chunks, aclosing(media.stream_mp4(chunks, ffmpeg)) as mp4_stream:
+        duration = (end - start).total_seconds()
+        async with aclosing(download) as chunks, aclosing(media.stream_mp4(chunks, ffmpeg, duration)) as mp4_stream:
             async for part in mp4_stream:
                 yield part
 

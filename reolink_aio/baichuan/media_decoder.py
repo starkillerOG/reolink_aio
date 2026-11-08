@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from collections.abc import AsyncGenerator, AsyncIterable
+from collections.abc import AsyncGenerator, AsyncIterable, Iterator
 from contextlib import aclosing
 from datetime import datetime
 
@@ -29,6 +29,7 @@ STREAM_READ_SIZE = 65536  # 64 KB
 STREAM_MAX_CHUNK_SIZE = 262144  # 256 KB, decoding and muxing runs in the event loop, larger chunks are split so a single step does not block the event loop for too long
 STREAM_MAX_AUDIO_WAIT = 2_000_000  # microseconds of video to buffer at the start of streaming, waiting for audio to be known for the MPEG-TS header
 AUDIO_RESYNC = 90000  # 1 second in 90 kHz units, move the audio forward to the video when it is further behind (gap between recordings)
+MP4_MAX_HEADER_SIZE = 1048576  # 1 MB, max mp4 data to buffer while waiting for the moov header to write the duration in
 
 
 class MediaStream:
@@ -160,11 +161,33 @@ class MediaStream:
         frame = self.video_frames[self.i_frame_indices[0]]
         return await asyncio.shield(_run_ffmpeg(["-i", "pipe:0", "-f", "image2", "pipe:1"], frame, ffmpeg, "Reolink frame to JPEG image"))
 
-    async def stream_mp4(self, chunks: AsyncIterable[bytes], ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
+    async def stream_mp4(self, chunks: AsyncIterable[bytes], ffmpeg: str = "ffmpeg", duration: float | None = None) -> AsyncGenerator[bytes, None]:
         """
         Decode chunks of a Baichuan media stream and remux them (without re-encoding) into a fragmented mp4 using ffmpeg, yields the mp4 data as it becomes available.
         Frames are removed from this MediaStream once passed to ffmpeg to limit memory usage.
+        duration: expected duration in seconds, written in the mp4 header so players show the full timeline from the start instead of a growing one.
         """
+        # buffer the start of the mp4 until the moov header is complete, write the duration in it, then pass everything through
+        header: bytes | None = b"" if duration is not None and duration > 0 else None
+        async with aclosing(self._stream_mp4(chunks, ffmpeg)) as mp4_stream:
+            async for data in mp4_stream:
+                if header is None or duration is None:
+                    yield data
+                    continue
+                header += data
+                patched = _mp4_set_duration(header, duration)
+                if patched is None:
+                    if len(header) < MP4_MAX_HEADER_SIZE:
+                        continue  # moov not complete yet
+                    _LOGGER.debug("Media stream mp4 header not found in the first %s bytes, duration not set", len(header))
+                    patched = header
+                yield patched
+                header = None
+            if header:
+                yield header  # stream ended before the moov was complete
+
+    async def _stream_mp4(self, chunks: AsyncIterable[bytes], ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
+        """Decode the chunks and remux them into a fragmented mp4 using ffmpeg"""
         # aclosing: stop decoding and reading the chunks on every exit, also on errors before ffmpeg is started
         async with aclosing(self._decode_mpegts(chunks)) as mpegts:
             # decode until the MPEG-TS header is muxed, the video codec is then known which is needed for the ffmpeg arguments
@@ -353,6 +376,57 @@ def _video_pts(microseconds: int, start: int) -> int:
 def _aac_frame_duration(frame: bytes) -> int:
     """Duration of an AAC frame in 90 kHz units, each frame holds 1024 samples, sample rate index from the ADTS header"""
     return 1024 * 90000 // AAC_SAMPLE_RATES[(frame[2] >> 2) & 0x0F]
+
+
+def _mp4_set_duration(data: bytes, duration: float) -> bytes | None:
+    """
+    Write the duration (seconds) in the moov header of a fragmented mp4 written by ffmpeg: mvhd, tkhd and mdhd durations and an added mvex/mehd.
+    Firefox uses the mehd, Chromium the track (tkhd/mdhd) durations.
+    Returns None if the moov header is not complete yet, returns data unchanged if the duration can not be written.
+    """
+    moov = next(((start, end) for box_type, start, end in _mp4_boxes(data, 0, len(data)) if box_type == b"moov"), None)
+    if moov is None or moov[1] > len(data):
+        return None
+    out = bytearray(data)
+    mvex, value = 0, 0  # value: duration in the mvhd timescale, the mvhd is processed before the tkhd boxes
+    # boxes of an empty moov are version 0 (32 bit fields): mvhd/mdhd timescale at offset 20 and duration at 24, tkhd duration at 28
+    todo = [moov]
+    while todo:
+        parent_start, parent_end = todo.pop(0)
+        for box_type, box, box_end in _mp4_boxes(data, parent_start + 8, parent_end):
+            if box_type in (b"trak", b"mdia", b"mvex"):
+                todo.append((box, box_end))
+                if box_type == b"mvex":
+                    mvex = box
+            elif box_type == b"mehd":
+                return data  # ffmpeg does not write a mehd for an empty moov, leave an unexpected one unchanged
+            elif box_type in (b"mvhd", b"mdhd", b"tkhd"):
+                box_value = value if box_type == b"tkhd" else round(duration * struct.unpack_from(">I", data, box + 20)[0])
+                if data[box + 8] != 0 or box_value > 0xFFFFFFFF:
+                    return data
+                struct.pack_into(">I", out, box + (28 if box_type == b"tkhd" else 24), box_value)
+                if box_type == b"mvhd":
+                    value = box_value
+    if not mvex or not value:
+        return data
+    # insert a mehd (movie extends header, fragment duration) in the mvex and increase the sizes of the mvex and moov that contain it
+    pos = mvex + 8
+    out[pos:pos] = struct.pack(">I4sII", 16, b"mehd", 0, value)
+    for box in (mvex, moov[0]):
+        # correct the length specified in the mvex and moov boxes for the added 16 bytes in the mvex.
+        size = struct.unpack_from(">I", out, box)[0]
+        struct.pack_into(">I", out, box, size + 16)
+    return bytes(out)
+
+
+def _mp4_boxes(data: bytes, start: int, end: int) -> Iterator[tuple[bytes, int, int]]:
+    """Parse mp4 boxes as (type, start, end), the last box can be incomplete (end > len(data)), ffmpeg does not write 64 bit box sizes in the header"""
+    while start + 8 <= end:
+        size, box_type = struct.unpack_from(">I4s", data, start)
+        if size < 8:
+            return
+        yield box_type, start, start + size
+        start += size
 
 
 def _crc32_mpeg(data: bytes) -> int:
