@@ -23,7 +23,7 @@ from zipfile import ZipFile
 
 import aiohttp
 from aiortsp.rtsp.connection import RTSPConnection  # type: ignore
-from aiortsp.rtsp.errors import RTSPError  # type: ignore
+from aiortsp.rtsp.errors import RTSPError, RTSPResponseError  # type: ignore
 from orjson import JSONDecodeError  # pylint: disable=no-name-in-module
 from orjson import dumps as json_dumps  # pylint: disable=no-name-in-module
 from orjson import loads as json_loads  # pylint: disable=no-name-in-module
@@ -256,6 +256,7 @@ class Host:
         self._rtsp_mainStream: dict[int, str] = {}
         self._rtsp_subStream: dict[int, str] = {}
         self._rtsp_verified: dict[int, dict[str, str]] = {}
+        self._rtsp_backchannel: dict[int, bool] = {}
 
         ##############################################################################
         # Presets
@@ -2690,6 +2691,13 @@ class Host:
                     await self.get_rtsp_stream_source(channel, "main")
                     if self.supported(channel, "autotrack_stream"):
                         await self.get_rtsp_stream_source(channel, "autotrack_main")
+                # Check two way audio support from the RTSP describe response
+                if self._rtsp_backchannel.get(channel, True) and (
+                    self.api_version("talk", channel) > 0
+                    or self.baichuan.api_version("ipcAudioTalk", channel) > 0
+                    or (not self.is_nvr and self.baichuan.api_version("audioTalk") > 0)
+                ):
+                    self._add_capability("two_way_audio", channel)
 
         self._startup = False
 
@@ -3456,9 +3464,21 @@ class Host:
 
         url_clean = url.replace(f"{self._username}:{self._enc_password}@", "")
 
+        backchannel: bool | None = None
         try:
             async with RTSPConnection(host=self._host, port=self._rtsp_port, username=self._username, password=self._password, logger=_LOGGER_RTSP) as rtsp_conn:
-                response = await rtsp_conn.send_request("DESCRIBE", url_clean)
+                if channel not in self._rtsp_backchannel:
+                    # Also check if the camera supports a ONVIF audio backchannel (two way audio over RTSP)
+                    try:
+                        response = await rtsp_conn.send_request("DESCRIBE", url_clean, headers={"Require": "www.onvif.org/ver20/backchannel"})
+                    except RTSPResponseError as err:
+                        _LOGGER.debug("RTSP url '%s' did not accept the backchannel Require header, retrying without: %s", url_clean, err)
+                        backchannel = False
+                        response = await rtsp_conn.send_request("DESCRIBE", url_clean)
+                    else:
+                        backchannel = b"a=sendonly" in response.data
+                else:
+                    response = await rtsp_conn.send_request("DESCRIBE", url_clean)
         except RTSPError as err:
             _LOGGER.debug("Error while checking RTSP url '%s': %s", url_clean, err)
             return False
@@ -3466,6 +3486,10 @@ class Host:
         if response.status != 200 or response.status_msg != "OK":
             _LOGGER.debug("Error while checking RTSP url '%s': status %s, message %s", url_clean, response.status, response.status_msg)
             return False
+
+        # only store the backchannel result once the URL itself is verified to work
+        if backchannel is not None:
+            self._rtsp_backchannel[channel] = backchannel
 
         self._rtsp_verified[channel][stream] = url
         return True
