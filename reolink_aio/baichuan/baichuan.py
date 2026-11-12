@@ -95,6 +95,9 @@ KEEP_ALLIVE_INTERVAL = 30  # seconds
 MIN_KEEP_ALLIVE_INTERVAL = 9  # seconds
 BATTERY_CLOSE_TIME = 5  # seconds
 MAX_MESS_SIZE = 38000  # bytes, max size of message including header. If mess size exceeds 40.000, the connection is closed by the camera.
+PREVIEW_CMD = 3  # start the live preview video/audio stream
+PREVIEW_STOP_CMD = 4  # stop the live preview video/audio stream
+PREVIEW_STREAM_TYPES = {"main": "mainStream", "sub": "subStream"}
 
 AI_DETECTS = {"people", "vehicle", "dog_cat", "state"}
 SMART_AI = {
@@ -241,6 +244,7 @@ class Baichuan:
         # payloads
         self._payload_lock: dict[tuple[int, int | None], asyncio.Lock] = {}  # one payload request at a time per (cmd_id, ch_id), ch_id None for the whole device
         self._payload_queue: dict[tuple[int, int], asyncio.Queue[bytes]] = {}  # received payload chunks per (cmd_id, full_mess_id), an empty chunk marks the end
+        self._live_previews: int = 0  # active live preview streams, the connection needs to stay open while receiving them
 
     async def _connect_if_needed(self):
         """Initialize the protocol and make the connection if needed."""
@@ -1745,7 +1749,7 @@ class Baichuan:
 
                 now = time_now()
                 sleep_t = min(BATTERY_CLOSE_TIME - (now - self._connection.time_send), BATTERY_CLOSE_TIME)
-                if self._connection.receive_futures:
+                if self._connection.receive_futures or self._live_previews:
                     sleep_t = BATTERY_CLOSE_TIME
                 elif sleep_t < 0.05:
                     _LOGGER.debug("Baichuan host %s: closing connection to preserve battery life", self._host)
@@ -2970,6 +2974,58 @@ class Baichuan:
         media = MediaStream(first_i_frame_only=True)
         media.decode_chunk(payload)
         return await media.to_jpeg(ffmpeg)
+
+    async def baichuan_stream(self, channel: int = 0, stream: str = "main") -> AsyncGenerator[bytes, None]:
+        """Yield the live video of a channel as Annex-B H.264 or H.265 frames.
+
+        Battery-powered Reolink cameras (Argus, MagiCam, Video Doorbell, ...) do not
+        expose a RTSP/RTMP url; this streams their live video over the Baichuan
+        protocol instead. The preview is started when iteration begins and stopped
+        again when iteration ends, so the camera can go back to sleep. The preview
+        starts on a key-frame, so the output is directly decodable, e.g. piped to
+        ffmpeg or fed to the Home Assistant stream component (no RTSP and no go2rtc
+        needed). The codec follows the encoding of the stream, see
+        ``Host.get_encoding`` (a 4K main stream is usually H.265).
+
+        Example::
+
+            async for frame in host.baichuan.baichuan_stream(channel=0):
+                ffmpeg_process.stdin.write(frame)
+
+        :param channel: the camera channel (0 for a standalone camera)
+        :param stream: "main" for the main stream or "sub" for the sub stream
+        """
+        stream_type = PREVIEW_STREAM_TYPES.get(stream)
+        if stream_type is None:
+            raise InvalidParameterError(f"Baichuan host {self._host}: baichuan_stream stream '{stream}' not in {list(PREVIEW_STREAM_TYPES)}")
+
+        xml = xmls.Preview.format(channel=channel, handle=channel, stream=stream_type)
+        media = MediaStream()
+        # the preview is pushed until it is stopped, so it never ends by itself
+        preview = self.send_payload_stream(cmd_id=PREVIEW_CMD, body=xml)
+        self._live_previews += 1
+        try:
+            # aclosing: stop reading and release the payload lock directly when the consumer stops early
+            async with aclosing(preview) as chunks:
+                async for chunk in chunks:
+                    media.decode_chunk(chunk, final=False)
+                    frames = media.video_frames
+                    # keep the last frame, the decoder uses it to detect duplicate frames
+                    for frame in frames[:-1]:
+                        yield frame
+                    del frames[:-1], media.frame_us[:-1]
+                    # the audio is not part of the video stream, do not buffer it
+                    media.audio_frames.clear()
+                    media.audio_us.clear()
+                # yield the last frame that was kept for the duplicate detection above
+                for frame in media.video_frames:
+                    yield frame
+        finally:
+            self._live_previews -= 1
+            try:
+                await self.send(cmd_id=PREVIEW_STOP_CMD, body=xml)
+            except ReolinkError as err:
+                _LOGGER.debug("Baichuan host %s: error while stopping the preview stream of channel %s: %s", self._host, channel, err)
 
     @http_cmd("GetP2p")
     async def get_uid(self) -> None:
