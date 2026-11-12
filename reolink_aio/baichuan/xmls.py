@@ -484,9 +484,9 @@ CoverPreview = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
 <CoverPreview version="1.1">
-<channelId>{channel}</channelId>
+<channelId>{channel}</channelId>{uid}
 <desc>0</desc>
-<streamType>{stream}Stream</streamType>
+<streamType>{stream_type}</streamType>
 {time_range}
 <frameList>
 <frameNo>1</frameNo>

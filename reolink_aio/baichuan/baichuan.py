@@ -2954,11 +2954,17 @@ class Baichuan:
     async def snapshot_past(self, channel: int, time: datetime, snapType: str = "sub", ffmpeg: str = "ffmpeg") -> bytes:
         """Get a JPEG image from a past recording (thumbnail)"""
         end = time + timedelta(seconds=10)
-        if "main" in snapType:
-            snapType = "main"
-        if snapType not in {"sub", "main", "ext"}:
-            snapType = "sub"
-        xml = xmls.CoverPreview.format(channel=channel, stream=snapType, time_range=xml_time_range(time, end))
+        if snapType in {"autotrack_main", "telephoto_main", "ext"}:
+            stream_type = "externStream"
+        elif snapType in {"autotrack_sub", "telephoto_sub"}:
+            stream_type = "mobileStream"
+        elif "main" in snapType:
+            stream_type = "mainStream"
+        else:
+            stream_type = "subStream"
+        uid = self.http_api.camera_uid(channel).split("_")[0]
+        uid_xml = "" if uid == UNKNOWN else f"\n<uid>{uid}</uid>"
+        xml = xmls.CoverPreview.format(channel=channel, uid=uid_xml, stream_type=stream_type, time_range=xml_time_range(time, end))
         _mess, payload = await self.send_payload(cmd_id=298, body=xml)
 
         media = MediaStream(first_i_frame_only=True)
