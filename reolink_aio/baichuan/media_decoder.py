@@ -53,6 +53,7 @@ class MediaStream:
         self.i_frame_indices: list[int] = []
         self.audio_frames: list[bytes] = []
         self.audio_us: list[int] = []  # timestamp of the last video frame when the audio frame was received
+        self.video_duration: float = 0.0  # seconds between the first i-frame and the last decoded video frame
         self.skipped_bytes: int = 0
         self.duplicate_frames: int = 0
         self.skipped_audio_frames: int = 0
@@ -119,6 +120,8 @@ class MediaStream:
                     if self._first_i_frame_us is None:
                         self._first_i_frame_us = microseconds
                     self._keyframe_times.append(((microseconds - self._first_i_frame_us) & 0xFFFFFFFF) / 1e6)  # the timestamp can wrap around
+                if self._first_i_frame_us is not None:
+                    self.video_duration = ((microseconds - self._first_i_frame_us) & 0xFFFFFFFF) / 1e6  # the timestamp can wrap around
                 self.video_frames.append(frame)
                 self.frame_us.append(microseconds)
                 idx = next_idx

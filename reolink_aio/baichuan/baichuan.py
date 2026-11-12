@@ -4601,8 +4601,8 @@ class Baichuan:
 
         return vod_type_dict, vod_dict
 
-    def _download_recording(self, channel: int, start: datetime, end: datetime, stream: str) -> AsyncGenerator[bytes, None]:
-        """Download the recording of a channel between start and end, yields the Baichuan media stream in chunks while it is being received"""
+    async def _download_recording(self, channel: int, start: datetime, end: datetime, stream: str, media: MediaStream) -> AsyncGenerator[bytes, None]:
+        """Download the recording of a channel between start and end, yields the Baichuan media stream in chunks while it is being received."""
         uid = self.http_api.camera_uid(channel)
         uid = uid.split("_")[0]
         if uid == UNKNOWN:
@@ -4616,16 +4616,35 @@ class Baichuan:
         else:
             stream_type = "subStream"
 
-        xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(start, end))
-        # NVRs do not support multiple downloads simultaneously, also not on different channels
-        return self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
+        download_start = start
+        while True:
+            xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(download_start, end))
+            # NVRs do not support multiple downloads simultaneously, also not on different channels
+            download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
+            async with aclosing(download):
+                async for chunk in download:
+                    yield chunk
+
+            # Some devices (seen on a Home Hub) stop a download before the requested end, then a follow-up download is done for the remaining part.
+            next_start = start + timedelta(seconds=round(media.video_duration))
+            if end - next_start <= timedelta(seconds=5) or next_start <= download_start:
+                return  # complete, or no new video received (prevents an endless loop)
+            _LOGGER.debug(
+                "Baichuan host %s: download of channel %s stopped %s before the requested end, doing a follow-up download from %s",
+                self._host,
+                channel,
+                end - next_start,
+                next_start,
+            )
+            download_start = next_start
 
     async def stream_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
         """Download the recording of a channel between start and end and yield it as fragmented mp4 data while it is being received"""
-        download = self._download_recording(channel, start, end, stream)
+        media = MediaStream()
+        download = self._download_recording(channel, start, end, stream, media)
         duration = (end - start).total_seconds()
         # aclosing: directly stop ffmpeg and the download when the consumer stops early, instead of when the generators are garbage collected
-        async with aclosing(download) as chunks, aclosing(MediaStream().stream_mp4(chunks, ffmpeg, duration)) as mp4_stream:
+        async with aclosing(download) as chunks, aclosing(media.stream_mp4(chunks, ffmpeg, duration)) as mp4_stream:
             async for part in mp4_stream:
                 yield part
 
@@ -4634,9 +4653,10 @@ class Baichuan:
         Download the recording of a channel between start and end and yield it as the files (name, content) of an HLS VOD playlist while it is being received.
         First the playlist (HLS_PLAYLIST) and init segment (HLS_INIT), then the media segments (HLS_SEGMENT) in order, the playlist refers to the files by name.
         """
-        download = self._download_recording(channel, start, end, stream)
+        media = MediaStream()
+        download = self._download_recording(channel, start, end, stream, media)
         duration = (end - start).total_seconds()
-        async with aclosing(download) as chunks, aclosing(MediaStream().stream_hls(chunks, duration, ffmpeg)) as hls_files:
+        async with aclosing(download) as chunks, aclosing(media.stream_hls(chunks, duration, ffmpeg)) as hls_files:
             async for file in hls_files:
                 yield file
 
