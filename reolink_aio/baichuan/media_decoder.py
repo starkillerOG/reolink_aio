@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import struct
+from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterable, Iterator
 from contextlib import aclosing
 from datetime import datetime
@@ -30,6 +32,10 @@ STREAM_MAX_CHUNK_SIZE = 262144  # 256 KB, decoding and muxing runs in the event 
 STREAM_MAX_AUDIO_WAIT = 2_000_000  # microseconds of video to buffer at the start of streaming, waiting for audio to be known for the MPEG-TS header
 AUDIO_RESYNC = 90000  # 1 second in 90 kHz units, move the audio forward to the video when it is further behind (gap between recordings)
 MP4_MAX_HEADER_SIZE = 1048576  # 1 MB, max mp4 data to buffer while waiting for the moov header to write the duration in
+HLS_PLAYLIST = "playlist.m3u8"
+HLS_INIT = "init.mp4"
+HLS_SEGMENT = "{index}.m4s"
+HLS_SEGMENT_LENGTH = 6.0  # target length of a segment in seconds
 
 
 class MediaStream:
@@ -54,6 +60,8 @@ class MediaStream:
         self._pending: list[bytes] = []  # received data not yet decoded
         self._pending_len: int = 0
         self._needed: int = 8  # number of pending bytes needed to decode the next item
+        self._first_i_frame_us: int | None = None  # timestamp of the first i-frame
+        self._keyframe_times: deque[float] = deque()  # seconds since the first i-frame of the i-frames not yet processed by stream_hls
         # muxer state
         self._muxer: MpegTsMuxer | None = None
         self._start_frame_us: int = 0  # timestamp of the first video frame
@@ -108,6 +116,9 @@ class MediaStream:
                         pass
                 if magic == MAGIC_VIDEO[0]:
                     self.i_frame_indices.append(len(self.video_frames))
+                    if self._first_i_frame_us is None:
+                        self._first_i_frame_us = microseconds
+                    self._keyframe_times.append(((microseconds - self._first_i_frame_us) & 0xFFFFFFFF) / 1e6)  # the timestamp can wrap around
                 self.video_frames.append(frame)
                 self.frame_us.append(microseconds)
                 idx = next_idx
@@ -185,6 +196,74 @@ class MediaStream:
                 header = None
             if header:
                 yield header  # stream ended before the moov was complete
+
+    async def stream_hls(
+        self, chunks: AsyncIterable[bytes], duration: float, ffmpeg: str = "ffmpeg", segment_length: float = HLS_SEGMENT_LENGTH
+    ) -> AsyncGenerator[tuple[str, bytes], None]:
+        """
+        Decode chunks of a Baichuan media stream and convert them (using stream_mp4) into the files of an HLS VOD playlist.
+        Yields (file name, content) while the chunks are being received: first HLS_PLAYLIST and HLS_INIT, then the media segments HLS_SEGMENT in order.
+        duration: expected duration in seconds, the complete playlist is written at the start so a player can seek in the full timeline.
+
+        The mp4 has one fragment (moof + mdat) per keyframe and nothing is re-encoded, a segment consists of whole fragments.
+        The segments in the playlist all have the same duration: a whole number of times the time between the first two keyframes.
+        Each fragment goes in the segment of its keyframe time, so segments stay at their place in the playlist when the keyframe interval changes.
+        """
+        init = b""  # ftyp + moov
+        moof = b""
+        pending: list[tuple[float, bytes]] = []  # (keyframe time, fragment) received but not yet added to a segment
+        segment: list[bytes] = []  # fragments of the segment being received
+        index = 0  # index of the segment being received
+        N_segments = 0  # number of segments in the playlist, 0 until the playlist.m3u8 is written
+        interval = 0.0  # seconds between the first two keyframes
+        segment_duration = 0.0  # always a multiple of interval
+
+        async with aclosing(self.stream_mp4(chunks, ffmpeg, duration)) as mp4_stream, aclosing(_mp4_stream_boxes(mp4_stream)) as boxes:
+            async for box_type, box in boxes:
+                if box_type in (b"ftyp", b"moov"):  # only occur 1x in the header
+                    init += box
+                elif box_type == b"moof":  # fragment header
+                    moof = box
+                elif box_type == b"mdat":  # fragment data
+                    if not self._keyframe_times:
+                        raise UnexpectedDataError("Media stream HLS: received more mp4 fragments than keyframes")
+                    # ffmpeg writes a fragment for each keyframe, in the same order
+                    pending.append((self._keyframe_times.popleft(), moof + box))
+                    if not N_segments:
+                        # yield the playlist.m3u8 and init.mp4, only runs once
+                        if len(pending) < 2:
+                            continue
+                        interval = pending[1][0] - pending[0][0]
+                        if interval <= 0:
+                            raise UnexpectedDataError(f"Media stream HLS: unexpected time of {interval} s between the first two keyframes")
+                        segment_duration = max(1, round(segment_length / interval)) * interval
+                        # The recording starts at the first keyframe at/after the requested start, so it can be up to one interval shorter than requested.
+                        # A segment in the playlist that is never received would stall the player, a longer recording is no problem,
+                        # therefore make the duration 1 interval shorter.
+                        duration_list = _hls_segment_durations(duration - interval, segment_duration)
+                        N_segments = len(duration_list)
+                        yield HLS_PLAYLIST, _hls_playlist(duration_list)
+                        yield HLS_INIT, init
+                    for time, fragment in pending:
+                        # Half an interval of margin: a keyframe just before the start of a segment belongs to that segment.
+                        # At most one segment further: no empty segments after a gap in the recording, the next segments catch up.
+                        # The last segment of the playlist gets all remaining fragments.
+                        time_index = int((time + interval / 2) // segment_duration)
+                        if (next_index := min(time_index, index + 1, N_segments - 1)) > index:
+                            yield HLS_SEGMENT.format(index=index), b"".join(segment)
+                            segment = []
+                            index = next_index
+                        segment.append(fragment)
+                    pending.clear()
+
+        if pending:
+            # only one fragment received: a single segment
+            yield HLS_PLAYLIST, _hls_playlist([duration])
+            yield HLS_INIT, init
+            segment = [fragment for _time, fragment in pending]
+        if not segment:
+            raise UnexpectedDataError("Media stream HLS: stream ended without video")
+        yield HLS_SEGMENT.format(index=index), b"".join(segment)
 
     async def _stream_mp4(self, chunks: AsyncIterable[bytes], ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
         """Decode the chunks and remux them into a fragmented mp4 using ffmpeg"""
@@ -427,6 +506,44 @@ def _mp4_boxes(data: bytes, start: int, end: int) -> Iterator[tuple[bytes, int, 
             return
         yield box_type, start, start + size
         start += size
+
+
+async def _mp4_stream_boxes(mp4_stream: AsyncIterable[bytes]) -> AsyncGenerator[tuple[bytes, bytes], None]:
+    """Split an mp4 stream into its top level boxes, yields (box type, complete box)"""
+    buffer = bytearray()
+    async for data in mp4_stream:
+        buffer += data
+        while len(buffer) >= 8:
+            size, box_type = struct.unpack_from(">I4s", buffer)
+            if size < 8:  # ffmpeg does not write 64 bit box sizes (size 1) for fragments of a few seconds
+                raise UnexpectedDataError(f"Media stream HLS: unsupported mp4 box size {size}")
+            if len(buffer) < size:
+                break  # box not complete yet
+            yield box_type, bytes(buffer[:size])
+            del buffer[:size]
+
+
+def _hls_segment_durations(duration: float, segment_duration: float) -> list[float]:
+    """List of segment durations of the playlist: all segment_duration, the last one gets the rest (0.5 - 1.5 times segment_duration)"""
+    N_segments = max(1, round(duration / segment_duration))
+    last = max(duration - (N_segments - 1) * segment_duration, 0.001)
+    return [segment_duration] * (N_segments - 1) + [last]
+
+
+def _hls_playlist(extinf: list[float]) -> bytes:
+    """HLS VOD playlist (playlist.m3u8) with the duration of each segment in seconds"""
+    lines = [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        f"#EXT-X-TARGETDURATION:{math.ceil(max(extinf))}",
+        "#EXT-X-PLAYLIST-TYPE:VOD",
+        "#EXT-X-INDEPENDENT-SEGMENTS",
+        f'#EXT-X-MAP:URI="{HLS_INIT}"',
+    ]
+    for index, seconds in enumerate(extinf):
+        lines += [f"#EXTINF:{seconds:.3f},", HLS_SEGMENT.format(index=index)]
+    lines.append("#EXT-X-ENDLIST")
+    return ("\n".join(lines) + "\n").encode()
 
 
 def _crc32_mpeg(data: bytes) -> int:

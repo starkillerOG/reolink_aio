@@ -4601,12 +4601,12 @@ class Baichuan:
 
         return vod_type_dict, vod_dict
 
-    async def stream_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
-        """Download the recording of a channel between start and end and yield it as fragmented mp4 data while it is being received"""
+    def _download_recording(self, channel: int, start: datetime, end: datetime, stream: str) -> AsyncGenerator[bytes, None]:
+        """Download the recording of a channel between start and end, yields the Baichuan media stream in chunks while it is being received"""
         uid = self.http_api.camera_uid(channel)
         uid = uid.split("_")[0]
         if uid == UNKNOWN:
-            raise InvalidParameterError(f"Baichuan host {self._host}: stream_mp4: cannot get UID for channel {channel}")
+            raise InvalidParameterError(f"Baichuan host {self._host}: download recording: cannot get UID for channel {channel}")
         if stream in {"autotrack_main", "telephoto_main"}:
             stream_type = "externStream"
         elif stream in {"autotrack_sub", "telephoto_sub"}:
@@ -4617,14 +4617,28 @@ class Baichuan:
             stream_type = "subStream"
 
         xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(start, end))
-        media = MediaStream()
         # NVRs do not support multiple downloads simultaneously, also not on different channels
-        download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
-        # aclosing: directly stop ffmpeg and the download when the consumer stops early, instead of when the generators are garbage collected
+        return self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
+
+    async def stream_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> AsyncGenerator[bytes, None]:
+        """Download the recording of a channel between start and end and yield it as fragmented mp4 data while it is being received"""
+        download = self._download_recording(channel, start, end, stream)
         duration = (end - start).total_seconds()
-        async with aclosing(download) as chunks, aclosing(media.stream_mp4(chunks, ffmpeg, duration)) as mp4_stream:
+        # aclosing: directly stop ffmpeg and the download when the consumer stops early, instead of when the generators are garbage collected
+        async with aclosing(download) as chunks, aclosing(MediaStream().stream_mp4(chunks, ffmpeg, duration)) as mp4_stream:
             async for part in mp4_stream:
                 yield part
+
+    async def stream_hls(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> AsyncGenerator[tuple[str, bytes], None]:
+        """
+        Download the recording of a channel between start and end and yield it as the files (name, content) of an HLS VOD playlist while it is being received.
+        First the playlist (HLS_PLAYLIST) and init segment (HLS_INIT), then the media segments (HLS_SEGMENT) in order, the playlist refers to the files by name.
+        """
+        download = self._download_recording(channel, start, end, stream)
+        duration = (end - start).total_seconds()
+        async with aclosing(download) as chunks, aclosing(MediaStream().stream_hls(chunks, duration, ffmpeg)) as hls_files:
+            async for file in hls_files:
+                yield file
 
     async def download_mp4(self, channel: int, start: datetime, end: datetime, stream: str = "sub", ffmpeg: str = "ffmpeg") -> bytes:
         """Download the recording of a channel between start and end and return it as a fragmented mp4 file content"""
