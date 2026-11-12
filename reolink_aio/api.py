@@ -276,6 +276,8 @@ class Host:
         # Saved settings response-blocks
         # Host data response
         self._host_data_raw: dict = {}
+        # Host data was restored from a cache, query the privacy mode once before the first HTTP(s) login
+        self._privacy_check_cached_host_data: bool = False
         # Host-level
         self._time_settings: Optional[dict] = None
         self._host_time_difference: float = 0
@@ -1340,6 +1342,15 @@ class Host:
             return  # succes
 
         # check privacy mode
+        if self._privacy_check_cached_host_data:
+            # The privacy mode state is not known yet after a (re)start, while the device may be in privacy mode with its HTTP(s) API closed.
+            # Ask over Baichuan, so the login raises LoginPrivacyModeError and get_host_data can use the cached host data instead of timing out.
+            self._privacy_check_cached_host_data = False
+            if self.baichuan.privacy_mode() is None:
+                try:
+                    await self.baichuan.get_privacy_mode()
+                except ReolinkError as exc:
+                    _LOGGER.debug("Failed to retrieve privacy mode before first login of host %s: %s", self._host, exc)
         if self.baichuan.privacy_mode():
             await self._check_privacy_mode()
 
@@ -2449,6 +2460,7 @@ class Host:
     def set_raw_host_data(self, data: str) -> None:
         """Set the cache of the host data using a string."""
         self._host_data_raw = json_loads(data)
+        self._privacy_check_cached_host_data = "host" in self._host_data_raw
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
