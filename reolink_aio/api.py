@@ -5895,6 +5895,11 @@ class Host:
             stream = stream.removeprefix("autotrack_")
             stream = stream.removeprefix("telephoto_")
 
+        if status_only and self.baichuan_only:
+            # No HTTP(s) API, the Search cmd has no Baichuan equivalent
+            statuses = await self.baichuan.search_vod_days(channel, start, end)
+            return statuses, []
+
         times = [(start, end)]
         if status_only:
             times = []
@@ -5937,6 +5942,15 @@ class Host:
                 statuses = await self.baichuan.search_vod_days(channel, start, end)
                 return statuses, []
             raise
+
+        if status_only and any(data.get("code", -1) != 0 for data in json_data):
+            # The Search cmd returned an error without raising, try Baichuan before giving up
+            try:
+                statuses = await self.baichuan.search_vod_days(channel, start, end)
+            except ReolinkError as err:
+                _LOGGER.debug("Host %s:%s: Request VOD files: Baichuan search for recording days failed: %s", self._host, self._port, err)
+            else:
+                return statuses, []
 
         statuses = []
         vod_files = []
