@@ -2066,6 +2066,9 @@ class Baichuan:
             self._add_capability("sync_time")
         if self.api_version("upgrade") > 0:
             self._add_capability("update")
+        replayVersion = self.api_version("replayVersion")
+        if (replayVersion >> 1) & 1:  # bit 1
+            self._add_capability("replay_trigger")
 
         if self.http_api.is_battery:
             host_coroutines.append((806, self.send(cmd_id=806)))
