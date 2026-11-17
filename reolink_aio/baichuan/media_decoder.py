@@ -9,7 +9,7 @@ import struct
 from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterable, Iterator
 from contextlib import aclosing
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from ..exceptions import InvalidParameterError, UnexpectedDataError
 
@@ -47,6 +47,9 @@ class MediaStream:
         self.width: int = 0
         self.height: int = 0
         self.start_time: datetime | None = None
+        self.file_end_time: datetime | None = None  # camera (local) end time of the recording file in the last stream header
+        self.stream_headers: int = 0  # number of stream headers, a recording download has one per recording file
+        self.video_since_header: bool = False  # a video frame was received after the last stream header
         self.video_codec: str | None = None
         self.audio_codec: str | None = None
         self.video_frames: list[bytes] = []
@@ -64,6 +67,7 @@ class MediaStream:
         self._pending_len: int = 0
         self._needed: int = 8  # number of pending bytes needed to decode the next item
         self._first_i_frame_us: int | None = None  # timestamp of the first i-frame
+        self._camera_time_ref: tuple[int, int] | None = None  # (camera time, timestamp) of the last i-frame with a camera time, for end_time
         self._keyframe_times: deque[float] = deque()  # seconds since the first i-frame of the i-frames not yet processed by stream_hls
         self._overlap: bool = False  # skipping the frames of a recording that overlaps in time with the frames already decoded
         # muxer state
@@ -71,6 +75,19 @@ class MediaStream:
         self._start_frame_us: int = 0  # timestamp of the first video frame
         self._audio_duration: int = 0  # duration of an audio frame in 90 kHz units, 0 if audio is not muxed
         self._audio_pts: int = TS_PTS_OFFSET  # timestamp of the next audio frame in 90 kHz units
+
+    @property
+    def end_time(self) -> datetime | None:
+        """Camera (local) time of the last decoded video frame, None if the stream does not contain the camera time."""
+        if self._camera_time_ref is None or not self.frame_us:
+            return None
+        camera_time, i_frame_us = self._camera_time_ref
+        try:
+            # the camera stores its local time as if it was a UTC unix timestamp
+            i_frame_time = datetime.fromtimestamp(camera_time, timezone.utc).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            return None
+        return i_frame_time + timedelta(microseconds=(self.frame_us[-1] - i_frame_us) & 0xFFFFFFFF)  # the timestamp can wrap around
 
     def decode_chunk(self, chunk: bytes, final: bool = True) -> None:
         """Decode a chunk of Baichuan media stream, final=True (default) for the last chunk or a complete stream."""
@@ -92,6 +109,17 @@ class MediaStream:
                 if idx + 32 > len(data):
                     self._needed = 32
                     break
+                self.stream_headers += 1
+                self.video_since_header = False
+                if self.video_frames:
+                    # Stream header of a next recording file or a follow-up download, which starts at the requested time with p-frames of the previous recording
+                    # Skip the frames until the next i-frame, which then goes through the overlap check
+                    self._overlap = True
+                try:
+                    end_time = struct.unpack_from("<6B", data, idx + 24)
+                    self.file_end_time = datetime(1900 + end_time[0], *end_time[1:])
+                except ValueError:
+                    self.file_end_time = None
                 self.width, self.height = struct.unpack_from("<II", data, idx + 8)
                 idx += 32
             elif magic in MAGIC_VIDEO:
@@ -106,6 +134,7 @@ class MediaStream:
                 if next_idx > len(data):
                     self._needed = next_idx - idx
                     break
+                self.video_since_header = True
                 frame = data[start:end]
                 if self.video_frames and frame == self.video_frames[-1]:
                     # camera sometimes sends the same frame twice, skip the duplicate
@@ -133,6 +162,8 @@ class MediaStream:
                     if self._first_i_frame_us is None:
                         self._first_i_frame_us = microseconds
                     self._keyframe_times.append(((microseconds - self._first_i_frame_us) & 0xFFFFFFFF) / 1e6)  # the timestamp can wrap around
+                    if add_header_len >= 4:
+                        self._camera_time_ref = (struct.unpack_from("<I", data, idx + 24)[0], microseconds)
                 if self._first_i_frame_us is not None:
                     self.video_duration = ((microseconds - self._first_i_frame_us) & 0xFFFFFFFF) / 1e6  # the timestamp can wrap around
                 self.video_frames.append(frame)

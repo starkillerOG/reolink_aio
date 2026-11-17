@@ -396,7 +396,9 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
             # check status code
             if len_header == 24:
                 rec_status_code = int.from_bytes(self._data_chunk[16:18], byteorder="little")
-                if rec_status_code not in [200, 201, 300]:
+                # 331 marks the end of one recording file within a multi-file payload (recording download), the payload continues
+                payload_file_end = rec_status_code == 331 and (receive_future is None or receive_future.done())
+                if rec_status_code not in [200, 201, 300] and not payload_file_end:
                     if receive_future is not None and not receive_future.done():
                         if rec_status_code == 401:
                             exc = ApiError(f"Baichuan host {self._host}: received 401 unauthorized login from cmd_id {rec_cmd_id}", rspCode=rec_status_code)
