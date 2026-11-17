@@ -4616,18 +4616,21 @@ class Baichuan:
         uid = uid.split("_")[0]
         if uid == UNKNOWN:
             raise InvalidParameterError(f"Baichuan host {self._host}: download recording: cannot get UID for channel {channel}")
+        support_sub = 0
         if stream in {"autotrack_main", "telephoto_main"}:
             stream_type = "externStream"
         elif stream in {"autotrack_sub", "telephoto_sub"}:
             stream_type = "mobileStream"
+            support_sub = 1
         elif "main" in stream:
             stream_type = "mainStream"
         else:
             stream_type = "subStream"
+            support_sub = 1
 
         download_start = start
         while True:
-            xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(download_start, end))
+            xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, support_sub=support_sub, time_range=xml_time_range(download_start, end))
             # NVRs do not support multiple downloads simultaneously, also not on different channels
             download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
             async with aclosing(download):

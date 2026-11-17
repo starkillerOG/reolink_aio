@@ -285,7 +285,7 @@ FileInfoListDownload = """
 <uid>{uid}</uid>
 <logicChnBitmap>255</logicChnBitmap>
 <channelId>{channel}</channelId>
-<supportSub>0</supportSub>
+<supportSub>{support_sub}</supportSub>
 <streamType>{stream_type}</streamType>
 {time_range}
 </FileInfo>
