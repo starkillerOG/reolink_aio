@@ -4616,17 +4616,18 @@ class Baichuan:
         uid = uid.split("_")[0]
         if uid == UNKNOWN:
             raise InvalidParameterError(f"Baichuan host {self._host}: download recording: cannot get UID for channel {channel}")
+        support_sub = 0
         if stream in {"autotrack_main", "telephoto_main"}:
             stream_type = "externStream"
         elif stream in {"autotrack_sub", "telephoto_sub"}:
             stream_type = "mobileStream"
+            support_sub = 1
         elif "main" in stream:
             stream_type = "mainStream"
         else:
             stream_type = "subStream"
+            support_sub = 1
 
-        # supportSub=1 is needed for the subStream, otherwise for instance the E1 sends the mainStream
-        support_sub = 1 if stream_type == "subStream" else 0
         download_start = start
         while True:
             xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, support_sub=support_sub, time_range=xml_time_range(download_start, end))
