@@ -64,8 +64,10 @@ class MediaStream:
         self._needed: int = 8  # number of pending bytes needed to decode the next item
         self._first_i_frame_us: int | None = None  # timestamp of the first i-frame
         self._keyframe_times: deque[float] = deque()  # seconds since the first i-frame of the i-frames not yet processed by stream_hls
-        self._last_i_frame_time: int | None = None  # unix time of the last decoded i-frame
+        self._last_i_frame_time: int | None = None  # camera time (seconds) of the last decoded i-frame
+        self._last_i_frame_us: int = 0  # timestamp of the last decoded i-frame
         self._skip_until_us: int | None = None  # skip frames of an overlapping recording until an i-frame after this timestamp
+        self._wait_for_i_frame: bool = False  # skip frames of a following stream segment until its first i-frame
         # muxer state
         self._muxer: MpegTsMuxer | None = None
         self._start_frame_us: int = 0  # timestamp of the first video frame
@@ -93,6 +95,10 @@ class MediaStream:
                     self._needed = 32
                     break
                 self.width, self.height = struct.unpack_from("<II", data, idx + 8)
+                if self.video_frames:
+                    # a following stream segment, for instance a follow-up download, can start with p-frames that refer to an i-frame
+                    # before the segment, those cannot be decoded and can be a repeat of frames already received
+                    self._wait_for_i_frame = True
                 idx += 32
             elif magic in MAGIC_VIDEO:
                 # parse frame header
@@ -114,8 +120,16 @@ class MediaStream:
                     continue
                 i_frame = magic == MAGIC_VIDEO[0]
                 frame_time = struct.unpack_from("<I", data, idx + 24)[0] if add_header_len >= 4 else None
+                if self._wait_for_i_frame:
+                    if not i_frame:
+                        self.overlap_frames += 1
+                        idx = next_idx
+                        continue
+                    self._wait_for_i_frame = False
                 if i_frame and frame_time is not None and self.frame_us and self._last_i_frame_time is not None:
-                    if frame_time <= self._last_i_frame_time and _us_before(microseconds, self.frame_us[-1]):
+                    # camera time of the last decoded frame, in whole seconds like frame_time
+                    last_frame_time = self._last_i_frame_time + ((self.frame_us[-1] - self._last_i_frame_us) & 0xFFFFFFFF) // 1000000
+                    if frame_time <= last_frame_time and _us_before(microseconds, self.frame_us[-1]):
                         # the next recording overlaps the previous one in time (the timestamps jump back),
                         # skip it until it passes the last frame, a recording download from for instance the E1 can contain overlapping recordings
                         self._skip_until_us = self.frame_us[-1]
@@ -128,6 +142,7 @@ class MediaStream:
                         continue
                 if i_frame and frame_time is not None:
                     self._last_i_frame_time = frame_time
+                    self._last_i_frame_us = microseconds
                 self.video_codec = codec.decode("utf8", errors="replace")
                 if self.start_time is None and add_header_len >= 4 and idx + 28 <= len(data):
                     try:
@@ -156,8 +171,8 @@ class MediaStream:
                     self._needed = next_idx - idx
                     break
                 self.audio_codec = MAGIC_AUDIO[magic]
-                if self._skip_until_us is not None:
-                    self.overlap_frames += 1  # audio of an overlapping recording
+                if self._skip_until_us is not None or self._wait_for_i_frame:
+                    self.overlap_frames += 1  # audio of an overlapping recording or segment
                 elif self.video_frames:
                     self.audio_frames.append(data[start:end])
                     self.audio_us.append(self.frame_us[-1])
