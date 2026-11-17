@@ -30,6 +30,7 @@ AAC_SAMPLE_RATES = (96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 1600
 STREAM_READ_SIZE = 65536  # 64 KB
 STREAM_MAX_CHUNK_SIZE = 262144  # 256 KB, decoding and muxing runs in the event loop, larger chunks are split so a single step does not block the event loop for too long
 STREAM_MAX_AUDIO_WAIT = 2_000_000  # microseconds of video to buffer at the start of streaming, waiting for audio to be known for the MPEG-TS header
+MAX_OVERLAP = 300_000_000  # microseconds, an i-frame up to 5 minutes before the last decoded frame is seen as an overlapping recording
 AUDIO_RESYNC = 90000  # 1 second in 90 kHz units, move the audio forward to the video when it is further behind (gap between recordings)
 MP4_MAX_HEADER_SIZE = 1048576  # 1 MB, max mp4 data to buffer while waiting for the moov header to write the duration in
 HLS_PLAYLIST = "playlist.m3u8"
@@ -57,12 +58,14 @@ class MediaStream:
         self.skipped_bytes: int = 0
         self.duplicate_frames: int = 0
         self.skipped_audio_frames: int = 0
+        self.overlap_frames: int = 0  # video and audio frames of an overlapping recording that were skipped
         # decoder state
         self._pending: list[bytes] = []  # received data not yet decoded
         self._pending_len: int = 0
         self._needed: int = 8  # number of pending bytes needed to decode the next item
         self._first_i_frame_us: int | None = None  # timestamp of the first i-frame
         self._keyframe_times: deque[float] = deque()  # seconds since the first i-frame of the i-frames not yet processed by stream_hls
+        self._overlap: bool = False  # skipping the frames of a recording that overlaps in time with the frames already decoded
         # muxer state
         self._muxer: MpegTsMuxer | None = None
         self._start_frame_us: int = 0  # timestamp of the first video frame
@@ -109,13 +112,23 @@ class MediaStream:
                     self.duplicate_frames += 1
                     idx = next_idx
                     continue
+                i_frame = magic == MAGIC_VIDEO[0]
+                if i_frame:
+                    # Check for jumps backward in time (can happen at the border between two files saved on the camera storage, e.g. E1)
+                    # Skip the frames until an i-frame which us-time is after the last decoded frame
+                    # Limit this behaviour to MAX_OVERLAP (5 minutes)
+                    self._overlap = bool(self.frame_us) and (self.frame_us[-1] - microseconds) & 0xFFFFFFFF < MAX_OVERLAP
+                if self._overlap:
+                    self.overlap_frames += 1
+                    idx = next_idx
+                    continue
                 self.video_codec = codec.decode("utf8", errors="replace")
                 if self.start_time is None and add_header_len >= 4 and idx + 28 <= len(data):
                     try:
                         self.start_time = datetime.fromtimestamp(struct.unpack_from("<I", data, idx + 24)[0])
                     except (OverflowError, OSError, ValueError):
                         pass
-                if magic == MAGIC_VIDEO[0]:
+                if i_frame:
                     self.i_frame_indices.append(len(self.video_frames))
                     if self._first_i_frame_us is None:
                         self._first_i_frame_us = microseconds
@@ -137,7 +150,9 @@ class MediaStream:
                     self._needed = next_idx - idx
                     break
                 self.audio_codec = MAGIC_AUDIO[magic]
-                if self.video_frames:
+                if self._overlap:
+                    self.overlap_frames += 1  # audio of an overlapping recording
+                elif self.video_frames:
                     self.audio_frames.append(data[start:end])
                     self.audio_us.append(self.frame_us[-1])
                 else:
@@ -165,6 +180,8 @@ class MediaStream:
             _LOGGER.debug("Media stream decoder skipped %s bytes of unknown data", self.skipped_bytes)
         if self.duplicate_frames:
             _LOGGER.debug("Media stream decoder skipped %s duplicate video frames", self.duplicate_frames)
+        if self.overlap_frames:
+            _LOGGER.debug("Media stream decoder skipped %s video/audio frames of overlapping recordings", self.overlap_frames)
         if self.skipped_audio_frames:
             _LOGGER.debug("Media stream decoder dropped %s audio frames received before the first video frame", self.skipped_audio_frames)
 
