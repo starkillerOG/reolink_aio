@@ -302,7 +302,7 @@ FileInfoListOpen = """
 <channelId>{channel}</channelId>
 <logicChnBitmap>255</logicChnBitmap>
 <streamType>{stream_type}</streamType>
-<recordType>manual, sched, io, md, people, face, vehicle, dog_cat, visitor, other, package</recordType>
+<recordType>manual, sched, io, md, people, face, vehicle, dog_cat, visitor, other, package, crossline, intrusion, loitering, legacy, loss</recordType>
 {time_range}
 </FileInfo>
 </FileInfoList>
