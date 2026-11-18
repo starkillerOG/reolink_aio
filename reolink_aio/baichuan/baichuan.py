@@ -4440,7 +4440,7 @@ class Baichuan:
 
             time_range = xml_time_range(datetime(year, month, start_day, 0, 0, 0), datetime(year, month, end_day, 23, 59, 59))
             xml = xmls.DayRecords.format(channel=channel, uid=uid, time_range=time_range)
-            coroutines.append((year, month, self.send(cmd_id=142, channel=channel, body=xml)))
+            coroutines.append((year, month, self.send(cmd_id=142, body=xml)))
 
         result: list[VOD_search_status] = []
         responses = await asyncio.gather(*[cor[2] for cor in coroutines], return_exceptions=True)
