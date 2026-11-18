@@ -4625,7 +4625,7 @@ class Baichuan:
         while start < end:
             end_day = min(end, start.replace(hour=23, minute=59, second=59))
             xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(start, end_day))
-            mess = await self.send(cmd_id=14, channel=channel, body=xml)
+            mess = await self.send(cmd_id=14, body=xml)
             handle = get_value_from_xml(mess, "handle")
             if handle is None:
                 raise UnexpectedDataError(f"Baichuan host {self._host}: search_vod_files: no handle received for channel {channel}")
