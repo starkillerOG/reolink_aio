@@ -4632,43 +4632,48 @@ class Baichuan:
 
             # each response contains the next page of files, a response without files marks the end
             xml = xmls.FileInfoList.format(channel=channel, uid=uid, handle=handle)
-            for _ in range(100):
-                mess = await self.send(cmd_id=15, channel=channel, body=xml)
-                items = XML.fromstring(mess).findall(".//FileInfo")
-                if not items:
-                    break
+            try:
+                for _ in range(100):
+                    mess = await self.send(cmd_id=15, body=xml)
+                    items = XML.fromstring(mess).findall(".//FileInfo")
+                    if not items:
+                        break
 
-                for item in items:
-                    file_name = get_value_from_xml(item, "Id") or get_value_from_xml(item, "name")
-                    start_time = self._xml_time_to_datetime(item.find("startTime"))
-                    end_time = self._xml_time_to_datetime(item.find("endTime"))
-                    if not file_name or start_time is None or end_time is None:
-                        continue
-                    if get_value_from_xml(item, "streamType") not in {None, stream_type}:
-                        continue  # a mainStream search also returns the subStream files
+                    for item in items:
+                        file_name = get_value_from_xml(item, "Id") or get_value_from_xml(item, "name")
+                        start_time = self._xml_time_to_datetime(item.find("startTime"))
+                        end_time = self._xml_time_to_datetime(item.find("endTime"))
+                        if not file_name or start_time is None or end_time is None:
+                            continue
+                        if get_value_from_xml(item, "streamType") not in {None, stream_type}:
+                            continue  # a mainStream search also returns the subStream files
 
-                    size = get_value_from_xml(item, "fileSize", int)
-                    if not size:
-                        size = (get_value_from_xml(item, "sizeH", int) or 0) * 2**32 + (get_value_from_xml(item, "sizeL", int) or 0)
+                        size = get_value_from_xml(item, "fileSize", int)
+                        if not size:
+                            size = (get_value_from_xml(item, "sizeH", int) or 0) * 2**32 + (get_value_from_xml(item, "sizeL", int) or 0)
 
-                    # start and end time are in the local time of the camera, the PlaybackTime of the HTTP Search is in UTC
-                    playback_time = start_time
-                    if tzinfo is not None:
-                        playback_time = start_time.replace(tzinfo=tzinfo).astimezone(timezone.utc)
-                    data = {
-                        "type": stream,
-                        "StartTime": datetime_to_reolink_time(start_time),
-                        "EndTime": datetime_to_reolink_time(end_time),
-                        "PlaybackTime": datetime_to_reolink_time(playback_time),
-                        "name": file_name,
-                        "size": size,
-                    }
-                    # a recording crossing midnight is found on both days, only keep it once
-                    vod_dict.setdefault(file_name, VOD_file(data, tzinfo))
-            else:
-                _LOGGER.warning("Baichuan host %s: search_vod_files took more then 100 itterations, quitting", self._host)
-
-            await self.send(cmd_id=16, channel=channel, body=xml)
+                        # start and end time are in the local time of the camera, the PlaybackTime of the HTTP Search is in UTC
+                        playback_time = start_time
+                        if tzinfo is not None:
+                            playback_time = start_time.replace(tzinfo=tzinfo).astimezone(timezone.utc)
+                        data = {
+                            "type": stream,
+                            "StartTime": datetime_to_reolink_time(start_time),
+                            "EndTime": datetime_to_reolink_time(end_time),
+                            "PlaybackTime": datetime_to_reolink_time(playback_time),
+                            "name": file_name,
+                            "size": size,
+                        }
+                        # a recording crossing midnight is found on both days, only keep it once
+                        vod_dict.setdefault(file_name, VOD_file(data, tzinfo))
+                else:
+                    _LOGGER.warning("Baichuan host %s: search_vod_files took more then 100 itterations, quitting", self._host)
+            finally:
+                # always close the search, the device only allows a limited number of open searches
+                try:
+                    await self.send(cmd_id=16, body=xml)
+                except ReolinkError as err:
+                    _LOGGER.debug("Baichuan host %s: search_vod_files: error closing the search of channel %s: %s", self._host, channel, err)
             start = start.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
         return list(vod_dict.values())
