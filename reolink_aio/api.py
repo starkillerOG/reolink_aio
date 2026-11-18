@@ -5880,14 +5880,38 @@ class Host:
             split_time = None
 
         trigger_dict: dict[str, typings.VOD_trigger] = {}
-        if not status_only and self.supported(None, "replay_trigger"):
-            try:
-                trigger_dict, trigger_vods = await self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream, split_time=split_time)
-            except ReolinkError as err:
-                _LOGGER.debug("Error while searching VOD type: %s", err)
-            else:
+        if not status_only:
+            # Search the files and the triggers of the files concurrently using Baichuan
+            coroutines: list[Any] = [self.baichuan.search_vod_files(channel, start, end, stream)]
+            if self.supported(None, "replay_trigger"):
+                coroutines.append(self.baichuan.search_vod_type(channel=channel, start=start, end=end, stream=stream, split_time=split_time))
+            results = await asyncio.gather(*coroutines, return_exceptions=True)
+            bc_files = results[0]
+            bc_types = results[1] if len(results) > 1 else None
+
+            if isinstance(bc_types, ReolinkError):
+                _LOGGER.debug("Error while searching VOD type: %s", bc_types)
+            elif isinstance(bc_types, BaseException):
+                raise bc_types
+            elif bc_types is not None:
+                trigger_dict, trigger_vods = bc_types
                 if trigger is not None:
                     return [], trigger_vods[trigger]
+
+            if isinstance(bc_files, ReolinkError):
+                if self.baichuan_only:
+                    raise bc_files  # No HTTP(s) API to fall back on
+                _LOGGER.debug("Error while searching VOD files using Baichuan, trying HTTP(s): %s", bc_files)
+            elif isinstance(bc_files, BaseException):
+                raise bc_files
+            else:
+                vod_files = self._split_vod_files(bc_files, split_time)
+                if trigger is not None:
+                    # search_vod_type not supported or failed, filter on the triggers parsed from the file names
+                    return [], [file for file in vod_files if trigger in file.triggers]
+                for file in vod_files:
+                    file.bc_triggers = trigger_dict.get(file.start_time_id)
+                return [], vod_files
 
         iLogicChannel = 0
         if stream.startswith("autotrack_") or stream.startswith("telephoto_"):
@@ -5976,36 +6000,40 @@ class Host:
             # When there are now recordings at all, their will be no "Status"
             _LOGGER.debug("Host %s:%s: Request VOD files: no 'Status' in the response, most likely their are no recordings: %s", self._host, self._port, json_data)
 
-        if split_time:
-            # split the recoding files in smaller time chunks
-            split_vod_files = []
-            for file in vod_files:
-                split_start = reolink_time_to_datetime(file.data["StartTime"])
-                file_end = reolink_time_to_datetime(file.data["EndTime"])
-                while file_end - split_start > split_time + timedelta(minutes=1):
-                    data = file.data.copy()
-                    data["StartTime"] = datetime_to_reolink_time(split_start)
-                    data["EndTime"] = datetime_to_reolink_time(split_start + split_time)
-                    split_vod_files.append(typings.VOD_file(data, self.timezone()))
-                    split_start = split_start + split_time
-                if file_end - split_start > timedelta(seconds=0):
-                    if file_end - split_start > split_time:
-                        split_delta = (file_end - split_start) / 2
-                        data = file.data.copy()
-                        data["StartTime"] = datetime_to_reolink_time(split_start)
-                        data["EndTime"] = datetime_to_reolink_time(split_start + split_delta)
-                        split_vod_files.append(typings.VOD_file(data, self.timezone()))
-                        split_start = split_start + split_delta
-                    data = file.data.copy()
-                    data["StartTime"] = datetime_to_reolink_time(split_start)
-                    data["EndTime"] = datetime_to_reolink_time(file_end)
-                    split_vod_files.append(typings.VOD_file(data, self.timezone()))
-            vod_files = split_vod_files
-
+        vod_files = self._split_vod_files(vod_files, split_time)
         for file in vod_files:
             file.bc_triggers = trigger_dict.get(file.start_time_id)
 
         return statuses, vod_files
+
+    def _split_vod_files(self, vod_files: list[typings.VOD_file], split_time: timedelta | None) -> list[typings.VOD_file]:
+        """Split the recoding files in smaller time chunks"""
+        if not split_time:
+            return vod_files
+
+        split_vod_files = []
+        for file in vod_files:
+            split_start = reolink_time_to_datetime(file.data["StartTime"])
+            file_end = reolink_time_to_datetime(file.data["EndTime"])
+            while file_end - split_start > split_time + timedelta(minutes=1):
+                data = file.data.copy()
+                data["StartTime"] = datetime_to_reolink_time(split_start)
+                data["EndTime"] = datetime_to_reolink_time(split_start + split_time)
+                split_vod_files.append(typings.VOD_file(data, self.timezone()))
+                split_start = split_start + split_time
+            if file_end - split_start > timedelta(seconds=0):
+                if file_end - split_start > split_time:
+                    split_delta = (file_end - split_start) / 2
+                    data = file.data.copy()
+                    data["StartTime"] = datetime_to_reolink_time(split_start)
+                    data["EndTime"] = datetime_to_reolink_time(split_start + split_delta)
+                    split_vod_files.append(typings.VOD_file(data, self.timezone()))
+                    split_start = split_start + split_delta
+                data = file.data.copy()
+                data["StartTime"] = datetime_to_reolink_time(split_start)
+                data["EndTime"] = datetime_to_reolink_time(file_end)
+                split_vod_files.append(typings.VOD_file(data, self.timezone()))
+        return split_vod_files
 
     async def send_setting(self, body: typings.reolink_json, wait_before_get: int = 0, getcmd: str = "") -> None:
         command = body[0]["cmd"]

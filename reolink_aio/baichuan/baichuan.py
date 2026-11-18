@@ -7,7 +7,7 @@ import logging
 from calendar import monthrange
 from collections.abc import AsyncGenerator, Callable
 from contextlib import aclosing
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from inspect import getmembers
 from math import ceil
 from time import time as time_now
@@ -4600,15 +4600,78 @@ class Baichuan:
 
             await self.send(cmd_id=274, channel=channel, body=xml)
 
-        # xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, time_range=xml_time_range(start, end))
-        # mess = await self.send(cmd_id=14, body=xml)
-        # handle = get_value_from_xml(mess, "handle")
-
-        # xml_file_info = xmls.FileInfoList.format(channel=channel, handle=handle, uid=uid)
-        # await self.send(cmd_id=15, body=xml_file_info)
-        # await self.send(cmd_id=16, body=xml_file_info)
-
         return vod_type_dict, vod_dict
+
+    async def search_vod_files(self, channel: int, start: datetime, end: datetime, stream: str = "main") -> list[VOD_file]:
+        """Search the recording files between start and end, returns the same format as the HTTP Search"""
+        vod_dict: dict[str, VOD_file] = {}
+        uid = self.http_api.camera_uid(channel)
+        uid = uid.split("_")[0]
+        if uid == UNKNOWN:
+            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_files: cannot get UID for channel {channel}")
+
+        if stream in {"autotrack_main", "telephoto_main"}:
+            stream_type = "externStream"
+        elif stream in {"autotrack_sub", "telephoto_sub"}:
+            stream_type = "mobileStream"
+        elif "main" in stream:
+            stream_type = "mainStream"
+        else:
+            stream_type = "subStream"
+
+        tzinfo = self.http_api.timezone()
+
+        # Split the requests per day, requests crossing midnight return no files (seen on a E1)
+        while start < end:
+            end_day = min(end, start.replace(hour=23, minute=59, second=59))
+            xml = xmls.FileInfoListOpen.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(start, end_day))
+            mess = await self.send(cmd_id=14, channel=channel, body=xml)
+            handle = get_value_from_xml(mess, "handle")
+            if handle is None:
+                raise UnexpectedDataError(f"Baichuan host {self._host}: search_vod_files: no handle received for channel {channel}")
+
+            # each response contains the next page of files, a response without files marks the end
+            xml = xmls.FileInfoList.format(channel=channel, uid=uid, handle=handle)
+            for _ in range(100):
+                mess = await self.send(cmd_id=15, channel=channel, body=xml)
+                items = XML.fromstring(mess).findall(".//FileInfo")
+                if not items:
+                    break
+
+                for item in items:
+                    file_name = get_value_from_xml(item, "Id") or get_value_from_xml(item, "name")
+                    start_time = self._xml_time_to_datetime(item.find("startTime"))
+                    end_time = self._xml_time_to_datetime(item.find("endTime"))
+                    if not file_name or start_time is None or end_time is None:
+                        continue
+                    if get_value_from_xml(item, "streamType") not in {None, stream_type}:
+                        continue  # a mainStream search also returns the subStream files
+
+                    size = get_value_from_xml(item, "fileSize", int)
+                    if not size:
+                        size = (get_value_from_xml(item, "sizeH", int) or 0) * 2**32 + (get_value_from_xml(item, "sizeL", int) or 0)
+
+                    # start and end time are in the local time of the camera, the PlaybackTime of the HTTP Search is in UTC
+                    playback_time = start_time
+                    if tzinfo is not None:
+                        playback_time = start_time.replace(tzinfo=tzinfo).astimezone(timezone.utc)
+                    data = {
+                        "type": stream,
+                        "StartTime": datetime_to_reolink_time(start_time),
+                        "EndTime": datetime_to_reolink_time(end_time),
+                        "PlaybackTime": datetime_to_reolink_time(playback_time),
+                        "name": file_name,
+                        "size": size,
+                    }
+                    # a recording crossing midnight is found on both days, only keep it once
+                    vod_dict.setdefault(file_name, VOD_file(data, tzinfo))
+            else:
+                _LOGGER.warning("Baichuan host %s: search_vod_files took more then 100 itterations, quitting", self._host)
+
+            await self.send(cmd_id=16, channel=channel, body=xml)
+            start = start.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+
+        return list(vod_dict.values())
 
     async def _download_recording(self, channel: int, start: datetime, end: datetime, stream: str, media: MediaStream) -> AsyncGenerator[bytes, None]:
         """Download the recording of a channel between start and end, yields the Baichuan media stream in chunks while it is being received."""
