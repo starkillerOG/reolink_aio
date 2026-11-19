@@ -4667,6 +4667,9 @@ class Baichuan:
                             "name": file_name,
                             "size": size,
                         }
+                        # triggers of the whole file, used when search_vod_type gives no triggers for this file
+                        if record_type := get_value_from_xml(item, "recordType"):
+                            data["recordType"] = record_type
                         # a recording crossing midnight is found on both days, only keep it once
                         vod_dict.setdefault(file_name, VOD_file(data, tzinfo))
                 else:

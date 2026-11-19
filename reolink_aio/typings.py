@@ -310,6 +310,30 @@ class VOD_trigger(IntFlag):
     LINGER = auto()
     FORGOTTEN_ITEM = auto()
     TAKEN_ITEM = auto()
+    MANUAL = auto()
+
+
+# recordType of the Baichuan file search (cmd 15)
+RECORD_TYPE_TRIGGERS: dict[str, VOD_trigger] = {
+    "manual": VOD_trigger.MANUAL,
+    "sched": VOD_trigger.TIMER,
+    "md": VOD_trigger.MOTION,
+    "pir": VOD_trigger.MOTION,
+    "other": VOD_trigger.MOTION,
+    "io": VOD_trigger.IO,
+    "people": VOD_trigger.PERSON,
+    "face": VOD_trigger.FACE,
+    "vehicle": VOD_trigger.VEHICLE,
+    "dog_cat": VOD_trigger.ANIMAL,
+    "visitor": VOD_trigger.DOORBELL,
+    "package": VOD_trigger.PACKAGE,
+    "cry": VOD_trigger.CRYING,
+    "crossline": VOD_trigger.CROSSLINE,
+    "intrusion": VOD_trigger.INTRUSION,
+    "loitering": VOD_trigger.LINGER,
+    "legacy": VOD_trigger.FORGOTTEN_ITEM,
+    "loss": VOD_trigger.TAKEN_ITEM,
+}
 
 
 Parsed_VOD_file_name = NamedTuple(
@@ -409,6 +433,12 @@ class VOD_file:
         """events that triggered the recording"""
         if self.bc_triggers is not None:
             return self.bc_triggers
+        if record_type := self.data.get("recordType"):
+            # Baichuan file search: "md, people, sched", covers the whole file
+            triggers = VOD_trigger.NONE
+            for rec_type in record_type.split(","):
+                triggers |= RECORD_TYPE_TRIGGERS.get(rec_type.strip(), VOD_trigger.NONE)
+            return triggers
         parsed = self._ensure_parsed_file_name()
         if parsed is None:
             return VOD_trigger.NONE
