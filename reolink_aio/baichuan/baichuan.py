@@ -1745,7 +1745,7 @@ class Baichuan:
 
                 now = time_now()
                 sleep_t = min(BATTERY_CLOSE_TIME - (now - self._connection.time_send), BATTERY_CLOSE_TIME)
-                if self._connection.receive_futures:
+                if self._connection.receive_futures or self._payload_queue:
                     sleep_t = BATTERY_CLOSE_TIME
                 elif sleep_t < 0.05:
                     _LOGGER.debug("Baichuan host %s: closing connection to preserve battery life", self._host)
