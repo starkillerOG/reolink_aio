@@ -629,6 +629,7 @@ class Baichuan:
         """Callback to parse a received message that was pushed"""
         payload_len = len(payload)
         mess_id: int = int.from_bytes(data[12:16], byteorder="little")
+        payload_queue = self._payload_queue.get((cmd_id, mess_id))
 
         # decryption
         try:
@@ -637,11 +638,15 @@ class Baichuan:
                 encryptLen = get_value_from_xml(rec_body.lower(), "encryptlen", int)
                 if encryptLen is not None:
                     payload = self._aes_decrypt(payload[0:encryptLen], b"", decode=False) + payload[encryptLen::]
-        except ReolinkError as err:
-            _LOGGER.debug(err)
-            return
-
-        payload_queue = self._payload_queue.get((cmd_id, mess_id))
+        except (ReolinkError, UnicodeDecodeError) as err:
+            if payload_queue is None or payload_len != 0 or len(data) <= len_header:
+                _LOGGER.debug("Baichuan host %s: failed to decrypt cmd_id %s: %s", self._host, cmd_id, err)
+                return
+            # some cameras (E1) send the continuation packets of a payload stream without extension (payload offset 0),
+            # the whole body is then unencrypted payload instead of a XML message
+            rec_body = ""
+            payload = data[len_header:]
+            payload_len = len(payload)
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if payload_queue is not None:
