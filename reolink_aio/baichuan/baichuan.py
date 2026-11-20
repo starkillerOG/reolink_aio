@@ -133,6 +133,24 @@ WHITELED_MODE_BC_TO_HTTP = {
 WHITELED_MODE_HTTP_TO_BC = {v: k for k, v in WHITELED_MODE_BC_TO_HTTP.items()}
 
 
+# a recording download that received less than this part of the size announced by the device (the size of the recording files) is not complete,
+# the received media stream is a few % smaller or larger than the files, for short sub stream recordings less (seen 53% on the E1)
+DOWNLOAD_COMPLETE_RATIO = 0.9
+
+
+def _download_info(body: str) -> tuple[int, int]:
+    """Total size in bytes and number of recording files announced in the response to a recording download (cmd_id 143), 0 if unknown"""
+    try:
+        root = XML.fromstring(body)
+    except XML.ParseError:
+        return 0, 0
+    size_l = root.findtext(".//sizeL", "")
+    size_h = root.findtext(".//sizeH", "")
+    file_count = root.findtext(".//FileCount", "")
+    size = int(size_l) + (int(size_h) << 32 if size_h.isdigit() else 0) if size_l.isdigit() else 0
+    return size, int(file_count) if file_count.isdigit() else 0
+
+
 class Baichuan:
     """Reolink Baichuan API class."""
 
@@ -629,6 +647,14 @@ class Baichuan:
         """Callback to parse a received message that was pushed"""
         payload_len = len(payload)
         mess_id: int = int.from_bytes(data[12:16], byteorder="little")
+
+        if len_header == 24 and int.from_bytes(data[16:18], byteorder="little") == 331 and (payload_queue_file := self._payload_queue.get((cmd_id, mess_id))) is not None:
+            # end of one recording file within a multi-file payload (recording download), the payload continues,
+            # the payload of this message is the stream header of the next recording file
+            _LOGGER.debug("Baichuan host %s: received cmd_id %s mess_id %s end of a recording file, next file header of %s bytes", self._host, cmd_id, mess_id, payload_len)
+            if payload_len != 0:
+                payload_queue_file.put_nowait(payload)
+            return
 
         # decryption
         try:
@@ -4703,18 +4729,68 @@ class Baichuan:
             support_sub = 1
 
         download_start = start
+        received_before: datetime | None = None  # camera time of the last frame received by the previous download
         while True:
             xml = xmls.FileInfoListDownload.format(channel=channel, uid=uid, stream_type=stream_type, support_sub=support_sub, time_range=xml_time_range(download_start, end))
             # NVRs do not support multiple downloads simultaneously, also not on different channels
-            download = self.send_payload_stream(cmd_id=143, channel=channel, body=xml, stop_cmd_id=144, lock_per_device=True)
-            async with aclosing(download):
-                async for chunk in download:
-                    yield chunk
+            announced: list[tuple[int, int]] = []
+            download = self.send_payload_stream(
+                cmd_id=143, channel=channel, body=xml, on_response=lambda body: announced.append(_download_info(body)), stop_cmd_id=144, lock_per_device=True
+            )
+            headers_before = media.stream_headers
+            received = 0
+            try:
+                async with aclosing(download):
+                    async for chunk in download:
+                        received += len(chunk)
+                        yield chunk
+            except ApiError as err:
+                if download_start == start or received:
+                    raise
+                # a follow-up download is rejected when there are no more recordings after the last received frame
+                _LOGGER.debug("Baichuan host %s: follow-up download of channel %s from %s: no more recordings (%s)", self._host, channel, download_start, err)
+                return
 
-            # Some devices (seen on a Home Hub) stop a download before the requested end, then a follow-up download is done for the remaining part.
-            next_start = start + timedelta(seconds=round(media.video_duration))
-            if end - next_start <= timedelta(seconds=5) or next_start <= download_start:
-                return  # complete, or no new video received (prevents an endless loop)
+            # Some devices (seen on a Home Hub) stop a download at the end of a recording file, before the requested end,
+            # then a follow-up download is done for the remaining part.
+            announced_size, file_count = announced[0] if announced else (0, 0)
+            # each recording file starts with a stream header (the next ones are sent with status 331), do not count a last header without video
+            headers = media.stream_headers - headers_before
+            files = headers - 1 if headers > 1 and not media.video_since_header else headers
+            received_until = media.end_time
+            if received_until is not None and start - timedelta(hours=1) <= received_until <= end + timedelta(hours=1):
+                # stopped before the end of the current recording file (from its stream header) and before the requested end
+                file_end = media.file_end_time
+                stopped_in_file = file_end is not None and received_until < min(file_end, end) - timedelta(seconds=2)
+                if headers > 1 or file_count == 1:
+                    # the device marks each recording file with a stream header, or there is only one file
+                    if files >= file_count and not stopped_in_file:
+                        return  # the device sent all announced recording files, they can end before the requested end or contain gaps
+                else:
+                    # the device does not mark the recording files, check if it stopped early:
+                    # at the end of the recording file in the stream header, or less than the announced size
+                    stopped_at_file_end = file_end is not None and abs(received_until - file_end) <= timedelta(seconds=2)
+                    received_too_little = announced_size > 0 and received < DOWNLOAD_COMPLETE_RATIO * announced_size
+                    no_info = file_end is None and announced_size == 0
+                    if not (stopped_in_file or stopped_at_file_end or received_too_little or no_info):
+                        return  # the device sent everything, the recordings can end before the requested end or contain gaps
+                if received_before is not None and received_until <= received_before:
+                    return  # no new video received (prevents an endless loop)
+                received_before = received_until
+                # continue from the last received frame, the recordings in the requested range can have gaps or start later than the requested start,
+                # the device starts at the i-frame before, MediaStream skips the frames that were already received.
+                # A download that starts at a file boundary can begin with the end of the previous file, always continue after the previous start.
+                next_start = max(received_until.replace(microsecond=0), download_start + timedelta(seconds=1))
+            elif (file_end := media.file_end_time) is not None and download_start <= file_end <= end:
+                # no video with a camera time, but the stream header of a recording file, for instance when the download started at the end of the previous file
+                next_start = max(file_end, download_start + timedelta(seconds=1))
+            else:
+                # no usable camera time in the stream, assume the video is continuous from the requested start
+                next_start = start + timedelta(seconds=round(media.video_duration))
+                if next_start <= download_start:
+                    return  # no new video received (prevents an endless loop)
+            if end - next_start <= timedelta(seconds=5):
+                return  # complete
             _LOGGER.debug(
                 "Baichuan host %s: download of channel %s stopped %s before the requested end, doing a follow-up download from %s",
                 self._host,
