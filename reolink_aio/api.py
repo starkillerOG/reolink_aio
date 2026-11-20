@@ -182,6 +182,7 @@ class Host:
         self._enc_password = parse.quote(self._password, safe="")
         self._token: Optional[str] = None
         self._lease_time: Optional[datetime] = None
+        self._privacy_check_cached_host_data: bool = False
         # Connection session
         self._timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(total=timeout, connect=timeout, sock_connect=min(timeout, SOCK_CONNECT_TIMEOUT), sock_read=timeout)
         self._aiohttp_session_internall: bool = True
@@ -1340,6 +1341,13 @@ class Host:
             return  # succes
 
         # check privacy mode
+        if self._privacy_check_cached_host_data and self.baichuan.privacy_mode() is None:
+            # privacy mode unknown after a restart with cached host data, HTTP(s) API is closed in privacy mode
+            self._privacy_check_cached_host_data = False
+            try:
+                await self.baichuan.get_privacy_mode()
+            except ReolinkError as exc:
+                _LOGGER.debug("Failed to retrieve privacy mode before first login of host %s: %s", self._host, exc)
         if self.baichuan.privacy_mode():
             await self._check_privacy_mode()
 
@@ -2449,6 +2457,7 @@ class Host:
     def set_raw_host_data(self, data: str) -> None:
         """Set the cache of the host data using a string."""
         self._host_data_raw = json_loads(data)
+        self._privacy_check_cached_host_data = "host" in self._host_data_raw
 
     async def get_host_data(self) -> None:
         """Fetch the host settings/capabilities."""
