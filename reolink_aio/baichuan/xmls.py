@@ -270,8 +270,7 @@ DayRecords = """
 <DayRecordList>
 <DayRecord>
 <index>0</index>
-<channelId>{channel}</channelId>
-<uid>{uid}</uid>
+<channelId>{channel}</channelId>{uid}
 </DayRecord>
 </DayRecordList>
 </DayRecords>
@@ -281,8 +280,7 @@ FileInfoListDownload = """
 <?xml version='1.0' encoding='utf-8'?>
 <body>
 <FileInfoList version="1.1">
-<FileInfo>
-<uid>{uid}</uid>
+<FileInfo>{uid}
 <logicChnBitmap>255</logicChnBitmap>
 <channelId>{channel}</channelId>
 <supportSub>{support_sub}</supportSub>
@@ -296,8 +294,7 @@ FileInfoListOpen = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
 <FileInfoList version="1.1">
-<FileInfo>
-<uid>{uid}</uid>
+<FileInfo>{uid}
 <searchAITrack>1</searchAITrack>
 <channelId>{channel}</channelId>
 <logicChnBitmap>255</logicChnBitmap>
@@ -313,8 +310,7 @@ FileInfoList = """
 <body>
 <FileInfoList version="1.1">
 <FileInfo>
-<channelId>{channel}</channelId>
-<uid>{uid}</uid>
+<channelId>{channel}</channelId>{uid}
 <searchAITrack>1</searchAITrack>
 <handle>{handle}</handle>
 </FileInfo>
@@ -325,8 +321,7 @@ FindRecVideoOpen = """
 <?xml version="1.0" encoding="UTF-8" ?>
 <body>
 <findAlarmVideo version="1.1">
-<channelId>{channel}</channelId>
-<uid>{uid}</uid>
+<channelId>{channel}</channelId>{uid}
 <logicChnBitmap>255</logicChnBitmap>
 <streamType>{stream_type}</streamType>
 <notSearchVideo>0</notSearchVideo>

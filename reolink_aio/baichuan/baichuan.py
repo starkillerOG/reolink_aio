@@ -768,6 +768,14 @@ class Baichuan:
             return None
         return channel
 
+    def _uid_xml(self, channel: int, cmd: str) -> str:
+        """Return the uid xml element of a channel, empty when the UID is unknown (kit cameras connected to a NVR without UID)"""
+        uid = self.http_api.camera_uid(channel).split("_")[0]
+        if uid == UNKNOWN:
+            _LOGGER.debug("Baichuan host %s: %s: UID of channel %s unknown, sending request without UID", self._host, cmd, channel)
+            return ""
+        return f"\n<uid>{uid}</uid>"
+
     async def _get_nonce(self, retry: int = RETRY_ATTEMPTS) -> str:
         """Get the nonce needed for the modern login"""
         retry = retry - 1
@@ -2965,9 +2973,8 @@ class Baichuan:
             stream_type = "mainStream"
         else:
             stream_type = "subStream"
-        uid = self.http_api.camera_uid(channel).split("_")[0]
-        uid_xml = "" if uid == UNKNOWN else f"\n<uid>{uid}</uid>"
-        xml = xmls.CoverPreview.format(channel=channel, uid=uid_xml, stream_type=stream_type, time_range=xml_time_range(time, end))
+        uid = self._uid_xml(channel, "snapshot_past")
+        xml = xmls.CoverPreview.format(channel=channel, uid=uid, stream_type=stream_type, time_range=xml_time_range(time, end))
         _mess, payload = await self.send_payload(cmd_id=298, body=xml)
 
         media = MediaStream(first_i_frame_only=True)
@@ -4420,10 +4427,7 @@ class Baichuan:
 
     async def search_vod_days(self, channel: int, start: datetime, end: datetime) -> list[VOD_search_status]:
         """Search on which days recordings are available, returns the same format as the HTTP Search with onlyStatus"""
-        uid = self.http_api.camera_uid(channel)
-        uid = uid.split("_")[0]
-        if uid == UNKNOWN:
-            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_days: cannot get UID for channel {channel}")
+        uid = self._uid_xml(channel, "search_vod_days")
 
         # Split the requests per month, requests spanning more then 1 month will timeout
         coroutines: list[tuple[int, int, Coroutine]] = []
@@ -4469,10 +4473,7 @@ class Baichuan:
         vod_dict: dict[VOD_trigger, list[VOD_file]] = {}
         for trig in VOD_trigger:
             vod_dict[trig] = []
-        uid = self.http_api.camera_uid(channel)
-        uid = uid.split("_")[0]
-        if uid == UNKNOWN:
-            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_type: cannot get UID for channel {channel}")
+        uid = self._uid_xml(channel, "search_vod_type")
 
         if stream == "sub":
             stream_type = 1
@@ -4608,10 +4609,7 @@ class Baichuan:
     async def search_vod_files(self, channel: int, start: datetime, end: datetime, stream: str = "main") -> list[VOD_file]:
         """Search the recording files between start and end, returns the same format as the HTTP Search"""
         vod_dict: dict[str, VOD_file] = {}
-        uid = self.http_api.camera_uid(channel)
-        uid = uid.split("_")[0]
-        if uid == UNKNOWN:
-            raise InvalidParameterError(f"Baichuan host {self._host}: search_vod_files: cannot get UID for channel {channel}")
+        uid = self._uid_xml(channel, "search_vod_files")
 
         if stream in {"autotrack_main", "telephoto_main"}:
             stream_type = "externStream"
@@ -4686,10 +4684,7 @@ class Baichuan:
 
     async def _download_recording(self, channel: int, start: datetime, end: datetime, stream: str, media: MediaStream) -> AsyncGenerator[bytes, None]:
         """Download the recording of a channel between start and end, yields the Baichuan media stream in chunks while it is being received."""
-        uid = self.http_api.camera_uid(channel)
-        uid = uid.split("_")[0]
-        if uid == UNKNOWN:
-            raise InvalidParameterError(f"Baichuan host {self._host}: download recording: cannot get UID for channel {channel}")
+        uid = self._uid_xml(channel, "download recording")
         support_sub = 0
         if stream in {"autotrack_main", "telephoto_main"}:
             stream_type = "externStream"
