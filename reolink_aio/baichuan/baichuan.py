@@ -629,9 +629,10 @@ class Baichuan:
         """Callback to parse a received message that was pushed"""
         payload_len = len(payload)
         mess_id: int = int.from_bytes(data[12:16], byteorder="little")
+        payload_offset = int.from_bytes(data[20:24], byteorder="little") if len_header == 24 else None
         payload_queue = self._payload_queue.get((cmd_id, mess_id))
 
-        if payload_queue is not None and len_header == 24 and len(data) > len_header and int.from_bytes(data[20:24], byteorder="little") == 0:
+        if payload_queue is not None and payload_offset == 0 and len(data) > len_header:
             # unencrypted payload stream without extension (payload offset 0 in the header)
             rec_body = ""
             payload = data[len_header:]
