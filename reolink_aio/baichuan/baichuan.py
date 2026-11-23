@@ -4373,6 +4373,53 @@ class Baichuan:
         """Return if the survaillance rule is enabled or not"""
         return self._rules.get(channel, {}).get(rule_id, {}).get("enable", False)
 
+    @http_cmd("GetTime")
+    async def GetTime(self) -> None:
+        """Get the time, timezone and DST settings of the host in the same format as the HTTP GetTime"""
+
+        async def get_time() -> tuple[str, datetime]:
+            # take the local time directly when the time is received, not when the DST settings are also received
+            return await self.send(cmd_id=104), datetime.now()
+
+        time_result, dst_mess = await asyncio.gather(get_time(), self.send(cmd_id=106), return_exceptions=True)
+        if isinstance(time_result, BaseException):
+            raise time_result
+        mess, now = time_result
+        root = XML.fromstring(mess)
+        time = self._xml_time_to_datetime(root)
+        time_zone = get_value_from_xml(root, "timeZone", int)
+        if time is None or time_zone is None:
+            raise UnexpectedDataError(f"Baichuan host {self._host}: GetTime: could not find the time or timeZone in response:\n{mess}")
+
+        time_diffrence = (now - time).total_seconds()
+        if abs(time_diffrence) < 10:
+            time_diffrence = 0
+        self.http_api._host_time_difference = time_diffrence
+
+        # construct the conversion for get_keys_from_xml; dst_keys
+        weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        dst_keys: dict[str, tuple[str, Callable]] = {"enable": ("enable", int), "offset": ("offset", int)}
+        for prefix in ("start", "end"):
+            for bc_key, http_key in (("Month", "Mon"), ("WeekIndex", "Week"), ("Hour", "Hour"), ("Minute", "Min"), ("Second", "Sec")):
+                dst_keys[f"{prefix}{bc_key}"] = (f"{prefix}{http_key}", int)
+            dst_keys[f"{prefix}Weekday"] = (f"{prefix}Weekday", lambda day: weekdays.index(day) if day in weekdays else int(day))
+
+        # Make a valid default for DST disabled
+        dst = {key: 1 for key, _ in dst_keys.values()} | {"enable": 0}
+        try:
+            if isinstance(dst_mess, BaseException):
+                raise dst_mess
+            dst_device = get_keys_from_xml(dst_mess, dst_keys)
+        except (ReolinkError, ValueError) as err:
+            _LOGGER.debug("Baichuan host %s: GetTime: could not get the DST settings: %s", self._host, err)
+        else:
+            if len(dst_device) == len(dst_keys):
+                dst = dst_device
+            else:
+                _LOGGER.debug("Baichuan host %s: GetTime: incomplete DST settings: %s", self._host, dst_device)
+
+        self.http_api._time_settings = {"Dst": dst, "Time": datetime_to_reolink_time(time) | {"timeZone": time_zone}}
+
     async def synchronize_time(self) -> None:
         """Synchronize the camera time to the time of the device running this code"""
         mess = await self.send(cmd_id=104)

@@ -158,7 +158,7 @@ def get_value_from_xml(xml: str | XML.Element, key: str, type_class=str, recursi
         return None
 
 
-def get_keys_from_xml(xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, type]], recursive: bool = True) -> dict[str, Any]:
+def get_keys_from_xml(xml: str | XML.Element, keys: list[str] | dict[str, tuple[str, Callable]], recursive: bool = True) -> dict[str, Any]:
     """Get multiple keys from a xml and return as a dict"""
     if isinstance(xml, str):
         root = XML.fromstring(xml)
