@@ -102,7 +102,7 @@ class BaichuanBaseConnection:
             self._transport.close()
             try:
                 async with asyncio.timeout(5):
-                    await self._protocol.close_future
+                    await asyncio.shield(self._protocol.close_future)  # shield: a timeout should not cancel the close_future itself
             except asyncio.TimeoutError:
                 _LOGGER.warning("Baichuan host %s: Timeout waiting on connection close", self._host)
                 self._protocol.connection_lost()
@@ -280,7 +280,8 @@ class BaichuanBaseClientProtocol(asyncio.BaseProtocol):
         _LOGGER.debug("Baichuan host %s: closed %s connection", self._host, self.con_type.value.upper())
         if self._close_callback is not None:
             self._close_callback(self.con_type)
-        self.close_future.set_result(True)
+        if not self.close_future.done():
+            self.close_future.set_result(True)
 
     def _set_error(self, err_mess: str, exc_class: type[Exception] = ReolinkError, cmd_id: int | None = None, mess_id: int | None = None) -> None:
         """Set a error message to the future or log the error"""
