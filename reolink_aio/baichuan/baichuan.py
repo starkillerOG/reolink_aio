@@ -629,19 +629,24 @@ class Baichuan:
         """Callback to parse a received message that was pushed"""
         payload_len = len(payload)
         mess_id: int = int.from_bytes(data[12:16], byteorder="little")
-
-        # decryption
-        try:
-            rec_body = self._decrypt(data, len_header, cmd_id)
-            if payload_len != 0 and rec_body:
-                encryptLen = get_value_from_xml(rec_body.lower(), "encryptlen", int)
-                if encryptLen is not None:
-                    payload = self._aes_decrypt(payload[0:encryptLen], b"", decode=False) + payload[encryptLen::]
-        except ReolinkError as err:
-            _LOGGER.debug(err)
-            return
-
         payload_queue = self._payload_queue.get((cmd_id, mess_id))
+
+        if payload_queue is not None and len_header == 24 and len(data) > len_header and int.from_bytes(data[20:24], byteorder="little") == 0:
+            # unencrypted payload stream without extension (payload offset 0 in the header)
+            rec_body = ""
+            payload = data[len_header:]
+            payload_len = len(payload)
+        else:
+            # decryption
+            try:
+                rec_body = self._decrypt(data, len_header, cmd_id)
+                if payload_len != 0 and rec_body:
+                    encryptLen = get_value_from_xml(rec_body.lower(), "encryptlen", int)
+                    if encryptLen is not None:
+                        payload = self._aes_decrypt(payload[0:encryptLen], b"", decode=False) + payload[encryptLen::]
+            except (ReolinkError, UnicodeDecodeError) as err:
+                _LOGGER.debug("Baichuan host %s: failed to decrypt cmd_id %s: %s", self._host, cmd_id, err)
+                return
 
         if _LOGGER.isEnabledFor(logging.DEBUG):
             if payload_queue is not None:
