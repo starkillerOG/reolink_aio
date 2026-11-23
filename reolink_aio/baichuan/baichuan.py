@@ -2177,6 +2177,7 @@ class Baichuan:
         # Stream capabilities
         RtspVersion = self.api_version("rtsp")
         RtmpVersion = self.api_version("rtmp")
+        replayVersion = self.api_version("replayVersion")
         noExternStream = self.api_version("noExternStream", no_key_return=0)
         coroutines: list[tuple[Any, int, Coroutine]] = []
         for channel in self.http_api._stream_channels:
@@ -2188,6 +2189,8 @@ class Baichuan:
             if RtspVersion > 0 or self.api_version("encCtrl", channel) > 0 or self.api_version("osdCfg", channel) > 0:
                 self._add_capability("snapshot", channel)
                 self._add_capability("main", channel)
+                if replayVersion > 0:
+                    self._add_capability("replay", channel)
                 if 1 in self.http_api.sub_channels(channel):
                     self._add_capability("autotrack_snapshot", channel)
             if noExternStream == 0 and RtmpVersion > 0:
