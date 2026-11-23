@@ -63,6 +63,7 @@ class MediaStream:
         self._pending: list[bytes] = []  # received data not yet decoded
         self._pending_len: int = 0
         self._needed: int = 8  # number of pending bytes needed to decode the next item
+        self._detected_codec: str | None = None  # video codec detected from the data of the first i-frame, None if not (yet) detected
         self._first_i_frame_us: int | None = None  # timestamp of the first i-frame
         self._keyframe_times: deque[float] = deque()  # seconds since the first i-frame of the i-frames not yet processed by stream_hls
         self._overlap: bool = False  # skipping the frames of a recording that overlaps in time with the frames already decoded
@@ -122,7 +123,13 @@ class MediaStream:
                     self.overlap_frames += 1
                     idx = next_idx
                     continue
-                self.video_codec = codec.decode("utf8", errors="replace")
+                header_codec = codec.decode("utf8", errors="replace")
+                if i_frame and self._detected_codec is None:
+                    # the codec in the frame header can be wrong (Argus 4 Pro main stream: H265 video with H264 in the header)
+                    self._detected_codec = _detect_video_codec(frame)
+                    if self._detected_codec not in (None, header_codec):
+                        _LOGGER.debug("Media stream frame header specifies video codec %s, while the i-frame contains %s", header_codec, self._detected_codec)
+                self.video_codec = self._detected_codec or header_codec
                 if self.start_time is None and add_header_len >= 4 and idx + 28 <= len(data):
                     try:
                         self.start_time = datetime.fromtimestamp(struct.unpack_from("<I", data, idx + 24)[0])
@@ -465,6 +472,23 @@ class MpegTsMuxer:
         # update the counter for the next time and return
         self._counters[pid] = (counter + 1 + len(starts)) & 0x0F
         return b"".join(packets)
+
+
+def _detect_video_codec(frame: bytes) -> str | None:
+    """
+    Detect the video codec of an i-frame from the parameter sets it starts with, None if not found.
+    H265: VPS (NAL type 32) or SPS (33), H264: SPS (7). The first byte of these NAL units can not be confused between both codecs.
+    """
+    pos = 0
+    while (pos := frame.find(PES_START_CODE, pos) + 3) > 2 and pos < len(frame):  # the NAL start code is the same as the PES start code
+        nal = frame[pos]
+        if nal & 0x80:
+            continue  # forbidden_zero_bit set, not a valid NAL unit
+        if (nal >> 1) & 0x3F in (32, 33):
+            return "H265"
+        if nal & 0x1F == 7:
+            return "H264"
+    return None
 
 
 def _video_pts(microseconds: int, start: int) -> int:
