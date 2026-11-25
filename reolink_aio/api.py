@@ -9,7 +9,9 @@ import logging
 import re
 import ssl
 import traceback
-from datetime import datetime, timedelta, tzinfo
+from datetime import datetime
+from datetime import time as dtime
+from datetime import timedelta, tzinfo
 from io import BytesIO
 from math import ceil
 from os.path import basename
@@ -40,6 +42,7 @@ from .const import (
 )
 from .enums import (
     AntiFlickerEnum,
+    AutoRebootDayEnum,
     BatteryEnum,
     BatteryModeIntEnum,
     BatteryModeStrEnum,
@@ -282,6 +285,8 @@ class Host:
         self._ntp_settings: Optional[dict] = None
         self._netport_settings: Optional[dict] = None
         self._push_config: dict = {}
+        self._auto_maint: dict = {}
+        self._auto_upgrade: dict = {}
         # Chime-level
         self._chime_list: dict[int, Chime] = {}
         # Camera-level
@@ -412,6 +417,29 @@ class Host:
     def cpu_usage(self) -> Optional[int]:
         """CPU usage in %"""
         return self._performance.get("cpuUsed")
+
+    @property
+    def auto_reboot_enabled(self) -> bool:
+        """Scheduled automatic reboot (Auto Reboot / AutoMaint) enabled"""
+        return self._auto_maint.get("AutoMaint", {}).get("enable") == 1
+
+    @property
+    def auto_reboot_weekday(self) -> str | None:
+        """Day of the scheduled automatic reboot, a value of AutoRebootDayEnum"""
+        return self._auto_maint.get("AutoMaint", {}).get("weekDay")
+
+    @property
+    def auto_reboot_time(self) -> dtime | None:
+        """Time of day of the scheduled automatic reboot"""
+        auto_maint = self._auto_maint.get("AutoMaint", {})
+        if "hour" not in auto_maint:
+            return None
+        return dtime(hour=auto_maint["hour"], minute=auto_maint.get("min", 0), second=auto_maint.get("sec", 0))
+
+    @property
+    def auto_upgrade_enabled(self) -> bool:
+        """Automatic firmware upgrade by the device itself enabled"""
+        return self._auto_upgrade.get("AutoUpgrade", {}).get("enable") == 1
 
     @property
     def state_light(self) -> bool:
@@ -1732,6 +1760,12 @@ class Host:
         if self._push_config.get("PushCfg", {}).get("enable") is not None:
             self._add_capability("push_config")
 
+        if self.api_version("autoMaint") > 0 and self._auto_maint.get("AutoMaint", {}).get("enable") is not None:
+            self._add_capability("auto_reboot")
+
+        if self._auto_upgrade.get("AutoUpgrade", {}).get("enable") is not None:
+            self._add_capability("auto_upgrade")
+
         if self._recording_settings and not self._is_hub:
             self._add_capability("recording")
             if self.api_version("supportIfttt", 0) <= 0:
@@ -2206,6 +2240,10 @@ class Host:
                 body = [{"cmd": "GetTime", "action": 0, "param": {}}]
             elif cmd == "GetPushCfg":
                 body = [{"cmd": "GetPushCfg", "action": 0, "param": {}}]
+            elif cmd == "GetAutoMaint":
+                body = [{"cmd": "GetAutoMaint", "action": 0, "param": {}}]
+            elif cmd == "GetAutoUpgrade":
+                body = [{"cmd": "GetAutoUpgrade", "action": 0, "param": {}}]
             elif cmd == "GetAbility":
                 body = [{"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}}]
             elif cmd == "GetDingDongList" and self.supported(None, "chime"):
@@ -2405,6 +2443,10 @@ class Host:
             host_body.append({"cmd": "GetChannelstatus", "action": 0, "param": {}})  # always include to discover new cameras
         if self.supported(None, "push_config") and (inc_host_cmd("GetPush") or inc_host_cmd("GetPushCfg")):
             host_body.append({"cmd": "GetPushCfg", "action": 0, "param": {}})
+        if self.supported(None, "auto_reboot") and inc_host_cmd("GetAutoMaint"):
+            host_body.append({"cmd": "GetAutoMaint", "action": 0, "param": {}})
+        if self.supported(None, "auto_upgrade") and inc_host_cmd("GetAutoUpgrade"):
+            host_body.append({"cmd": "GetAutoUpgrade", "action": 0, "param": {}})
 
         body.extend(host_body)
         channels.extend([-1] * len(host_body))
@@ -2463,6 +2505,8 @@ class Host:
             {"cmd": "GetNtp", "action": 0, "param": {}},
             {"cmd": "GetTime", "action": 0, "param": {}},
             {"cmd": "GetPushCfg", "action": 0, "param": {}},
+            {"cmd": "GetAutoMaint", "action": 0, "param": {}},
+            {"cmd": "GetAutoUpgrade", "action": 0, "param": {}},
             {"cmd": "GetAbility", "action": 0, "param": {"User": {"userName": self._username}}},
         ]
 
@@ -3982,6 +4026,12 @@ class Host:
                 elif data["cmd"] == "GetPushCfg":
                     self._push_config = data["value"]
 
+                elif data["cmd"] == "GetAutoMaint":
+                    self._auto_maint = data["value"]
+
+                elif data["cmd"] == "GetAutoUpgrade":
+                    self._auto_upgrade = data["value"]
+
                 elif data["cmd"] == "GetAbility":
                     self._abilities = data["value"]["Ability"]
 
@@ -4493,6 +4543,35 @@ class Host:
         body: typings.reolink_json = [{"cmd": "SetNtp", "action": 0, "param": self._ntp_settings}]
         body[0]["param"]["Ntp"]["interval"] = 0
 
+        await self.send_setting(body)
+
+    async def set_auto_reboot(self, enable: bool | None = None, day: AutoRebootDayEnum | None = None, reboot_time: dtime | None = None) -> None:
+        """
+        Set the scheduled automatic reboot (Auto Reboot / AutoMaint) of the host.
+        Arguments left at None keep their current value.
+        """
+        if not self.supported(None, "auto_reboot"):
+            raise NotSupportedError(f"set_auto_reboot: not supported by {self.nvr_name}")
+
+        auto_maint = dict(self._auto_maint["AutoMaint"])
+        if enable is not None:
+            auto_maint["enable"] = 1 if enable else 0
+        if day is not None:
+            auto_maint["weekDay"] = day.value
+        if reboot_time is not None:
+            auto_maint["hour"] = reboot_time.hour
+            auto_maint["min"] = reboot_time.minute
+            auto_maint["sec"] = reboot_time.second
+
+        body: typings.reolink_json = [{"cmd": "SetAutoMaint", "action": 0, "param": {"AutoMaint": auto_maint}}]
+        await self.send_setting(body)
+
+    async def set_auto_upgrade(self, enable: bool) -> None:
+        """Enable or disable the automatic firmware upgrade done by the host itself."""
+        if not self.supported(None, "auto_upgrade"):
+            raise NotSupportedError(f"set_auto_upgrade: not supported by {self.nvr_name}")
+
+        body: typings.reolink_json = [{"cmd": "SetAutoUpgrade", "action": 0, "param": {"AutoUpgrade": {"enable": 1 if enable else 0}}}]
         await self.send_setting(body)
 
     async def set_state_light(self, enable: bool) -> None:

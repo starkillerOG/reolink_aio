@@ -91,6 +91,19 @@ class DayNightEnum(Enum):
     blackwhite = "Black&White"
 
 
+class AutoRebootDayEnum(Enum):
+    """Options for the day of the scheduled automatic reboot (AutoMaint)"""
+
+    everyday = "Everyday"
+    sunday = "Sunday"
+    monday = "Monday"
+    tuesday = "Tuesday"
+    wednesday = "Wednesday"
+    thursday = "Thursday"
+    friday = "Friday"
+    saturday = "Saturday"
+
+
 class HDREnum(Enum):
     """Options for the HDR setting"""
 
