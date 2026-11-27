@@ -2706,6 +2706,9 @@ class Baichuan:
                 if key.text is None:
                     continue
                 value: str | int | bool = key.text
+                if sub_key in ("port", "enable") and not key.text.strip().isdigit():
+                    # Battery doorbells report "no" for ports that are not available
+                    continue
                 if sub_key == "port":
                     value = int(value)
                 if sub_key == "enable":
